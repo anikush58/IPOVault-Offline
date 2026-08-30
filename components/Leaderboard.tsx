@@ -131,12 +131,12 @@ function LeaderRow({
 }
 
 const row = StyleSheet.create({
-  wrap: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 20 },
+  wrap: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 16 },
   info: { flex: 1 },
   name: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: -0.1 },
   sub: { fontSize: 11, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 1 },
   profit: { fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.2 },
-  divider: { height: 1, marginHorizontal: 20 },
+  divider: { height: 1, marginHorizontal: 16 },
 });
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -253,7 +253,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     marginBottom: 10,
     gap: 12,
   },
@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
   },
 
   tabsRow: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     marginBottom: 10,
   },
 
