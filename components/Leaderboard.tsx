@@ -130,13 +130,15 @@ function LeaderRow({
   );
 }
 
+const CARD_PADDING_H = 18;
+
 const row = StyleSheet.create({
-  wrap: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 16 },
+  wrap: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: CARD_PADDING_H },
   info: { flex: 1 },
   name: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: -0.1 },
   sub: { fontSize: 11, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 1 },
   profit: { fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.2 },
-  divider: { height: 1, marginHorizontal: 16 },
+  divider: { height: 1, marginHorizontal: CARD_PADDING_H },
 });
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -253,7 +255,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: CARD_PADDING_H,
     marginBottom: 10,
     gap: 12,
   },
@@ -275,7 +277,7 @@ const styles = StyleSheet.create({
   },
 
   tabsRow: {
-    paddingHorizontal: 16,
+    paddingHorizontal: CARD_PADDING_H,
     marginBottom: 10,
   },
 
