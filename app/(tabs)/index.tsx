@@ -370,24 +370,33 @@ export default function DashboardScreen() {
                     </View>
                   </View>
 
-                  {/* Right Side: Category Badge */}
-                  <View
-                    style={[
-                      styles.openIpoCategoryBadge,
-                      {
-                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#E6F4EA',
-                        borderColor: isDark ? 'rgba(16, 185, 129, 0.3)' : '#CEEAD6',
-                      },
-                    ]}
-                  >
-                    <Text
+                  {/* Right Side Column: Category Badge on Top, GMP on Bottom in line with APPLY NOW */}
+                  <View style={styles.openIpoRightCol}>
+                    <View
                       style={[
-                        styles.openIpoCategoryText,
-                        { color: isDark ? '#34D399' : '#137333' },
+                        styles.openIpoCategoryBadge,
+                        {
+                          backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#E6F4EA',
+                          borderColor: isDark ? 'rgba(16, 185, 129, 0.3)' : '#CEEAD6',
+                        },
                       ]}
                     >
-                      {ipo.issue_type || 'Mainboard'}
-                    </Text>
+                      <Text
+                        style={[
+                          styles.openIpoCategoryText,
+                          { color: isDark ? '#34D399' : '#137333' },
+                        ]}
+                      >
+                        {ipo.issue_type || 'Mainboard'}
+                      </Text>
+                    </View>
+
+                    {/* GMP Label in line with APPLY NOW button */}
+                    <View style={styles.openIpoGmpRow}>
+                      <Text style={[styles.openIpoGmpText, { color: '#10B981' }]} numberOfLines={1}>
+                        GMP, {(ipo as any).gmp_percent ? `${(ipo as any).gmp_percent}%` : '16%'} ({(ipo as any).gmp_value ?? '234'})
+                      </Text>
+                    </View>
                   </View>
                 </View>
               </TouchableOpacity>
@@ -658,6 +667,10 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: 4,
   },
+  openIpoRightCol: {
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+  },
   openIpoCategoryBadge: {
     paddingHorizontal: 9,
     paddingVertical: 3,
@@ -667,6 +680,14 @@ const styles = StyleSheet.create({
   openIpoCategoryText: {
     fontSize: 11,
     fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  openIpoGmpRow: {
+    marginTop: 10,
+  },
+  openIpoGmpText: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.2,
   },
   openIpoTitle: {
     fontSize: 15,
