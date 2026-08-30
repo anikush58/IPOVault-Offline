@@ -21,7 +21,6 @@ import { useDB, type IPOListing } from '@/context/DBContext';
 import { IconButton } from '@/components/ui/IconButton';
 import { formatCurrency } from '@/utils/formatters';
 import { SegmentedTabControl } from '@/components/ui/SegmentedTabControl';
-import { NumberedText } from '@/components/ui/NumberedText';
 
 type TabSegment = 'active' | 'favorites' | 'archived';
 
@@ -390,23 +389,23 @@ export default function IPOManagementScreen() {
                 <View style={styles.cardMetricsGrid}>
                   <View style={styles.metricColLeft}>
                     <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Price / Lot</Text>
-                    <NumberedText style={[styles.metricVal, { color: colors.foreground }]}>
-                      {`₹${ipo.buy_price} × ${ipo.quantity}`}
-                    </NumberedText>
+                    <Text style={[styles.metricVal, { color: colors.foreground }]}>
+                      ₹{ipo.buy_price} × {ipo.quantity}
+                    </Text>
                   </View>
 
                   <View style={styles.metricColCenter}>
                     <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Investment</Text>
-                    <NumberedText style={[styles.metricVal, { color: colors.foreground }]}>
+                    <Text style={[styles.metricVal, { color: colors.foreground }]}>
                       {formatCurrency(totalAmount)}
-                    </NumberedText>
+                    </Text>
                   </View>
 
                   <View style={styles.metricColRight}>
                     <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Close Date</Text>
-                    <NumberedText style={[styles.metricVal, { color: colors.foreground }]}>
+                    <Text style={[styles.metricVal, { color: colors.foreground }]}>
                       {ipo.close_date || 'Active'}
-                    </NumberedText>
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -712,7 +711,7 @@ const styles = StyleSheet.create({
   },
   metricVal: {
     fontSize: 12.5,
-    fontFamily: 'SpaceMono_700Bold',
+    fontFamily: 'GoogleSansFlex_600SemiBold',
     opacity: 0.8,
   },
 

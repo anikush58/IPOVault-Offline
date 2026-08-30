@@ -25,8 +25,10 @@ import { PerformanceChart } from '@/components/PerformanceChart';
 import { Leaderboard } from '@/components/Leaderboard';
 import { FilterSheet } from '@/components/FilterSheet';
 import { formatCurrency } from '@/utils/formatters';
-import { calcBuyValue, calculateAppTaxAndNet } from '@/utils/calculations';
-import { NumberedText } from '@/components/ui/NumberedText';
+import {
+  calcBuyValue,
+  calculateAppTaxAndNet,
+} from '@/utils/calculations';
 
 const heroBg = require('@/assets/images/dashboard-hero-bg.png');
 const graphicLeft = require('@/assets/images/dashboard-graphic-left.png');
@@ -201,7 +203,7 @@ export default function DashboardScreen() {
             ]}
           >
             <Feather name="filter" size={12} color={colors.primary} />
-            <NumberedText style={[styles.filterBarText, { color: colors.primary }]}>{filterChipLabel}</NumberedText>
+            <Text style={[styles.filterBarText, { color: colors.primary }]}>{filterChipLabel}</Text>
             <TouchableOpacity
               onPress={() => { setFilterUserIds([]); setFilterBrokers([]); setFilterIpoNames([]); }}
               hitSlop={8}
@@ -513,8 +515,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   portfolioMetricVal: {
-    fontSize: 14.5,
-    fontFamily: 'SpaceMono_700Bold',
+    fontSize: 15,
+    fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: -0.3,
     marginBottom: 4,
   },
