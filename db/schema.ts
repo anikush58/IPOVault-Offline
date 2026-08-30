@@ -47,6 +47,8 @@ export async function initDB(db: SQLiteDatabase) {
       allotment_date TEXT DEFAULT '',
       logo_url TEXT DEFAULT '',
       is_favorite INTEGER DEFAULT 0,
+      gmp_percent REAL DEFAULT 0,
+      gmp_value REAL DEFAULT 0,
       sync_version INTEGER DEFAULT 0,
       sync_status TEXT NOT NULL DEFAULT 'SYNCED',
       last_synced_at TEXT,
@@ -286,6 +288,8 @@ export async function initDB(db: SQLiteDatabase) {
     'ALTER TABLE ipo_listings ADD COLUMN created_at TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE ipo_listings ADD COLUMN updated_at TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE ipo_listings ADD COLUMN deleted_at TEXT',
+    'ALTER TABLE ipo_listings ADD COLUMN gmp_percent REAL DEFAULT 0',
+    'ALTER TABLE ipo_listings ADD COLUMN gmp_value REAL DEFAULT 0',
 
     // ipo_applications migrations
     'ALTER TABLE ipo_applications ADD COLUMN owner_id TEXT',

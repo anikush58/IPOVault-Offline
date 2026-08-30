@@ -41,6 +41,8 @@ export type IPOListing = {
   issue_type?: string;
   allotment_date?: string;
   logo_url?: string;
+  gmp_percent?: number;
+  gmp_value?: number;
 };
 
 export type ApplicationStatus = 'Applied' | 'Mandate Approved' | 'Allotted' | 'Partially Allotted' | 'Holding' | 'Not Allotted' | 'Sold' | 'Cancelled';

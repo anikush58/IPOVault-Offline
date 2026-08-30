@@ -101,6 +101,8 @@ export default function AddIPOScreen() {
   const [formAllotmentDate, setFormAllotmentDate] = useState('');
   const [formListingDate, setFormListingDate] = useState('');
   const [formLogoUrl, setFormLogoUrl] = useState('');
+  const [formGmpPercent, setFormGmpPercent] = useState('');
+  const [formGmpValue, setFormGmpValue] = useState('');
   const [saving, setSaving] = useState(false);
 
   // Date picker state — one active field at a time
@@ -119,6 +121,8 @@ export default function AddIPOScreen() {
       setFormAllotmentDate(editingIPO.allotment_date || '');
       setFormListingDate(editingIPO.listing_date || '');
       setFormLogoUrl(editingIPO.logo_url || '');
+      setFormGmpPercent(editingIPO.gmp_percent != null ? editingIPO.gmp_percent.toString() : '');
+      setFormGmpValue(editingIPO.gmp_value != null ? editingIPO.gmp_value.toString() : '');
     } else {
       setFormOpenDate(new Date().toISOString().slice(0, 10));
     }
@@ -156,6 +160,8 @@ export default function AddIPOScreen() {
       const closeDate = masterRow?.close_date || listingRow?.close_date || seedMatch?.closeDate;
       const allotmentDate = masterRow?.allotment_date || listingRow?.allotment_date || seedMatch?.allotmentDate;
       const listingDate = masterRow?.listing_date || listingRow?.listing_date || seedMatch?.listingDate;
+      const gmpPercent = masterRow?.gmp_percent || listingRow?.gmp_percent;
+      const gmpValue = masterRow?.gmp_value || listingRow?.gmp_value;
 
       let count = 0;
       if (price) { setFormPrice(price.toString()); count++; }
@@ -167,6 +173,8 @@ export default function AddIPOScreen() {
       if (closeDate) { setFormCloseDate(closeDate); count++; }
       if (allotmentDate) { setFormAllotmentDate(allotmentDate); count++; }
       if (listingDate) { setFormListingDate(listingDate); count++; }
+      if (gmpPercent != null) { setFormGmpPercent(gmpPercent.toString()); count++; }
+      if (gmpValue != null) { setFormGmpValue(gmpValue.toString()); count++; }
 
       Haptics.selectionAsync();
       if (count > 0) {
@@ -201,6 +209,8 @@ export default function AddIPOScreen() {
     }
     const price = parseFloat(formPrice) || 0;
     const qty = parseInt(formLotSize, 10) || 0;
+    const gmpPercent = parseFloat(formGmpPercent) || 0;
+    const gmpValue = parseFloat(formGmpValue) || 0;
     if (price <= 0 || qty <= 0) {
       showError('Invalid Values', 'Price and lot size must be greater than zero.');
       return;
@@ -212,7 +222,7 @@ export default function AddIPOScreen() {
         const now = new Date().toISOString();
         await db.runAsync(
           `UPDATE ipo_listings
-           SET ipo_name = ?, buy_price = ?, quantity = ?, registrar = ?, exchange = ?, issue_type = ?, open_date = ?, close_date = ?, allotment_date = ?, listing_date = ?, logo_url = ?, updated_at = ?
+           SET ipo_name = ?, buy_price = ?, quantity = ?, registrar = ?, exchange = ?, issue_type = ?, open_date = ?, close_date = ?, allotment_date = ?, listing_date = ?, logo_url = ?, gmp_percent = ?, gmp_value = ?, updated_at = ?
            WHERE id = ?`,
           [
             formIpoName.trim(),
@@ -226,6 +236,8 @@ export default function AddIPOScreen() {
             formAllotmentDate,
             formListingDate,
             formLogoUrl,
+            gmpPercent,
+            gmpValue,
             now,
             editingIPO.id,
           ]
@@ -235,8 +247,8 @@ export default function AddIPOScreen() {
         const newId = `ipo_${Date.now()}`;
         const now = new Date().toISOString();
         await db.runAsync(
-          `INSERT INTO ipo_listings (id, ipo_name, buy_price, quantity, registrar, exchange, issue_type, open_date, close_date, allotment_date, listing_date, logo_url, archived, is_favorite, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+          `INSERT INTO ipo_listings (id, ipo_name, buy_price, quantity, registrar, exchange, issue_type, open_date, close_date, allotment_date, listing_date, logo_url, archived, is_favorite, gmp_percent, gmp_value, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)`,
           [
             newId,
             formIpoName.trim(),
@@ -250,6 +262,8 @@ export default function AddIPOScreen() {
             formAllotmentDate,
             formListingDate,
             formLogoUrl,
+            gmpPercent,
+            gmpValue,
             now,
             now,
           ]
@@ -405,6 +419,51 @@ export default function AddIPOScreen() {
               value={formLotSize}
               onChangeText={setFormLotSize}
               placeholder="e.g. 2000"
+              placeholderTextColor={colors.mutedForeground}
+              keyboardType="numeric"
+              style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground }]}
+            />
+          </View>
+        </View>
+
+        {/* GMP (%) & GMP AMOUNT (₹) side by side */}
+        <View style={styles.row}>
+          <View style={[styles.field, { flex: 1 }]}>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
+              GMP (%)
+            </Text>
+            <TextInput
+              value={formGmpPercent}
+              onChangeText={(txt) => {
+                setFormGmpPercent(txt);
+                const pct = parseFloat(txt);
+                const price = parseFloat(formPrice);
+                if (!isNaN(pct) && !isNaN(price) && price > 0 && !formGmpValue) {
+                  setFormGmpValue(Math.round((price * pct) / 100).toString());
+                }
+              }}
+              placeholder="e.g. 16"
+              placeholderTextColor={colors.mutedForeground}
+              keyboardType="numeric"
+              style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground }]}
+            />
+          </View>
+
+          <View style={[styles.field, { flex: 1 }]}>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
+              GMP AMOUNT (₹)
+            </Text>
+            <TextInput
+              value={formGmpValue}
+              onChangeText={(txt) => {
+                setFormGmpValue(txt);
+                const amt = parseFloat(txt);
+                const price = parseFloat(formPrice);
+                if (!isNaN(amt) && !isNaN(price) && price > 0 && !formGmpPercent) {
+                  setFormGmpPercent(((amt / price) * 100).toFixed(1).replace(/\.0$/, ''));
+                }
+              }}
+              placeholder="e.g. 234"
               placeholderTextColor={colors.mutedForeground}
               keyboardType="numeric"
               style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground }]}
