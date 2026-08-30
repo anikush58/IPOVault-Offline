@@ -10,7 +10,6 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,8 +19,9 @@ import { useDialog } from '@/context/DialogContext';
 import { useDB } from '@/context/DBContext';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
+import { DatePickerModal } from '@/components/DatePickerModal';
 
-type DateField = 'openDate' | 'closeDate' | 'allotmentDate' | 'listingDate';
+
 
 const REGISTRARS = [
   'KFin Technologies Limited',
@@ -42,18 +42,7 @@ const REGISTRARS = [
   'SEBI Registered Registrar',
 ];
 
-function isoToDate(iso: string): Date {
-  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return new Date();
-  const [y, m, d] = iso.split('-').map(Number);
-  return new Date(y, m - 1, d);
-}
 
-function dateToISO(d: Date): string {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
 
 export default function AddIPOScreen() {
   const colors = useColors();
@@ -81,9 +70,8 @@ export default function AddIPOScreen() {
   const [formListingDate, setFormListingDate] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Date picker state
-  const [pickerField, setPickerField] = useState<DateField | null>(null);
-  const [showPicker, setShowPicker] = useState(false);
+  // Date picker state — one active field at a time
+  const [activeDateField, setActiveDateField] = useState<'openDate' | 'closeDate' | 'allotmentDate' | 'listingDate' | null>(null);
 
   useEffect(() => {
     if (editingIPO) {
@@ -102,29 +90,6 @@ export default function AddIPOScreen() {
     }
   }, [editingIPO]);
 
-  const openDatePicker = (field: DateField) => {
-    setPickerField(field);
-    setShowPicker(true);
-  };
-
-  const handleDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
-    if (Platform.OS === 'android') setShowPicker(false);
-    if (selectedDate && pickerField) {
-      const iso = dateToISO(selectedDate);
-      if (pickerField === 'openDate') setFormOpenDate(iso);
-      else if (pickerField === 'closeDate') setFormCloseDate(iso);
-      else if (pickerField === 'allotmentDate') setFormAllotmentDate(iso);
-      else if (pickerField === 'listingDate') setFormListingDate(iso);
-    }
-  };
-
-  const getCurrentPickerValue = (): Date => {
-    if (pickerField === 'openDate') return isoToDate(formOpenDate);
-    if (pickerField === 'closeDate') return isoToDate(formCloseDate);
-    if (pickerField === 'allotmentDate') return isoToDate(formAllotmentDate);
-    if (pickerField === 'listingDate') return isoToDate(formListingDate);
-    return new Date();
-  };
 
   const handleSave = async () => {
     if (!formIpoName.trim()) {
@@ -386,28 +351,28 @@ export default function AddIPOScreen() {
           <View style={[styles.field, { flex: 1 }]}>
             <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>OPEN DATE</Text>
             <TouchableOpacity
-              onPress={() => openDatePicker('openDate')}
+              onPress={() => setActiveDateField('openDate')}
               activeOpacity={0.8}
-              style={[styles.dateInput, { borderColor: colors.border, backgroundColor: colors.surface }]}
+              style={[styles.dateInput, { borderColor: formOpenDate ? colors.primary : colors.border, backgroundColor: colors.surface }]}
             >
               <Text style={{ flex: 1, fontSize: 14, fontFamily: 'GoogleSansFlex_400Regular', color: formOpenDate ? colors.foreground : colors.mutedForeground }}>
-                {formOpenDate || 'YYYY-MM-DD'}
+                {formOpenDate || 'Select'}
               </Text>
-              <Feather name="calendar" size={16} color={colors.primary} />
+              <Feather name="calendar" size={16} color={formOpenDate ? colors.primary : colors.mutedForeground} />
             </TouchableOpacity>
           </View>
 
           <View style={[styles.field, { flex: 1 }]}>
             <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>CLOSE DATE</Text>
             <TouchableOpacity
-              onPress={() => openDatePicker('closeDate')}
+              onPress={() => setActiveDateField('closeDate')}
               activeOpacity={0.8}
-              style={[styles.dateInput, { borderColor: colors.border, backgroundColor: colors.surface }]}
+              style={[styles.dateInput, { borderColor: formCloseDate ? colors.primary : colors.border, backgroundColor: colors.surface }]}
             >
               <Text style={{ flex: 1, fontSize: 14, fontFamily: 'GoogleSansFlex_400Regular', color: formCloseDate ? colors.foreground : colors.mutedForeground }}>
-                {formCloseDate || 'Select date'}
+                {formCloseDate || 'Select'}
               </Text>
-              <Feather name="calendar" size={16} color={colors.primary} />
+              <Feather name="calendar" size={16} color={formCloseDate ? colors.primary : colors.mutedForeground} />
             </TouchableOpacity>
           </View>
         </View>
@@ -416,42 +381,62 @@ export default function AddIPOScreen() {
           <View style={[styles.field, { flex: 1 }]}>
             <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>ALLOTMENT</Text>
             <TouchableOpacity
-              onPress={() => openDatePicker('allotmentDate')}
+              onPress={() => setActiveDateField('allotmentDate')}
               activeOpacity={0.8}
-              style={[styles.dateInput, { borderColor: colors.border, backgroundColor: colors.surface }]}
+              style={[styles.dateInput, { borderColor: formAllotmentDate ? colors.primary : colors.border, backgroundColor: colors.surface }]}
             >
               <Text style={{ flex: 1, fontSize: 14, fontFamily: 'GoogleSansFlex_400Regular', color: formAllotmentDate ? colors.foreground : colors.mutedForeground }}>
-                {formAllotmentDate || 'Select date'}
+                {formAllotmentDate || 'Select'}
               </Text>
-              <Feather name="calendar" size={16} color={colors.primary} />
+              <Feather name="calendar" size={16} color={formAllotmentDate ? colors.primary : colors.mutedForeground} />
             </TouchableOpacity>
           </View>
 
           <View style={[styles.field, { flex: 1 }]}>
             <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>LISTING DATE</Text>
             <TouchableOpacity
-              onPress={() => openDatePicker('listingDate')}
+              onPress={() => setActiveDateField('listingDate')}
               activeOpacity={0.8}
-              style={[styles.dateInput, { borderColor: colors.border, backgroundColor: colors.surface }]}
+              style={[styles.dateInput, { borderColor: formListingDate ? colors.primary : colors.border, backgroundColor: colors.surface }]}
             >
               <Text style={{ flex: 1, fontSize: 14, fontFamily: 'GoogleSansFlex_400Regular', color: formListingDate ? colors.foreground : colors.mutedForeground }}>
-                {formListingDate || 'Select date'}
+                {formListingDate || 'Select'}
               </Text>
-              <Feather name="calendar" size={16} color={colors.primary} />
+              <Feather name="calendar" size={16} color={formListingDate ? colors.primary : colors.mutedForeground} />
             </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
 
-      {/* Date Picker */}
-      {showPicker && (
-        <DateTimePicker
-          value={getCurrentPickerValue()}
-          mode="date"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={handleDateChange}
-        />
-      )}
+      {/* ── Custom Date Picker Modals ── */}
+      <DatePickerModal
+        visible={activeDateField === 'openDate'}
+        value={formOpenDate}
+        label="Open Date"
+        onConfirm={(iso) => setFormOpenDate(iso)}
+        onClose={() => setActiveDateField(null)}
+      />
+      <DatePickerModal
+        visible={activeDateField === 'closeDate'}
+        value={formCloseDate}
+        label="Close Date"
+        onConfirm={(iso) => setFormCloseDate(iso)}
+        onClose={() => setActiveDateField(null)}
+      />
+      <DatePickerModal
+        visible={activeDateField === 'allotmentDate'}
+        value={formAllotmentDate}
+        label="Allotment Date"
+        onConfirm={(iso) => setFormAllotmentDate(iso)}
+        onClose={() => setActiveDateField(null)}
+      />
+      <DatePickerModal
+        visible={activeDateField === 'listingDate'}
+        value={formListingDate}
+        label="Listing Date"
+        onConfirm={(iso) => setFormListingDate(iso)}
+        onClose={() => setActiveDateField(null)}
+      />
     </KeyboardAvoidingView>
   );
 }
