@@ -44,38 +44,7 @@ const REGISTRARS = [
   'SEBI Registered Registrar',
 ];
 
-const KNOWN_DOMAINS: Record<string, string> = {
-  'ola': 'olaelectric.com',
-  'ola electric': 'olaelectric.com',
-  'hdb': 'hdbfs.com',
-  'hdb financial': 'hdbfs.com',
-  'kotak': 'kotak.com',
-  'kotak multicap': 'kotak.com',
-  'tata': 'tatamotors.com',
-  'tata tech': 'tatatechnologies.com',
-  'swiggy': 'swiggy.com',
-  'zomato': 'zomato.com',
-  'paytm': 'paytm.com',
-  'lic': 'licindia.in',
-  'hyundai': 'hyundai.com',
-  'adani': 'adani.com',
-  'bajaj': 'bajajhousingfinance.in',
-  'nykaa': 'nykaa.com',
-  'firstcry': 'firstcry.com',
-  'ixigo': 'ixigo.com',
-  'unicommerce': 'unicommerce.com',
-  'mamaearth': 'honasa.in',
-  'zerodha': 'zerodha.com',
-};
 
-function getAutoLogoUrl(companyName: string): string {
-  if (!companyName.trim()) return '';
-  const lower = companyName.toLowerCase().trim();
-  const clean = lower.replace(/ (ltd|limited|pvt|private|inc|corp|corporation|services|india|technologies|tech|finance|housing|capital)/g, '').trim();
-  const known = KNOWN_DOMAINS[lower] || KNOWN_DOMAINS[clean];
-  const domain = known || `${clean.replace(/[^a-z0-9]/g, '')}.com`;
-  return `https://logo.clearbit.com/${domain}`;
-}
 
 
 
@@ -127,21 +96,6 @@ export default function AddIPOScreen() {
     }
   }, [editingIPO]);
 
-  // Auto-fetch data when company name changes (if fields are not manually set)
-  const [userPickedLogo, setUserPickedLogo] = useState(false);
-
-  useEffect(() => {
-    if (!formLogoUrl || !userPickedLogo) {
-      if (formIpoName.trim().length >= 3) {
-        const timer = setTimeout(() => {
-          const autoUrl = getAutoLogoUrl(formIpoName);
-          if (autoUrl) setFormLogoUrl(autoUrl);
-        }, 400);
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [formIpoName]);
-
   const handleAutoFetchData = async () => {
     if (!formIpoName.trim()) {
       showError('Enter Company Name', 'Please type the IPO or company name first.');
@@ -168,7 +122,6 @@ export default function AddIPOScreen() {
       const closeDate = masterRow?.close_date || listingRow?.close_date;
       const allotmentDate = masterRow?.allotment_date || listingRow?.allotment_date;
       const listingDate = masterRow?.listing_date || listingRow?.listing_date;
-      const logoUrl = masterRow?.logo_url || listingRow?.logo_url || getAutoLogoUrl(formIpoName);
 
       let count = 0;
       if (price) { setFormPrice(price.toString()); count++; }
@@ -180,13 +133,12 @@ export default function AddIPOScreen() {
       if (closeDate) { setFormCloseDate(closeDate); count++; }
       if (allotmentDate) { setFormAllotmentDate(allotmentDate); count++; }
       if (listingDate) { setFormListingDate(listingDate); count++; }
-      if (logoUrl) { setFormLogoUrl(logoUrl); count++; }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (count > 0) {
         showSuccess('Data Auto-Fetched', `Auto-filled ${count} field(s) for ${formIpoName}.`);
       } else {
-        showError('No Master Data Found', 'No auto data found for this company name. Fill remaining fields manually.');
+        showError('No Master Data Found', 'No master record found for this company name. Fill remaining fields manually.');
       }
     } catch (err) {
       console.error('Auto fetch data error:', err);
@@ -201,7 +153,6 @@ export default function AddIPOScreen() {
       });
       if (!result.canceled && result.assets && result.assets.length > 0) {
         setFormLogoUrl(result.assets[0].uri);
-        setUserPickedLogo(true);
         Haptics.selectionAsync();
       }
     } catch (err) {
@@ -331,77 +282,49 @@ export default function AddIPOScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* COMPANY LOGO UPLOAD */}
+        {/* COMPANY LOGO UPLOAD (MANUAL ONLY) */}
         <View style={styles.field}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground, marginBottom: 0 }]}>
-              COMPANY LOGO
-            </Text>
-            <TouchableOpacity onPress={handleAutoFetchData} activeOpacity={0.7} style={styles.autoFetchLink}>
-              <Feather name="zap" size={12} color={colors.primary} style={{ marginRight: 4 }} />
-              <Text style={[styles.autoFetchLinkText, { color: colors.primary }]}>Auto-Fetch Data</Text>
-            </TouchableOpacity>
-          </View>
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
+            COMPANY LOGO
+          </Text>
 
           {formLogoUrl ? (
             <View style={[styles.logoPreviewRow, { borderColor: colors.border, backgroundColor: colors.surface }]}>
               <Image source={{ uri: formLogoUrl }} style={styles.logoPreviewImage} resizeMode="contain" />
               <View style={{ flex: 1, paddingHorizontal: 10 }}>
                 <Text style={[styles.logoPreviewText, { color: colors.foreground }]} numberOfLines={1}>
-                  {userPickedLogo ? 'Custom Logo Uploaded' : 'Logo Auto-Fetched'}
+                  Logo Uploaded
                 </Text>
                 <Text style={[styles.logoPreviewSub, { color: colors.mutedForeground }]}>
-                  Auto-detected from company name
+                  Manual image selected
                 </Text>
               </View>
-              <TouchableOpacity onPress={handleAutoFetchData} style={[styles.logoBtn, { backgroundColor: colors.card, borderColor: colors.border }]} activeOpacity={0.8}>
-                <Feather name="refresh-cw" size={13} color={colors.foreground} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={pickLogoImage} style={[styles.logoBtn, { backgroundColor: colors.card, borderColor: colors.border, marginLeft: 6 }]} activeOpacity={0.8}>
+              <TouchableOpacity onPress={pickLogoImage} style={[styles.logoBtn, { backgroundColor: colors.card, borderColor: colors.border }]} activeOpacity={0.8}>
                 <Feather name="edit-2" size={13} color={colors.foreground} />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => { setFormLogoUrl(''); setUserPickedLogo(true); }} style={[styles.logoBtn, { backgroundColor: colors.destructiveBg, borderColor: colors.destructiveBg, marginLeft: 6 }]} activeOpacity={0.8}>
+              <TouchableOpacity onPress={() => setFormLogoUrl('')} style={[styles.logoBtn, { backgroundColor: colors.destructiveBg, borderColor: colors.destructiveBg, marginLeft: 6 }]} activeOpacity={0.8}>
                 <Feather name="trash-2" size={13} color={colors.destructive} />
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <TouchableOpacity
-                onPress={handleAutoFetchData}
-                activeOpacity={0.8}
-                style={[styles.logoUploadDropzone, { flex: 1, borderColor: colors.border, backgroundColor: colors.surface }]}
-              >
-                <View style={[styles.logoUploadIconWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Feather name="zap" size={16} color={colors.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.logoUploadTitle, { color: colors.foreground }]}>
-                    Auto-Fetch Data
-                  </Text>
-                  <Text style={[styles.logoUploadSub, { color: colors.mutedForeground }]}>
-                    Fill form automatically
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={pickLogoImage}
-                activeOpacity={0.8}
-                style={[styles.logoUploadDropzone, { flex: 1, borderColor: colors.border, backgroundColor: colors.surface }]}
-              >
-                <View style={[styles.logoUploadIconWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Feather name="upload-cloud" size={16} color={colors.mutedForeground} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.logoUploadTitle, { color: colors.foreground }]}>
-                    Upload File
-                  </Text>
-                  <Text style={[styles.logoUploadSub, { color: colors.mutedForeground }]}>
-                    Pick custom image
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              onPress={pickLogoImage}
+              activeOpacity={0.8}
+              style={[styles.logoUploadDropzone, { borderColor: colors.border, backgroundColor: colors.surface }]}
+            >
+              <View style={[styles.logoUploadIconWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Feather name="upload-cloud" size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.logoUploadTitle, { color: colors.foreground }]}>
+                  Upload Company Logo
+                </Text>
+                <Text style={[styles.logoUploadSub, { color: colors.mutedForeground }]}>
+                  PNG, JPG or SVG image file
+                </Text>
+              </View>
+              <Feather name="plus" size={16} color={colors.mutedForeground} />
+            </TouchableOpacity>
           )}
         </View>
 
