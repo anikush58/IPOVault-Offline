@@ -25,17 +25,17 @@ const colors = {
     border: '#E5E7EB',
     borderStrong: '#D1D5DB',
 
-    // Primary — refined amber gold accent
-    primary: '#D4A017',
-    primaryLight: '#E5C158',
+    // Primary — crisp dark charcoal / black
+    primary: '#111827',
+    primaryLight: '#374151',
     primaryForeground: '#FFFFFF',
 
     // Accent
-    accent: '#D4A017',
+    accent: '#111827',
     accentForeground: '#FFFFFF',
 
     // Legacy tint alias
-    tint: '#D4A017',
+    tint: '#111827',
 
     // Destructive
     destructive: '#EF4444',
@@ -94,14 +94,14 @@ const colors = {
     border: '#2E3545',
     borderStrong: '#3E4659',
 
-    primary: '#D4A017',
-    primaryLight: '#E5C158',
+    primary: '#F3F4F6',
+    primaryLight: '#D1D5DB',
     primaryForeground: '#0E1117',
 
-    accent: '#D4A017',
+    accent: '#F3F4F6',
     accentForeground: '#0E1117',
 
-    tint: '#D4A017',
+    tint: '#F3F4F6',
 
     destructive: '#F87171',
     destructiveForeground: '#FFFFFF',

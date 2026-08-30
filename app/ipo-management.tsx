@@ -129,7 +129,7 @@ export default function IPOManagementScreen() {
       {/* ── Custom Single Header (No Double Navigation Bar) ── */}
       <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
         <View style={{ flex: 1, justifyContent: 'center' }}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>TRACK & MANAGE</Text>
+          <Text style={[styles.headerEyebrow, { color: colors.mutedForeground }]}>TRACK & MANAGE</Text>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>IPOs</Text>
         </View>
 
@@ -289,55 +289,63 @@ export default function IPOManagementScreen() {
         ) : (
           filteredIPOs.map((ipo) => {
             const totalAmount = ipo.buy_price * ipo.quantity;
-            const appCount = applications.filter((a) => a.ipo_id === ipo.id).length;
             const isArchivedRow = ipo.archived === 1;
 
             return (
               <View key={ipo.id} style={[styles.ipoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 {/* Header Row */}
                 <View style={styles.cardHeaderRow}>
-                  <View style={styles.cardIconAvatar}>
-                    <Feather name="trending-up" size={16} color="#D4A017" />
+                  {/* Left Logo / Avatar */}
+                  <View style={[styles.cardIconAvatar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <Text style={[styles.cardAvatarText, { color: colors.foreground }]}>
+                      {ipo.ipo_name.slice(0, 1).toUpperCase()}
+                    </Text>
                   </View>
 
+                  {/* Title & Subtitle */}
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.cardTitle, { color: colors.foreground }]} numberOfLines={1}>
                       {ipo.ipo_name}
                     </Text>
-                    <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
-                      ₹{ipo.buy_price} × {ipo.quantity} lot · {appCount} application{appCount !== 1 ? 's' : ''}
+                    <Text style={[styles.cardSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+                      {ipo.issue_type || 'Mainboard'}{ipo.registrar ? ` · ${ipo.registrar}` : ''}
                     </Text>
                   </View>
 
-                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                    <TouchableOpacity onPress={() => handleToggleFavorite(ipo)} hitSlop={8}>
-                      <Feather
-                        name="star"
-                        size={16}
-                        color={ipo.is_favorite === 1 ? '#D4A017' : colors.mutedForeground}
-                      />
-                    </TouchableOpacity>
-                    <Text style={styles.cardAmountText}>{formatCurrency(totalAmount)}</Text>
-                  </View>
+                  {/* Right Action / Star */}
+                  <TouchableOpacity onPress={() => handleToggleFavorite(ipo)} hitSlop={8}>
+                    <Feather
+                      name="star"
+                      size={18}
+                      color={ipo.is_favorite === 1 ? colors.primary : colors.mutedForeground}
+                    />
+                  </TouchableOpacity>
                 </View>
 
-                {/* Date Blocks Grid (4 columns) */}
-                <View style={styles.dateBlocksGrid}>
-                  <View style={styles.dateBlock}>
-                    <Text style={styles.dateBlockTag}>OPEN</Text>
-                    <Text style={styles.dateBlockVal}>{ipo.open_date || '—'}</Text>
+                {/* Thin Horizontal Divider Line */}
+                <View style={[styles.cardDivider, { backgroundColor: colors.border }]} />
+
+                {/* 3-Column Metrics Grid (Matching reference image bottom row) */}
+                <View style={styles.cardMetricsGrid}>
+                  <View style={styles.metricCol}>
+                    <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Price / Lot</Text>
+                    <Text style={[styles.metricVal, { color: colors.foreground }]}>
+                      ₹{ipo.buy_price} × {ipo.quantity}
+                    </Text>
                   </View>
-                  <View style={styles.dateBlock}>
-                    <Text style={styles.dateBlockTag}>CLOSE</Text>
-                    <Text style={styles.dateBlockVal}>{ipo.close_date || '—'}</Text>
+
+                  <View style={styles.metricCol}>
+                    <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Investment</Text>
+                    <Text style={[styles.metricVal, { color: colors.foreground }]}>
+                      {formatCurrency(totalAmount)}
+                    </Text>
                   </View>
-                  <View style={styles.dateBlock}>
-                    <Text style={styles.dateBlockTag}>ALLOTMENT</Text>
-                    <Text style={styles.dateBlockVal}>{ipo.allotment_date || '—'}</Text>
-                  </View>
-                  <View style={styles.dateBlock}>
-                    <Text style={styles.dateBlockTag}>LISTS</Text>
-                    <Text style={styles.dateBlockVal}>{ipo.listing_date || '—'}</Text>
+
+                  <View style={[styles.metricCol, { alignItems: 'flex-end' }]}>
+                    <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Close Date</Text>
+                    <Text style={[styles.metricVal, { color: colors.positive }]}>
+                      {ipo.close_date || 'Active'}
+                    </Text>
                   </View>
                 </View>
 
@@ -345,26 +353,42 @@ export default function IPOManagementScreen() {
                 <View style={styles.cardActionsRow}>
                   {!isArchivedRow ? (
                     <>
-                      <TouchableOpacity onPress={() => openEditPage(ipo)} style={styles.actionBtnTan} activeOpacity={0.8}>
-                        <Feather name="edit-2" size={14} color="#D4A017" style={{ marginRight: 6 }} />
-                        <Text style={styles.actionBtnTanText}>Edit</Text>
+                      <TouchableOpacity
+                        onPress={() => openEditPage(ipo)}
+                        style={[styles.actionBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        activeOpacity={0.8}
+                      >
+                        <Feather name="edit-2" size={13} color={colors.foreground} style={{ marginRight: 5 }} />
+                        <Text style={[styles.actionBtnText, { color: colors.foreground }]}>Edit</Text>
                       </TouchableOpacity>
 
-                      <TouchableOpacity onPress={() => handleToggleArchive(ipo)} style={styles.actionBtnTan} activeOpacity={0.8}>
-                        <Feather name="archive" size={14} color="#D4A017" style={{ marginRight: 6 }} />
-                        <Text style={styles.actionBtnTanText}>Archive</Text>
+                      <TouchableOpacity
+                        onPress={() => handleToggleArchive(ipo)}
+                        style={[styles.actionBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        activeOpacity={0.8}
+                      >
+                        <Feather name="archive" size={13} color={colors.foreground} style={{ marginRight: 5 }} />
+                        <Text style={[styles.actionBtnText, { color: colors.foreground }]}>Archive</Text>
                       </TouchableOpacity>
                     </>
                   ) : (
                     <>
-                      <TouchableOpacity onPress={() => handleToggleArchive(ipo)} style={styles.actionBtnTan} activeOpacity={0.8}>
-                        <Feather name="rotate-ccw" size={14} color="#D4A017" style={{ marginRight: 6 }} />
-                        <Text style={styles.actionBtnTanText}>Unarchive</Text>
+                      <TouchableOpacity
+                        onPress={() => handleToggleArchive(ipo)}
+                        style={[styles.actionBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        activeOpacity={0.8}
+                      >
+                        <Feather name="rotate-ccw" size={13} color={colors.foreground} style={{ marginRight: 5 }} />
+                        <Text style={[styles.actionBtnText, { color: colors.foreground }]}>Unarchive</Text>
                       </TouchableOpacity>
 
-                      <TouchableOpacity onPress={() => handleDeleteIPO(ipo)} style={styles.actionBtnRed} activeOpacity={0.8}>
-                        <Feather name="trash-2" size={14} color="#E53E3E" style={{ marginRight: 6 }} />
-                        <Text style={styles.actionBtnRedText}>Delete</Text>
+                      <TouchableOpacity
+                        onPress={() => handleDeleteIPO(ipo)}
+                        style={[styles.actionBtn, { backgroundColor: colors.destructiveBg, borderColor: colors.destructiveBg }]}
+                        activeOpacity={0.8}
+                      >
+                        <Feather name="trash-2" size={13} color={colors.destructive} style={{ marginRight: 5 }} />
+                        <Text style={[styles.actionBtnText, { color: colors.destructive }]}>Delete</Text>
                       </TouchableOpacity>
                     </>
                   )}
@@ -579,48 +603,91 @@ const styles = StyleSheet.create({
     width: '100%',
   },
 
-  // IPO Card
+  // IPO Card (Matching reference design)
   ipoCard: {
-    borderRadius: 16,
+    borderRadius: 20,
     borderWidth: 1,
-    padding: 14,
-    marginBottom: 12,
-  },
-  cardHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 12 },
-  cardIconAvatar: { width: 36, height: 36, borderRadius: 10, backgroundColor: '#FFF9E6', alignItems: 'center', justifyContent: 'center' },
-  cardTitle: { fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.2 },
-  cardSub: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 2 },
-  cardAmountText: { fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold', color: '#D4A017' },
+    padding: 16,
+    marginBottom: 14,
 
-  // Date Blocks Grid
-  dateBlocksGrid: { flexDirection: 'row', gap: 6, marginBottom: 12 },
-  dateBlock: { flex: 1, backgroundColor: '#F4F5F7', borderRadius: 8, paddingVertical: 6, paddingHorizontal: 4, alignItems: 'center' },
-  dateBlockTag: { fontSize: 9, fontFamily: 'GoogleSansFlex_700Bold', color: '#718096', letterSpacing: 0.6 },
-  dateBlockVal: { fontSize: 10, fontFamily: 'GoogleSansFlex_600SemiBold', color: '#2D3748', marginTop: 2 },
+    // Soft drop shadow
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  cardIconAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardAvatarText: {
+    fontSize: 16,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
+  },
+  cardSub: {
+    fontSize: 12.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 2,
+  },
+  cardDivider: {
+    height: 1,
+    marginVertical: 14,
+    width: '100%',
+  },
+
+  // 3-Column Metrics Grid
+  cardMetricsGrid: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  metricCol: {
+    flex: 1,
+  },
+  metricLabel: {
+    fontSize: 11.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginBottom: 4,
+  },
+  metricVal: {
+    fontSize: 13.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
 
   // Card Action Buttons
-  cardActionsRow: { flexDirection: 'row', gap: 10 },
-  actionBtnTan: {
+  cardActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  actionBtn: {
     flex: 1,
-    backgroundColor: '#FFF9E6',
+    paddingVertical: 9,
     borderRadius: 12,
-    paddingVertical: 10,
+    borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actionBtnTanText: { fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold', color: '#D4A017' },
-
-  actionBtnRed: {
-    flex: 1,
-    backgroundColor: '#FFF5F5',
-    borderRadius: 12,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+  actionBtnText: {
+    fontSize: 12.5,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
   },
-  actionBtnRedText: { fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold', color: '#E53E3E' },
 
   // Modal Form Sheet
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
