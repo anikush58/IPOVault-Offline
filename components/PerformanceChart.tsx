@@ -816,43 +816,34 @@ export function PerformanceChart({ applications }: Props) {
             </View>
           </View>
 
-          {/* ── Dynamic Summary Cards ── */}
+          {/* ── Dynamic Summary Row ── */}
           {(() => {
             const unitLabel = filterMode === 'weekly' || filterMode === 'custom_date' ? 'day' : filterMode === 'monthly' ? 'month' : 'year';
 
             return (
               <View style={[styles.summaryContainer, { borderTopColor: colors.border }]}>
-                {/* Card 1 */}
-                <View style={[styles.summaryCard, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: colors.border }]}>
-                  <Text style={[styles.cardLabel, { color: colors.mutedForeground }]}>PERIOD NET</Text>
+                {/* Column 1: Period Net */}
+                <View style={styles.summaryColLeft}>
                   <Text style={[styles.cardValue, { color: totalNet >= 0 ? '#10B981' : colors.destructive }]} numberOfLines={1}>
                     {totalNet >= 0 ? '+' : ''}{formatCurrency(totalNet, false)}
                   </Text>
-                  <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
-                    {barsWithData.reduce((s, b) => s + b.count, 0)} total sales
-                  </Text>
+                  <Text style={[styles.cardLabel, { color: colors.mutedForeground }]}>PERIOD NET</Text>
                 </View>
 
-                {/* Card 2 */}
-                <View style={[styles.summaryCard, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: colors.border }]}>
-                  <Text style={[styles.cardLabel, { color: colors.mutedForeground }]}>BEST {unitLabel.toUpperCase()}</Text>
-                  <Text style={[styles.cardValue, { color: colors.foreground }]} numberOfLines={1}>
-                    {bestBar ? bestBar.label : '—'}
-                  </Text>
-                  <Text style={[styles.cardSub, { color: '#10B981', fontFamily: 'GoogleSansFlex_700Bold' }]}>
+                {/* Column 2: Best Period */}
+                <View style={styles.summaryColCenter}>
+                  <Text style={[styles.cardValue, { color: '#10B981' }]} numberOfLines={1}>
                     {bestBar ? (bestBar.value >= 0 ? '+' : '') + formatCurrency(bestBar.value, false) : '—'}
                   </Text>
+                  <Text style={[styles.cardLabel, { color: colors.mutedForeground }]}>BEST {unitLabel.toUpperCase()}</Text>
                 </View>
 
-                {/* Card 3 */}
-                <View style={[styles.summaryCard, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: colors.border }]}>
-                  <Text style={[styles.cardLabel, { color: colors.mutedForeground }]}>WORST {unitLabel.toUpperCase()}</Text>
-                  <Text style={[styles.cardValue, { color: colors.foreground }]} numberOfLines={1}>
-                    {worstBar ? worstBar.label : '—'}
-                  </Text>
-                  <Text style={[styles.cardSub, { color: worstBar && worstBar.value >= 0 ? '#10B981' : colors.destructive, fontFamily: 'GoogleSansFlex_700Bold' }]}>
+                {/* Column 3: Worst Period */}
+                <View style={styles.summaryColRight}>
+                  <Text style={[styles.cardValue, { color: worstBar && worstBar.value >= 0 ? '#10B981' : colors.destructive }]} numberOfLines={1}>
                     {worstBar ? (worstBar.value >= 0 ? '+' : '') + formatCurrency(worstBar.value, false) : '—'}
                   </Text>
+                  <Text style={[styles.cardLabel, { color: colors.mutedForeground }]}>WORST {unitLabel.toUpperCase()}</Text>
                 </View>
               </View>
             );
@@ -1105,37 +1096,37 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
 
-  // Summary Cards Section
+  // Summary Row Section
   summaryContainer: {
     flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 16,
-    borderTopWidth: 1,
-    marginTop: 4,
-  },
-  summaryCard: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    marginTop: 6,
+  },
+  summaryColLeft: {
+    flex: 1,
+    alignItems: 'flex-start',
+  },
+  summaryColCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  summaryColRight: {
+    flex: 1,
+    alignItems: 'flex-end',
   },
   cardLabel: {
-    fontSize: 8,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 0.6,
-    marginBottom: 2,
-    textTransform: 'uppercase',
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 2,
   },
   cardValue: {
-    fontSize: 12,
+    fontSize: 15,
     fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.2,
-    marginBottom: 1,
+    letterSpacing: -0.3,
   },
   cardSub: {
     fontSize: 8,
