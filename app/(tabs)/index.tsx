@@ -339,13 +339,13 @@ export default function DashboardScreen() {
 
           {/* 3 Columns Row */}
           <View style={styles.portfolioMetricsRow}>
-            {/* Column 1: Net Profit */}
+            {/* Column 1: Gross Profit */}
             <View style={styles.portfolioMetricColLeft}>
-              <Text style={[styles.portfolioMetricVal, { color: totalNetProfit >= 0 ? '#10B981' : colors.destructive }]}>
-                {formatCurrency(totalNetProfit)}
+              <Text style={[styles.portfolioMetricVal, { color: totalPL >= 0 ? '#10B981' : colors.destructive }]}>
+                {formatCurrency(totalPL)}
               </Text>
               <Text style={[styles.portfolioMetricLabel, { color: colors.mutedForeground }]}>
-                Net Profit
+                Gross Profit
               </Text>
             </View>
 
