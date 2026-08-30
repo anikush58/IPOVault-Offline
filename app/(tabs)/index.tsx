@@ -337,7 +337,7 @@ export default function DashboardScreen() {
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.openIposScrollContent}
-            snapToInterval={288}
+            snapToInterval={307}
             decelerationRate="fast"
           >
             {openIpoList.map((ipo, idx) => (
@@ -657,14 +657,15 @@ const styles = StyleSheet.create({
   openIposScrollContent: {
     paddingHorizontal: 16,
     paddingTop: 4,
-    paddingBottom: 12,
+    paddingBottom: 14,
     gap: 12,
   },
   openIpoCard: {
-    width: 280,
-    borderRadius: 18,
+    width: 295,
+    borderRadius: 20,
     borderWidth: 1,
-    padding: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.02,
@@ -675,7 +676,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: 10,
   },
   openIpoLeftCol: {
     flex: 1,
@@ -686,8 +687,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   openIpoCategoryBadge: {
-    paddingHorizontal: 9,
-    paddingVertical: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 12,
     borderWidth: 1,
   },
@@ -697,19 +698,19 @@ const styles = StyleSheet.create({
   },
   openIpoGmpStack: {
     alignItems: 'flex-end',
-    marginTop: 6,
+    marginTop: 8,
   },
   openIpoGmpLabel: {
     fontSize: 9,
     fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 0.6,
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
   openIpoGmpValue: {
-    fontSize: 12,
+    fontSize: 12.5,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: -0.2,
-    marginTop: 1,
+    marginTop: 1.5,
   },
   openIpoTitle: {
     fontSize: 15,
