@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useRef, useMemo, useState } from 'react';
 import {
+  Animated,
   Platform,
   ScrollView,
   StyleSheet,
@@ -35,6 +36,18 @@ export default function IPOManagementScreen() {
   // Segment State: active | favorites | archived
   const [activeSegment, setActiveSegment] = useState<TabSegment>('active');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const searchRef = useRef<TextInput>(null);
+
+  const toggleSearch = () => {
+    if (showSearch) {
+      setShowSearch(false);
+      setSearchQuery('');
+    } else {
+      setShowSearch(true);
+      setTimeout(() => searchRef.current?.focus(), 100);
+    }
+  };
 
 
   // Counts
@@ -120,16 +133,48 @@ export default function IPOManagementScreen() {
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>IPOs</Text>
         </View>
 
-        <IconButton
-          name="plus"
-          variant="surface"
-          size="md"
-          onPress={openAddPage}
-        />
+        {/* header actions: search + add */}
+        <View style={styles.headerActions}>
+          <IconButton
+            name={showSearch ? 'x' : 'search'}
+            variant={showSearch ? 'primary' : 'surface'}
+            size="md"
+            onPress={toggleSearch}
+          />
+          <IconButton
+            name="plus"
+            variant="surface"
+            size="md"
+            onPress={openAddPage}
+          />
+        </View>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40 }}>
-        {/* ── Segmented Tabs Bar ── */}
+      {/* ── Collapsible Search Bar ── */}
+      {showSearch && (
+        <View style={[styles.searchWrap, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+          <View style={[styles.searchInner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Feather name="search" size={14} color={colors.mutedForeground} />
+            <TextInput
+              ref={searchRef}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search IPOs by name or registrar…"
+              placeholderTextColor={colors.mutedForeground}
+              style={[styles.searchInput, { color: colors.foreground }]}
+              returnKeyType="search"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
+                <Feather name="x" size={16} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* ── Sticky Segmented Tabs ── */}
+      <View style={[styles.stickyTabs, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
         <SegmentedTabControl
           variant="primary"
           tabs={[
@@ -139,26 +184,10 @@ export default function IPOManagementScreen() {
           ]}
           activeTab={activeSegment}
           onChange={(newSeg) => setActiveSegment(newSeg as TabSegment)}
-          style={{ marginBottom: 14 }}
         />
+      </View>
 
-        {/* ── Search Input Bar ── */}
-        <View style={[styles.searchWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Feather name="search" size={16} color={colors.mutedForeground} style={{ marginRight: 8 }} />
-          <TextInput
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search IPOs by name or registrar..."
-            placeholderTextColor={colors.mutedForeground}
-            style={[styles.searchInput, { color: colors.foreground }]}
-          />
-          {searchQuery ? (
-            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-              <Feather name="x" size={16} color={colors.mutedForeground} />
-            </TouchableOpacity>
-          ) : null}
-        </View>
-
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40 }}>
         {/* ── Listings Count Eyebrow ── */}
         <Text style={[styles.listingsEyebrow, { color: colors.mutedForeground }]}>
           {filteredIPOs.length} LISTING{filteredIPOs.length !== 1 ? 'S' : ''}
@@ -362,6 +391,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   headerCenter: { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   backBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
   headerEyebrow: {
     fontSize: 11,
@@ -417,15 +447,26 @@ const styles = StyleSheet.create({
   countBadgeText: { fontSize: 11, fontFamily: 'GoogleSansFlex_700Bold', color: '#4A5568' },
 
   searchWrap: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
+  searchInner: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 14,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    gap: 8,
   },
   searchInput: { flex: 1, fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular' },
+
+  stickyTabs: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
 
   listingsEyebrow: {
     fontSize: 11,
