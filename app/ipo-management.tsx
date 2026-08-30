@@ -385,25 +385,25 @@ export default function IPOManagementScreen() {
                 {/* Thin Horizontal Divider Line */}
                 <View style={[styles.cardDivider, { backgroundColor: colors.border }]} />
 
-                {/* 3-Column Metrics Grid (Matching reference image bottom row) */}
+                {/* 3-Column Metrics Grid (Equal width: Left, Center, Right) */}
                 <View style={styles.cardMetricsGrid}>
-                  <View style={styles.metricCol}>
+                  <View style={styles.metricColLeft}>
                     <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Price / Lot</Text>
                     <Text style={[styles.metricVal, { color: colors.foreground }]}>
                       ₹{ipo.buy_price} × {ipo.quantity}
                     </Text>
                   </View>
 
-                  <View style={styles.metricCol}>
+                  <View style={styles.metricColCenter}>
                     <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Investment</Text>
                     <Text style={[styles.metricVal, { color: colors.foreground }]}>
                       {formatCurrency(totalAmount)}
                     </Text>
                   </View>
 
-                  <View style={[styles.metricCol, { alignItems: 'flex-end' }]}>
+                  <View style={styles.metricColRight}>
                     <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Close Date</Text>
-                    <Text style={[styles.metricVal, { color: colors.positive }]}>
+                    <Text style={[styles.metricVal, { color: colors.foreground }]}>
                       {ipo.close_date || 'Active'}
                     </Text>
                   </View>
@@ -685,23 +685,34 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // 3-Column Metrics Grid
+  // 3-Column Metrics Grid (Equal Width)
   cardMetricsGrid: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    width: '100%',
   },
-  metricCol: {
+  metricColLeft: {
     flex: 1,
+    alignItems: 'flex-start',
+  },
+  metricColCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  metricColRight: {
+    flex: 1,
+    alignItems: 'flex-end',
   },
   metricLabel: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontFamily: 'GoogleSansFlex_400Regular',
     marginBottom: 4,
   },
   metricVal: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.2,
   },
 
   // Modal Form Sheet
