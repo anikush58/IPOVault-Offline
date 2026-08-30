@@ -23,6 +23,25 @@ import { IconButton } from '@/components/ui/IconButton';
 
 type DateField = 'openDate' | 'closeDate' | 'allotmentDate' | 'listingDate';
 
+const REGISTRARS = [
+  'KFin Technologies Limited',
+  'Link Intime India Pvt. Ltd.',
+  'Bigshare Services Pvt. Ltd.',
+  'Cameo Corporate Services Ltd.',
+  'Skyline Financial Services Pvt. Ltd.',
+  'Purva Sharegistry India Pvt. Ltd.',
+  'Mas Services Ltd.',
+  'Alankit Assignments Ltd.',
+  'Beetal Financial & Computer Services Pvt. Ltd.',
+  'Karvy Fintech Pvt. Ltd.',
+  'MUFG Intime India Pvt. Ltd.',
+  'Integrated Registry Management Services Pvt. Ltd.',
+  'Universal Capital Securities Pvt. Ltd.',
+  'Niche Technologies Pvt. Ltd.',
+  'S.K.D.C. Consultants Ltd.',
+  'SEBI Registered Registrar',
+];
+
 function isoToDate(iso: string): Date {
   if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return new Date();
   const [y, m, d] = iso.split('-').map(Number);
@@ -290,16 +309,60 @@ export default function AddIPOScreen() {
           </View>
         </View>
 
-        {/* REGISTRAR */}
+        {/* REGISTRAR — Chip Selection */}
         <View style={styles.field}>
           <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>REGISTRAR</Text>
-          <TextInput
-            value={formRegistrar}
-            onChangeText={setFormRegistrar}
-            placeholder="e.g. KFin Technologies Limited"
-            placeholderTextColor={colors.mutedForeground}
-            style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground }]}
-          />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipRow}
+            keyboardShouldPersistTaps="handled"
+          >
+            {REGISTRARS.map((r) => {
+              const selected = formRegistrar === r;
+              return (
+                <TouchableOpacity
+                  key={r}
+                  onPress={() => setFormRegistrar(selected ? '' : r)}
+                  activeOpacity={0.8}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: selected ? colors.primary : colors.surface,
+                      borderColor: selected ? colors.primary : colors.border,
+                    },
+                  ]}
+                >
+                  {selected && (
+                    <Feather name="check" size={12} color="#fff" style={{ marginRight: 4 }} />
+                  )}
+                  <Text
+                    style={[
+                      styles.chipText,
+                      { color: selected ? '#fff' : colors.foreground },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {r}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          {formRegistrar ? (
+            <TouchableOpacity
+              onPress={() => setFormRegistrar('')}
+              style={styles.chipClearRow}
+              activeOpacity={0.7}
+            >
+              <Feather name="x-circle" size={13} color={colors.mutedForeground} style={{ marginRight: 4 }} />
+              <Text style={[styles.chipClearText, { color: colors.mutedForeground }]}
+                numberOfLines={1}
+              >
+                {formRegistrar}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {/* EXCHANGE (edit only) */}
@@ -475,5 +538,34 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 14,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 4,
+    paddingRight: 4,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  chipText: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_500Medium',
+  },
+  chipClearRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingHorizontal: 4,
+  },
+  chipClearText: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    flex: 1,
   },
 });
