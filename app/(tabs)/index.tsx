@@ -30,6 +30,7 @@ import {
   calculateAppTaxAndNet,
 } from '@/utils/calculations';
 
+const heroBg = require('@/assets/images/dashboard-hero-bg.png');
 const graphicLeft = require('@/assets/images/dashboard-graphic-left.png');
 const graphicRight = require('@/assets/images/dashboard-graphic-right.png');
 
@@ -227,15 +228,11 @@ export default function DashboardScreen() {
 
         {/* ── Net Profit Hero Section ── */}
         <View style={styles.heroSection}>
-          {/* Soft Arch Backdrop */}
-          <View
-            style={[
-              styles.archBackdrop,
-              {
-                borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-                backgroundColor: isDark ? 'rgba(255,255,255,0.015)' : 'rgba(0,0,0,0.01)',
-              },
-            ]}
+          {/* Custom Curved Background Asset */}
+          <Image
+            source={heroBg}
+            style={styles.heroBgImage}
+            resizeMode="contain"
           />
 
           <HeroCustomGraphics side="left" />
@@ -412,16 +409,15 @@ const styles = StyleSheet.create({
     position: 'relative',
     minHeight: 155,
   },
-  archBackdrop: {
+  heroBgImage: {
     position: 'absolute',
-    top: 14,
-    left: 36,
-    right: 36,
-    height: 130,
-    borderTopLeftRadius: 110,
-    borderTopRightRadius: 110,
-    borderWidth: 1,
-    borderBottomWidth: 0,
+    top: 10,
+    left: 20,
+    right: 20,
+    bottom: 10,
+    width: undefined,
+    height: undefined,
+    opacity: 0.35,
   },
   heroContent: {
     alignItems: 'center',
