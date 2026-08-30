@@ -316,6 +316,7 @@ const styles = StyleSheet.create({
   flexRowContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'flex-start',
     gap: 8,
   },
   scrollContainer: {
@@ -368,8 +369,7 @@ const styles = StyleSheet.create({
 
   // Pills Variant
   pillTabBtn: {
-    flex: 1,
-    paddingHorizontal: 13,
+    paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1,

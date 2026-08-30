@@ -176,8 +176,10 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
           <Text style={[styles.eyebrow, { color: colors.mutedForeground }]}>RANKINGS</Text>
           <Text style={[styles.title, { color: colors.foreground }]}>Leaderboard</Text>
         </View>
+      </View>
 
-        {/* User / Broker / IPO tabs */}
+      {/* User / Broker / IPO chip tabs (Left aligned above user rankings) */}
+      <View style={styles.tabsRow}>
         <Tabs
           variant="pills"
           tabs={[
@@ -255,11 +257,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 18,
-    marginBottom: 4,
+    marginBottom: 10,
     gap: 12,
   },
   eyebrow: { fontSize: 10, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 },
   title: { fontSize: 18, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
+
+  tabsRow: {
+    paddingHorizontal: 18,
+    marginBottom: 10,
+  },
 
   segmented: {
     flexDirection: 'row',
