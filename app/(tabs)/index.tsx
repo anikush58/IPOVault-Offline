@@ -567,9 +567,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.03,
     shadowRadius: 16,
-    elevation: 3,
+    elevation: 2,
   },
   portfolioCardHeader: {
     flexDirection: 'row',
@@ -635,9 +635,9 @@ const styles = StyleSheet.create({
     padding: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.02,
     shadowRadius: 6,
-    elevation: 2,
+    elevation: 1,
   },
   openIpoCardMain: {
     flexDirection: 'row',

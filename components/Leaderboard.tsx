@@ -147,14 +147,6 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
 
   return (
     <View style={[styles.card, { backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderColor: colors.border }]}>
-      {/* Gradient wash */}
-      <LinearGradient
-        colors={[colors.primary + '0C', colors.card]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
 
       {/* Header */}
       <View style={styles.header}>
@@ -232,9 +224,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.03,
     shadowRadius: 16,
-    elevation: 3,
+    elevation: 2,
   },
   header: {
     flexDirection: 'row',
