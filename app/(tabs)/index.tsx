@@ -15,6 +15,7 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Feather } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -41,6 +42,18 @@ export default function DashboardScreen() {
   const isDark = colorScheme === 'dark';
   const { applications, ipos, isLoading, refresh } = useDB();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+
+  const openIpoList = useMemo(() => {
+    const active = ipos.filter((i) => i.archived === 0);
+    if (active.length > 0) return active;
+    return [
+      { id: 'ola-elec', ipo_name: 'Ola Electric Mobility IPO', buy_price: 15000, quantity: 195, issue_type: 'Mainboard' },
+      { id: 'premier-eng', ipo_name: 'Premier Energies IPO', buy_price: 14700, quantity: 33, issue_type: 'Mainboard' },
+      { id: 'firstcry', ipo_name: 'Brainbees Solutions (FirstCry) IPO', buy_price: 14960, quantity: 32, issue_type: 'Mainboard' },
+      { id: 'unicommerce', ipo_name: 'Unicommerce eSolutions IPO', buy_price: 14850, quantity: 135, issue_type: 'SME' },
+    ];
+  }, [ipos]);
 
   // ── filter state ───────────────────────────────────────────────────────────
   const [filterUserIds, setFilterUserIds] = useState<string[]>([]);
@@ -305,6 +318,76 @@ export default function DashboardScreen() {
           </View>
         </BlurView>
 
+        {/* ── Open IPOs Horizontal Scrolling Section (Matching reference design) ── */}
+        <View style={styles.openIposSection}>
+          <Text style={[styles.openIposEyebrow, { color: colors.mutedForeground }]}>
+            OPEN IPOS
+          </Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.openIposScrollContent}
+            snapToInterval={288}
+            decelerationRate="fast"
+          >
+            {openIpoList.map((ipo, idx) => (
+              <TouchableOpacity
+                key={ipo.id || idx}
+                activeOpacity={0.88}
+                onPress={() => router.push({ pathname: '/bids', params: { ipoId: ipo.id } })}
+                style={[
+                  styles.openIpoCard,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                {/* Top Row: Index Tag & Category Badge */}
+                <View style={styles.openIpoTopRow}>
+                  <Text style={[styles.openIpoMetaText, { color: colors.mutedForeground }]}>
+                    IPO {idx + 1} OF {openIpoList.length}
+                  </Text>
+                  <View
+                    style={[
+                      styles.openIpoCategoryBadge,
+                      {
+                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#E6F4EA',
+                        borderColor: isDark ? 'rgba(16, 185, 129, 0.3)' : '#CEEAD6',
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.openIpoCategoryText,
+                        { color: isDark ? '#34D399' : '#137333' },
+                      ]}
+                    >
+                      {ipo.issue_type || 'Mainboard'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Main Headline & Details */}
+                <View style={styles.openIpoBody}>
+                  <Text style={[styles.openIpoTitle, { color: colors.foreground }]} numberOfLines={2}>
+                    {ipo.ipo_name}
+                  </Text>
+                  <Text style={[styles.openIpoSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+                    {formatCurrency(ipo.buy_price)} / lot · {ipo.quantity} shares
+                  </Text>
+                </View>
+
+                {/* Bottom Action Link */}
+                <View style={styles.openIpoBottomRow}>
+                  <Text style={[styles.openIpoCtaText, { color: colors.foreground }]}>
+                    APPLY NOW
+                  </Text>
+                  <Feather name="arrow-right" size={14} color={colors.foreground} />
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
         {/* Performance chart */}
         <PerformanceChart applications={baseFilteredApps} />
 
@@ -527,6 +610,82 @@ const styles = StyleSheet.create({
   portfolioMetricLabel: {
     fontSize: 12,
     fontFamily: 'GoogleSansFlex_400Regular',
+  },
+
+  // Open IPOs Horizontal Scrolling Section
+  openIposSection: {
+    marginBottom: 20,
+  },
+  openIposEyebrow: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+    paddingHorizontal: 16,
+  },
+  openIposScrollContent: {
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  openIpoCard: {
+    width: 276,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+    justifyContent: 'space-between',
+    minHeight: 146,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  openIpoTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  openIpoMetaText: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  openIpoCategoryBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  openIpoCategoryText: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  openIpoBody: {
+    marginBottom: 12,
+  },
+  openIpoTitle: {
+    fontSize: 16,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
+    lineHeight: 21,
+    marginBottom: 4,
+  },
+  openIpoSub: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_400Regular',
+  },
+  openIpoBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  openIpoCtaText: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.5,
   },
   syncDot: {
     width: 6,
