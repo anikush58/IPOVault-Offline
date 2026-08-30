@@ -274,22 +274,19 @@ export function FilterSheet({
         </Pressable>
       </Modal>
 
-      {/* Bulk-Apply Style Dropdown Option Selection Modal */}
-      <Modal visible={activePicker !== null} transparent animationType="slide" onRequestClose={() => setActivePicker(null)}>
+      {/* Field Option Selection Modal Dialog for All Fields */}
+      <Modal visible={activePicker !== null} transparent animationType="fade" onRequestClose={() => setActivePicker(null)}>
         <Pressable style={styles.pickerOverlay} onPress={() => setActivePicker(null)}>
           <Pressable
             style={[
               styles.pickerSheet,
               {
                 backgroundColor: colors.background,
-                borderTopColor: colors.border,
-                paddingBottom: Math.max(Math.round(insets.bottom * 0.5) + 12, 16),
+                borderColor: colors.border,
               },
             ]}
             onPress={() => {}}
           >
-            <View style={[styles.pickerHandle, { backgroundColor: colors.border }]} />
-
             <View style={[styles.pickerTitleRow, { borderBottomColor: colors.border }]}>
               <Text style={[styles.pickerTitle, { color: colors.foreground }]}>
                 {activePicker === 'bank' && 'Select Banks'}
@@ -303,7 +300,7 @@ export function FilterSheet({
               </TouchableOpacity>
             </View>
 
-            {/* Optional Search bar for long option lists */}
+            {/* Search bar for option lists */}
             {(activePicker === 'bank' || activePicker === 'user' || activePicker === 'broker' || activePicker === 'ipo') && (
               <View style={[styles.searchBox, { borderColor: colors.border, backgroundColor: colors.surface }]}>
                 <Feather name="search" size={16} color={colors.mutedForeground} />
@@ -322,7 +319,7 @@ export function FilterSheet({
               </View>
             )}
 
-            <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 320 }} contentContainerStyle={{ paddingVertical: 6 }}>
+            <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 320 }} contentContainerStyle={{ paddingVertical: 4 }}>
               {/* PICKER: BANK */}
               {activePicker === 'bank' && (
                 <>
@@ -487,7 +484,7 @@ export function FilterSheet({
               )}
             </ScrollView>
 
-            <TouchableOpacity onPress={() => setActivePicker(null)} style={[styles.applyBtn, { backgroundColor: colors.primary, marginTop: 12 }]} activeOpacity={0.85}>
+            <TouchableOpacity onPress={() => setActivePicker(null)} style={[styles.applyBtn, { backgroundColor: colors.primary, marginTop: 14 }]} activeOpacity={0.85}>
               <Text style={styles.applyBtnText}>Done</Text>
             </TouchableOpacity>
           </Pressable>
@@ -551,25 +548,23 @@ const styles = StyleSheet.create({
   },
   applyBtnText: { color: '#fff', fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 0.2 },
 
-  // Picker Modal Styles
+  // Centered Modal Dialog Styles for All Option Pickers
   pickerOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 40,
   },
   pickerSheet: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderTopWidth: 1,
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 24,
+    borderWidth: 1,
     paddingHorizontal: 20,
-    paddingTop: 12,
-  },
-  pickerHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 12,
+    paddingTop: 18,
+    paddingBottom: 18,
   },
   pickerTitleRow: {
     flexDirection: 'row',
@@ -577,7 +572,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingBottom: 12,
     borderBottomWidth: 1,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   pickerTitle: {
     fontSize: 18,
