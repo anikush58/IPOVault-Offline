@@ -128,7 +128,7 @@ function LeaderRow({
 }
 
 const row = StyleSheet.create({
-  wrap: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingHorizontal: 18 },
+  wrap: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 20 },
   avatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold' },
   info: { flex: 1 },
@@ -250,7 +250,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
+    paddingHorizontal: 20,
     marginBottom: 10,
     gap: 12,
   },
@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
   },
 
   tabsRow: {
-    paddingHorizontal: 18,
+    paddingHorizontal: 20,
     marginBottom: 10,
   },
 
