@@ -268,13 +268,13 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* ── Portfolio Details Card (Matching reference design with blur effect) ── */}
+        {/* ── Portfolio Details Card ── */}
         <BlurView
           intensity={Platform.OS === 'web' ? 0 : 50}
           tint={isDark ? 'dark' : 'light'}
           style={[
             styles.portfolioCard,
-            { backgroundColor: isDark ? 'rgba(30, 41, 59, 0.75)' : 'rgba(255, 255, 255, 0.85)', borderColor: colors.border },
+            { backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderColor: colors.border },
           ]}
         >
           {/* Card Header (No Chevron) */}
@@ -626,6 +626,8 @@ const styles = StyleSheet.create({
   },
   openIposScrollContent: {
     paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 12,
     gap: 12,
   },
   openIpoCard: {
@@ -634,7 +636,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 16,
     justifyContent: 'space-between',
-    minHeight: 146,
+    minHeight: 160,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
