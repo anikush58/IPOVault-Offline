@@ -57,10 +57,10 @@ export default function DashboardScreen() {
       });
     }
     return [
-      { id: 'ola-elec', ipo_name: 'Ola Electric Mobility IPO', buy_price: 15000, quantity: 195, issue_type: 'Mainboard', close_date: '2026-08-31' },
-      { id: 'premier-eng', ipo_name: 'Premier Energies IPO', buy_price: 14700, quantity: 33, issue_type: 'Mainboard', close_date: '2026-09-02' },
-      { id: 'firstcry', ipo_name: 'Brainbees Solutions (FirstCry) IPO', buy_price: 14960, quantity: 32, issue_type: 'Mainboard', close_date: '2026-09-04' },
-      { id: 'unicommerce', ipo_name: 'Unicommerce eSolutions IPO', buy_price: 14850, quantity: 135, issue_type: 'SME', close_date: '2026-09-05' },
+      { id: 'ola-elec', ipo_name: 'Ola Electric Mobility IPO', buy_price: 15000, quantity: 195, issue_type: 'Mainboard', close_date: '2026-08-31', gmp_percent: 16, gmp_value: 234 },
+      { id: 'premier-eng', ipo_name: 'Premier Energies IPO', buy_price: 14700, quantity: 33, issue_type: 'Mainboard', close_date: '2026-09-02', gmp_percent: 42, gmp_value: 185 },
+      { id: 'firstcry', ipo_name: 'Brainbees Solutions (FirstCry) IPO', buy_price: 14960, quantity: 32, issue_type: 'Mainboard', close_date: '2026-09-04', gmp_percent: 12, gmp_value: 56 },
+      { id: 'unicommerce', ipo_name: 'Unicommerce eSolutions IPO', buy_price: 14850, quantity: 135, issue_type: 'SME', close_date: '2026-09-05', gmp_percent: 68, gmp_value: 74 },
     ];
   }, [ipos]);
 
@@ -391,11 +391,12 @@ export default function DashboardScreen() {
                       </Text>
                     </View>
 
-                    {/* GMP Label & Value stacked in line with APPLY NOW button */}
+                    {/* GMP Label & Value coming directly from IPO record */}
                     {(() => {
-                      const pct = (ipo as any).gmp_percent ?? 16;
-                      const val = (ipo as any).gmp_value ?? 234;
-                      const isPos = pct >= 0;
+                      const pct = (ipo as any).gmp_percent;
+                      const val = (ipo as any).gmp_value;
+                      const hasGmp = pct !== undefined && pct !== null;
+                      const isPos = (pct ?? 0) >= 0;
 
                       return (
                         <View style={styles.openIpoGmpStack}>
@@ -403,7 +404,9 @@ export default function DashboardScreen() {
                             GMP
                           </Text>
                           <Text style={[styles.openIpoGmpValue, { color: isPos ? '#10B981' : colors.destructive }]} numberOfLines={1}>
-                            {pct}% ({val})
+                            {hasGmp
+                              ? `${pct}%${val != null ? ` (${val})` : ''}`
+                              : '—'}
                           </Text>
                         </View>
                       );
