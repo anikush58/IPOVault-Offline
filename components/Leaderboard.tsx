@@ -57,27 +57,38 @@ function computeRankings(
 
 // ── Rank badge ────────────────────────────────────────────────────────────────
 
-function RankBadge({ rank, colors }: { rank: number; colors: ReturnType<typeof useColors> }) {
-  const medalColor = RANK_COLORS[rank - 1];
-  const isMedal = rank <= 3;
+function RankBadge({ rank, isDark, colors }: { rank: number; isDark: boolean; colors: ReturnType<typeof useColors> }) {
+  if (rank === 1) {
+    return (
+      <View style={[badge.wrap, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.18)' : '#FEF3C7', borderColor: isDark ? 'rgba(245, 158, 11, 0.4)' : '#FDE68A' }]}>
+        <Text style={[badge.text, { color: isDark ? '#FBBF24' : '#D97706' }]}>1</Text>
+      </View>
+    );
+  }
+  if (rank === 2) {
+    return (
+      <View style={[badge.wrap, { backgroundColor: isDark ? 'rgba(148, 163, 184, 0.18)' : '#F1F5F9', borderColor: isDark ? 'rgba(148, 163, 184, 0.4)' : '#E2E8F0' }]}>
+        <Text style={[badge.text, { color: isDark ? '#CBD5E1' : '#475569' }]}>2</Text>
+      </View>
+    );
+  }
+  if (rank === 3) {
+    return (
+      <View style={[badge.wrap, { backgroundColor: isDark ? 'rgba(217, 119, 6, 0.18)' : '#FFEDD5', borderColor: isDark ? 'rgba(217, 119, 6, 0.4)' : '#FED7AA' }]}>
+        <Text style={[badge.text, { color: isDark ? '#F97316' : '#C2410C' }]}>3</Text>
+      </View>
+    );
+  }
   return (
-    <View style={[
-      badge.wrap,
-      {
-        backgroundColor: isMedal ? medalColor + '22' : colors.surface,
-        borderColor: isMedal ? medalColor + '55' : colors.border,
-      },
-    ]}>
-      <Text style={[badge.text, { color: isMedal ? medalColor : colors.mutedForeground }]}>
-        {rank}
-      </Text>
+    <View style={[badge.wrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <Text style={[badge.text, { color: colors.mutedForeground }]}>{rank}</Text>
     </View>
   );
 }
 
 const badge = StyleSheet.create({
-  wrap: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  text: { fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold' },
+  wrap: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  text: { fontSize: 12, fontFamily: 'GoogleSansFlex_700Bold' },
 });
 
 // ── Row ───────────────────────────────────────────────────────────────────────
@@ -86,17 +97,26 @@ function LeaderRow({
   entry,
   rank,
   isLast,
+  isDark,
   colors,
 }: {
   entry: LeaderEntry;
   rank: number;
   isLast: boolean;
+  isDark: boolean;
   colors: ReturnType<typeof useColors>;
 }) {
   const isPos = entry.netProfit >= 0;
+  const initial = (entry.name || 'U').charAt(0).toUpperCase();
+
   return (
     <View style={[row.wrap, !isLast && { borderBottomWidth: 1, borderBottomColor: colors.border }]}>
-      <RankBadge rank={rank} colors={colors} />
+      <RankBadge rank={rank} isDark={isDark} colors={colors} />
+      
+      <View style={[row.avatar, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+        <Text style={[row.avatarText, { color: colors.foreground }]}>{initial}</Text>
+      </View>
+
       <View style={row.info}>
         <Text style={[row.name, { color: colors.foreground }]} numberOfLines={1}>
           {entry.name}
@@ -105,7 +125,7 @@ function LeaderRow({
           {entry.soldCount} {entry.soldCount === 1 ? 'sale' : 'sales'}
         </Text>
       </View>
-      <Text style={[row.profit, { color: isPos ? colors.positive : colors.negative }]}>
+      <Text style={[row.profit, { color: isPos ? '#10B981' : colors.destructive }]}>
         {isPos ? '+' : ''}{formatCurrency(entry.netProfit)}
       </Text>
     </View>
@@ -113,10 +133,12 @@ function LeaderRow({
 }
 
 const row = StyleSheet.create({
-  wrap: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
+  wrap: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingHorizontal: 18 },
+  avatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold' },
   info: { flex: 1 },
   name: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: -0.1 },
-  sub: { fontSize: 11, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 2 },
+  sub: { fontSize: 11, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 1 },
   profit: { fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.2 },
 });
 
@@ -188,6 +210,7 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
               entry={entry}
               rank={i + 1}
               isLast={i === top5.length - 1}
+              isDark={isDark}
               colors={colors}
             />
           ))}
