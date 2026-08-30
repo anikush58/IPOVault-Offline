@@ -109,32 +109,34 @@ function LeaderRow({
   const isPos = entry.netProfit >= 0;
 
   return (
-    <View style={[row.wrap, !isLast && { borderBottomWidth: 1, borderBottomColor: colors.border }]}>
-      <RankBadge rank={rank} isDark={isDark} colors={colors} />
+    <View>
+      <View style={row.wrap}>
+        <RankBadge rank={rank} isDark={isDark} colors={colors} />
 
-      <View style={row.info}>
-        <Text style={[row.name, { color: colors.foreground }]} numberOfLines={1}>
-          {entry.name}
-        </Text>
-        <Text style={[row.sub, { color: colors.mutedForeground }]}>
-          {entry.soldCount} {entry.soldCount === 1 ? 'sale' : 'sales'}
+        <View style={row.info}>
+          <Text style={[row.name, { color: colors.foreground }]} numberOfLines={1}>
+            {entry.name}
+          </Text>
+          <Text style={[row.sub, { color: colors.mutedForeground }]}>
+            {entry.soldCount} {entry.soldCount === 1 ? 'sale' : 'sales'}
+          </Text>
+        </View>
+        <Text style={[row.profit, { color: isPos ? '#10B981' : colors.destructive }]}>
+          {isPos ? '+' : ''}{formatCurrency(entry.netProfit)}
         </Text>
       </View>
-      <Text style={[row.profit, { color: isPos ? '#10B981' : colors.destructive }]}>
-        {isPos ? '+' : ''}{formatCurrency(entry.netProfit)}
-      </Text>
+      {!isLast && <View style={[row.divider, { backgroundColor: colors.border }]} />}
     </View>
   );
 }
 
 const row = StyleSheet.create({
   wrap: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 20 },
-  avatar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold' },
   info: { flex: 1 },
   name: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: -0.1 },
   sub: { fontSize: 11, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 1 },
   profit: { fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.2 },
+  divider: { height: 1, width: '100%' },
 });
 
 // ── Main component ────────────────────────────────────────────────────────────
