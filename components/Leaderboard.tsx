@@ -297,7 +297,7 @@ const styles = StyleSheet.create({
   },
   segLabel: { fontSize: 12, fontFamily: 'GoogleSansFlex_600SemiBold' },
 
-  list: { paddingHorizontal: 18, paddingTop: 10 },
+  list: { paddingTop: 2 },
 
   empty: { alignItems: 'center', paddingVertical: 32, paddingHorizontal: 24, gap: 8 },
   emptyIcon: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
