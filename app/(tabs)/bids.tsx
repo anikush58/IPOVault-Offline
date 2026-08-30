@@ -26,7 +26,6 @@ import { IconButton } from '@/components/ui/IconButton';
 import { formatCurrency } from '@/utils/formatters';
 import { StatusBadge } from '@/components/StatusBadge';
 import { AddIPOModal } from '@/components/AddIPOModal';
-import { NumberedText } from '@/components/ui/NumberedText';
 
 type ViewMode = 'home' | 'attention' | 'allBids';
 type FilterStatus = 'All' | 'Applied' | 'Allotted' | 'Not Allotted' | 'Cancelled';
@@ -156,9 +155,9 @@ function SwipeableBidCard({
           {
             transform: [{ translateX: pan }],
             backgroundColor: isChecked
-              ? (isDark ? '#3D3011' : '#FFF9E6')
+              ? (isDark ? '#27272A' : '#F1F5F9')
               : colors.card,
-            borderColor: isChecked ? '#D4A017' : colors.border,
+            borderColor: isChecked ? (isDark ? '#64748B' : '#475569') : colors.border,
           },
         ]}
         {...panResponder.panHandlers}
@@ -176,8 +175,8 @@ function SwipeableBidCard({
                   style={[
                     styles.bulkCheckbox,
                     {
-                      borderColor: isChecked ? '#D4A017' : colors.mutedForeground,
-                      backgroundColor: isChecked ? '#D4A017' : 'transparent',
+                      borderColor: isChecked ? (isDark ? '#64748B' : '#1E293B') : colors.mutedForeground,
+                      backgroundColor: isChecked ? (isDark ? '#475569' : '#0F172A') : 'transparent',
                     },
                   ]}
                 >
@@ -185,8 +184,8 @@ function SwipeableBidCard({
                 </View>
               )}
 
-              <View style={[styles.ipoAvatarBox, { backgroundColor: isDark ? '#3D3011' : '#FEF9C3' }]}>
-                <Text style={[styles.ipoAvatarLetter, { color: isDark ? '#FBBF24' : '#B45309' }]}>
+              <View style={[styles.ipoAvatarBox, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                <Text style={[styles.ipoAvatarLetter, { color: colors.foreground }]}>
                   {firstLetter}
                 </Text>
               </View>
@@ -210,7 +209,7 @@ function SwipeableBidCard({
           {/* Bottom Row: User Name & Bank Badge */}
           <View style={styles.cardBottomRow}>
             <View style={styles.userNameWrap}>
-              <View style={[styles.userDot, { backgroundColor: '#D4A017' }]} />
+              <View style={[styles.userDot, { backgroundColor: isDark ? '#94A3B8' : '#64748B' }]} />
               <Text style={[styles.userNameText, { color: colors.foreground }]} numberOfLines={1}>
                 {bid.user_name}
               </Text>
@@ -452,8 +451,8 @@ export default function BidsScreen() {
                 activeOpacity={0.78}
                 style={[styles.shortcutCard, { backgroundColor: colors.card, borderColor: colors.border }]}
               >
-                <View style={[styles.shortcutIconWrap, { backgroundColor: isDark ? '#3D3011' : '#FFF9E6' }]}>
-                  <Feather name="users" size={18} color="#D4A017" />
+                <View style={[styles.shortcutIconWrap, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                  <Feather name="users" size={18} color={colors.foreground} />
                 </View>
                 <Text style={[styles.shortcutTitle, { color: colors.foreground }]} numberOfLines={1}>Users</Text>
                 <Text style={[styles.shortcutSub, { color: colors.mutedForeground }]} numberOfLines={1}>
@@ -467,8 +466,8 @@ export default function BidsScreen() {
                 activeOpacity={0.78}
                 style={[styles.shortcutCard, { backgroundColor: colors.card, borderColor: colors.border }]}
               >
-                <View style={[styles.shortcutIconWrap, { backgroundColor: isDark ? '#1A365D' : '#EBF8FF' }]}>
-                  <Feather name="credit-card" size={18} color={isDark ? '#63B3ED' : '#3182CE'} />
+                <View style={[styles.shortcutIconWrap, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                  <Feather name="credit-card" size={18} color={colors.foreground} />
                 </View>
                 <Text style={[styles.shortcutTitle, { color: colors.foreground }]} numberOfLines={1}>Banks</Text>
                 <Text style={[styles.shortcutSub, { color: colors.mutedForeground }]} numberOfLines={1}>
@@ -485,8 +484,8 @@ export default function BidsScreen() {
                 activeOpacity={0.8}
                 style={[styles.quickActionCard, { backgroundColor: colors.card, borderColor: colors.border }]}
               >
-                <View style={[styles.quickIconWrap, { backgroundColor: isDark ? '#3D3011' : '#FFF9E6' }]}>
-                  <Feather name="layers" size={20} color="#D4A017" />
+                <View style={[styles.quickIconWrap, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
+                  <Feather name="layers" size={20} color={colors.foreground} />
                 </View>
                 <View style={{ flex: 1, paddingRight: 4 }}>
                   <Text style={[styles.quickActionTitle, { color: colors.foreground }]}>Bulk Apply</Text>
@@ -547,19 +546,19 @@ export default function BidsScreen() {
                   style={[
                     styles.attentionAlertCard,
                     {
-                      backgroundColor: isDark ? '#3F1718' : '#FFF5F5',
-                      borderColor: isDark ? '#7F1D1D' : '#FFC9C9',
+                      backgroundColor: isDark ? '#1F2937' : '#F8FAFC',
+                      borderColor: colors.border,
                     },
                   ]}
                 >
-                  <View style={[styles.alertIconWrap, { backgroundColor: isDark ? '#7F1D1D' : '#FFE3E3' }]}>
-                    <Feather name="clock" size={18} color={isDark ? '#F87171' : '#E53E3E'} />
+                  <View style={[styles.alertIconWrap, { backgroundColor: isDark ? '#374151' : '#E2E8F0' }]}>
+                    <Feather name="clock" size={18} color={colors.foreground} />
                   </View>
                   <View style={{ flex: 1, paddingRight: 4 }}>
-                    <Text style={[styles.attentionAlertTitle, { color: isDark ? '#F87171' : '#C53030' }]}>
+                    <Text style={[styles.attentionAlertTitle, { color: colors.foreground }]}>
                       {attentionItems.length} status update{attentionItems.length !== 1 ? 's' : ''} pending
                     </Text>
-                    <Text style={[styles.attentionAlertSub, { color: isDark ? '#FCA5A5' : '#9B2C2C' }]}>
+                    <Text style={[styles.attentionAlertSub, { color: colors.mutedForeground }]}>
                       Allotment results require your action
                     </Text>
                   </View>
@@ -1243,19 +1242,19 @@ export default function BidsScreen() {
           style={[
             styles.bulkFloatingBar,
             {
-              backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
-              borderColor: colors.border,
+              backgroundColor: isDark ? '#1E293B' : '#0F172A',
+              borderColor: isDark ? '#334155' : '#1E293B',
               bottom: Platform.OS === 'web' ? 80 : insets.bottom + 90,
             },
           ]}
         >
           {/* Header Row: Selection Counter & Quick Deselect */}
           <View style={styles.bulkBarTopRow}>
-            <View style={[styles.bulkCountBadge, { backgroundColor: colors.primary + '18' }]}>
-              <View style={[styles.bulkCountDot, { backgroundColor: colors.primary }]} />
-              <NumberedText style={[styles.bulkCountText, { color: colors.foreground }]}>
-                {`${bulkSelectedBidIds.size} Selected`}
-              </NumberedText>
+            <View style={[styles.bulkCountBadge, { backgroundColor: 'rgba(255,255,255,0.12)' }]}>
+              <View style={[styles.bulkCountDot, { backgroundColor: '#FFFFFF' }]} />
+              <Text style={[styles.bulkCountText, { color: '#FFFFFF' }]}>
+                {bulkSelectedBidIds.size} Selected
+              </Text>
             </View>
 
             <TouchableOpacity
@@ -1263,7 +1262,7 @@ export default function BidsScreen() {
               hitSlop={8}
               activeOpacity={0.7}
             >
-              <Text style={[styles.bulkClearText, { color: colors.mutedForeground }]}>
+              <Text style={[styles.bulkClearText, { color: '#94A3B8' }]}>
                 Deselect All
               </Text>
             </TouchableOpacity>
@@ -1344,21 +1343,17 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     textTransform: 'uppercase',
     marginBottom: 2,
-    color: '#D4A017',
+    color: '#64748B',
   },
   headerTitle: { fontSize: 30, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.8, lineHeight: 34 },
   headerAddBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#D4A017',
+    backgroundColor: '#0F172A',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 2,
-    shadowColor: '#D4A017',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
     elevation: 3,
   },
 
@@ -1659,7 +1654,7 @@ const styles = StyleSheet.create({
   chipEmptyText: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', fontStyle: 'italic', paddingVertical: 8 },
   checkbox: { width: 18, height: 18, borderRadius: 4, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
 
-  goldBtn: { backgroundColor: '#D4A017', borderRadius: 16, minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
+  goldBtn: { backgroundColor: '#0F172A', borderRadius: 16, minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
   goldBtnDisabled: { backgroundColor: '#E2E8F0', borderRadius: 16, minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
   goldBtnText: { color: '#FFFFFF', fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 0.1 },
   goldBtnTextDisabled: { color: '#A0AEC0', fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 0.1 },
