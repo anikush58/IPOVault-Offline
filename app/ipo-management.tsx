@@ -1,6 +1,7 @@
 import React, { useRef, useMemo, useState } from 'react';
 import {
   Animated,
+  Image,
   Platform,
   ScrollView,
   StyleSheet,
@@ -297,9 +298,13 @@ export default function IPOManagementScreen() {
                 <View style={styles.cardHeaderRow}>
                   {/* Left Logo / Avatar */}
                   <View style={[styles.cardIconAvatar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    <Text style={[styles.cardAvatarText, { color: colors.foreground }]}>
-                      {ipo.ipo_name.slice(0, 1).toUpperCase()}
-                    </Text>
+                    {ipo.logo_url ? (
+                      <Image source={{ uri: ipo.logo_url }} style={styles.cardLogoImage} resizeMode="contain" />
+                    ) : (
+                      <Text style={[styles.cardAvatarText, { color: colors.foreground }]}>
+                        {ipo.ipo_name.slice(0, 1).toUpperCase()}
+                      </Text>
+                    )}
                   </View>
 
                   {/* Title & Subtitle */}
@@ -639,6 +644,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  cardLogoImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
   },
   cardAvatarText: {
     fontSize: 16,

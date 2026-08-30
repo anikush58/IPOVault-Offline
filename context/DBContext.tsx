@@ -40,6 +40,7 @@ export type IPOListing = {
   exchange?: string;
   issue_type?: string;
   allotment_date?: string;
+  logo_url?: string;
 };
 
 export type ApplicationStatus = 'Applied' | 'Mandate Approved' | 'Allotted' | 'Partially Allotted' | 'Holding' | 'Not Allotted' | 'Sold' | 'Cancelled';

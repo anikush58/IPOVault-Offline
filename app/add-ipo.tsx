@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -10,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -68,6 +70,7 @@ export default function AddIPOScreen() {
   const [formCloseDate, setFormCloseDate] = useState('');
   const [formAllotmentDate, setFormAllotmentDate] = useState('');
   const [formListingDate, setFormListingDate] = useState('');
+  const [formLogoUrl, setFormLogoUrl] = useState('');
   const [saving, setSaving] = useState(false);
 
   // Date picker state — one active field at a time
@@ -85,10 +88,26 @@ export default function AddIPOScreen() {
       setFormCloseDate(editingIPO.close_date || '');
       setFormAllotmentDate(editingIPO.allotment_date || '');
       setFormListingDate(editingIPO.listing_date || '');
+      setFormLogoUrl(editingIPO.logo_url || '');
     } else {
       setFormOpenDate(new Date().toISOString().slice(0, 10));
     }
   }, [editingIPO]);
+
+  const pickLogoImage = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'image/*',
+        copyToCacheDirectory: true,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setFormLogoUrl(result.assets[0].uri);
+        Haptics.selectionAsync();
+      }
+    } catch (err) {
+      console.error('Failed to pick logo image:', err);
+    }
+  };
 
 
   const handleSave = async () => {
@@ -109,7 +128,7 @@ export default function AddIPOScreen() {
         const now = new Date().toISOString();
         await db.runAsync(
           `UPDATE ipo_listings
-           SET ipo_name = ?, buy_price = ?, quantity = ?, registrar = ?, exchange = ?, issue_type = ?, open_date = ?, close_date = ?, allotment_date = ?, listing_date = ?, updated_at = ?
+           SET ipo_name = ?, buy_price = ?, quantity = ?, registrar = ?, exchange = ?, issue_type = ?, open_date = ?, close_date = ?, allotment_date = ?, listing_date = ?, logo_url = ?, updated_at = ?
            WHERE id = ?`,
           [
             formIpoName.trim(),
@@ -122,6 +141,7 @@ export default function AddIPOScreen() {
             formCloseDate,
             formAllotmentDate,
             formListingDate,
+            formLogoUrl,
             now,
             editingIPO.id,
           ]
@@ -131,8 +151,8 @@ export default function AddIPOScreen() {
         const newId = `ipo_${Date.now()}`;
         const now = new Date().toISOString();
         await db.runAsync(
-          `INSERT INTO ipo_listings (id, ipo_name, buy_price, quantity, registrar, exchange, issue_type, open_date, close_date, allotment_date, listing_date, archived, is_favorite, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+          `INSERT INTO ipo_listings (id, ipo_name, buy_price, quantity, registrar, exchange, issue_type, open_date, close_date, allotment_date, listing_date, logo_url, archived, is_favorite, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
           [
             newId,
             formIpoName.trim(),
@@ -145,6 +165,7 @@ export default function AddIPOScreen() {
             formCloseDate,
             formAllotmentDate,
             formListingDate,
+            formLogoUrl,
             now,
             now,
           ]
@@ -210,6 +231,51 @@ export default function AddIPOScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {/* COMPANY LOGO UPLOAD */}
+        <View style={styles.field}>
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
+            COMPANY LOGO
+          </Text>
+          {formLogoUrl ? (
+            <View style={[styles.logoPreviewRow, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+              <Image source={{ uri: formLogoUrl }} style={styles.logoPreviewImage} resizeMode="contain" />
+              <View style={{ flex: 1, paddingHorizontal: 10 }}>
+                <Text style={[styles.logoPreviewText, { color: colors.foreground }]} numberOfLines={1}>
+                  Logo Uploaded
+                </Text>
+                <Text style={[styles.logoPreviewSub, { color: colors.mutedForeground }]}>
+                  Tap to change or remove
+                </Text>
+              </View>
+              <TouchableOpacity onPress={pickLogoImage} style={[styles.logoBtn, { backgroundColor: colors.card, borderColor: colors.border }]} activeOpacity={0.8}>
+                <Feather name="edit-2" size={13} color={colors.foreground} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setFormLogoUrl('')} style={[styles.logoBtn, { backgroundColor: colors.destructiveBg, borderColor: colors.destructiveBg, marginLeft: 6 }]} activeOpacity={0.8}>
+                <Feather name="trash-2" size={13} color={colors.destructive} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              onPress={pickLogoImage}
+              activeOpacity={0.8}
+              style={[styles.logoUploadDropzone, { borderColor: colors.border, backgroundColor: colors.surface }]}
+            >
+              <View style={[styles.logoUploadIconWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Feather name="upload-cloud" size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.logoUploadTitle, { color: colors.foreground }]}>
+                  Upload Company Logo
+                </Text>
+                <Text style={[styles.logoUploadSub, { color: colors.mutedForeground }]}>
+                  PNG or JPG logo image
+                </Text>
+              </View>
+              <Feather name="plus" size={16} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          )}
+        </View>
+
         {/* IPO / COMPANY NAME */}
         <View style={styles.field}>
           <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
@@ -552,5 +618,62 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'GoogleSansFlex_400Regular',
     flex: 1,
+  },
+  logoUploadDropzone: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  logoUploadIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoUploadTitle: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  logoUploadSub: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 1,
+  },
+  logoPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  logoPreviewImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+  },
+  logoPreviewText: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  logoPreviewSub: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 1,
+  },
+  logoBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
