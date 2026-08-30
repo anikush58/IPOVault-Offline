@@ -46,12 +46,21 @@ export default function DashboardScreen() {
 
   const openIpoList = useMemo(() => {
     const active = ipos.filter((i) => i.archived === 0);
-    if (active.length > 0) return active;
+    if (active.length > 0) {
+      return [...active].sort((a, b) => {
+        if (a.close_date && b.close_date) {
+          return a.close_date.localeCompare(b.close_date);
+        }
+        if (a.close_date) return -1;
+        if (b.close_date) return 1;
+        return 0;
+      });
+    }
     return [
-      { id: 'ola-elec', ipo_name: 'Ola Electric Mobility IPO', buy_price: 15000, quantity: 195, issue_type: 'Mainboard' },
-      { id: 'premier-eng', ipo_name: 'Premier Energies IPO', buy_price: 14700, quantity: 33, issue_type: 'Mainboard' },
-      { id: 'firstcry', ipo_name: 'Brainbees Solutions (FirstCry) IPO', buy_price: 14960, quantity: 32, issue_type: 'Mainboard' },
-      { id: 'unicommerce', ipo_name: 'Unicommerce eSolutions IPO', buy_price: 14850, quantity: 135, issue_type: 'SME' },
+      { id: 'ola-elec', ipo_name: 'Ola Electric Mobility IPO', buy_price: 15000, quantity: 195, issue_type: 'Mainboard', close_date: '2026-08-31' },
+      { id: 'premier-eng', ipo_name: 'Premier Energies IPO', buy_price: 14700, quantity: 33, issue_type: 'Mainboard', close_date: '2026-09-02' },
+      { id: 'firstcry', ipo_name: 'Brainbees Solutions (FirstCry) IPO', buy_price: 14960, quantity: 32, issue_type: 'Mainboard', close_date: '2026-09-04' },
+      { id: 'unicommerce', ipo_name: 'Unicommerce eSolutions IPO', buy_price: 14850, quantity: 135, issue_type: 'SME', close_date: '2026-09-05' },
     ];
   }, [ipos]);
 
