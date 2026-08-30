@@ -31,43 +31,87 @@ import {
 
 const PillarGraphics = ({ isDark, side }: { isDark: boolean; side: 'left' | 'right' }) => {
   const isLeft = side === 'left';
-  const barFront = isDark ? '#374151' : '#CBD5E1';
-  const barSide = isDark ? '#1F2937' : '#94A3B8';
-  const barTop = isDark ? '#4B5563' : '#E2E8F0';
 
-  const RenderPillar = ({ height, width = 16 }: { height: number; width?: number }) => (
-    <View style={{ width, height, justifyContent: 'flex-end' }}>
-      {/* 3D Top Cap */}
+  const frontGrad = isDark ? ['#475569', '#334155', '#1E293B'] : ['#F8FAFC', '#E2E8F0', '#CBD5E1'];
+  const sideGrad = isDark ? ['#334155', '#1E293B', '#0F172A'] : ['#CBD5E1', '#94A3B8', '#64748B'];
+  const topGrad = isDark ? ['#94A3B8', '#64748B'] : ['#FFFFFF', '#E2E8F0'];
+  const highlightColor = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.7)';
+
+  const RenderPillar = ({ height, width = 18 }: { height: number; width?: number }) => (
+    <View style={{ width, alignItems: 'center' }}>
+      {/* 3D Pillar Unit */}
       <View
         style={{
-          height: 7,
-          width: '100%',
-          backgroundColor: barTop,
-          borderTopLeftRadius: 3,
-          borderTopRightRadius: 3,
-          transform: [{ skewX: '-20deg' }],
-          marginBottom: -1,
+          width: width,
+          height: height,
+          justifyContent: 'flex-end',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.15,
+          shadowRadius: 6,
+          elevation: 4,
+        }}
+      >
+        {/* 3D Top Cap */}
+        <LinearGradient
+          colors={topGrad as [string, string]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{
+            height: 8,
+            width: '100%',
+            borderTopLeftRadius: 3,
+            borderTopRightRadius: 3,
+            transform: [{ skewX: '-24deg' }],
+            marginBottom: -2,
+            zIndex: 2,
+          }}
+        />
+        {/* 3D Pillar Body */}
+        <View style={{ flexDirection: 'row', height: height - 6, width: '100%', overflow: 'hidden', borderBottomLeftRadius: 2, borderBottomRightRadius: 2 }}>
+          {/* Specular Left Highlight Edge */}
+          <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 1.5, backgroundColor: highlightColor, zIndex: 3 }} />
+          {/* Front Face */}
+          <LinearGradient
+            colors={frontGrad as [string, string, string]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={{ flex: 0.65 }}
+          />
+          {/* Side Face (Darker Shading) */}
+          <LinearGradient
+            colors={sideGrad as [string, string, string]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{ flex: 0.35 }}
+          />
+        </View>
+      </View>
+      {/* Contact Ground Shadow */}
+      <View
+        style={{
+          width: width + 4,
+          height: 5,
+          borderRadius: 4,
+          backgroundColor: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.12)',
+          marginTop: 2,
+          transform: [{ scaleY: 0.5 }],
         }}
       />
-      {/* 3D Pillar Body */}
-      <View style={{ flexDirection: 'row', height: height - 6, width: '100%' }}>
-        <View style={{ flex: 0.65, backgroundColor: barFront, borderBottomLeftRadius: 2 }} />
-        <View style={{ flex: 0.35, backgroundColor: barSide, borderBottomRightRadius: 2 }} />
-      </View>
     </View>
   );
 
   return (
-    <View style={[styles.pillarContainer, isLeft ? { left: 16 } : { right: 16 }]}>
+    <View style={[styles.pillarContainer, isLeft ? { left: 14 } : { right: 14 }]}>
       {isLeft ? (
         <>
-          <RenderPillar height={44} width={13} />
-          <RenderPillar height={70} width={15} />
+          <RenderPillar height={48} width={15} />
+          <RenderPillar height={78} width={18} />
         </>
       ) : (
         <>
-          <RenderPillar height={70} width={15} />
-          <RenderPillar height={44} width={13} />
+          <RenderPillar height={78} width={18} />
+          <RenderPillar height={48} width={15} />
         </>
       )}
     </View>
@@ -255,6 +299,17 @@ export default function DashboardScreen() {
 
         {/* ── Net Profit Hero Section ── */}
         <View style={styles.heroSection}>
+          {/* Soft Arch Backdrop */}
+          <View
+            style={[
+              styles.archBackdrop,
+              {
+                borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                backgroundColor: isDark ? 'rgba(255,255,255,0.015)' : 'rgba(0,0,0,0.01)',
+              },
+            ]}
+          />
+
           <PillarGraphics isDark={isDark} side="left" />
           <PillarGraphics isDark={isDark} side="right" />
 
@@ -262,33 +317,31 @@ export default function DashboardScreen() {
             <Text style={[styles.heroEyebrow, { color: colors.mutedForeground }]}>
               NET PROFIT
             </Text>
-            <Text style={[styles.heroValue, { color: colors.foreground }]}>
+            <Text style={[styles.heroValue, { color: totalNetProfit >= 0 ? '#10B981' : colors.destructive }]}>
               {formatCurrency(totalNetProfit)}
             </Text>
           </View>
         </View>
 
         {/* ── Portfolio Details Card (Matching reference design) ── */}
-        <TouchableOpacity
-          activeOpacity={0.9}
+        <View
           style={[
             styles.portfolioCard,
             { backgroundColor: colors.card, borderColor: colors.border },
           ]}
         >
-          {/* Card Header */}
+          {/* Card Header (No Chevron) */}
           <View style={styles.portfolioCardHeader}>
             <Text style={[styles.portfolioCardTitle, { color: colors.foreground }]}>
               Portfolio Details
             </Text>
-            <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
           </View>
 
           {/* 3 Columns Row */}
           <View style={styles.portfolioMetricsRow}>
             {/* Column 1: Net Profit */}
             <View style={styles.portfolioMetricColLeft}>
-              <Text style={[styles.portfolioMetricVal, { color: colors.foreground }]}>
+              <Text style={[styles.portfolioMetricVal, { color: totalNetProfit >= 0 ? '#10B981' : colors.destructive }]}>
                 {formatCurrency(totalNetProfit)}
               </Text>
               <Text style={[styles.portfolioMetricLabel, { color: colors.mutedForeground }]}>
@@ -298,7 +351,7 @@ export default function DashboardScreen() {
 
             {/* Column 2: Holding Profit */}
             <View style={styles.portfolioMetricColCenter}>
-              <Text style={[styles.portfolioMetricVal, { color: colors.foreground }]}>
+              <Text style={[styles.portfolioMetricVal, { color: totalHoldingNet >= 0 ? '#10B981' : colors.destructive }]}>
                 {formatCurrency(totalHoldingNet)}
               </Text>
               <Text style={[styles.portfolioMetricLabel, { color: colors.mutedForeground }]}>
@@ -316,7 +369,7 @@ export default function DashboardScreen() {
               </Text>
             </View>
           </View>
-        </TouchableOpacity>
+        </View>
 
         {/* Performance chart */}
         <PerformanceChart applications={baseFilteredApps} />
@@ -425,11 +478,22 @@ const styles = StyleSheet.create({
   heroSection: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 32,
-    paddingBottom: 28,
+    paddingTop: 36,
+    paddingBottom: 32,
     paddingHorizontal: 20,
     position: 'relative',
-    minHeight: 145,
+    minHeight: 155,
+  },
+  archBackdrop: {
+    position: 'absolute',
+    top: 14,
+    left: 36,
+    right: 36,
+    height: 130,
+    borderTopLeftRadius: 110,
+    borderTopRightRadius: 110,
+    borderWidth: 1,
+    borderBottomWidth: 0,
   },
   heroContent: {
     alignItems: 'center',
