@@ -341,8 +341,27 @@ export default function DashboardScreen() {
                   { backgroundColor: colors.card, borderColor: colors.border },
                 ]}
               >
-                {/* Top Row: Category Badge */}
-                <View style={styles.openIpoTopRow}>
+                {/* Main Content Layout: Left details, Right Category badge */}
+                <View style={styles.openIpoCardMain}>
+                  {/* Left Column: Company Name, Price/Lot details, APPLY NOW */}
+                  <View style={styles.openIpoLeftCol}>
+                    <Text style={[styles.openIpoTitle, { color: colors.foreground }]} numberOfLines={1}>
+                      {ipo.ipo_name}
+                    </Text>
+                    <Text style={[styles.openIpoSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+                      {formatCurrency(ipo.buy_price)} / lot · {ipo.quantity} shares
+                    </Text>
+
+                    {/* Bottom Action Link */}
+                    <View style={styles.openIpoBottomRow}>
+                      <Text style={[styles.openIpoCtaText, { color: colors.foreground }]}>
+                        APPLY NOW
+                      </Text>
+                      <Feather name="arrow-right" size={13} color={colors.foreground} />
+                    </View>
+                  </View>
+
+                  {/* Right Side: Category Badge */}
                   <View
                     style={[
                       styles.openIpoCategoryBadge,
@@ -361,24 +380,6 @@ export default function DashboardScreen() {
                       {ipo.issue_type || 'Mainboard'}
                     </Text>
                   </View>
-                </View>
-
-                {/* Main Headline & Details */}
-                <View style={styles.openIpoBody}>
-                  <Text style={[styles.openIpoTitle, { color: colors.foreground }]} numberOfLines={2}>
-                    {ipo.ipo_name}
-                  </Text>
-                  <Text style={[styles.openIpoSub, { color: colors.mutedForeground }]} numberOfLines={1}>
-                    {formatCurrency(ipo.buy_price)} / lot · {ipo.quantity} shares
-                  </Text>
-                </View>
-
-                {/* Bottom Action Link */}
-                <View style={styles.openIpoBottomRow}>
-                  <Text style={[styles.openIpoCtaText, { color: colors.foreground }]}>
-                    APPLY NOW
-                  </Text>
-                  <Feather name="arrow-right" size={14} color={colors.foreground} />
                 </View>
               </TouchableOpacity>
             ))}
@@ -628,32 +629,28 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   openIpoCard: {
-    width: 260,
+    width: 280,
     borderRadius: 18,
     borderWidth: 1,
     padding: 14,
-    justifyContent: 'space-between',
-    minHeight: 122,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 6,
     elevation: 2,
   },
-  openIpoTopRow: {
+  openIpoCardMain: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
   },
-  openIpoMetaText: {
-    fontSize: 10,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
+  openIpoLeftCol: {
+    flex: 1,
+    paddingRight: 4,
   },
   openIpoCategoryBadge: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 9,
     paddingVertical: 3,
     borderRadius: 12,
     borderWidth: 1,
@@ -662,27 +659,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'GoogleSansFlex_600SemiBold',
   },
-  openIpoBody: {
-    marginBottom: 12,
-  },
   openIpoTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: -0.3,
-    lineHeight: 21,
+    lineHeight: 20,
     marginBottom: 4,
   },
   openIpoSub: {
     fontSize: 12,
     fontFamily: 'GoogleSansFlex_400Regular',
+    marginBottom: 10,
   },
   openIpoBottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
   },
   openIpoCtaText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: 0.5,
   },
