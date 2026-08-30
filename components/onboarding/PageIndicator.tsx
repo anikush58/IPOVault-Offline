@@ -13,7 +13,9 @@ function AnimatedDot({ isActive, isDark }: { isActive: boolean; isDark: boolean 
     return {
       width: withSpring(isActive ? 22 : 8, { damping: 15, stiffness: 120 }),
       backgroundColor: isActive
-        ? '#C39B27'
+        ? isDark
+          ? '#FFFFFF'
+          : '#0F172A'
         : isDark
         ? 'rgba(255, 255, 255, 0.22)'
         : 'rgba(0, 0, 0, 0.22)',

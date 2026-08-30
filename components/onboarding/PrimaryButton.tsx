@@ -5,11 +5,12 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 interface PrimaryButtonProps {
   label: string;
   onPress: () => void;
+  isDark?: boolean;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export function PrimaryButton({ label, onPress }: PrimaryButtonProps) {
+export function PrimaryButton({ label, onPress, isDark = false }: PrimaryButtonProps) {
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => {
@@ -26,16 +27,19 @@ export function PrimaryButton({ label, onPress }: PrimaryButtonProps) {
     scale.value = withSpring(1, { damping: 15, stiffness: 200 });
   };
 
+  const btnBg = isDark ? '#FFFFFF' : '#0F172A';
+  const btnTxt = isDark ? '#0F172A' : '#FFFFFF';
+
   return (
     <AnimatedPressable
       onPress={onPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      style={[styles.button, animatedStyle]}
+      style={[styles.button, { backgroundColor: btnBg }, animatedStyle]}
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <Text style={styles.buttonText}>{label}</Text>
+      <Text style={[styles.buttonText, { color: btnTxt }]}>{label}</Text>
     </AnimatedPressable>
   );
 }
@@ -45,12 +49,10 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 56,
     borderRadius: 16,
-    backgroundColor: '#D4A017',
     alignItems: 'center',
     justifyContent: 'center',
   },
   buttonText: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontFamily: 'GoogleSansFlex_700Bold',
   },

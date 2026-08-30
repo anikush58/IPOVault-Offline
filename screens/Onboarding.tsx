@@ -98,7 +98,7 @@ export function OnboardingScreenView() {
             isDark={isDark}
           />
           <View style={styles.buttonWrapper}>
-            <PrimaryButton label={buttonLabel} onPress={handleNext} />
+            <PrimaryButton label={buttonLabel} onPress={handleNext} isDark={isDark} />
           </View>
         </View>
       </View>
