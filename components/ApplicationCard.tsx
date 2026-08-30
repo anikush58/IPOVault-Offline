@@ -29,6 +29,7 @@ export function ApplicationCard({ application: app, onPress }: Props) {
     Holding:             colors.statusHolding,
     'Not Allotted':      colors.statusNotAllotted,
     Sold:                colors.statusSold,
+    Cancelled:           colors.statusRefund,
   };
 
   const borderColor = STATUS_BORDER[app.status] ?? colors.statusApplied;

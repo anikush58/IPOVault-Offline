@@ -381,7 +381,7 @@ export default function BidsScreen() {
     }
   };
 
-  const handleExecuteBulkStatusUpdate = async (newStatus: 'Allotted' | 'Not Allotted') => {
+  const handleExecuteBulkStatusUpdate = async (newStatus: 'Allotted' | 'Not Allotted' | 'Cancelled') => {
     if (bulkSelectedBidIds.size === 0) {
       showError('', 'Please select at least one bid.');
       return;
@@ -1257,7 +1257,7 @@ export default function BidsScreen() {
             </Text>
           </View>
 
-          <View style={{ flexDirection: 'row', gap: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
             <TouchableOpacity
               onPress={() => handleExecuteBulkStatusUpdate('Allotted')}
               disabled={bulkSelectedBidIds.size === 0 || bulkActionLoading}
@@ -1267,7 +1267,7 @@ export default function BidsScreen() {
               ]}
               activeOpacity={0.85}
             >
-              <Feather name="check-circle" size={15} color="#FFFFFF" style={{ marginRight: 5 }} />
+              <Feather name="check-circle" size={13} color="#FFFFFF" style={{ marginRight: 3 }} />
               <Text style={styles.bulkBarBtnText}>Allotted</Text>
             </TouchableOpacity>
 
@@ -1280,8 +1280,21 @@ export default function BidsScreen() {
               ]}
               activeOpacity={0.85}
             >
-              <Feather name="x-circle" size={15} color="#FFFFFF" style={{ marginRight: 5 }} />
+              <Feather name="x-circle" size={13} color="#FFFFFF" style={{ marginRight: 3 }} />
               <Text style={styles.bulkBarBtnText}>Not Allotted</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => handleExecuteBulkStatusUpdate('Cancelled')}
+              disabled={bulkSelectedBidIds.size === 0 || bulkActionLoading}
+              style={[
+                styles.bulkBarBtnCancelled,
+                { opacity: bulkSelectedBidIds.size === 0 || bulkActionLoading ? 0.45 : 1 },
+              ]}
+              activeOpacity={0.85}
+            >
+              <Feather name="slash" size={13} color="#FFFFFF" style={{ marginRight: 3 }} />
+              <Text style={styles.bulkBarBtnText}>Cancelled</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1751,25 +1764,34 @@ const styles = StyleSheet.create({
   },
   bulkBarBtnAllotted: {
     backgroundColor: '#10B981',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
   bulkBarBtnNotAllotted: {
     backgroundColor: '#EF4444',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bulkBarBtnCancelled: {
+    backgroundColor: '#6B7280',
+    borderRadius: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
   bulkBarBtnText: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
 

@@ -44,6 +44,11 @@ export function StatusBadge({ status, small }: Props) {
       text: colors.statusSold,
       dot: colors.statusSold,
     },
+    Cancelled: {
+      bg: colors.statusRefundBg,
+      text: colors.statusRefund,
+      dot: colors.statusRefund,
+    },
   };
 
   const { bg, text, dot } = config[status] ?? config['Applied'];

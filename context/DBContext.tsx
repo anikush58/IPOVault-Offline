@@ -42,7 +42,7 @@ export type IPOListing = {
   allotment_date?: string;
 };
 
-export type ApplicationStatus = 'Applied' | 'Mandate Approved' | 'Allotted' | 'Partially Allotted' | 'Holding' | 'Not Allotted' | 'Sold';
+export type ApplicationStatus = 'Applied' | 'Mandate Approved' | 'Allotted' | 'Partially Allotted' | 'Holding' | 'Not Allotted' | 'Sold' | 'Cancelled';
 
 export type ApplicationWithDetails = {
   id: string;
