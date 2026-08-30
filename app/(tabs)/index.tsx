@@ -138,14 +138,8 @@ export default function DashboardScreen() {
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Dashboard</Text>
         </View>
 
-        {/* Actions (Search + Filter) */}
+        {/* Actions (Filter) */}
         <View style={styles.headerActions}>
-          <IconButton
-            name={showSearch ? 'x' : 'search'}
-            variant={showSearch ? 'primary' : 'surface'}
-            size="md"
-            onPress={toggleSearch}
-          />
           <IconButton
             name="sliders"
             variant={hasFilter ? 'primary' : 'surface'}
