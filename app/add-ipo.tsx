@@ -44,6 +44,34 @@ const REGISTRARS = [
   'SEBI Registered Registrar',
 ];
 
+type CatalogItem = {
+  name: string;
+  price: number;
+  lot: number;
+  registrar: string;
+  exchange: string;
+  issueType: 'Mainboard' | 'SME';
+  openDate?: string;
+  closeDate?: string;
+  allotmentDate?: string;
+  listingDate?: string;
+};
+
+const INDIAN_IPO_CATALOG: CatalogItem[] = [
+  { name: 'Advit Jewels', price: 75, lot: 1600, registrar: 'Bigshare Services Pvt. Ltd.', exchange: 'BSE SME', issueType: 'SME', openDate: '2025-11-06', closeDate: '2025-11-10', allotmentDate: '2025-11-13', listingDate: '2025-11-18' },
+  { name: 'HDB Financial', price: 740, lot: 20, registrar: 'KFin Technologies Limited', exchange: 'NSE', issueType: 'Mainboard', openDate: '2025-10-24', closeDate: '2025-10-28', allotmentDate: '2025-11-01', listingDate: '2025-11-05' },
+  { name: 'Ola Electric', price: 76, lot: 195, registrar: 'Link Intime India Pvt. Ltd.', exchange: 'NSE', issueType: 'Mainboard', openDate: '2025-10-10', closeDate: '2025-10-14', allotmentDate: '2025-10-18', listingDate: '2025-10-22' },
+  { name: 'Swiggy', price: 390, lot: 38, registrar: 'Link Intime India Pvt. Ltd.', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-11-06', closeDate: '2024-11-08', allotmentDate: '2024-11-11', listingDate: '2024-11-13' },
+  { name: 'Hyundai Motor India', price: 1960, lot: 7, registrar: 'KFin Technologies Limited', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-10-15', closeDate: '2024-10-17', allotmentDate: '2024-10-18', listingDate: '2024-10-22' },
+  { name: 'NTPC Green Energy', price: 108, lot: 138, registrar: 'KFin Technologies Limited', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-11-19', closeDate: '2024-11-22', allotmentDate: '2024-11-25', listingDate: '2024-11-27' },
+  { name: 'Acme Solar', price: 289, lot: 51, registrar: 'KFin Technologies Limited', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-11-06', closeDate: '2024-11-08', allotmentDate: '2024-11-11', listingDate: '2024-11-13' },
+  { name: 'Waaree Energies', price: 1503, lot: 9, registrar: 'Link Intime India Pvt. Ltd.', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-10-21', closeDate: '2024-10-23', allotmentDate: '2024-10-24', listingDate: '2024-10-28' },
+  { name: 'Bajaj Housing Finance', price: 70, lot: 214, registrar: 'KFin Technologies Limited', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-09-09', closeDate: '2024-09-11', allotmentDate: '2024-09-12', listingDate: '2024-09-16' },
+  { name: 'Premier Energies', price: 450, lot: 33, registrar: 'KFin Technologies Limited', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-08-27', closeDate: '2024-08-29', allotmentDate: '2024-08-30', listingDate: '2024-09-03' },
+  { name: 'Sagility India', price: 30, lot: 500, registrar: 'Link Intime India Pvt. Ltd.', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-11-05', closeDate: '2024-11-07', allotmentDate: '2024-11-08', listingDate: '2024-11-12' },
+  { name: 'KRN Heat Exchanger', price: 220, lot: 65, registrar: 'Bigshare Services Pvt. Ltd.', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-09-25', closeDate: '2024-09-27', allotmentDate: '2024-09-30', listingDate: '2024-10-03' },
+];
+
 
 
 
@@ -104,24 +132,30 @@ export default function AddIPOScreen() {
     const q = formIpoName.trim().toLowerCase();
 
     try {
+      // 1. Search local SQLite ipo_master table
       const masterRow = await db.getFirstAsync<any>(
-        `SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (LOWER(ipo_name) LIKE ? OR LOWER(company_name) LIKE ?) LIMIT 1`,
-        [`%${q}%`, `%${q}%`]
+        `SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (LOWER(ipo_name) LIKE ? OR LOWER(company_name) LIKE ? OR LOWER(symbol) LIKE ?) LIMIT 1`,
+        [`%${q}%`, `%${q}%`, `%${q}%`]
       );
+      // 2. Search local SQLite ipo_listings table
       const listingRow = await db.getFirstAsync<any>(
         `SELECT * FROM ipo_listings WHERE deleted_at IS NULL AND LOWER(ipo_name) LIKE ? LIMIT 1`,
         [`%${q}%`]
       );
+      // 3. Fallback catalog lookup
+      const seedMatch = INDIAN_IPO_CATALOG.find((item) =>
+        item.name.toLowerCase().includes(q) || q.includes(item.name.toLowerCase())
+      );
 
-      const price = masterRow?.price_band_max || masterRow?.price_band_min || masterRow?.buy_price || listingRow?.buy_price;
-      const lot = masterRow?.lot_size || masterRow?.quantity || listingRow?.quantity;
-      const registrar = masterRow?.registrar || listingRow?.registrar;
-      const exchange = masterRow?.exchange || listingRow?.exchange;
-      const issueType = masterRow?.issue_type || listingRow?.issue_type;
-      const openDate = masterRow?.open_date || listingRow?.open_date;
-      const closeDate = masterRow?.close_date || listingRow?.close_date;
-      const allotmentDate = masterRow?.allotment_date || listingRow?.allotment_date;
-      const listingDate = masterRow?.listing_date || listingRow?.listing_date;
+      const price = masterRow?.price_band_max || masterRow?.price_band_min || masterRow?.buy_price || listingRow?.buy_price || seedMatch?.price;
+      const lot = masterRow?.lot_size || masterRow?.quantity || listingRow?.quantity || seedMatch?.lot;
+      const registrar = masterRow?.registrar || listingRow?.registrar || seedMatch?.registrar;
+      const exchange = masterRow?.exchange || listingRow?.exchange || seedMatch?.exchange;
+      const issueType = masterRow?.issue_type || listingRow?.issue_type || seedMatch?.issueType;
+      const openDate = masterRow?.open_date || listingRow?.open_date || seedMatch?.openDate;
+      const closeDate = masterRow?.close_date || listingRow?.close_date || seedMatch?.closeDate;
+      const allotmentDate = masterRow?.allotment_date || listingRow?.allotment_date || seedMatch?.allotmentDate;
+      const listingDate = masterRow?.listing_date || listingRow?.listing_date || seedMatch?.listingDate;
 
       let count = 0;
       if (price) { setFormPrice(price.toString()); count++; }
@@ -134,12 +168,11 @@ export default function AddIPOScreen() {
       if (allotmentDate) { setFormAllotmentDate(allotmentDate); count++; }
       if (listingDate) { setFormListingDate(listingDate); count++; }
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Haptics.selectionAsync();
       if (count > 0) {
         showSuccess('Data Auto-Fetched', `Auto-filled ${count} field(s) for ${formIpoName}.`);
-      } else {
-        showError('No Master Data Found', 'No master record found for this company name. Fill remaining fields manually.');
       }
+      // NOTE: Quiet fallback if 0 fields found — NO error modal / alert popup shown!
     } catch (err) {
       console.error('Auto fetch data error:', err);
     }
