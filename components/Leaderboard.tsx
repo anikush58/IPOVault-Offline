@@ -107,15 +107,10 @@ function LeaderRow({
   colors: ReturnType<typeof useColors>;
 }) {
   const isPos = entry.netProfit >= 0;
-  const initial = (entry.name || 'U').charAt(0).toUpperCase();
 
   return (
     <View style={[row.wrap, !isLast && { borderBottomWidth: 1, borderBottomColor: colors.border }]}>
       <RankBadge rank={rank} isDark={isDark} colors={colors} />
-      
-      <View style={[row.avatar, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
-        <Text style={[row.avatarText, { color: colors.foreground }]}>{initial}</Text>
-      </View>
 
       <View style={row.info}>
         <Text style={[row.name, { color: colors.foreground }]} numberOfLines={1}>
@@ -170,12 +165,25 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
   return (
     <View style={[styles.card, { backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderColor: colors.border }]}>
 
-      {/* Header */}
+      {/* Header with View More on Top-Right */}
       <View style={styles.header}>
         <View>
           <Text style={[styles.eyebrow, { color: colors.mutedForeground }]}>RANKINGS</Text>
           <Text style={[styles.title, { color: colors.foreground }]}>Leaderboard</Text>
         </View>
+
+        {filteredRankings.length > 5 && (
+          <TouchableOpacity
+            onPress={() => router.push({ pathname: '/leaderboard', params: { tab: activeTab } })}
+            style={[styles.headerViewMoreBtn, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: colors.border }]}
+            activeOpacity={0.75}
+          >
+            <Text style={[styles.headerViewMoreText, { color: colors.foreground }]}>
+              View More
+            </Text>
+            <Feather name="chevron-right" size={13} color={colors.foreground} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* User / Broker / IPO chip tabs (Left aligned above user rankings) */}
@@ -217,20 +225,6 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
           ))}
         </View>
       )}
-
-      {/* View More footer */}
-      {filteredRankings.length > 5 && (
-        <TouchableOpacity
-          onPress={() => router.push({ pathname: '/leaderboard', params: { tab: activeTab } })}
-          style={[styles.viewAll, { borderTopColor: colors.border }]}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.viewAllText, { color: colors.primary }]}>
-            View More
-          </Text>
-          <Feather name="chevron-right" size={15} color={colors.primary} />
-        </TouchableOpacity>
-      )}
     </View>
   );
 }
@@ -262,6 +256,20 @@ const styles = StyleSheet.create({
   },
   eyebrow: { fontSize: 10, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 },
   title: { fontSize: 18, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
+
+  headerViewMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  headerViewMoreText: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
 
   tabsRow: {
     paddingHorizontal: 18,

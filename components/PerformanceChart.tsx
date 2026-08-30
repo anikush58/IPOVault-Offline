@@ -816,38 +816,6 @@ export function PerformanceChart({ applications }: Props) {
             </View>
           </View>
 
-          {/* ── Dynamic Summary Row ── */}
-          {(() => {
-            const unitLabel = filterMode === 'weekly' || filterMode === 'custom_date' ? 'day' : filterMode === 'monthly' ? 'month' : 'year';
-
-            return (
-              <View style={[styles.summaryContainer, { borderTopColor: colors.border }]}>
-                {/* Column 1: Period Net */}
-                <View style={styles.summaryColLeft}>
-                  <Text style={[styles.cardValue, { color: totalNet >= 0 ? '#10B981' : colors.destructive }]} numberOfLines={1}>
-                    {totalNet >= 0 ? '+' : ''}{formatCurrency(totalNet, false)}
-                  </Text>
-                  <Text style={[styles.cardLabel, { color: colors.mutedForeground }]}>PERIOD NET</Text>
-                </View>
-
-                {/* Column 2: Best Period */}
-                <View style={styles.summaryColCenter}>
-                  <Text style={[styles.cardValue, { color: '#10B981' }]} numberOfLines={1}>
-                    {bestBar ? (bestBar.value >= 0 ? '+' : '') + formatCurrency(bestBar.value, false) : '—'}
-                  </Text>
-                  <Text style={[styles.cardLabel, { color: colors.mutedForeground }]}>BEST {unitLabel.toUpperCase()}</Text>
-                </View>
-
-                {/* Column 3: Worst Period */}
-                <View style={styles.summaryColRight}>
-                  <Text style={[styles.cardValue, { color: worstBar && worstBar.value >= 0 ? '#10B981' : colors.destructive }]} numberOfLines={1}>
-                    {worstBar ? (worstBar.value >= 0 ? '+' : '') + formatCurrency(worstBar.value, false) : '—'}
-                  </Text>
-                  <Text style={[styles.cardLabel, { color: colors.mutedForeground }]}>WORST {unitLabel.toUpperCase()}</Text>
-                </View>
-              </View>
-            );
-          })()}
         </>
       )}
 
