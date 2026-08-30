@@ -181,7 +181,7 @@ function PeriodTabs({
 }) {
   return (
     <Tabs
-      variant="segmented"
+      variant="pills"
       tabs={PERIOD_TABS.map((t) => ({ key: t.value, label: t.label }))}
       activeTab={period}
       onChange={onChange}

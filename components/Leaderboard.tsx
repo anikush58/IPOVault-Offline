@@ -179,7 +179,7 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
 
         {/* User / Broker / IPO tabs */}
         <Tabs
-          variant="segmented"
+          variant="pills"
           tabs={[
             { key: 'user', label: 'User' },
             { key: 'broker', label: 'Broker' },
@@ -187,7 +187,6 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
           ]}
           activeTab={activeTab}
           onChange={setActiveTab}
-          style={{ minWidth: 200 }}
         />
       </View>
 

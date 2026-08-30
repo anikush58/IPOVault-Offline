@@ -11,6 +11,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { DesignSystem } from '@/constants/DesignSystem';
 
 export type TabStyleVariant = 'segmented' | 'segmented-secondary' | 'underline' | 'pills';
@@ -47,6 +48,8 @@ export function Tabs<T extends string = string>({
   testID,
 }: TabsProps<T>) {
   const colors = useColors();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
 
   const handlePress = (key: T) => {
     if (key !== activeTab) {
@@ -122,8 +125,12 @@ export function Tabs<T extends string = string>({
           style={[
             styles.pillTabBtn,
             {
-              backgroundColor: isActive ? colors.primary : colors.surface,
-              borderColor: isActive ? colors.primary : colors.border,
+              backgroundColor: isActive
+                ? (isDark ? '#374151' : '#0F172A')
+                : (isDark ? '#27272A' : '#FFFFFF'),
+              borderColor: isActive
+                ? (isDark ? '#4B5563' : '#0F172A')
+                : colors.border,
             },
             tabStyle,
           ]}
