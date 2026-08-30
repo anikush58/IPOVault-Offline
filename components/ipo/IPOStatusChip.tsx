@@ -1,0 +1,109 @@
+import React from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import { useColors } from '@/hooks/useColors';
+
+export type IPOStatusType = 'Upcoming' | 'Open' | 'Closed' | 'Allotment' | 'Listed' | string;
+
+export function IPOStatusChip({ status }: { status: IPOStatusType }) {
+  const colors = useColors();
+
+  const getStyle = (st: string) => {
+    const s = (st || '').toLowerCase();
+    if (s === 'closing soon' || s === 'closes today' || s === 'closing') {
+      return {
+        bg: 'rgba(239, 68, 68, 0.10)',
+        border: 'rgba(239, 68, 68, 0.22)',
+        text: '#EF4444',
+        dot: '#EF4444',
+      };
+    }
+    if (s === 'open' || s === 'live bid' || s === 'live') {
+      return {
+        bg: 'transparent',
+        border: '#10B981',
+        text: '#10B981',
+        dot: '#10B981',
+      };
+    }
+    if (s === 'pre-apply' || s === 'pre_apply' || s === 'preapply') {
+      return {
+        bg: 'rgba(6, 182, 212, 0.10)',
+        border: 'rgba(6, 182, 212, 0.22)',
+        text: '#06B6D4',
+        dot: '#06B6D4',
+      };
+    }
+    if (s === 'upcoming') {
+      return {
+        bg: 'rgba(59, 130, 246, 0.10)',
+        border: 'rgba(59, 130, 246, 0.22)',
+        text: '#3B82F6',
+        dot: '#3B82F6',
+      };
+    }
+    if (s === 'awaiting allotment' || s === 'awaiting_allotment' || s === 'closed') {
+      return {
+        bg: 'rgba(245, 158, 11, 0.10)',
+        border: 'rgba(245, 158, 11, 0.22)',
+        text: '#F59E0B',
+        dot: '#F59E0B',
+      };
+    }
+    if (s === 'allotted' || s === 'allotment out' || s === 'allotment') {
+      return {
+        bg: 'rgba(16, 185, 129, 0.10)',
+        border: 'rgba(16, 185, 129, 0.22)',
+        text: '#10B981',
+        dot: '#10B981',
+      };
+    }
+    if (s === 'listed') {
+      return {
+        bg: 'rgba(139, 92, 246, 0.10)',
+        border: 'rgba(139, 92, 246, 0.22)',
+        text: '#8B5CF6',
+        dot: '#8B5CF6',
+      };
+    }
+    return {
+      bg: colors.surface,
+      border: colors.border,
+      text: colors.mutedForeground,
+      dot: colors.mutedForeground,
+    };
+  };
+
+  const styleConfig = getStyle(status);
+
+  return (
+    <View style={[styles.chip, { backgroundColor: styleConfig.bg, borderColor: styleConfig.border }]}>
+      <View style={[styles.dot, { backgroundColor: styleConfig.dot }]} />
+      <Text style={[styles.text, { color: styleConfig.text }]}>
+        {status || 'Unknown'}
+      </Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  dot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+  },
+  text: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+});
