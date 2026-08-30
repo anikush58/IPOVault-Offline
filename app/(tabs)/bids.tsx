@@ -1242,32 +1242,45 @@ export default function BidsScreen() {
           style={[
             styles.bulkFloatingBar,
             {
-              backgroundColor: colors.card,
+              backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
               borderColor: colors.border,
-              bottom: insets.bottom + 16,
+              bottom: Platform.OS === 'web' ? 80 : insets.bottom + 90,
             },
           ]}
         >
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.bulkSelectedCount, { color: colors.foreground }]}>
-              {bulkSelectedBidIds.size} Selected
-            </Text>
-            <Text style={[styles.bulkSelectedSub, { color: colors.mutedForeground }]}>
-              Mark allotment status in bulk
-            </Text>
+          {/* Header Row: Selection Counter & Quick Deselect */}
+          <View style={styles.bulkBarTopRow}>
+            <View style={[styles.bulkCountBadge, { backgroundColor: colors.primary + '18' }]}>
+              <View style={[styles.bulkCountDot, { backgroundColor: colors.primary }]} />
+              <Text style={[styles.bulkCountText, { color: colors.foreground }]}>
+                {bulkSelectedBidIds.size} Selected
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => setBulkSelectedBidIds(new Set())}
+              hitSlop={8}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.bulkClearText, { color: colors.mutedForeground }]}>
+                Deselect All
+              </Text>
+            </TouchableOpacity>
           </View>
 
-          <View style={{ flexDirection: 'row', gap: 6 }}>
+          {/* Action Row: 3 Equal-Width Status Buttons */}
+          <View style={styles.bulkBarActionsRow}>
             <TouchableOpacity
               onPress={() => handleExecuteBulkStatusUpdate('Allotted')}
               disabled={bulkSelectedBidIds.size === 0 || bulkActionLoading}
               style={[
-                styles.bulkBarBtnAllotted,
-                { opacity: bulkSelectedBidIds.size === 0 || bulkActionLoading ? 0.45 : 1 },
+                styles.bulkBarBtn,
+                { backgroundColor: '#10B981' },
+                (bulkSelectedBidIds.size === 0 || bulkActionLoading) && { opacity: 0.4 },
               ]}
               activeOpacity={0.85}
             >
-              <Feather name="check-circle" size={13} color="#FFFFFF" style={{ marginRight: 3 }} />
+              <Feather name="check" size={14} color="#FFFFFF" />
               <Text style={styles.bulkBarBtnText}>Allotted</Text>
             </TouchableOpacity>
 
@@ -1275,12 +1288,13 @@ export default function BidsScreen() {
               onPress={() => handleExecuteBulkStatusUpdate('Not Allotted')}
               disabled={bulkSelectedBidIds.size === 0 || bulkActionLoading}
               style={[
-                styles.bulkBarBtnNotAllotted,
-                { opacity: bulkSelectedBidIds.size === 0 || bulkActionLoading ? 0.45 : 1 },
+                styles.bulkBarBtn,
+                { backgroundColor: '#EF4444' },
+                (bulkSelectedBidIds.size === 0 || bulkActionLoading) && { opacity: 0.4 },
               ]}
               activeOpacity={0.85}
             >
-              <Feather name="x-circle" size={13} color="#FFFFFF" style={{ marginRight: 3 }} />
+              <Feather name="x" size={14} color="#FFFFFF" />
               <Text style={styles.bulkBarBtnText}>Not Allotted</Text>
             </TouchableOpacity>
 
@@ -1288,12 +1302,13 @@ export default function BidsScreen() {
               onPress={() => handleExecuteBulkStatusUpdate('Cancelled')}
               disabled={bulkSelectedBidIds.size === 0 || bulkActionLoading}
               style={[
-                styles.bulkBarBtnCancelled,
-                { opacity: bulkSelectedBidIds.size === 0 || bulkActionLoading ? 0.45 : 1 },
+                styles.bulkBarBtn,
+                { backgroundColor: '#6B7280' },
+                (bulkSelectedBidIds.size === 0 || bulkActionLoading) && { opacity: 0.4 },
               ]}
               activeOpacity={0.85}
             >
-              <Feather name="slash" size={13} color="#FFFFFF" style={{ marginRight: 3 }} />
+              <Feather name="slash" size={13} color="#FFFFFF" />
               <Text style={styles.bulkBarBtnText}>Cancelled</Text>
             </TouchableOpacity>
           </View>
@@ -1330,7 +1345,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
     color: '#D4A017',
   },
-  headerTitle: { fontSize: 28, fontFamily: 'PlayfairDisplay_700Bold', letterSpacing: -0.6, lineHeight: 32 },
+  headerTitle: { fontSize: 30, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.8, lineHeight: 34 },
   headerAddBtn: {
     width: 40,
     height: 40,
@@ -1741,57 +1756,61 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 16,
     right: 16,
-    borderRadius: 20,
+    borderRadius: 22,
     borderWidth: 1,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
+    gap: 12,
+    elevation: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    zIndex: 9990,
+  },
+  bulkBarTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
+    justifyContent: 'space-between',
   },
-  bulkSelectedCount: {
-    fontSize: 15,
+  bulkCountBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 6,
+  },
+  bulkCountDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  bulkCountText: {
+    fontSize: 12.5,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
-  bulkSelectedSub: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    marginTop: 1,
+  bulkClearText: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_500Medium',
   },
-  bulkBarBtnAllotted: {
-    backgroundColor: '#10B981',
-    borderRadius: 12,
-    paddingHorizontal: 9,
-    paddingVertical: 8,
+  bulkBarActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  bulkBarBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  bulkBarBtnNotAllotted: {
-    backgroundColor: '#EF4444',
-    borderRadius: 12,
-    paddingHorizontal: 9,
-    paddingVertical: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bulkBarBtnCancelled: {
-    backgroundColor: '#6B7280',
-    borderRadius: 12,
-    paddingHorizontal: 9,
-    paddingVertical: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    gap: 5,
   },
   bulkBarBtnText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 12.5,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
 
