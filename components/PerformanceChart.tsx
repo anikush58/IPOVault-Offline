@@ -4,6 +4,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -859,56 +860,75 @@ export function PerformanceChart({ applications }: Props) {
         </>
       )}
 
-      {/* Top-Right Header Period Dropdown Sheet */}
-      <Modal visible={showHeaderDropdown} transparent animationType="slide" onRequestClose={() => setShowHeaderDropdown(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setShowHeaderDropdown(false)}>
-          <Pressable style={[styles.modalSheet, { backgroundColor: colors.background, borderTopColor: colors.border, paddingBottom: Math.max(Math.round(insets.bottom * 0.5) + 12, 16) }]}>
-            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-            <View style={[styles.modalTitleRow, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.modalTitleText, { color: colors.foreground }]}>
+      {/* Top-Right Header Period Dropdown Centered Modal */}
+      <Modal visible={showHeaderDropdown} transparent animationType="fade" onRequestClose={() => setShowHeaderDropdown(false)}>
+        <Pressable style={styles.centerModalOverlay} onPress={() => setShowHeaderDropdown(false)}>
+          <Pressable style={[styles.pickerModalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => {}}>
+            <View style={[styles.pickerModalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
                 Select {tabPeriod === 'weekly' ? 'Week Range' : tabPeriod === 'monthly' ? 'Month / Year' : 'Year'}
               </Text>
+              <TouchableOpacity onPress={() => setShowHeaderDropdown(false)} style={styles.closeBtn} hitSlop={8}>
+                <Feather name="x" size={18} color={colors.mutedForeground} />
+              </TouchableOpacity>
             </View>
 
-            {dropdownOptions.map((opt, idx) => {
-              const isParticularDate = opt.type === 'date';
-              const isSelected = isParticularDate
-                ? filterMode === 'custom_date'
-                : filterMode !== 'custom_date' && (selectedLabel ? selectedLabel === opt.label : idx === 0);
+            <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 380 }}>
+              {dropdownOptions.map((opt, idx) => {
+                const isParticularDate = opt.type === 'date';
+                const isSelected = isParticularDate
+                  ? filterMode === 'custom_date'
+                  : filterMode !== 'custom_date' && (selectedLabel ? selectedLabel === opt.label : idx === 0);
 
-              return (
-                <TouchableOpacity
-                  key={opt.id}
-                  onPress={() => {
-                    setShowHeaderDropdown(false);
-                    if (isParticularDate) {
-                      setTimeout(() => setShowDatePicker(true), 200);
-                    } else {
-                      setFilterMode(tabPeriod);
-                      setSelectedRefDate(opt.refDate);
-                      setSelectedLabel(opt.label);
-                      setSelectedIdx(null);
-                    }
-                  }}
-                  style={[styles.modalOption, { borderBottomColor: colors.border, backgroundColor: isSelected ? colors.surface : 'transparent' }]}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-                    <View style={[styles.modalOptionIcon, { backgroundColor: isSelected ? colors.primary + '18' : colors.surface }]}>
-                      <Feather name={isParticularDate ? 'clock' : tabPeriod === 'weekly' ? 'calendar' : tabPeriod === 'monthly' ? 'bar-chart-2' : 'trending-up'} size={16} color={isSelected ? colors.primary : colors.mutedForeground} />
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    onPress={() => {
+                      setShowHeaderDropdown(false);
+                      if (isParticularDate) {
+                        setTimeout(() => setShowDatePicker(true), 200);
+                      } else {
+                        setFilterMode(tabPeriod);
+                        setSelectedRefDate(opt.refDate);
+                        setSelectedLabel(opt.label);
+                        setSelectedIdx(null);
+                      }
+                    }}
+                    style={[
+                      styles.modalOption,
+                      {
+                        borderBottomColor: colors.border,
+                        backgroundColor: isSelected ? (isDark ? '#27272A' : '#F1F5F9') : 'transparent',
+                      },
+                    ]}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                      <View
+                        style={[
+                          styles.modalOptionIcon,
+                          { backgroundColor: isSelected ? (isDark ? '#374151' : '#E2E8F0') : colors.surface },
+                        ]}
+                      >
+                        <Feather
+                          name={isParticularDate ? 'clock' : tabPeriod === 'weekly' ? 'calendar' : tabPeriod === 'monthly' ? 'bar-chart-2' : 'trending-up'}
+                          size={16}
+                          color={colors.foreground}
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.modalOptionTitle, { color: colors.foreground }]}>
+                          {opt.label}
+                        </Text>
+                        <Text style={[styles.modalOptionSub, { color: colors.mutedForeground }]}>
+                          {opt.sub}
+                        </Text>
+                      </View>
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.modalOptionTitle, { color: isSelected ? colors.primary : colors.foreground }]}>
-                        {opt.label}
-                      </Text>
-                      <Text style={[styles.modalOptionSub, { color: colors.mutedForeground }]}>
-                        {opt.sub}
-                      </Text>
-                    </View>
-                  </View>
-                  {isSelected && <Feather name="check" size={18} color={colors.primary} />}
-                </TouchableOpacity>
-              );
-            })}
+                    {isSelected && <Feather name="check" size={18} color={colors.foreground} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1129,36 +1149,44 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
   emptySub: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', textAlign: 'center', lineHeight: 18 },
 
-  // Dropdown Modal
-  modalOverlay: {
+  // Centered Dropdown Modal
+  centerModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  modalSheet: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderTopWidth: 1,
-    paddingHorizontal: 0,
-    paddingTop: 12,
+  pickerModalCard: {
+    width: '92%',
+    maxWidth: 400,
+    borderRadius: 22,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  modalHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 16,
-  },
-  modalTitleRow: {
-    paddingHorizontal: 20,
-    paddingBottom: 14,
+  pickerModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    marginBottom: 8,
   },
-  modalTitleText: {
-    fontSize: 17,
+  sheetTitle: {
+    fontSize: 16,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: -0.3,
+  },
+  closeBtn: {
+    minWidth: 36,
+    minHeight: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalOption: {
     flexDirection: 'row',
