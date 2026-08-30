@@ -391,12 +391,23 @@ export default function DashboardScreen() {
                       </Text>
                     </View>
 
-                    {/* GMP Label in line with APPLY NOW button */}
-                    <View style={styles.openIpoGmpRow}>
-                      <Text style={[styles.openIpoGmpText, { color: '#10B981' }]} numberOfLines={1}>
-                        GMP, {(ipo as any).gmp_percent ? `${(ipo as any).gmp_percent}%` : '16%'} ({(ipo as any).gmp_value ?? '234'})
-                      </Text>
-                    </View>
+                    {/* GMP Label & Value stacked in line with APPLY NOW button */}
+                    {(() => {
+                      const pct = (ipo as any).gmp_percent ?? 16;
+                      const val = (ipo as any).gmp_value ?? 234;
+                      const isPos = pct >= 0;
+
+                      return (
+                        <View style={styles.openIpoGmpStack}>
+                          <Text style={[styles.openIpoGmpLabel, { color: colors.mutedForeground }]}>
+                            GMP
+                          </Text>
+                          <Text style={[styles.openIpoGmpValue, { color: isPos ? '#10B981' : colors.destructive }]} numberOfLines={1}>
+                            {pct}% ({val})
+                          </Text>
+                        </View>
+                      );
+                    })()}
                   </View>
                 </View>
               </TouchableOpacity>
@@ -681,13 +692,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'GoogleSansFlex_600SemiBold',
   },
-  openIpoGmpRow: {
-    marginTop: 10,
+  openIpoGmpStack: {
+    alignItems: 'flex-end',
+    marginTop: 6,
   },
-  openIpoGmpText: {
-    fontSize: 11,
+  openIpoGmpLabel: {
+    fontSize: 9,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  openIpoGmpValue: {
+    fontSize: 12,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: -0.2,
+    marginTop: 1,
   },
   openIpoTitle: {
     fontSize: 15,
