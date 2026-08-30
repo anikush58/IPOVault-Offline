@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  Image,
   Platform,
   RefreshControl,
   ScrollView,
@@ -29,91 +30,18 @@ import {
   calculateAppTaxAndNet,
 } from '@/utils/calculations';
 
-const PillarGraphics = ({ isDark, side }: { isDark: boolean; side: 'left' | 'right' }) => {
+const graphicLeft = require('@/assets/images/dashboard-graphic-left.png');
+const graphicRight = require('@/assets/images/dashboard-graphic-right.png');
+
+const HeroCustomGraphics = ({ side }: { side: 'left' | 'right' }) => {
   const isLeft = side === 'left';
-
-  const frontGrad = isDark ? ['#475569', '#334155', '#1E293B'] : ['#F8FAFC', '#E2E8F0', '#CBD5E1'];
-  const sideGrad = isDark ? ['#334155', '#1E293B', '#0F172A'] : ['#CBD5E1', '#94A3B8', '#64748B'];
-  const topGrad = isDark ? ['#94A3B8', '#64748B'] : ['#FFFFFF', '#E2E8F0'];
-  const highlightColor = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.7)';
-
-  const RenderPillar = ({ height, width = 18 }: { height: number; width?: number }) => (
-    <View style={{ width, alignItems: 'center' }}>
-      {/* 3D Pillar Unit */}
-      <View
-        style={{
-          width: width,
-          height: height,
-          justifyContent: 'flex-end',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.15,
-          shadowRadius: 6,
-          elevation: 4,
-        }}
-      >
-        {/* 3D Top Cap */}
-        <LinearGradient
-          colors={topGrad as [string, string]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{
-            height: 8,
-            width: '100%',
-            borderTopLeftRadius: 3,
-            borderTopRightRadius: 3,
-            transform: [{ skewX: '-24deg' }],
-            marginBottom: -2,
-            zIndex: 2,
-          }}
-        />
-        {/* 3D Pillar Body */}
-        <View style={{ flexDirection: 'row', height: height - 6, width: '100%', overflow: 'hidden', borderBottomLeftRadius: 2, borderBottomRightRadius: 2 }}>
-          {/* Specular Left Highlight Edge */}
-          <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 1.5, backgroundColor: highlightColor, zIndex: 3 }} />
-          {/* Front Face */}
-          <LinearGradient
-            colors={frontGrad as [string, string, string]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={{ flex: 0.65 }}
-          />
-          {/* Side Face (Darker Shading) */}
-          <LinearGradient
-            colors={sideGrad as [string, string, string]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{ flex: 0.35 }}
-          />
-        </View>
-      </View>
-      {/* Contact Ground Shadow */}
-      <View
-        style={{
-          width: width + 4,
-          height: 5,
-          borderRadius: 4,
-          backgroundColor: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.12)',
-          marginTop: 2,
-          transform: [{ scaleY: 0.5 }],
-        }}
-      />
-    </View>
-  );
-
   return (
-    <View style={[styles.pillarContainer, isLeft ? { left: 14 } : { right: 14 }]}>
-      {isLeft ? (
-        <>
-          <RenderPillar height={48} width={15} />
-          <RenderPillar height={78} width={18} />
-        </>
-      ) : (
-        <>
-          <RenderPillar height={78} width={18} />
-          <RenderPillar height={48} width={15} />
-        </>
-      )}
+    <View style={[styles.heroGraphicWrap, isLeft ? { left: 12 } : { right: 12 }]}>
+      <Image
+        source={isLeft ? graphicLeft : graphicRight}
+        style={styles.heroGraphicImage}
+        resizeMode="contain"
+      />
     </View>
   );
 };
@@ -310,8 +238,8 @@ export default function DashboardScreen() {
             ]}
           />
 
-          <PillarGraphics isDark={isDark} side="left" />
-          <PillarGraphics isDark={isDark} side="right" />
+          <HeroCustomGraphics side="left" />
+          <HeroCustomGraphics side="right" />
 
           <View style={styles.heroContent}>
             <Text style={[styles.heroEyebrow, { color: colors.mutedForeground }]}>
@@ -512,13 +440,18 @@ const styles = StyleSheet.create({
     letterSpacing: -0.8,
   },
 
-  // 3D Pillar Graphics
-  pillarContainer: {
+  // Custom Hero Image Graphics
+  heroGraphicWrap: {
     position: 'absolute',
-    bottom: 24,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
+    bottom: 14,
+    width: 76,
+    height: 96,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  heroGraphicImage: {
+    width: '100%',
+    height: '100%',
   },
 
   // Portfolio Details Card
