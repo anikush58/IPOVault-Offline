@@ -304,5 +304,5 @@ const modal = StyleSheet.create({
   },
   rowName: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: -0.1 },
   rowSub: { fontSize: 11, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 2 },
-  rowProfit: { fontSize: 13.5, fontFamily: 'SpaceMono_700Bold', letterSpacing: -0.2 },
+  rowProfit: { fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.2 },
 });

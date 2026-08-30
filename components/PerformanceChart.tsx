@@ -843,7 +843,7 @@ export function PerformanceChart({ applications }: Props) {
                   <Text style={[styles.cardValue, { color: colors.foreground }]} numberOfLines={1}>
                     {bestBar ? bestBar.label : '—'}
                   </Text>
-                  <Text style={[styles.cardSub, { color: colors.positive, fontFamily: 'SpaceMono_700Bold' }]}>
+                  <Text style={[styles.cardSub, { color: colors.positive, fontFamily: 'GoogleSansFlex_700Bold' }]}>
                     {bestBar ? (bestBar.value >= 0 ? '+' : '') + formatCurrency(bestBar.value, false) : '—'}
                   </Text>
                 </View>
@@ -854,7 +854,7 @@ export function PerformanceChart({ applications }: Props) {
                   <Text style={[styles.cardValue, { color: colors.foreground }]} numberOfLines={1}>
                     {worstBar ? worstBar.label : '—'}
                   </Text>
-                  <Text style={[styles.cardSub, { color: worstBar && worstBar.value >= 0 ? colors.positive : colors.negative, fontFamily: 'SpaceMono_700Bold' }]}>
+                  <Text style={[styles.cardSub, { color: worstBar && worstBar.value >= 0 ? colors.positive : colors.negative, fontFamily: 'GoogleSansFlex_700Bold' }]}>
                     {worstBar ? (worstBar.value >= 0 ? '+' : '') + formatCurrency(worstBar.value, false) : '—'}
                   </Text>
                 </View>
