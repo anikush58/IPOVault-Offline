@@ -11,15 +11,13 @@ import {
   View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDB } from '@/context/DBContext';
 import { IconButton } from '@/components/ui/IconButton';
-import { useSmartIPODatabase } from '@/hooks/useSmartIPODatabase';
-import { KPICard } from '@/components/KPICard';
 import { PerformanceChart } from '@/components/PerformanceChart';
 import { Leaderboard } from '@/components/Leaderboard';
 import { FilterSheet } from '@/components/FilterSheet';
@@ -33,17 +31,18 @@ export default function DashboardScreen() {
   const colors = useColors();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const router = useRouter();
   const { applications, ipos, isLoading, refresh } = useDB();
   const insets = useSafeAreaInsets();
 
-  // ── filter state ───────────────────────────────────────────────────────────
+  // ── Filter state ───────────────────────────────────────────────────────────
   const [filterUserIds, setFilterUserIds] = useState<string[]>([]);
   const [filterBrokers, setFilterBrokers] = useState<string[]>([]);
   const [filterYear, setFilterYear] = useState<string | null>(new Date().getFullYear().toString());
   const [filterIpoNames, setFilterIpoNames] = useState<string[]>([]);
   const [showFilter, setShowFilter] = useState(false);
 
-  // ── search state ───────────────────────────────────────────────────────────
+  // ── Search state ───────────────────────────────────────────────────────────
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const searchAnim = useRef(new Animated.Value(0)).current;
@@ -62,7 +61,7 @@ export default function DashboardScreen() {
     }
   };
 
-  // ── base filter (user / broker / year / IPO) ──────────────────────────────
+  // ── Base filter (user / broker / year / IPO) ──────────────────────────────
   const baseFilteredApps = applications.filter((a) => {
     if (filterUserIds.length > 0 && !filterUserIds.includes(a.user_id)) return false;
     if (filterBrokers.length > 0 && !filterBrokers.includes(a.user_broker ?? '')) return false;
@@ -99,13 +98,11 @@ export default function DashboardScreen() {
     }
   }
 
+  const netPortfolioValue = totalInvested + totalNetProfit;
   const profitPct = totalInvested > 0 ? (totalNetProfit / totalInvested) * 100 : null;
-  const profitPctLabel = profitPct != null ? `${profitPct >= 0 ? '+' : ''}${profitPct.toFixed(1)}%` : '—';
+  const profitPctLabel = profitPct != null ? `${profitPct >= 0 ? '+' : ''}${profitPct.toFixed(2)}%` : '—';
 
-  const holdingProfitPct = holdingInvested > 0 ? (totalHoldingNet / holdingInvested) * 100 : null;
-  const holdingProfitPctLabel = holdingProfitPct != null ? `${holdingProfitPct >= 0 ? '+' : ''}${holdingProfitPct.toFixed(1)}%` : '—';
-
-  // ── display helpers ────────────────────────────────────────────────────────
+  // ── Display helpers ────────────────────────────────────────────────────────
   const hasFilter = filterUserIds.length > 0 || filterBrokers.length > 0 || filterIpoNames.length > 0;
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const filterUserNames = filterUserIds
@@ -122,31 +119,40 @@ export default function DashboardScreen() {
     outputRange: [0, 0, 1],
   });
 
+  const quickActions = [
+    { label: 'Apply IPO', icon: 'plus-circle', route: '/bids' },
+    { label: 'Holdings', icon: 'briefcase', route: '/applications' },
+    { label: 'Users', icon: 'users', route: '/users' },
+    { label: 'Banks', icon: 'dollar-sign', route: '/banks' },
+  ];
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      {/* ── Header ── */}
-      <View
-        style={[
-          styles.header,
-          { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background, borderBottomColor: colors.border },
-        ]}
-      >
-        <View style={{ flex: 1, justifyContent: 'center' }}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>IPO PORTFOLIO</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Dashboard</Text>
-        </View>
+      {/* ── Top Header Actions Bar ── */}
+      <View style={[styles.topActionHeader, { paddingTop: topPad + 8 }]}>
+        <TouchableOpacity
+          onPress={() => router.push('/users')}
+          style={[styles.headerIconCircle, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          activeOpacity={0.8}
+        >
+          <Feather name="user" size={18} color={colors.foreground} />
+        </TouchableOpacity>
 
-        {/* Actions (Filter) */}
-        <View style={styles.headerActions}>
-          <IconButton
-            name="sliders"
-            variant={hasFilter ? 'primary' : 'surface'}
-            size="md"
-            onPress={() => setShowFilter(true)}
-          />
-        </View>
+        <TouchableOpacity
+          onPress={() => setShowFilter(true)}
+          style={[
+            styles.headerIconCircle,
+            {
+              backgroundColor: hasFilter ? colors.primary + '20' : colors.surface,
+              borderColor: hasFilter ? colors.primary : colors.border,
+            },
+          ]}
+          activeOpacity={0.8}
+        >
+          <Feather name="sliders" size={18} color={hasFilter ? colors.primary : colors.foreground} />
+        </TouchableOpacity>
       </View>
 
       {/* ── Collapsible search bar ── */}
@@ -187,7 +193,7 @@ export default function DashboardScreen() {
         refreshControl={
           <RefreshControl refreshing={isLoading} onRefresh={refresh} tintColor={colors.primary} />
         }
-        contentContainerStyle={{ paddingBottom: insets.bottom + 90 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
       >
         {/* Active filter chip */}
         {hasFilter && (
@@ -208,57 +214,179 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* Dynamic Good Evening Banner */}
-        <View style={styles.greetingBanner}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.greetingTitle, { color: colors.foreground }]}>
-              {new Date().getHours() < 12 ? 'Good Morning 👋' : new Date().getHours() < 17 ? 'Good Afternoon 🌤️' : 'Good Evening 🌙'}
-            </Text>
-            <Text style={[styles.greetingSub, { color: colors.mutedForeground }]}>
-              Portfolio Overview
+        {/* ── Hero Wealth Display (Arch Reference Style) ── */}
+        <View style={styles.heroWealthContainer}>
+          <Text style={[styles.heroEyebrow, { color: colors.mutedForeground }]}>
+            PORTFOLIO VALUE
+          </Text>
+          <Text style={[styles.heroAmountText, { color: colors.foreground }]}>
+            {formatCurrency(netPortfolioValue > 0 ? netPortfolioValue : totalInvested)}
+          </Text>
+
+          {/* 1D Return Pill */}
+          <View
+            style={[
+              styles.returnPill,
+              {
+                backgroundColor: totalNetProfit >= 0 ? colors.positiveBg : colors.negativeBg,
+                borderColor: totalNetProfit >= 0 ? colors.positive + '30' : colors.negative + '30',
+              },
+            ]}
+          >
+            <Feather
+              name={totalNetProfit >= 0 ? 'trending-up' : 'trending-down'}
+              size={13}
+              color={totalNetProfit >= 0 ? colors.positive : colors.negative}
+              style={{ marginRight: 4 }}
+            />
+            <Text
+              style={[
+                styles.returnPillText,
+                { color: totalNetProfit >= 0 ? colors.positive : colors.negative },
+              ]}
+            >
+              {totalNetProfit >= 0 ? '+' : ''}{formatCurrency(totalNetProfit)} ({profitPctLabel}) Total Return
             </Text>
           </View>
         </View>
 
-        {/* KPI 2×2 grid */}
-        <View style={styles.kpiGrid}>
-          <View style={styles.kpiRow}>
-            <KPICard
-              label="TOTAL P/L"
-              value={formatCurrency(totalPL)}
-              isPositive={totalPL > 0}
-              isNegative={totalPL < 0}
-              subtitle="sold & holding P/L"
-            />
-            <KPICard
-              label="NET PROFIT"
-              value={formatCurrency(totalNetProfit)}
-              isPositive={totalNetProfit > 0}
-              isNegative={totalNetProfit < 0}
-              subtitle={profitPctLabel !== '—' ? `${profitPctLabel} net return` : 'after tax & cuts'}
-            />
-          </View>
-          <View style={styles.kpiRow}>
-            <KPICard
-              label="HOLDING PROFIT"
-              value={formatCurrency(totalHoldingNet)}
-              isPositive={totalHoldingNet > 0}
-              isNegative={totalHoldingNet < 0}
-              subtitle={holdingProfitPctLabel !== '—' ? `${holdingProfitPctLabel} return` : 'unrealized net'}
-            />
-            <KPICard
-              label="TAX / CHARGES"
-              value={formatCurrency(totalTax + totalUserCut)}
-              subtitle={`Tax: ${formatCurrency(totalTax)} · Cut: ${formatCurrency(totalUserCut)}`}
-            />
+        {/* ── Quick Actions Grid (Reference Circle Buttons) ── */}
+        <View style={styles.quickActionsSection}>
+          <Text style={[styles.sectionSerifTitle, { color: colors.foreground, marginBottom: 14 }]}>
+            Quick actions
+          </Text>
+          <View style={styles.quickActionsGrid}>
+            {quickActions.map((qa) => (
+              <TouchableOpacity
+                key={qa.label}
+                onPress={() => router.push(qa.route as any)}
+                activeOpacity={0.8}
+                style={styles.quickActionItem}
+              >
+                <View
+                  style={[
+                    styles.quickActionCircle,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <Feather name={qa.icon as any} size={20} color={colors.foreground} />
+                </View>
+                <Text style={[styles.quickActionLabel, { color: colors.foreground }]}>
+                  {qa.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
-        {/* Performance chart */}
-        <PerformanceChart applications={baseFilteredApps} />
+        {/* ── Insights Promo Card (Matching Reference Card) ── */}
+        <View style={styles.promoWrap}>
+          <View
+            style={[
+              styles.promoCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <View style={{ flex: 1, paddingRight: 12 }}>
+              <Text style={[styles.promoTitle, { color: colors.foreground }]}>
+                Optimize IPO Allocations ✨
+              </Text>
+              <Text style={[styles.promoSub, { color: colors.mutedForeground }]}>
+                Track ASBA balances across user accounts and maximize listing day returns.
+              </Text>
+              <TouchableOpacity
+                onPress={() => router.push('/allotment-checker')}
+                activeOpacity={0.85}
+                style={[styles.promoBtn, { backgroundColor: isDark ? '#FFFFFF' : '#111827' }]}
+              >
+                <Text style={[styles.promoBtnText, { color: isDark ? '#111827' : '#FFFFFF' }]}>
+                  ALLOTMENT CHECKER &gt;
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-        {/* Leaderboard */}
-        <Leaderboard applications={baseFilteredApps} searchQuery={searchQuery} />
+            {/* Right Graphic Badge */}
+            <View style={[styles.promoGraphic, { backgroundColor: colors.primary + '18' }]}>
+              <Feather name="award" size={32} color={colors.primary} />
+            </View>
+          </View>
+        </View>
+
+        {/* ── Analyse Your Portfolio Gauge Cards ── */}
+        <View style={styles.sectionWrap}>
+          <Text style={[styles.sectionSerifTitle, { color: colors.foreground }]}>
+            Portfolio Insights
+          </Text>
+          <Text style={[styles.sectionSerifSub, { color: colors.mutedForeground }]}>
+            Key signals from your investments
+          </Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 12, paddingVertical: 12 }}
+          >
+            {/* Metric Card 1 */}
+            <View style={[styles.insightGaugeCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.gaugeLabel, { color: colors.mutedForeground }]}>INVESTED CAPITAL</Text>
+              <Text style={[styles.gaugeVal, { color: colors.foreground }]}>{formatCurrency(totalInvested)}</Text>
+              <View style={[styles.gaugeBar, { backgroundColor: colors.surface }]}>
+                <View style={[styles.gaugeFill, { width: '80%', backgroundColor: colors.primary }]} />
+              </View>
+              <TouchableOpacity onPress={() => router.push('/applications')} activeOpacity={0.7} style={styles.gaugeLink}>
+                <Text style={[styles.gaugeLinkText, { color: colors.primary }]}>VIEW HOLDINGS &gt;</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Metric Card 2 */}
+            <View style={[styles.insightGaugeCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.gaugeLabel, { color: colors.mutedForeground }]}>UNREALIZED P/L</Text>
+              <Text style={[styles.gaugeVal, { color: totalHoldingNet >= 0 ? colors.positive : colors.negative }]}>
+                {formatCurrency(totalHoldingNet)}
+              </Text>
+              <View style={[styles.gaugeBar, { backgroundColor: colors.surface }]}>
+                <View style={[styles.gaugeFill, { width: '60%', backgroundColor: colors.positive }]} />
+              </View>
+              <TouchableOpacity onPress={() => router.push('/applications')} activeOpacity={0.7} style={styles.gaugeLink}>
+                <Text style={[styles.gaugeLinkText, { color: colors.primary }]}>DETAILS &gt;</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Metric Card 3 */}
+            <View style={[styles.insightGaugeCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.gaugeLabel, { color: colors.mutedForeground }]}>TAX & CHARGES</Text>
+              <Text style={[styles.gaugeVal, { color: colors.foreground }]}>{formatCurrency(totalTax + totalUserCut)}</Text>
+              <View style={[styles.gaugeBar, { backgroundColor: colors.surface }]}>
+                <View style={[styles.gaugeFill, { width: '35%', backgroundColor: colors.negative }]} />
+              </View>
+              <TouchableOpacity onPress={() => setShowFilter(true)} activeOpacity={0.7} style={styles.gaugeLink}>
+                <Text style={[styles.gaugeLinkText, { color: colors.primary }]}>BREAKDOWN &gt;</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </View>
+
+        {/* ── Performance Chart ── */}
+        <View style={styles.sectionWrap}>
+          <Text style={[styles.sectionSerifTitle, { color: colors.foreground, marginBottom: 12 }]}>
+            Portfolio Growth
+          </Text>
+          <PerformanceChart applications={baseFilteredApps} />
+        </View>
+
+        {/* ── Leaderboard ── */}
+        <View style={styles.sectionWrap}>
+          <Text style={[styles.sectionSerifTitle, { color: colors.foreground, marginBottom: 12 }]}>
+            Top Performers
+          </Text>
+          <Leaderboard applications={baseFilteredApps} searchQuery={searchQuery} />
+        </View>
       </ScrollView>
 
       <FilterSheet
@@ -282,30 +410,17 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
-  header: {
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    overflow: 'hidden',
+  topActionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 8,
   },
-  headerGlow: { position: 'absolute', right: 0, top: 0, width: 200, height: 130 },
-  headerEyebrow: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    marginBottom: 2,
-    color: '#D4A017',
-  },
-  headerTitle: { fontSize: 30, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.8, lineHeight: 34 },
-
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  headerIconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -333,20 +448,12 @@ const styles = StyleSheet.create({
     padding: 0,
   },
 
-  sectionEyebrow: {
-    fontSize: 10,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 1.1,
-    textTransform: 'uppercase',
-    marginBottom: 8,
-  },
-
   filterBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     marginHorizontal: 16,
-    marginTop: 14,
+    marginTop: 10,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 9,
@@ -354,70 +461,165 @@ const styles = StyleSheet.create({
   },
   filterBarText: { flex: 1, fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold' },
 
-  kpiGrid: { paddingHorizontal: 16, paddingTop: 16, gap: 10 },
-  kpiRow: { flexDirection: 'row', gap: 10 },
-
-  greetingBanner: {
-    flexDirection: 'row',
+  // Hero Arch Section
+  heroWealthContainer: {
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    justifyContent: 'center',
     paddingTop: 16,
-    marginBottom: 4,
+    paddingBottom: 24,
   },
-  greetingTitle: {
-    fontSize: 18,
+  heroEyebrow: {
+    fontSize: 11,
     fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.3,
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    marginBottom: 6,
   },
-  greetingSub: {
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    marginTop: 2,
+  heroAmountText: {
+    fontSize: 38,
+    fontFamily: 'PlayfairDisplay_700Bold',
+    letterSpacing: -1,
+    marginBottom: 10,
   },
-  syncBadge: {
+  returnPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 20,
     borderWidth: 1,
   },
-  syncDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  syncText: {
-    fontSize: 11,
+  returnPillText: {
+    fontSize: 12,
     fontFamily: 'GoogleSansFlex_600SemiBold',
   },
 
-  snapshotWrap: {
-    marginHorizontal: 16,
-    marginTop: 16,
+  // Quick Actions Section
+  quickActionsSection: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
   },
-  snapshotGrid: {
-    flexDirection: 'row',
-    gap: 10,
+  sectionSerifTitle: {
+    fontSize: 22,
+    fontFamily: 'PlayfairDisplay_700Bold',
+    letterSpacing: -0.3,
   },
-  snapshotItem: {
-    flex: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-    justifyContent: 'center',
-    minHeight: 64,
-  },
-  snapshotVal: {
-    fontSize: 14,
-    fontFamily: 'GoogleSansFlex_700Bold',
-  },
-  snapshotSub: {
-    fontSize: 11,
+  sectionSerifSub: {
+    fontSize: 13,
     fontFamily: 'GoogleSansFlex_400Regular',
     marginTop: 2,
+    marginBottom: 4,
+  },
+  quickActionsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  quickActionItem: {
+    alignItems: 'center',
+    width: '22%',
+  },
+  quickActionCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  quickActionLabel: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+    textAlign: 'center',
+  },
+
+  // Promo Wrap
+  promoWrap: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+  promoCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  promoTitle: {
+    fontSize: 16,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.2,
+    marginBottom: 6,
+  },
+  promoSub: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    lineHeight: 17,
+    marginBottom: 14,
+  },
+  promoBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+  },
+  promoBtnText: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.5,
+  },
+  promoGraphic: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Section Wrap
+  sectionWrap: {
+    paddingHorizontal: 20,
+    marginBottom: 24,
+  },
+
+  // Insight Gauge Cards
+  insightGaugeCard: {
+    width: 160,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 16,
+    justifyContent: 'space-between',
+  },
+  gaugeLabel: {
+    fontSize: 9.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.9,
+    marginBottom: 6,
+  },
+  gaugeVal: {
+    fontSize: 17,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
+    marginBottom: 10,
+  },
+  gaugeBar: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  gaugeFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  gaugeLink: {
+    marginTop: 4,
+  },
+  gaugeLinkText: {
+    fontSize: 10.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.5,
   },
 });

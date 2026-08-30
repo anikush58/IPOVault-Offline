@@ -1330,7 +1330,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
     color: '#D4A017',
   },
-  headerTitle: { fontSize: 30, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.8, lineHeight: 34 },
+  headerTitle: { fontSize: 28, fontFamily: 'PlayfairDisplay_700Bold', letterSpacing: -0.6, lineHeight: 32 },
   headerAddBtn: {
     width: 40,
     height: 40,
