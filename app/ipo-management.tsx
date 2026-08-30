@@ -1,9 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
-  FlatList,
-  Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,7 +9,6 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,20 +21,6 @@ import { formatCurrency } from '@/utils/formatters';
 import { SegmentedTabControl } from '@/components/ui/SegmentedTabControl';
 
 type TabSegment = 'active' | 'favorites' | 'archived';
-type DateField = 'openDate' | 'closeDate' | 'allotmentDate' | 'listingDate';
-
-function isoToDate(iso: string): Date {
-  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return new Date();
-  const [y, m, d] = iso.split('-').map(Number);
-  return new Date(y, m - 1, d);
-}
-
-function dateToISO(d: Date): string {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
 
 export default function IPOManagementScreen() {
   const colors = useColors();
@@ -54,50 +36,6 @@ export default function IPOManagementScreen() {
   const [activeSegment, setActiveSegment] = useState<TabSegment>('active');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Add / Edit Modal State
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [editingIPO, setEditingIPO] = useState<IPOListing | null>(null);
-
-  // Form State
-  const [formIpoName, setFormIpoName] = useState('');
-  const [formPrice, setFormPrice] = useState('');
-  const [formLotSize, setFormLotSize] = useState('');
-  const [formRegistrar, setFormRegistrar] = useState('');
-  const [formExchange, setFormExchange] = useState('');
-  const [formIssueType, setFormIssueType] = useState<'Mainboard' | 'SME'>('Mainboard');
-  const [formOpenDate, setFormOpenDate] = useState('');
-  const [formCloseDate, setFormCloseDate] = useState('');
-  const [formAllotmentDate, setFormAllotmentDate] = useState('');
-  const [formListingDate, setFormListingDate] = useState('');
-  const [formSaving, setFormSaving] = useState(false);
-
-  // Date picker state
-  const [pickerField, setPickerField] = useState<DateField | null>(null);
-  const [showPicker, setShowPicker] = useState(false);
-
-  const openDatePicker = (field: DateField) => {
-    setPickerField(field);
-    setShowPicker(true);
-  };
-
-  const handleDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
-    if (Platform.OS === 'android') setShowPicker(false);
-    if (selectedDate && pickerField) {
-      const iso = dateToISO(selectedDate);
-      if (pickerField === 'openDate') setFormOpenDate(iso);
-      else if (pickerField === 'closeDate') setFormCloseDate(iso);
-      else if (pickerField === 'allotmentDate') setFormAllotmentDate(iso);
-      else if (pickerField === 'listingDate') setFormListingDate(iso);
-    }
-  };
-
-  const getCurrentPickerValue = (): Date => {
-    if (pickerField === 'openDate') return isoToDate(formOpenDate);
-    if (pickerField === 'closeDate') return isoToDate(formCloseDate);
-    if (pickerField === 'allotmentDate') return isoToDate(formAllotmentDate);
-    if (pickerField === 'listingDate') return isoToDate(formListingDate);
-    return new Date();
-  };
 
   // Counts
   const activeCount = useMemo(() => ipos.filter((i) => i.archived === 0).length, [ipos]);
@@ -124,36 +62,14 @@ export default function IPOManagementScreen() {
     return list;
   }, [ipos, activeSegment, searchQuery]);
 
-  // Open Add Modal
-  const openAddModal = () => {
-    setEditingIPO(null);
-    setFormIpoName('');
-    setFormPrice('');
-    setFormLotSize('');
-    setFormRegistrar('');
-    setFormExchange('');
-    setFormIssueType('Mainboard');
-    setFormOpenDate(new Date().toISOString().slice(0, 10));
-    setFormCloseDate('');
-    setFormAllotmentDate('');
-    setFormListingDate('');
-    setShowAddModal(true);
+  // Navigate to Add IPO page
+  const openAddPage = () => {
+    router.push('/add-ipo');
   };
 
-  // Open Edit Modal
-  const openEditModal = (ipo: IPOListing) => {
-    setEditingIPO(ipo);
-    setFormIpoName(ipo.ipo_name);
-    setFormPrice(ipo.buy_price.toString());
-    setFormLotSize(ipo.quantity.toString());
-    setFormRegistrar(ipo.registrar || '');
-    setFormExchange(ipo.exchange || '');
-    setFormIssueType((ipo.issue_type as any) === 'SME' ? 'SME' : 'Mainboard');
-    setFormOpenDate(ipo.open_date || '');
-    setFormCloseDate(ipo.close_date || '');
-    setFormAllotmentDate(ipo.allotment_date || '');
-    setFormListingDate(ipo.listing_date || '');
-    setShowAddModal(true);
+  // Navigate to Edit IPO page
+  const openEditPage = (ipo: IPOListing) => {
+    router.push({ pathname: '/add-ipo', params: { ipoId: ipo.id } });
   };
 
   // Toggle Favorite
@@ -194,78 +110,6 @@ export default function IPOManagementScreen() {
     }
   };
 
-  // Save (Create or Update)
-  const handleSaveForm = async () => {
-    if (!formIpoName.trim()) {
-      showError('Required Field', 'Please enter IPO / Company Name.');
-      return;
-    }
-    const price = parseFloat(formPrice) || 0;
-    const qty = parseInt(formLotSize, 10) || 0;
-    if (price <= 0 || qty <= 0) {
-      showError('Invalid Values', 'Price and lot size must be greater than zero.');
-      return;
-    }
-
-    setFormSaving(true);
-    try {
-      if (editingIPO) {
-        // Update existing record
-        const now = new Date().toISOString();
-        await db.runAsync(
-          `UPDATE ipo_listings 
-           SET ipo_name = ?, buy_price = ?, quantity = ?, registrar = ?, exchange = ?, issue_type = ?, open_date = ?, close_date = ?, allotment_date = ?, listing_date = ?, updated_at = ? 
-           WHERE id = ?`,
-          [
-            formIpoName.trim(),
-            price,
-            qty,
-            formRegistrar.trim(),
-            formExchange.trim(),
-            formIssueType,
-            formOpenDate,
-            formCloseDate,
-            formAllotmentDate,
-            formListingDate,
-            now,
-            editingIPO.id,
-          ]
-        );
-        showSuccess('Saved', `${formIpoName} updated successfully.`);
-      } else {
-        // Create new record
-        const newId = `ipo_${Date.now()}`;
-        const now = new Date().toISOString();
-        await db.runAsync(
-          `INSERT INTO ipo_listings (id, ipo_name, buy_price, quantity, registrar, exchange, issue_type, open_date, close_date, allotment_date, listing_date, archived, is_favorite, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
-          [
-            newId,
-            formIpoName.trim(),
-            price,
-            qty,
-            formRegistrar.trim(),
-            formExchange.trim(),
-            formIssueType,
-            formOpenDate,
-            formCloseDate,
-            formAllotmentDate,
-            formListingDate,
-            now,
-            now,
-          ]
-        );
-        showSuccess('Created', `${formIpoName} added to IPO listings.`);
-      }
-      await refresh();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setShowAddModal(false);
-    } catch {
-      showError('Error', 'Failed to save IPO record.');
-    } finally {
-      setFormSaving(false);
-    }
-  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -280,7 +124,7 @@ export default function IPOManagementScreen() {
           name="plus"
           variant="surface"
           size="md"
-          onPress={openAddModal}
+          onPress={openAddPage}
         />
       </View>
 
@@ -373,7 +217,7 @@ export default function IPOManagementScreen() {
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
-                onPress={openAddModal}
+                onPress={openAddPage}
                 style={[styles.emptyActionBtnPrimary, { backgroundColor: colors.primary }]}
                 activeOpacity={0.85}
               >
@@ -472,7 +316,7 @@ export default function IPOManagementScreen() {
                 <View style={styles.cardActionsRow}>
                   {!isArchivedRow ? (
                     <>
-                      <TouchableOpacity onPress={() => openEditModal(ipo)} style={styles.actionBtnTan} activeOpacity={0.8}>
+                      <TouchableOpacity onPress={() => openEditPage(ipo)} style={styles.actionBtnTan} activeOpacity={0.8}>
                         <Feather name="edit-2" size={14} color="#D4A017" style={{ marginRight: 6 }} />
                         <Text style={styles.actionBtnTanText}>Edit</Text>
                       </TouchableOpacity>
@@ -501,220 +345,10 @@ export default function IPOManagementScreen() {
           })
         )}
       </ScrollView>
-
-      {/* ── Add / Edit IPO Modal Screen ── */}
-      <Modal visible={showAddModal} transparent animationType="slide" onRequestClose={() => setShowAddModal(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setShowAddModal(false)}>
-          <Pressable style={[styles.formModalSheet, { backgroundColor: colors.background, borderTopColor: colors.border }]} onPress={() => {}}>
-            {/* Modal Header */}
-            <View style={[styles.formModalHeader, { borderBottomColor: colors.border }]}>
-              <TouchableOpacity onPress={() => setShowAddModal(false)} style={styles.modalCloseCircle}>
-                <Feather name="x" size={18} color={colors.foreground} />
-              </TouchableOpacity>
-              <Text style={[styles.formModalTitle, { color: colors.foreground }]}>
-                {editingIPO ? 'Edit IPO' : 'Add IPO'}
-              </Text>
-              <TouchableOpacity onPress={handleSaveForm} disabled={formSaving} style={styles.formSavePill} activeOpacity={0.85}>
-                <Text style={styles.formSavePillText}>{formSaving ? 'Saving…' : 'Save'}</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView contentContainerStyle={{ padding: 20, gap: 14 }}>
-              {/* IPO / COMPANY NAME */}
-              <View>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>IPO / COMPANY NAME *</Text>
-                <TextInput
-                  value={formIpoName}
-                  onChangeText={setFormIpoName}
-                  placeholder="e.g. Advit Jewels"
-                  placeholderTextColor={colors.mutedForeground}
-                  style={[styles.inputField, { borderColor: colors.border, backgroundColor: colors.card, color: colors.foreground }]}
-                />
-              </View>
-
-              {!editingIPO && (
-                <TouchableOpacity style={styles.autoFillBtn} activeOpacity={0.8}>
-                  <Text style={styles.autoFillBtnText}>Auto Fill IPO Details</Text>
-                </TouchableOpacity>
-              )}
-
-              {/* CUT-OFF PRICE */}
-              <View>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>CUT-OFF PRICE (₹) *</Text>
-                <TextInput
-                  value={formPrice}
-                  onChangeText={setFormPrice}
-                  placeholder="e.g. 56"
-                  placeholderTextColor={colors.mutedForeground}
-                  keyboardType="numeric"
-                  style={[styles.inputField, { borderColor: colors.border, backgroundColor: colors.card, color: colors.foreground }]}
-                />
-              </View>
-
-              {/* LOT SIZE */}
-              <View>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>LOT SIZE (QTY) *</Text>
-                <TextInput
-                  value={formLotSize}
-                  onChangeText={setFormLotSize}
-                  placeholder="e.g. 2000"
-                  placeholderTextColor={colors.mutedForeground}
-                  keyboardType="numeric"
-                  style={[styles.inputField, { borderColor: colors.border, backgroundColor: colors.card, color: colors.foreground }]}
-                />
-              </View>
-
-              {/* REGISTRAR */}
-              <View>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>REGISTRAR</Text>
-                <TextInput
-                  value={formRegistrar}
-                  onChangeText={setFormRegistrar}
-                  placeholder="e.g. KFin Technologies Limited"
-                  placeholderTextColor={colors.mutedForeground}
-                  style={[styles.inputField, { borderColor: colors.border, backgroundColor: colors.card, color: colors.foreground }]}
-                />
-              </View>
-
-              {/* EXCHANGE (only shown on edit) */}
-              {editingIPO && (
-                <View>
-                  <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>EXCHANGE</Text>
-                  <TextInput
-                    value={formExchange}
-                    onChangeText={setFormExchange}
-                    placeholder="e.g. BSE SME"
-                    placeholderTextColor={colors.mutedForeground}
-                    style={[styles.inputField, { borderColor: colors.border, backgroundColor: colors.card, color: colors.foreground }]}
-                  />
-                </View>
-              )}
-
-              {/* ISSUE TYPE Segmented Toggle */}
-              <View>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>ISSUE TYPE</Text>
-                <View style={[styles.issueTypeGroup, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <TouchableOpacity
-                    onPress={() => setFormIssueType('Mainboard')}
-                    style={[styles.issueTypePill, formIssueType === 'Mainboard' && styles.issueTypePillActive]}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.issueTypeText, formIssueType === 'Mainboard' && styles.issueTypeTextActive]}>
-                      Mainboard
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => setFormIssueType('SME')}
-                    style={[styles.issueTypePill, formIssueType === 'SME' && styles.issueTypePillActive]}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.issueTypeText, formIssueType === 'SME' && styles.issueTypeTextActive]}>
-                      SME
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* OPEN DATE */}
-              <View>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>OPEN DATE</Text>
-                <TouchableOpacity
-                  onPress={() => openDatePicker('openDate')}
-                  activeOpacity={0.8}
-                  style={[styles.dateInputWrap, { borderColor: colors.border, backgroundColor: colors.card }]}
-                >
-                  <TextInput
-                    value={formOpenDate}
-                    onChangeText={setFormOpenDate}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor={colors.mutedForeground}
-                    style={[styles.dateInput, { color: colors.foreground }]}
-                    editable={false}
-                    pointerEvents="none"
-                  />
-                  <Feather name="calendar" size={16} color="#D4A017" />
-                </TouchableOpacity>
-              </View>
-
-              {/* CLOSE DATE */}
-              <View>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>CLOSE DATE</Text>
-                <TouchableOpacity
-                  onPress={() => openDatePicker('closeDate')}
-                  activeOpacity={0.8}
-                  style={[styles.dateInputWrap, { borderColor: colors.border, backgroundColor: colors.card }]}
-                >
-                  <TextInput
-                    value={formCloseDate}
-                    onChangeText={setFormCloseDate}
-                    placeholder="Select date"
-                    placeholderTextColor={colors.mutedForeground}
-                    style={[styles.dateInput, { color: colors.foreground }]}
-                    editable={false}
-                    pointerEvents="none"
-                  />
-                  <Feather name="calendar" size={16} color="#D4A017" />
-                </TouchableOpacity>
-              </View>
-
-              {/* ALLOTMENT DATE */}
-              <View>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>ALLOTMENT DATE</Text>
-                <TouchableOpacity
-                  onPress={() => openDatePicker('allotmentDate')}
-                  activeOpacity={0.8}
-                  style={[styles.dateInputWrap, { borderColor: colors.border, backgroundColor: colors.card }]}
-                >
-                  <TextInput
-                    value={formAllotmentDate}
-                    onChangeText={setFormAllotmentDate}
-                    placeholder="Select date"
-                    placeholderTextColor={colors.mutedForeground}
-                    style={[styles.dateInput, { color: colors.foreground }]}
-                    editable={false}
-                    pointerEvents="none"
-                  />
-                  <Feather name="calendar" size={16} color="#D4A017" />
-                </TouchableOpacity>
-              </View>
-
-              {/* LISTING DATE */}
-              <View>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>LISTING DATE</Text>
-                <TouchableOpacity
-                  onPress={() => openDatePicker('listingDate')}
-                  activeOpacity={0.8}
-                  style={[styles.dateInputWrap, { borderColor: colors.border, backgroundColor: colors.card }]}
-                >
-                  <TextInput
-                    value={formListingDate}
-                    onChangeText={setFormListingDate}
-                    placeholder="Select date"
-                    placeholderTextColor={colors.mutedForeground}
-                    style={[styles.dateInput, { color: colors.foreground }]}
-                    editable={false}
-                    pointerEvents="none"
-                  />
-                  <Feather name="calendar" size={16} color="#D4A017" />
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* Date Picker Modal Component */}
-      {showPicker && (
-        <DateTimePicker
-          value={getCurrentPickerValue()}
-          mode="date"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={handleDateChange}
-        />
-      )}
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: { flex: 1 },

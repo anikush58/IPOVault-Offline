@@ -61,6 +61,7 @@ function RootLayoutNav() {
         <Stack.Screen name="watchlist" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="add-ipo-manual" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="ipo-management" options={{ headerShown: false, animation: 'fade' }} />
+        <Stack.Screen name="add-ipo" options={{ headerShown: false, animation: 'slide_from_right' }} />
         <Stack.Screen name="users" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="banks" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="auth" options={{ headerShown: false, animation: 'fade' }} />
