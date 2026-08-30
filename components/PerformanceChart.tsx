@@ -575,13 +575,13 @@ export function PerformanceChart({ applications }: Props) {
 
         <TouchableOpacity
           onPress={() => setShowHeaderDropdown(true)}
-          style={[styles.headerDropdownBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          style={[styles.headerDropdownBtn, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: colors.border }]}
           activeOpacity={0.75}
         >
           <Text style={[styles.headerDropdownText, { color: colors.foreground }]}>
             {getHeaderDropdownLabel()}
           </Text>
-          <Feather name="chevron-down" size={13} color={colors.mutedForeground} />
+          <Feather name="chevron-down" size={13} color={colors.foreground} />
         </TouchableOpacity>
       </View>
 
@@ -623,8 +623,8 @@ export function PerformanceChart({ applications }: Props) {
                 <Svg width={chartWidth} height={CHART_H} style={{ position: 'absolute', top: 0, left: 0 }}>
                   <Defs>
                     <SvgLinearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                      <Stop offset="0%" stopColor={colors.positive} stopOpacity={0.2} />
-                      <Stop offset="100%" stopColor={colors.positive} stopOpacity={0.0} />
+                      <Stop offset="0%" stopColor="#10B981" stopOpacity={0.25} />
+                      <Stop offset="100%" stopColor="#10B981" stopOpacity={0.0} />
                     </SvgLinearGradient>
                   </Defs>
 
@@ -689,9 +689,9 @@ export function PerformanceChart({ applications }: Props) {
                         key={pt.data.key}
                         cx={pt.x}
                         cy={pt.y}
-                        r={isSelected ? 4 : 2}
-                        fill={isSelected ? colors.positive : colors.card}
-                        stroke={colors.positive}
+                        r={isSelected ? 4.5 : 2.5}
+                        fill={isSelected ? '#10B981' : colors.card}
+                        stroke="#10B981"
                         strokeWidth={1.5}
                       />
                     );
@@ -822,9 +822,9 @@ export function PerformanceChart({ applications }: Props) {
             return (
               <View style={[styles.summaryContainer, { borderTopColor: colors.border }]}>
                 {/* Card 1 */}
-                <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={[styles.summaryCard, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: colors.border }]}>
                   <Text style={[styles.cardLabel, { color: colors.mutedForeground }]}>PERIOD NET</Text>
-                  <Text style={[styles.cardValue, { color: totalNet >= 0 ? colors.positive : colors.negative }]} numberOfLines={1}>
+                  <Text style={[styles.cardValue, { color: totalNet >= 0 ? '#10B981' : colors.destructive }]} numberOfLines={1}>
                     {totalNet >= 0 ? '+' : ''}{formatCurrency(totalNet, false)}
                   </Text>
                   <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
@@ -833,23 +833,23 @@ export function PerformanceChart({ applications }: Props) {
                 </View>
 
                 {/* Card 2 */}
-                <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={[styles.summaryCard, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: colors.border }]}>
                   <Text style={[styles.cardLabel, { color: colors.mutedForeground }]}>BEST {unitLabel.toUpperCase()}</Text>
                   <Text style={[styles.cardValue, { color: colors.foreground }]} numberOfLines={1}>
                     {bestBar ? bestBar.label : '—'}
                   </Text>
-                  <Text style={[styles.cardSub, { color: colors.positive, fontFamily: 'GoogleSansFlex_700Bold' }]}>
+                  <Text style={[styles.cardSub, { color: '#10B981', fontFamily: 'GoogleSansFlex_700Bold' }]}>
                     {bestBar ? (bestBar.value >= 0 ? '+' : '') + formatCurrency(bestBar.value, false) : '—'}
                   </Text>
                 </View>
 
                 {/* Card 3 */}
-                <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={[styles.summaryCard, { backgroundColor: isDark ? '#27272A' : '#F8FAFC', borderColor: colors.border }]}>
                   <Text style={[styles.cardLabel, { color: colors.mutedForeground }]}>WORST {unitLabel.toUpperCase()}</Text>
                   <Text style={[styles.cardValue, { color: colors.foreground }]} numberOfLines={1}>
                     {worstBar ? worstBar.label : '—'}
                   </Text>
-                  <Text style={[styles.cardSub, { color: worstBar && worstBar.value >= 0 ? colors.positive : colors.negative, fontFamily: 'GoogleSansFlex_700Bold' }]}>
+                  <Text style={[styles.cardSub, { color: worstBar && worstBar.value >= 0 ? '#10B981' : colors.destructive, fontFamily: 'GoogleSansFlex_700Bold' }]}>
                     {worstBar ? (worstBar.value >= 0 ? '+' : '') + formatCurrency(worstBar.value, false) : '—'}
                   </Text>
                 </View>
