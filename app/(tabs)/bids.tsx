@@ -26,6 +26,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { formatCurrency } from '@/utils/formatters';
 import { StatusBadge } from '@/components/StatusBadge';
 import { AddIPOModal } from '@/components/AddIPOModal';
+import { NumberedText } from '@/components/ui/NumberedText';
 
 type ViewMode = 'home' | 'attention' | 'allBids';
 type FilterStatus = 'All' | 'Applied' | 'Allotted' | 'Not Allotted' | 'Cancelled';
@@ -1252,9 +1253,9 @@ export default function BidsScreen() {
           <View style={styles.bulkBarTopRow}>
             <View style={[styles.bulkCountBadge, { backgroundColor: colors.primary + '18' }]}>
               <View style={[styles.bulkCountDot, { backgroundColor: colors.primary }]} />
-              <Text style={[styles.bulkCountText, { color: colors.foreground }]}>
-                {bulkSelectedBidIds.size} Selected
-              </Text>
+              <NumberedText style={[styles.bulkCountText, { color: colors.foreground }]}>
+                {`${bulkSelectedBidIds.size} Selected`}
+              </NumberedText>
             </View>
 
             <TouchableOpacity
