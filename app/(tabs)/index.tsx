@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
@@ -254,11 +255,13 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* ── Portfolio Details Card (Matching reference design) ── */}
-        <View
+        {/* ── Portfolio Details Card (Matching reference design with blur effect) ── */}
+        <BlurView
+          intensity={Platform.OS === 'web' ? 0 : 50}
+          tint={isDark ? 'dark' : 'light'}
           style={[
             styles.portfolioCard,
-            { backgroundColor: colors.card, borderColor: colors.border },
+            { backgroundColor: isDark ? 'rgba(30, 41, 59, 0.75)' : 'rgba(255, 255, 255, 0.85)', borderColor: colors.border },
           ]}
         >
           {/* Card Header (No Chevron) */}
@@ -300,7 +303,7 @@ export default function DashboardScreen() {
               </Text>
             </View>
           </View>
-        </View>
+        </BlurView>
 
         {/* Performance chart */}
         <PerformanceChart applications={baseFilteredApps} />
@@ -450,10 +453,10 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_600SemiBold',
     letterSpacing: 1.2,
     textTransform: 'uppercase',
-    marginBottom: 8,
+    marginBottom: 2,
   },
   heroValue: {
-    fontSize: 32,
+    fontSize: 38.5,
     fontFamily: 'SpaceMono_700Bold',
     letterSpacing: -0.8,
   },
@@ -480,11 +483,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 18,
     paddingVertical: 18,
+    overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 6,
   },
   portfolioCardHeader: {
     flexDirection: 'row',
