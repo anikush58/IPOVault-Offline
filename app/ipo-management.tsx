@@ -293,7 +293,7 @@ export default function IPOManagementScreen() {
 
             return (
               <View key={ipo.id} style={[styles.ipoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                {/* Header Row */}
+                {/* Header Row with Title & 3 Action Icons */}
                 <View style={styles.cardHeaderRow}>
                   {/* Left Logo / Avatar */}
                   <View style={[styles.cardIconAvatar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -303,7 +303,7 @@ export default function IPOManagementScreen() {
                   </View>
 
                   {/* Title & Subtitle */}
-                  <View style={{ flex: 1 }}>
+                  <View style={{ flex: 1, paddingRight: 4 }}>
                     <Text style={[styles.cardTitle, { color: colors.foreground }]} numberOfLines={1}>
                       {ipo.ipo_name}
                     </Text>
@@ -312,14 +312,69 @@ export default function IPOManagementScreen() {
                     </Text>
                   </View>
 
-                  {/* Right Action / Star */}
-                  <TouchableOpacity onPress={() => handleToggleFavorite(ipo)} hitSlop={8}>
-                    <Feather
-                      name="star"
-                      size={18}
-                      color={ipo.is_favorite === 1 ? colors.primary : colors.mutedForeground}
-                    />
-                  </TouchableOpacity>
+                  {/* 3 Header Action Icons: Edit, Archive/Unarchive, Favorite */}
+                  <View style={styles.cardHeaderIconsRow}>
+                    {!isArchivedRow ? (
+                      <>
+                        <TouchableOpacity
+                          onPress={() => openEditPage(ipo)}
+                          style={[styles.cardIconButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                          activeOpacity={0.7}
+                          hitSlop={4}
+                        >
+                          <Feather name="edit-2" size={14} color={colors.foreground} />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          onPress={() => handleToggleArchive(ipo)}
+                          style={[styles.cardIconButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                          activeOpacity={0.7}
+                          hitSlop={4}
+                        >
+                          <Feather name="archive" size={14} color={colors.foreground} />
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <>
+                        <TouchableOpacity
+                          onPress={() => handleToggleArchive(ipo)}
+                          style={[styles.cardIconButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                          activeOpacity={0.7}
+                          hitSlop={4}
+                        >
+                          <Feather name="rotate-ccw" size={14} color={colors.foreground} />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          onPress={() => handleDeleteIPO(ipo)}
+                          style={[styles.cardIconButton, { backgroundColor: colors.destructiveBg, borderColor: colors.destructiveBg }]}
+                          activeOpacity={0.7}
+                          hitSlop={4}
+                        >
+                          <Feather name="trash-2" size={14} color={colors.destructive} />
+                        </TouchableOpacity>
+                      </>
+                    )}
+
+                    <TouchableOpacity
+                      onPress={() => handleToggleFavorite(ipo)}
+                      style={[
+                        styles.cardIconButton,
+                        {
+                          backgroundColor: ipo.is_favorite === 1 ? colors.primary + '18' : colors.surface,
+                          borderColor: ipo.is_favorite === 1 ? colors.primary : colors.border,
+                        },
+                      ]}
+                      activeOpacity={0.7}
+                      hitSlop={4}
+                    >
+                      <Feather
+                        name="star"
+                        size={14}
+                        color={ipo.is_favorite === 1 ? colors.primary : colors.mutedForeground}
+                      />
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
                 {/* Thin Horizontal Divider Line */}
@@ -347,51 +402,6 @@ export default function IPOManagementScreen() {
                       {ipo.close_date || 'Active'}
                     </Text>
                   </View>
-                </View>
-
-                {/* Bottom Action Row */}
-                <View style={styles.cardActionsRow}>
-                  {!isArchivedRow ? (
-                    <>
-                      <TouchableOpacity
-                        onPress={() => openEditPage(ipo)}
-                        style={[styles.actionBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                        activeOpacity={0.8}
-                      >
-                        <Feather name="edit-2" size={13} color={colors.foreground} style={{ marginRight: 5 }} />
-                        <Text style={[styles.actionBtnText, { color: colors.foreground }]}>Edit</Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        onPress={() => handleToggleArchive(ipo)}
-                        style={[styles.actionBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                        activeOpacity={0.8}
-                      >
-                        <Feather name="archive" size={13} color={colors.foreground} style={{ marginRight: 5 }} />
-                        <Text style={[styles.actionBtnText, { color: colors.foreground }]}>Archive</Text>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <>
-                      <TouchableOpacity
-                        onPress={() => handleToggleArchive(ipo)}
-                        style={[styles.actionBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                        activeOpacity={0.8}
-                      >
-                        <Feather name="rotate-ccw" size={13} color={colors.foreground} style={{ marginRight: 5 }} />
-                        <Text style={[styles.actionBtnText, { color: colors.foreground }]}>Unarchive</Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        onPress={() => handleDeleteIPO(ipo)}
-                        style={[styles.actionBtn, { backgroundColor: colors.destructiveBg, borderColor: colors.destructiveBg }]}
-                        activeOpacity={0.8}
-                      >
-                        <Feather name="trash-2" size={13} color={colors.destructive} style={{ marginRight: 5 }} />
-                        <Text style={[styles.actionBtnText, { color: colors.destructive }]}>Delete</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
                 </View>
               </View>
             );
@@ -650,12 +660,25 @@ const styles = StyleSheet.create({
     width: '100%',
   },
 
+  cardHeaderIconsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  cardIconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   // 3-Column Metrics Grid
   cardMetricsGrid: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
   },
   metricCol: {
     flex: 1,
@@ -668,25 +691,6 @@ const styles = StyleSheet.create({
   metricVal: {
     fontSize: 13.5,
     fontFamily: 'GoogleSansFlex_700Bold',
-  },
-
-  // Card Action Buttons
-  cardActionsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  actionBtn: {
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: 12,
-    borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionBtnText: {
-    fontSize: 12.5,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
   },
 
   // Modal Form Sheet
