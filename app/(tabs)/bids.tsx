@@ -732,8 +732,8 @@ export default function BidsScreen() {
                   style={[
                     styles.filterPill,
                     {
-                      backgroundColor: isActive ? '#D4A017' : colors.card,
-                      borderColor: isActive ? '#D4A017' : colors.border,
+                      backgroundColor: isActive ? (isDark ? '#374151' : '#0F172A') : colors.card,
+                      borderColor: isActive ? (isDark ? '#4B5563' : '#1E293B') : colors.border,
                     },
                   ]}
                   activeOpacity={0.8}
@@ -805,7 +805,7 @@ export default function BidsScreen() {
                 <Text style={[styles.stepLabel, { color: colors.mutedForeground }]}>1. SELECT IPO</Text>
                 <TouchableOpacity
                   onPress={() => setShowIPOPicker(true)}
-                  style={[styles.pickerTrigger, { borderColor: selectedIPO ? '#D4A017' : colors.border, backgroundColor: colors.surface }]}
+                  style={[styles.pickerTrigger, { borderColor: selectedIPO ? colors.foreground : colors.border, backgroundColor: colors.surface }]}
                   activeOpacity={0.8}
                 >
                   <Text style={[styles.pickerTriggerText, { color: selectedIPO ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
@@ -821,7 +821,7 @@ export default function BidsScreen() {
                 <View style={{ flexDirection: 'row', gap: 10 }}>
                   <TouchableOpacity
                     onPress={() => setShowBankPicker(true)}
-                    style={[styles.pickerTrigger, { flex: 1, borderColor: bulkBankName ? '#D4A017' : colors.border, backgroundColor: colors.surface }]}
+                    style={[styles.pickerTrigger, { flex: 1, borderColor: bulkBankName ? colors.foreground : colors.border, backgroundColor: colors.surface }]}
                     activeOpacity={0.8}
                   >
                     <Text style={[styles.pickerTriggerText, { color: bulkBankName ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
@@ -832,7 +832,7 @@ export default function BidsScreen() {
 
                   <TouchableOpacity
                     onPress={() => setShowUPIPicker(true)}
-                    style={[styles.pickerTrigger, { flex: 1, borderColor: bulkUPIApp ? '#D4A017' : colors.border, backgroundColor: colors.surface }]}
+                    style={[styles.pickerTrigger, { flex: 1, borderColor: bulkUPIApp ? colors.foreground : colors.border, backgroundColor: colors.surface }]}
                     activeOpacity={0.8}
                   >
                     <Text style={[styles.pickerTriggerText, { color: bulkUPIApp ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
@@ -850,7 +850,7 @@ export default function BidsScreen() {
                     3. SELECT APPLICANTS ({selectedUserIds.size} Selected)
                   </Text>
                   <TouchableOpacity onPress={toggleSelectAllUsers} activeOpacity={0.7} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 }}>
-                    <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold', color: '#D4A017' }}>
+                    <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold', color: colors.foreground }}>
                       {selectedUserIds.size === filteredUsers.length && filteredUsers.length > 0 ? 'Deselect All' : 'Select All'}
                     </Text>
                   </TouchableOpacity>
@@ -872,13 +872,13 @@ export default function BidsScreen() {
                             style={[
                               styles.chipItem,
                               {
-                                borderColor: isChecked ? '#D4A017' : colors.border,
-                                backgroundColor: isChecked ? (isDark ? '#3D3011' : '#FFF9E6') : colors.card,
+                                borderColor: isChecked ? (isDark ? '#64748B' : '#334155') : colors.border,
+                                backgroundColor: isChecked ? (isDark ? '#27272A' : '#F1F5F9') : colors.card,
                               },
                             ]}
                             activeOpacity={0.75}
                           >
-                            <View style={[styles.checkbox, { borderColor: isChecked ? '#D4A017' : colors.mutedForeground, backgroundColor: isChecked ? '#D4A017' : 'transparent' }]}>
+                            <View style={[styles.checkbox, { borderColor: isChecked ? (isDark ? '#64748B' : '#1E293B') : colors.mutedForeground, backgroundColor: isChecked ? (isDark ? '#374151' : '#0F172A') : 'transparent' }]}>
                               {isChecked && <Feather name="check" size={10} color="#FFFFFF" />}
                             </View>
                             <Text style={[styles.chipText, { color: colors.foreground }]}>{u.name}</Text>
@@ -966,8 +966,8 @@ export default function BidsScreen() {
                           style={[styles.statusRadioOption, { borderBottomColor: colors.border }]}
                           activeOpacity={0.7}
                         >
-                          <View style={[styles.radioCircle, { borderColor: isSelected ? '#D4A017' : colors.mutedForeground }]}>
-                            {isSelected && <View style={styles.radioDot} />}
+                          <View style={[styles.radioCircle, { borderColor: isSelected ? colors.foreground : colors.mutedForeground }]}>
+                            {isSelected && <View style={[styles.radioDot, { backgroundColor: colors.foreground }]} />}
                           </View>
                           <Text style={[styles.radioLabel, { color: colors.foreground }]}>{stOption.label}</Text>
                           {isCurrent && (
@@ -1061,7 +1061,7 @@ export default function BidsScreen() {
                   <TouchableOpacity
                     key={ipo.id}
                     onPress={() => { setBulkIPOId(ipo.id); setShowIPOPicker(false); }}
-                    style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: bulkIPOId === ipo.id ? (isDark ? '#3D3011' : '#D4A0170A') : 'transparent' }]}
+                    style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: bulkIPOId === ipo.id ? (isDark ? '#27272A' : '#F1F5F9') : 'transparent' }]}
                   >
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.pickerRowName, { color: colors.foreground }]}>{ipo.ipo_name}</Text>
@@ -1069,7 +1069,7 @@ export default function BidsScreen() {
                         {formatCurrency(ipo.buy_price)} × {ipo.quantity} = {formatCurrency(ipo.buy_price * ipo.quantity)}
                       </Text>
                     </View>
-                    {bulkIPOId === ipo.id && <Feather name="check" size={16} color="#D4A017" />}
+                    {bulkIPOId === ipo.id && <Feather name="check" size={16} color={colors.foreground} />}
                   </TouchableOpacity>
                 ))
               )}
@@ -1096,10 +1096,10 @@ export default function BidsScreen() {
                   <TouchableOpacity
                     key={bank.id}
                     onPress={() => { setBulkBankName(bank.bank_name); setShowBankPicker(false); }}
-                    style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: bulkBankName === bank.bank_name ? (isDark ? '#3D3011' : '#D4A0170A') : 'transparent' }]}
+                    style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: bulkBankName === bank.bank_name ? (isDark ? '#27272A' : '#F1F5F9') : 'transparent' }]}
                   >
                     <Text style={[styles.pickerRowName, { color: colors.foreground }]}>{bank.bank_name}</Text>
-                    {bulkBankName === bank.bank_name && <Feather name="check" size={16} color="#D4A017" />}
+                    {bulkBankName === bank.bank_name && <Feather name="check" size={16} color={colors.foreground} />}
                   </TouchableOpacity>
                 ))
               )}
@@ -1123,10 +1123,10 @@ export default function BidsScreen() {
                 <TouchableOpacity
                   key={app}
                   onPress={() => { setBulkUPIApp(app); setShowUPIPicker(false); }}
-                  style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: bulkUPIApp === app ? (isDark ? '#3D3011' : '#D4A0170A') : 'transparent' }]}
+                  style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: bulkUPIApp === app ? (isDark ? '#27272A' : '#F1F5F9') : 'transparent' }]}
                 >
                   <Text style={[styles.pickerRowName, { color: colors.foreground }]}>{app}</Text>
-                  {bulkUPIApp === app && <Feather name="check" size={16} color="#D4A017" />}
+                  {bulkUPIApp === app && <Feather name="check" size={16} color={colors.foreground} />}
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -1477,14 +1477,14 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   attentionItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  ipoAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#D4A01720', alignItems: 'center', justifyContent: 'center' },
-  ipoAvatarText: { color: '#D4A017', fontFamily: 'GoogleSansFlex_700Bold', fontSize: 16 },
+  ipoAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(100,116,139,0.12)', alignItems: 'center', justifyContent: 'center' },
+  ipoAvatarText: { color: '#64748B', fontFamily: 'GoogleSansFlex_700Bold', fontSize: 16 },
   attentionItemTitle: { fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold' },
   attentionItemSub: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 2 },
   attentionItemDate: { fontSize: 11, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 1 },
 
-  updateRowBtn: { borderWidth: 1, borderColor: '#D4A017', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8, minHeight: 44, justifyContent: 'center' },
-  updateRowBtnText: { color: '#D4A017', fontSize: 12, fontFamily: 'GoogleSansFlex_700Bold' },
+  updateRowBtn: { borderWidth: 1, borderColor: '#64748B', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8, minHeight: 44, justifyContent: 'center' },
+  updateRowBtnText: { color: '#64748B', fontSize: 12, fontFamily: 'GoogleSansFlex_700Bold' },
 
   bottomTipWrap: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 16, paddingHorizontal: 4 },
   bottomTipIcon: { fontSize: 14 },
@@ -1682,13 +1682,13 @@ const styles = StyleSheet.create({
   confirmOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   confirmCard: { width: '100%', maxWidth: 340, borderRadius: 24, padding: 24, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 8 },
   confirmQuestionBadge: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  confirmQuestionMark: { fontSize: 28, fontFamily: 'GoogleSansFlex_700Bold', color: '#D4A017' },
+  confirmQuestionMark: { fontSize: 28, fontFamily: 'GoogleSansFlex_700Bold' },
   confirmTitle: { fontSize: 20, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.4, textAlign: 'center', marginBottom: 6 },
   confirmSubtitle: { fontSize: 15, fontFamily: 'GoogleSansFlex_400Regular', textAlign: 'center', marginBottom: 24 },
   confirmActionsRow: { flexDirection: 'row', gap: 12, width: '100%' },
   confirmCancelBtn: { flex: 1, minHeight: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   confirmCancelText: { fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold' },
-  confirmActionBtn: { flex: 1, backgroundColor: '#D4A017', minHeight: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  confirmActionBtn: { flex: 1, backgroundColor: '#0F172A', minHeight: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   confirmActionBtnText: { fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold', color: '#FFFFFF' },
 
   stepperVal: { fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold' },
