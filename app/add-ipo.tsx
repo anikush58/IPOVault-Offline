@@ -127,7 +127,7 @@ export default function AddIPOScreen() {
     }
   }, [editingIPO]);
 
-  // Auto-fetch logo when company name changes (if logo is not manually set)
+  // Auto-fetch data when company name changes (if fields are not manually set)
   const [userPickedLogo, setUserPickedLogo] = useState(false);
 
   useEffect(() => {
@@ -142,15 +142,55 @@ export default function AddIPOScreen() {
     }
   }, [formIpoName]);
 
-  const handleAutoFetchLogo = () => {
+  const handleAutoFetchData = async () => {
     if (!formIpoName.trim()) {
       showError('Enter Company Name', 'Please type the IPO or company name first.');
       return;
     }
-    const autoUrl = getAutoLogoUrl(formIpoName);
-    setFormLogoUrl(autoUrl);
-    setUserPickedLogo(false);
-    Haptics.selectionAsync();
+    const q = formIpoName.trim().toLowerCase();
+
+    try {
+      const masterRow = await db.getFirstAsync<any>(
+        `SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (LOWER(ipo_name) LIKE ? OR LOWER(company_name) LIKE ?) LIMIT 1`,
+        [`%${q}%`, `%${q}%`]
+      );
+      const listingRow = await db.getFirstAsync<any>(
+        `SELECT * FROM ipo_listings WHERE deleted_at IS NULL AND LOWER(ipo_name) LIKE ? LIMIT 1`,
+        [`%${q}%`]
+      );
+
+      const price = masterRow?.price_band_max || masterRow?.price_band_min || masterRow?.buy_price || listingRow?.buy_price;
+      const lot = masterRow?.lot_size || masterRow?.quantity || listingRow?.quantity;
+      const registrar = masterRow?.registrar || listingRow?.registrar;
+      const exchange = masterRow?.exchange || listingRow?.exchange;
+      const issueType = masterRow?.issue_type || listingRow?.issue_type;
+      const openDate = masterRow?.open_date || listingRow?.open_date;
+      const closeDate = masterRow?.close_date || listingRow?.close_date;
+      const allotmentDate = masterRow?.allotment_date || listingRow?.allotment_date;
+      const listingDate = masterRow?.listing_date || listingRow?.listing_date;
+      const logoUrl = masterRow?.logo_url || listingRow?.logo_url || getAutoLogoUrl(formIpoName);
+
+      let count = 0;
+      if (price) { setFormPrice(price.toString()); count++; }
+      if (lot) { setFormLotSize(lot.toString()); count++; }
+      if (registrar) { setFormRegistrar(registrar); count++; }
+      if (exchange) { setFormExchange(exchange); count++; }
+      if (issueType) { setFormIssueType(issueType.toString().toUpperCase().includes('SME') ? 'SME' : 'Mainboard'); count++; }
+      if (openDate) { setFormOpenDate(openDate); count++; }
+      if (closeDate) { setFormCloseDate(closeDate); count++; }
+      if (allotmentDate) { setFormAllotmentDate(allotmentDate); count++; }
+      if (listingDate) { setFormListingDate(listingDate); count++; }
+      if (logoUrl) { setFormLogoUrl(logoUrl); count++; }
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (count > 0) {
+        showSuccess('Data Auto-Fetched', `Auto-filled ${count} field(s) for ${formIpoName}.`);
+      } else {
+        showError('No Master Data Found', 'No auto data found for this company name. Fill remaining fields manually.');
+      }
+    } catch (err) {
+      console.error('Auto fetch data error:', err);
+    }
   };
 
   const pickLogoImage = async () => {
@@ -297,9 +337,9 @@ export default function AddIPOScreen() {
             <Text style={[styles.fieldLabel, { color: colors.mutedForeground, marginBottom: 0 }]}>
               COMPANY LOGO
             </Text>
-            <TouchableOpacity onPress={handleAutoFetchLogo} activeOpacity={0.7} style={styles.autoFetchLink}>
+            <TouchableOpacity onPress={handleAutoFetchData} activeOpacity={0.7} style={styles.autoFetchLink}>
               <Feather name="zap" size={12} color={colors.primary} style={{ marginRight: 4 }} />
-              <Text style={[styles.autoFetchLinkText, { color: colors.primary }]}>Auto-Fetch Logo</Text>
+              <Text style={[styles.autoFetchLinkText, { color: colors.primary }]}>Auto-Fetch Data</Text>
             </TouchableOpacity>
           </View>
 
@@ -314,7 +354,7 @@ export default function AddIPOScreen() {
                   Auto-detected from company name
                 </Text>
               </View>
-              <TouchableOpacity onPress={handleAutoFetchLogo} style={[styles.logoBtn, { backgroundColor: colors.card, borderColor: colors.border }]} activeOpacity={0.8}>
+              <TouchableOpacity onPress={handleAutoFetchData} style={[styles.logoBtn, { backgroundColor: colors.card, borderColor: colors.border }]} activeOpacity={0.8}>
                 <Feather name="refresh-cw" size={13} color={colors.foreground} />
               </TouchableOpacity>
               <TouchableOpacity onPress={pickLogoImage} style={[styles.logoBtn, { backgroundColor: colors.card, borderColor: colors.border, marginLeft: 6 }]} activeOpacity={0.8}>
@@ -327,7 +367,7 @@ export default function AddIPOScreen() {
           ) : (
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <TouchableOpacity
-                onPress={handleAutoFetchLogo}
+                onPress={handleAutoFetchData}
                 activeOpacity={0.8}
                 style={[styles.logoUploadDropzone, { flex: 1, borderColor: colors.border, backgroundColor: colors.surface }]}
               >
@@ -336,10 +376,10 @@ export default function AddIPOScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.logoUploadTitle, { color: colors.foreground }]}>
-                    Auto-Fetch
+                    Auto-Fetch Data
                   </Text>
                   <Text style={[styles.logoUploadSub, { color: colors.mutedForeground }]}>
-                    From company name
+                    Fill form automatically
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -367,9 +407,15 @@ export default function AddIPOScreen() {
 
         {/* IPO / COMPANY NAME */}
         <View style={styles.field}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
-            IPO / COMPANY NAME *
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground, marginBottom: 0 }]}>
+              IPO / COMPANY NAME *
+            </Text>
+            <TouchableOpacity onPress={handleAutoFetchData} activeOpacity={0.7} style={styles.autoFetchLink}>
+              <Feather name="zap" size={12} color={colors.primary} style={{ marginRight: 4 }} />
+              <Text style={[styles.autoFetchLinkText, { color: colors.primary }]}>Auto-Fetch Data</Text>
+            </TouchableOpacity>
+          </View>
           <TextInput
             value={formIpoName}
             onChangeText={setFormIpoName}
