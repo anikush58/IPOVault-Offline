@@ -221,7 +221,7 @@ export default function DashboardScreen() {
               <Image
                 source={graphicLeft}
                 style={styles.fullGraphicImage}
-                resizeMode="cover"
+                resizeMode="stretch"
               />
             </View>
 
@@ -230,7 +230,7 @@ export default function DashboardScreen() {
               <Image
                 source={heroBg}
                 style={styles.fullGraphicImage}
-                resizeMode="contain"
+                resizeMode="stretch"
               />
             </View>
 
@@ -239,7 +239,7 @@ export default function DashboardScreen() {
               <Image
                 source={graphicRight}
                 style={styles.fullGraphicImage}
-                resizeMode="cover"
+                resizeMode="stretch"
               />
             </View>
           </View>
