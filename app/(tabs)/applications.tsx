@@ -5,13 +5,13 @@ import {
   FlatList,
   Platform,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
@@ -21,17 +21,18 @@ import { useDB, type ApplicationWithDetails } from '@/context/DBContext';
 import { ApplicationCard } from '@/components/ApplicationCard';
 import { FilterSheet } from '@/components/FilterSheet';
 import { UpdateApplicationModal } from '@/components/UpdateApplicationModal';
-import { calcBuyValue, calcNetProfit, calcProfitLoss, calcSaleValue, calculateAppTaxAndNet } from '@/utils/calculations';
+import { KPICard } from '@/components/KPICard';
+import { FeatureFlags } from '@/constants/FeatureFlags';
+import { calcBuyValue, calcNetProfit, calcProfitLoss, calcSaleValue } from '@/utils/calculations';
 import { formatCurrency } from '@/utils/formatters';
 
-type TabKey = 'All' | 'Applied' | 'Allotted' | 'Sold' | 'Holding' | 'Not Allotted';
+type TabKey = 'Applied' | 'Allotted' | 'Sold' | 'Holding' | 'Not Allotted';
 
 const TABS: { key: TabKey; label: string }[] = [
-  { key: 'All',          label: 'All' },
   { key: 'Applied',      label: 'Applied' },
   { key: 'Allotted',     label: 'Allotted' },
-  { key: 'Holding',      label: 'Holding' },
   { key: 'Sold',         label: 'Sold' },
+  { key: 'Holding',      label: 'Holding' },
   { key: 'Not Allotted', label: 'Not Allotted' },
 ];
 
@@ -44,7 +45,7 @@ export default function ApplicationsScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
-  const [activeTab, setActiveTab] = useState<TabKey>('All');
+  const [activeTab, setActiveTab] = useState<TabKey>('Applied');
   const [selectedApp, setSelectedApp] = useState<ApplicationWithDetails | null>(null);
   const [filterUserIds, setFilterUserIds] = useState<string[]>([]);
   const [filterBrokers, setFilterBrokers] = useState<string[]>([]);
@@ -82,7 +83,7 @@ export default function ApplicationsScreen() {
 
   const hasFilter = filterUserIds.length > 0 || filterBrokers.length > 0 || filterIpoNames.length > 0 || filterBankNames.length > 0;
 
-  // Newest first sorting
+  // Newest first sorting by open_date or ID
   const sortedApplications = [...applications].sort((a, b) => {
     const dateA = a.open_date ? new Date(a.open_date).getTime() : 0;
     const dateB = b.open_date ? new Date(b.open_date).getTime() : 0;
@@ -113,62 +114,83 @@ export default function ApplicationsScreen() {
     );
   });
 
-  const filtered = activeTab === 'All'
-    ? searchFiltered
-    : activeTab === 'Applied'
-    ? searchFiltered.filter((a) => a.status === 'Applied' || a.status === 'Mandate Approved')
+  const isAppliedStatus = (st: string) =>
+    st === 'Mandate Approved';
+
+  const filtered = activeTab === 'Applied'
+    ? searchFiltered.filter((a) => isAppliedStatus(a.status))
     : searchFiltered.filter((a) => a.status === activeTab);
 
   const countFor = (key: TabKey) => {
-    if (key === 'All') return searchFiltered.length;
-    if (key === 'Applied') return searchFiltered.filter((a) => a.status === 'Applied' || a.status === 'Mandate Approved').length;
+    if (key === 'Applied') return searchFiltered.filter((a) => isAppliedStatus(a.status)).length;
     return searchFiltered.filter((a) => a.status === key).length;
   };
 
-  // Portfolio holdings total calculations
-  let totalInvested = 0;
-  let totalNetReturn = 0;
+  const filterUserNames = filterUserIds
+    .map((uid) => applications.find((a) => a.user_id === uid)?.user_name)
+    .filter(Boolean) as string[];
+  const filterChipLabel = [...filterUserNames, ...filterBrokers, ...filterBankNames, ...filterIpoNames].join(' · ');
 
+  // ── KPI calculations ───────────────────────────────────────────────────────
+  const appliedCount = searchFiltered.length;
+  const allottedCount = searchFiltered.filter((a) => a.status === 'Allotted' || a.status === 'Holding' || a.status === 'Sold').length;
+
+  const ipoProfitMap: Record<string, number> = {};
+  const userProfitMap: Record<string, number> = {};
   for (const a of searchFiltered) {
-    if (a.status === 'Sold' || a.status === 'Holding') {
-      const { netPL } = calculateAppTaxAndNet(a);
-      const buyVal = calcBuyValue(a.buy_price, a.quantity);
-      totalInvested += buyVal;
-      totalNetReturn += netPL;
+    if (a.status !== 'Sold') continue;
+    const bv = calcBuyValue(a.buy_price, a.quantity);
+    const sv = calcSaleValue(a.sell_price ?? 0, a.quantity);
+    const net = calcNetProfit(calcProfitLoss(sv, bv), a.tax ?? 0, a.user_cut ?? 0);
+    ipoProfitMap[a.ipo_name] = (ipoProfitMap[a.ipo_name] ?? 0) + net;
+    userProfitMap[a.user_name] = (userProfitMap[a.user_name] ?? 0) + net;
+  }
+
+  let bestIpoName = '—';
+  let maxIpoProfit = -Infinity;
+  for (const [name, profit] of Object.entries(ipoProfitMap)) {
+    if (profit > maxIpoProfit && profit > 0) {
+      maxIpoProfit = profit;
+      bestIpoName = name;
     }
   }
 
-  const overallPortfolioVal = totalInvested + totalNetReturn;
+  let bestUserName = '—';
+  let maxUserProfit = -Infinity;
+  for (const [name, profit] of Object.entries(userProfitMap)) {
+    if (profit > maxUserProfit && profit > 0) {
+      maxUserProfit = profit;
+      bestUserName = name;
+    }
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* ── Top Action Header ── */}
-      <View style={[styles.topActionHeader, { paddingTop: topPad + 8 }]}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={[styles.headerIconCircle, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          activeOpacity={0.8}
-        >
-          <Feather name="arrow-left" size={18} color={colors.foreground} />
-        </TouchableOpacity>
-
-        <Text style={[styles.headerTitleSerif, { color: colors.foreground }]}>Holdings & Portfolio</Text>
-
-        <View style={styles.headerRightActions}>
-          <TouchableOpacity
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+        <View style={{ flex: 1, justifyContent: 'center' }}>
+          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>IPO</Text>
+          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Applications</Text>
+        </View>
+        <View style={styles.headerActions}>
+          <IconButton
+            name={showSearch ? 'x' : 'search'}
+            variant={showSearch ? 'primary' : 'surface'}
+            size="md"
             onPress={toggleSearch}
-            style={[styles.headerIconCircle, { backgroundColor: showSearch ? colors.primary + '20' : colors.surface, borderColor: showSearch ? colors.primary : colors.border }]}
-            activeOpacity={0.8}
-          >
-            <Feather name={showSearch ? 'x' : 'search'} size={18} color={showSearch ? colors.primary : colors.foreground} />
-          </TouchableOpacity>
-          <TouchableOpacity
+          />
+          <IconButton
+            name="star"
+            variant="surface"
+            size="md"
+            onPress={() => router.push('/favorite-applications')}
+          />
+          <IconButton
+            name="sliders"
+            variant={hasFilter ? 'primary' : 'surface'}
+            size="md"
             onPress={() => setShowFilter(true)}
-            style={[styles.headerIconCircle, { backgroundColor: hasFilter ? colors.primary + '20' : colors.surface, borderColor: hasFilter ? colors.primary : colors.border }]}
-            activeOpacity={0.8}
-          >
-            <Feather name="sliders" size={18} color={hasFilter ? colors.primary : colors.foreground} />
-          </TouchableOpacity>
+          />
         </View>
       </View>
 
@@ -205,7 +227,121 @@ export default function ApplicationsScreen() {
         </View>
       </Animated.View>
 
-      {/* ── Holdings List with Hero Header Component ── */}
+      {/* Active filter chip */}
+      {hasFilter && (
+        <View style={[styles.filterBar, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
+          <Feather name="filter" size={12} color={colors.primary} />
+          <Text style={[styles.filterBarText, { color: colors.primary }]}>
+            {filterChipLabel}
+          </Text>
+          <TouchableOpacity onPress={() => { setFilterUserIds([]); setFilterBrokers([]); setFilterIpoNames([]); setFilterBankNames([]); }} hitSlop={8}>
+            <Feather name="x" size={14} color={colors.primary} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* KPI Cards Grid */}
+      <View style={styles.kpiGrid}>
+        <View style={styles.kpiRow}>
+          <KPICard
+            label="Applied"
+            value={String(appliedCount)}
+            subtitle="total applications"
+          />
+          <KPICard
+            label="Allotted"
+            value={String(allottedCount)}
+            subtitle="allotted or sold"
+          />
+        </View>
+        <View style={styles.kpiRow}>
+          <KPICard
+            label="Best IPO"
+            value={bestIpoName}
+            subtitle={maxIpoProfit > 0 ? `+${formatCurrency(maxIpoProfit, false)}` : 'no profit yet'}
+            isPositive={maxIpoProfit > 0}
+          />
+          <KPICard
+            label="Top User"
+            value={bestUserName}
+            subtitle={maxUserProfit > 0 ? `+${formatCurrency(maxUserProfit, false)}` : 'no profit yet'}
+            isPositive={maxUserProfit > 0}
+          />
+        </View>
+      </View>
+
+      {/* Check Allotment Button */}
+      {FeatureFlags.ENABLE_AUTO_ALLOTMENT && (
+        <TouchableOpacity
+          onPress={() => router.push('/allotment-checker')}
+          style={[styles.checkAllotmentBtn, { borderColor: colors.primary }]}
+        >
+          <LinearGradient
+            colors={[colors.primary, colors.primaryLight]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <Text style={styles.checkAllotmentBtnText}>🔍 Check Allotment</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Tab pills */}
+      <View style={[styles.tabBar, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
+        <FlatList
+          data={TABS}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(t) => t.key}
+          contentContainerStyle={styles.tabScroll}
+          renderItem={({ item: tab }) => {
+            const active = activeTab === tab.key;
+            const count = countFor(tab.key);
+            return (
+              <TouchableOpacity
+                onPress={() => setActiveTab(tab.key)}
+                style={[
+                  styles.tab,
+                  active
+                    ? { backgroundColor: colors.primary }
+                    : { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
+                ]}
+              >
+                <Text style={[styles.tabLabel, { color: active ? '#fff' : colors.mutedForeground }]}>
+                  {tab.label}
+                </Text>
+                {count > 0 && (
+                  <View
+                    style={[
+                      styles.tabBadge,
+                      {
+                        backgroundColor: active
+                          ? (isDark ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.25)')
+                          : (isDark ? 'rgba(255,255,255,0.08)' : (colors.borderStrong || '#D1D5DB')),
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.tabBadgeText,
+                        {
+                          color: active
+                            ? (isDark ? '#14120F' : '#FFFFFF')
+                            : (isDark ? colors.mutedForeground : colors.secondaryForeground),
+                        },
+                      ]}
+                    >
+                      {count}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          }}
+        />
+      </View>
+
+      {/* List */}
       <FlatList
         data={filtered}
         keyExtractor={(item) => item.id.toString()}
@@ -216,115 +352,32 @@ export default function ApplicationsScreen() {
           <ApplicationCard application={item} onPress={() => setSelectedApp(item)} />
         )}
         ListHeaderComponent={() => (
-          <View style={styles.listHeaderSection}>
-            {/* ── Reference Image 3 Hero Wealth Header ── */}
-            <View style={styles.heroHoldingsContainer}>
-              <Text style={[styles.heroHoldingsEyebrow, { color: colors.mutedForeground }]}>
-                TOTAL HOLDINGS VALUE
-              </Text>
-              <Text style={[styles.heroHoldingsAmount, { color: colors.foreground }]}>
-                {formatCurrency(overallPortfolioVal > 0 ? overallPortfolioVal : totalInvested)}
-              </Text>
-              <View style={[styles.returnPill, { backgroundColor: totalNetReturn >= 0 ? colors.positiveBg : colors.negativeBg, borderColor: totalNetReturn >= 0 ? colors.positive + '30' : colors.negative + '30' }]}>
-                <Feather
-                  name={totalNetReturn >= 0 ? 'trending-up' : 'trending-down'}
-                  size={12}
-                  color={totalNetReturn >= 0 ? colors.positive : colors.negative}
-                  style={{ marginRight: 4 }}
-                />
-                <Text style={[styles.returnPillText, { color: totalNetReturn >= 0 ? colors.positive : colors.negative }]}>
-                  {totalNetReturn >= 0 ? '+' : ''}{formatCurrency(totalNetReturn)} Net Returns
-                </Text>
-              </View>
-            </View>
-
-            {/* ── Holdings Summary Card (Reference Image 3 Style) ── */}
-            <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <View style={styles.summaryCol}>
-                <Text style={[styles.summaryVal, { color: colors.foreground }]}>
-                  {formatCurrency(totalInvested)}
-                </Text>
-                <Text style={[styles.summarySub, { color: colors.mutedForeground }]}>Invested</Text>
-              </View>
-
-              <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
-
-              <View style={styles.summaryCol}>
-                <Text style={[styles.summaryVal, { color: colors.foreground }]}>
-                  {searchFiltered.length}
-                </Text>
-                <Text style={[styles.summarySub, { color: colors.mutedForeground }]}>Total Bids</Text>
-              </View>
-
-              <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
-
-              <View style={styles.summaryCol}>
-                <Text style={[styles.summaryVal, { color: totalNetReturn >= 0 ? colors.positive : colors.negative }]}>
-                  {totalNetReturn >= 0 ? '+' : ''}{formatCurrency(totalNetReturn)}
-                </Text>
-                <Text style={[styles.summarySub, { color: colors.mutedForeground }]}>Total Returns</Text>
-              </View>
-            </View>
-
-            {/* ── Section Title & Filter Chips ── */}
-            <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.sectionSerifTitle, { color: colors.foreground }]}>
-                Holdings
-              </Text>
-            </View>
-
-            {/* Tab Filter Pills */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 8, paddingHorizontal: 20, paddingBottom: 12 }}
-            >
-              {TABS.map((tab) => {
-                const active = activeTab === tab.key;
-                const count = countFor(tab.key);
-                return (
-                  <TouchableOpacity
-                    key={tab.key}
-                    onPress={() => setActiveTab(tab.key)}
-                    activeOpacity={0.8}
-                    style={[
-                      styles.tabPill,
-                      {
-                        backgroundColor: active ? (isDark ? '#FFFFFF' : '#111827') : colors.surface,
-                        borderColor: active ? (isDark ? '#FFFFFF' : '#111827') : colors.border,
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.tabPillText,
-                        { color: active ? (isDark ? '#111827' : '#FFFFFF') : colors.foreground },
-                      ]}
-                    >
-                      {tab.label} {count > 0 ? `(${count})` : ''}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+          <View style={styles.listHeader}>
+            <Text style={[styles.listCount, { color: colors.mutedForeground }]}>
+              {filtered.length} {filtered.length === 1 ? 'application' : 'applications'}
+            </Text>
           </View>
         )}
         ListEmptyComponent={() => (
           <View style={styles.empty}>
-            <View style={[styles.emptyIconCircle, { backgroundColor: colors.surface }]}>
-              <Feather name="inbox" size={28} color={colors.mutedForeground} />
+            <View style={[styles.emptyIcon, { backgroundColor: colors.surface }]}>
+              <Feather
+                name="inbox"
+                size={28}
+                color={colors.mutedForeground}
+              />
             </View>
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-              No Applications Found
+              No Applications
             </Text>
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              {activeTab === 'All'
-                ? 'Create applications from the Bids tab.'
-                : `No ${activeTab} applications matching your filters.`}
+              {activeTab === 'Applied'
+                ? 'Create applications from the Actions tab.'
+                : `No ${activeTab} applications yet.`}
             </Text>
           </View>
         )}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 90, paddingTop: 8 }}
       />
 
       <UpdateApplicationModal application={selectedApp} onClose={() => setSelectedApp(null)} />
@@ -350,24 +403,19 @@ export default function ApplicationsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-
-  topActionHeader: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingBottom: 8,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    overflow: 'hidden',
   },
-  headerTitleSerif: {
-    fontSize: 18,
-    fontFamily: 'PlayfairDisplay_700Bold',
-    letterSpacing: -0.2,
-  },
-  headerRightActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  headerIconCircle: {
+  headerGlow: { position: 'absolute', right: 0, top: 0, width: 200, height: 130 },
+  headerEyebrow: { fontSize: 11, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 2 },
+  headerTitle: { fontSize: 30, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.8, lineHeight: 34 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  iconBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -375,7 +423,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
   searchBar: {
     borderBottomWidth: 1,
     justifyContent: 'center',
@@ -389,7 +436,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     paddingHorizontal: 12,
-    height: 40,
+    height: 38,
   },
   searchInput: {
     flex: 1,
@@ -397,97 +444,41 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_400Regular',
     padding: 0,
   },
-
-  listHeaderSection: {
-    marginBottom: 4,
+  filterBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginHorizontal: 16, marginTop: 10, marginBottom: 2,
+    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, borderWidth: 1,
   },
-  heroHoldingsContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 12,
-    paddingBottom: 18,
-  },
-  heroHoldingsEyebrow: {
-    fontSize: 10.5,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    marginBottom: 4,
-  },
-  heroHoldingsAmount: {
-    fontSize: 34,
-    fontFamily: 'PlayfairDisplay_700Bold',
-    letterSpacing: -0.8,
-    marginBottom: 8,
-  },
-  returnPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  returnPillText: {
-    fontSize: 11.5,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
-  },
-
-  // Summary Card (Reference Image 3)
-  summaryCard: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-    borderRadius: 20,
-    borderWidth: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-  },
-  summaryCol: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  summaryVal: {
-    fontSize: 15,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.2,
-  },
-  summarySub: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    marginTop: 2,
-  },
-  summaryDivider: {
-    width: 1,
-    height: 24,
-  },
-
-  sectionHeaderRow: {
-    paddingHorizontal: 20,
-    marginBottom: 10,
-  },
-  sectionSerifTitle: {
-    fontSize: 22,
-    fontFamily: 'PlayfairDisplay_700Bold',
-    letterSpacing: -0.3,
-  },
-
-  // Filter Pills
-  tabPill: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  tabPillText: {
-    fontSize: 12.5,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
-  },
-
+  filterBarText: { flex: 1, fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold' },
+  tabBar: { borderBottomWidth: 1 },
+  tabScroll: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
+  tab: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  tabLabel: { fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold' },
+  tabBadge: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: 10, minWidth: 20, alignItems: 'center' },
+  tabBadgeText: { fontSize: 11, fontFamily: 'GoogleSansFlex_700Bold' },
+  listHeader: { paddingHorizontal: 16, paddingVertical: 6 },
+  listCount: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular' },
   empty: { alignItems: 'center', paddingVertical: 56, paddingHorizontal: 36 },
-  emptyIconCircle: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  emptyIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   emptyTitle: { fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3, marginBottom: 8 },
   emptyText: { fontSize: 14, fontFamily: 'GoogleSansFlex_400Regular', textAlign: 'center', lineHeight: 22 },
+  kpiGrid: { paddingHorizontal: 16, paddingTop: 18, gap: 10, marginBottom: 6 },
+  kpiRow: { flexDirection: 'row', gap: 10 },
+  checkAllotmentBtn: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 14,
+    borderRadius: 14,
+    overflow: 'hidden',
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  checkAllotmentBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.1,
+  },
 });

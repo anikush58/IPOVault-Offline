@@ -81,8 +81,8 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   value: {
-    fontSize: 20,
-    fontFamily: 'SpaceMono_700Bold',
+    fontSize: 22,
+    fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: -0.5,
     lineHeight: 28,
   },
