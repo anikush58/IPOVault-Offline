@@ -34,19 +34,6 @@ const heroBg = require('@/assets/images/dashboard-hero-bg.png');
 const graphicLeft = require('@/assets/images/dashboard-graphic-left.png');
 const graphicRight = require('@/assets/images/dashboard-graphic-right.png');
 
-const HeroCustomGraphics = ({ side }: { side: 'left' | 'right' }) => {
-  const isLeft = side === 'left';
-  return (
-    <View style={[styles.heroGraphicWrap, isLeft ? { left: 12 } : { right: 12 }]}>
-      <Image
-        source={isLeft ? graphicLeft : graphicRight}
-        style={styles.heroGraphicImage}
-        resizeMode="contain"
-      />
-    </View>
-  );
-};
-
 export default function DashboardScreen() {
   const colors = useColors();
   const colorScheme = useColorScheme();
@@ -226,17 +213,36 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* ── Net Profit Hero Section ── */}
+        {/* ── Net Profit Hero Section (Seamless 20% | 60% | 20% 3-Part Graphics) ── */}
         <View style={styles.heroSection}>
-          {/* Custom Curved Background Asset */}
-          <Image
-            source={heroBg}
-            style={styles.heroBgImage}
-            resizeMode="contain"
-          />
+          <View style={styles.graphicsRow}>
+            {/* Left Graphic (20%) */}
+            <View style={styles.graphicColLeft}>
+              <Image
+                source={graphicLeft}
+                style={styles.fullGraphicImage}
+                resizeMode="cover"
+              />
+            </View>
 
-          <HeroCustomGraphics side="left" />
-          <HeroCustomGraphics side="right" />
+            {/* Center Hero Background (60%) */}
+            <View style={styles.graphicColCenter}>
+              <Image
+                source={heroBg}
+                style={styles.fullGraphicImage}
+                resizeMode="contain"
+              />
+            </View>
+
+            {/* Right Graphic (20%) */}
+            <View style={styles.graphicColRight}>
+              <Image
+                source={graphicRight}
+                style={styles.fullGraphicImage}
+                resizeMode="cover"
+              />
+            </View>
+          </View>
 
           <View style={styles.heroContent}>
             <Text style={[styles.heroEyebrow, { color: colors.mutedForeground }]}>
@@ -399,29 +405,45 @@ const styles = StyleSheet.create({
   kpiGrid: { paddingHorizontal: 16, paddingTop: 16, gap: 10 },
   kpiRow: { flexDirection: 'row', gap: 10 },
 
-  // Net Profit Hero Section
+  // Net Profit Hero Section (20% | 60% | 20% Seamless Proportions)
   heroSection: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 36,
-    paddingBottom: 32,
-    paddingHorizontal: 20,
+    paddingVertical: 36,
     position: 'relative',
     minHeight: 155,
+    width: '100%',
+    overflow: 'hidden',
   },
-  heroBgImage: {
+  graphicsRow: {
     position: 'absolute',
-    top: 10,
-    left: 20,
-    right: 20,
-    bottom: 10,
-    width: undefined,
-    height: undefined,
-    opacity: 0.35,
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  graphicColLeft: {
+    width: '20%',
+    height: '100%',
+  },
+  graphicColCenter: {
+    width: '60%',
+    height: '100%',
+  },
+  graphicColRight: {
+    width: '20%',
+    height: '100%',
+  },
+  fullGraphicImage: {
+    width: '100%',
+    height: '100%',
   },
   heroContent: {
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 2,
   },
   heroEyebrow: {
     fontSize: 12,
