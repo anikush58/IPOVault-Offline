@@ -221,7 +221,8 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
 const styles = StyleSheet.create({
   card: {
     marginHorizontal: 16,
-    marginTop: 14,
+    marginTop: 0,
+    marginBottom: 20,
     borderRadius: 20,
     borderWidth: 1,
     overflow: 'hidden',

@@ -559,7 +559,7 @@ const styles = StyleSheet.create({
   // Portfolio Details Card
   portfolioCard: {
     marginHorizontal: 16,
-    marginBottom: 24,
+    marginBottom: 20,
     borderRadius: 22,
     borderWidth: 1,
     paddingHorizontal: 18,
