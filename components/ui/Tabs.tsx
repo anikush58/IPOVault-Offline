@@ -369,7 +369,7 @@ const styles = StyleSheet.create({
 
   // Pills Variant
   pillTabBtn: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 15,
     paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1,
