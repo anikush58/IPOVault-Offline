@@ -136,7 +136,7 @@ const row = StyleSheet.create({
   name: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: -0.1 },
   sub: { fontSize: 11, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 1 },
   profit: { fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.2 },
-  divider: { height: 1, width: '100%' },
+  divider: { height: 1, marginHorizontal: 20 },
 });
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -241,6 +241,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     paddingTop: 18,
+    paddingBottom: 6,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
