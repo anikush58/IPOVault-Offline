@@ -188,7 +188,7 @@ export default function IPOManagementScreen() {
         />
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 110 }}>
         {/* ── Listings Count Eyebrow ── */}
         <Text style={[styles.listingsEyebrow, { color: colors.mutedForeground }]}>
           {filteredIPOs.length} LISTING{filteredIPOs.length !== 1 ? 'S' : ''}
