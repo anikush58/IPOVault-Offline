@@ -923,7 +923,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     paddingTop: 18,
-    paddingBottom: 0,
+    paddingBottom: 10,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
