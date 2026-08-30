@@ -341,11 +341,8 @@ export default function DashboardScreen() {
                   { backgroundColor: colors.card, borderColor: colors.border },
                 ]}
               >
-                {/* Top Row: Index Tag & Category Badge */}
+                {/* Top Row: Category Badge */}
                 <View style={styles.openIpoTopRow}>
-                  <Text style={[styles.openIpoMetaText, { color: colors.mutedForeground }]}>
-                    IPO {idx + 1} OF {openIpoList.length}
-                  </Text>
                   <View
                     style={[
                       styles.openIpoCategoryBadge,
@@ -631,23 +628,23 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   openIpoCard: {
-    width: 276,
-    borderRadius: 20,
+    width: 260,
+    borderRadius: 18,
     borderWidth: 1,
-    padding: 16,
+    padding: 14,
     justifyContent: 'space-between',
-    minHeight: 160,
+    minHeight: 122,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
-    shadowRadius: 8,
+    shadowRadius: 6,
     elevation: 2,
   },
   openIpoTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
+    justifyContent: 'flex-start',
+    marginBottom: 8,
   },
   openIpoMetaText: {
     fontSize: 10,
