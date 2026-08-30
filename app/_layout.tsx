@@ -10,11 +10,7 @@ import {
   GoogleSansFlex_600SemiBold,
   GoogleSansFlex_700Bold,
 } from '@expo-google-fonts/google-sans-flex';
-import {
-  PlayfairDisplay_400Regular,
-  PlayfairDisplay_600SemiBold,
-  PlayfairDisplay_700Bold,
-} from '@expo-google-fonts/playfair-display';
+import { SpaceMono_400Regular, SpaceMono_700Bold } from '@expo-google-fonts/space-mono';
 import { Feather } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
@@ -85,9 +81,8 @@ export default function RootLayout() {
     GoogleSansFlex_500Medium,
     GoogleSansFlex_600SemiBold,
     GoogleSansFlex_700Bold,
-    PlayfairDisplay_400Regular,
-    PlayfairDisplay_600SemiBold,
-    PlayfairDisplay_700Bold,
+    SpaceMono_400Regular,
+    SpaceMono_700Bold,
     ...Feather.font,
   });
 

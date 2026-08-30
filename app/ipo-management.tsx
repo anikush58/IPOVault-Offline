@@ -711,7 +711,7 @@ const styles = StyleSheet.create({
   },
   metricVal: {
     fontSize: 12.5,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
+    fontFamily: 'SpaceMono_700Bold',
     opacity: 0.8,
   },
 

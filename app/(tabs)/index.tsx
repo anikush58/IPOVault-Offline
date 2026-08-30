@@ -453,8 +453,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   heroValue: {
-    fontSize: 34,
-    fontFamily: 'GoogleSansFlex_700Bold',
+    fontSize: 32,
+    fontFamily: 'SpaceMono_700Bold',
     letterSpacing: -0.8,
   },
 
@@ -515,8 +515,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   portfolioMetricVal: {
-    fontSize: 15,
-    fontFamily: 'GoogleSansFlex_700Bold',
+    fontSize: 14.5,
+    fontFamily: 'SpaceMono_700Bold',
     letterSpacing: -0.3,
     marginBottom: 4,
   },
