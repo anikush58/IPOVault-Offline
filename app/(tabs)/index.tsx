@@ -250,7 +250,7 @@ export default function DashboardScreen() {
               NET PROFIT
             </Text>
             <Text style={[styles.heroValue, { color: totalNetProfit >= 0 ? '#10B981' : colors.destructive }]}>
-              {formatCurrency(totalNetProfit)}
+              {formatCurrency(totalNetProfit).replace(/,/g, '')}
             </Text>
           </View>
         </View>
