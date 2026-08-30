@@ -13,6 +13,7 @@ import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { type ApplicationWithDetails } from '@/context/DBContext';
 import { Tabs } from '@/components/ui/Tabs';
 import { calcBuyValue, calcNetProfit, calcProfitLoss, calcSaleValue, calculateAppTaxAndNet } from '@/utils/calculations';
@@ -125,6 +126,8 @@ type Props = { applications: ApplicationWithDetails[]; searchQuery?: string };
 
 export function Leaderboard({ applications, searchQuery = '' }: Props) {
   const colors = useColors();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabKey>('user');
 
@@ -143,7 +146,7 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
   const hasData = filteredRankings.length > 0;
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    <View style={[styles.card, { backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderColor: colors.border }]}>
       {/* Gradient wash */}
       <LinearGradient
         colors={[colors.primary + '0C', colors.card]}
@@ -223,10 +226,15 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 0,
     marginBottom: 20,
-    borderRadius: 20,
+    borderRadius: 22,
     borderWidth: 1,
-    overflow: 'hidden',
     paddingTop: 18,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    elevation: 3,
   },
   header: {
     flexDirection: 'row',

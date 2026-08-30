@@ -15,6 +15,7 @@ import { Feather } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { type ApplicationWithDetails } from '@/context/DBContext';
 import { Tabs } from '@/components/ui/Tabs';
 import { calcBuyValue, calcNetProfit, calcProfitLoss, calcSaleValue } from '@/utils/calculations';
@@ -211,6 +212,8 @@ type Props = { applications: ApplicationWithDetails[] };
 
 export function PerformanceChart({ applications }: Props) {
   const colors = useColors();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
 
   const [tabPeriod, setTabPeriod] = useState<PeriodTab>('monthly');
@@ -561,7 +564,7 @@ export function PerformanceChart({ applications }: Props) {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    <View style={[styles.card, { backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderColor: colors.border }]}>
       {/* Subtle gradient wash */}
       <LinearGradient
         colors={[colors.primary + '0C', colors.card]}
@@ -945,12 +948,17 @@ export function PerformanceChart({ applications }: Props) {
 const styles = StyleSheet.create({
   card: {
     marginHorizontal: 16,
-    marginTop: 14,
-    borderRadius: 20,
+    marginBottom: 20,
+    borderRadius: 22,
     borderWidth: 1,
-    overflow: 'hidden',
-    paddingTop: 14,
+    paddingTop: 18,
     paddingBottom: 0,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    elevation: 3,
   },
 
   header: {

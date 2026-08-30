@@ -612,7 +612,7 @@ const styles = StyleSheet.create({
 
   // Open IPOs Horizontal Scrolling Section
   openIposSection: {
-    marginBottom: 20,
+    marginBottom: 8,
   },
   openIposEyebrow: {
     fontSize: 10,
