@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { StatusBadge } from './StatusBadge';
 import { formatCurrency } from '@/utils/formatters';
@@ -42,137 +42,134 @@ export function ApplicationCard({ application: app, onPress }: Props) {
   const netProfit = pl != null ? calcNetProfit(pl, app.tax ?? 0, app.user_cut ?? 0) : null;
   const isProfit  = netProfit != null && netProfit >= 0;
 
-  const initial = app.ipo_name.charAt(0).toUpperCase();
-
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.88}
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.card,
-          borderColor: colors.border,
-        },
-      ]}
-    >
-      {/* Top Header Row */}
-      <View style={styles.topRow}>
-        {/* Brand Avatar */}
-        <View style={[styles.avatar, { backgroundColor: isDark ? '#2E3545' : '#F1F3F5' }]}>
-          <Text style={[styles.avatarText, { color: colors.foreground }]}>{initial}</Text>
-        </View>
-
-        {/* Title and User info */}
-        <View style={{ flex: 1, paddingRight: 8 }}>
-          <Text style={[styles.ipoTitle, { color: colors.foreground }]} numberOfLines={1}>
+    <View style={[styles.wrapper, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: borderColor }]}>
+      {/* ── Collapsed row — always visible ── */}
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.72}
+        style={styles.topRow}
+      >
+        <View style={styles.nameCol}>
+          <Text style={[styles.ipoName, { color: colors.foreground }]} numberOfLines={1}>
             {app.ipo_name}
           </Text>
-          <Text style={[styles.userSub, { color: colors.mutedForeground }]} numberOfLines={1}>
-            {app.user_name} · {app.user_broker ?? 'Broker'}
+          <Text style={[styles.userName, { color: colors.mutedForeground }]} numberOfLines={2}>
+            {app.user_name}{app.user_broker ? ` · ${app.user_broker}` : ''}{app.user_bank_name ? ` · ${app.user_bank_name}` : ''}{app.user_upi_app ? ` · ${app.user_upi_app}` : ''}
           </Text>
         </View>
 
-        {/* Status Badge */}
-        <StatusBadge status={app.status} small />
-      </View>
+        <View style={styles.rightCluster}>
+          <StatusBadge status={app.status} />
 
-      {/* Metric 3-Column Grid (Reference Image 3 Style) */}
-      <View style={[styles.metricsGrid, { backgroundColor: isDark ? '#161B22' : '#F8F9FA', borderColor: colors.border }]}>
-        <View style={styles.metricItem}>
-          <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Invested</Text>
-          <Text style={[styles.metricValue, { color: colors.foreground }]}>
-            {formatCurrency(buyValue)}
-          </Text>
-        </View>
+          {/* Favourite star */}
+          <TouchableOpacity
+            onPress={() => toggleFavorite(app.id, !isFav)}
+            hitSlop={10}
+            style={styles.starBtn}
+          >
+            <Feather
+              name={isFav ? 'star' : 'star'}
+              size={15}
+              color={isFav ? colors.primary : colors.border}
+            />
+          </TouchableOpacity>
 
-        <View style={styles.metricItem}>
-          <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Qty / Price</Text>
-          <Text style={[styles.metricValue, { color: colors.foreground }]}>
-            {app.quantity} @ ₹{app.buy_price}
-          </Text>
+          {/* Expand / collapse toggle */}
+          <TouchableOpacity
+            onPress={() => setExpanded((v) => !v)}
+            hitSlop={12}
+            style={styles.chevronBtn}
+          >
+            <Feather
+              name={expanded ? 'chevron-up' : 'chevron-down'}
+              size={16}
+              color={colors.mutedForeground}
+            />
+          </TouchableOpacity>
         </View>
+      </TouchableOpacity>
 
-        <View style={[styles.metricItem, { alignItems: 'flex-end' }]}>
-          <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>
-            {isSold ? 'Net Return' : 'Status Date'}
-          </Text>
-          {isSold && netProfit != null ? (
-            <Text style={[styles.metricValue, { color: isProfit ? colors.positive : colors.negative }]}>
-              {isProfit ? '+' : ''}{formatCurrency(netProfit)}
-            </Text>
-          ) : (
-            <Text style={[styles.metricValue, { color: colors.foreground }]}>
-              {app.open_date ? app.open_date.slice(5) : '—'}
-            </Text>
-          )}
-        </View>
-      </View>
-    </TouchableOpacity>
+      {/* ── Expanded detail row ── */}
+      {expanded && (
+        <>
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+          <View style={styles.metricsRow}>
+            <View style={styles.metricCell}>
+              <Text style={[styles.metaLabel, { color: colors.mutedForeground }]}>Buy Value</Text>
+              <Text style={[styles.metaValue, { color: colors.foreground }]}>
+                {formatCurrency(buyValue)}
+              </Text>
+            </View>
+
+            <View style={[styles.sep, { backgroundColor: colors.border }]} />
+
+            <View style={styles.metricCell}>
+              <Text style={[styles.metaLabel, { color: colors.mutedForeground }]}>Sell Value</Text>
+              <Text style={[styles.metaValue, { color: saleValue != null ? colors.foreground : colors.mutedForeground }]}>
+                {saleValue != null ? formatCurrency(saleValue) : '—'}
+              </Text>
+            </View>
+
+            <View style={[styles.sep, { backgroundColor: colors.border }]} />
+
+            <View style={styles.metricCell}>
+              <Text style={[styles.metaLabel, { color: colors.mutedForeground }]}>Net Profit</Text>
+              {netProfit != null ? (
+                <Text style={[styles.metaValue, { color: isProfit ? colors.positive : colors.negative }]}>
+                  {formatCurrency(netProfit)}
+                </Text>
+              ) : (
+                <Text style={[styles.metaValue, { color: colors.mutedForeground }]}>—</Text>
+              )}
+            </View>
+          </View>
+        </>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
+  wrapper: {
     marginHorizontal: 16,
-    marginBottom: 12,
-    borderRadius: 20,
+    marginBottom: 8,
+    borderRadius: 14,
     borderWidth: 1,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
+    borderLeftWidth: 3.5,
+    overflow: 'hidden',
+    backgroundColor: 'transparent',
   },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 14,
+    paddingVertical: 13,
+    paddingLeft: 14,
+    paddingRight: 10,
+    gap: 10,
   },
-  avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  avatarText: {
-    fontSize: 18,
-    fontFamily: 'GoogleSansFlex_700Bold',
-  },
-  ipoTitle: {
-    fontSize: 15,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.2,
-  },
-  userSub: {
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    marginTop: 2,
-  },
-  metricsGrid: {
+  nameCol: { flex: 1, gap: 3 },
+  ipoName:  { fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.2 },
+  userName: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular' },
+
+  rightCluster: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 0 },
+  starBtn:      { padding: 2 },
+  chevronBtn:   { padding: 2 },
+
+  divider: { height: 1, marginHorizontal: 14 },
+  metricsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderRadius: 14,
-    borderWidth: 1,
+    alignItems: 'flex-start',
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
   },
-  metricItem: {
-    flex: 1,
-  },
-  metricLabel: {
+  metricCell: { flex: 1, gap: 4 },
+  sep: { width: 1, marginHorizontal: 10, alignSelf: 'stretch' },
+  metaLabel: {
     fontSize: 10,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
+    fontFamily: 'GoogleSansFlex_500Medium',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
-    marginBottom: 2,
   },
-  metricValue: {
-    fontSize: 13,
-    fontFamily: 'GoogleSansFlex_700Bold',
-  },
+  metaValue: { fontSize: 13, fontFamily: 'SpaceMono_700Bold' },
 });

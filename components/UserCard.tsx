@@ -198,6 +198,6 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   statSep: { width: 1, alignSelf: 'stretch' },
-  statValue: { fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
+  statValue: { fontSize: 15, fontFamily: 'SpaceMono_700Bold', letterSpacing: -0.3 },
   statLabel: { fontSize: 10, fontFamily: 'GoogleSansFlex_500Medium', letterSpacing: 0.4, textTransform: 'uppercase' },
 });
