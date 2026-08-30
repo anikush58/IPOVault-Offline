@@ -710,9 +710,9 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   metricVal: {
-    fontSize: 14,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.2,
+    fontSize: 12.5,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+    opacity: 0.8,
   },
 
   // Modal Form Sheet
