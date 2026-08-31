@@ -284,7 +284,7 @@ export default function IPOHubScreen() {
       <View
         style={[
           styles.topBar,
-          { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background, borderBottomColor: colors.border },
+          { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background },
         ]}
       >
         <View style={styles.titleWrap}>
@@ -448,7 +448,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
   },
   iconBtn: {
     width: 40,

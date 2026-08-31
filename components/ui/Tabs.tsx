@@ -126,11 +126,9 @@ export function Tabs<T extends string = string>({
             styles.pillTabBtn,
             {
               backgroundColor: isActive
-                ? (isDark ? '#374151' : '#0F172A')
-                : (isDark ? '#27272A' : '#FFFFFF'),
-              borderColor: isActive
-                ? (isDark ? '#4B5563' : '#0F172A')
-                : colors.border,
+                ? (isDark ? '#F8FAFC' : '#0F172A')
+                : (isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF'),
+              borderColor: isActive ? 'transparent' : colors.border,
             },
             tabStyle,
           ]}
@@ -140,20 +138,20 @@ export function Tabs<T extends string = string>({
               <View
                 style={[
                   styles.dot,
-                  { backgroundColor: isActive ? '#FFFFFF' : tab.dotColor },
+                  { backgroundColor: isActive ? (isDark ? '#0F172A' : '#FFFFFF') : tab.dotColor },
                 ]}
               />
             ) : tab.icon ? (
               <Feather
                 name={tab.icon}
                 size={12}
-                color={isActive ? '#FFFFFF' : colors.mutedForeground}
+                color={isActive ? (isDark ? '#0F172A' : '#FFFFFF') : colors.mutedForeground}
               />
             ) : null}
             <Text
               style={[
                 styles.pillText,
-                { color: isActive ? '#FFFFFF' : colors.foreground },
+                { color: isActive ? (isDark ? '#0F172A' : '#FFFFFF') : colors.foreground },
                 isActive ? styles.fontBold : styles.fontSemiBold,
                 textStyle,
               ]}
@@ -166,7 +164,7 @@ export function Tabs<T extends string = string>({
                   styles.countBadge,
                   {
                     backgroundColor: isActive
-                      ? 'rgba(255, 255, 255, 0.25)'
+                      ? (isDark ? 'rgba(15, 23, 42, 0.15)' : 'rgba(255, 255, 255, 0.25)')
                       : colors.muted,
                   },
                 ]}
@@ -174,7 +172,7 @@ export function Tabs<T extends string = string>({
                 <Text
                   style={[
                     styles.countText,
-                    { color: isActive ? '#FFFFFF' : colors.mutedForeground },
+                    { color: isActive ? (isDark ? '#0F172A' : '#FFFFFF') : colors.mutedForeground },
                   ]}
                 >
                   {tab.count}
@@ -369,15 +367,16 @@ const styles = StyleSheet.create({
 
   // Pills Variant
   pillTabBtn: {
-    paddingHorizontal: 15,
-    paddingVertical: 7,
-    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 24,
     borderWidth: 1,
+    minHeight: 38,
     alignItems: 'center',
     justifyContent: 'center',
   },
   pillText: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: 'GoogleSansFlex_600SemiBold',
   },
 

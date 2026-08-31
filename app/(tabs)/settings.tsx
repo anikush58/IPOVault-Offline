@@ -283,7 +283,7 @@ export default function SettingsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
         <View style={{ flex: 1, justifyContent: 'center' }}>
           <Text style={[styles.headerEyebrow, { color: colors.primary }]}>App</Text>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Settings</Text>
@@ -578,7 +578,7 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 16, borderBottomWidth: 1, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  header: { paddingHorizontal: 16, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
  headerIcon: { width: 40, height: 40, borderRadius: 10, marginBottom: 4 },
   headerGlow: { position: 'absolute', right: 0, top: 0, width: 200, height: 130 },
   headerEyebrow: { fontSize: 11, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 2 },

@@ -186,7 +186,7 @@ export default function LeaderboardScreen() {
       <View
         style={[
           styles.header,
-          { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background, borderBottomColor: colors.border },
+          { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background },
         ]}
       >
         <IconButton
@@ -304,7 +304,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingBottom: 12,
-    borderBottomWidth: 1,
     position: 'relative',
   },
   headerGlow: {

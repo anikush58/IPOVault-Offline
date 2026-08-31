@@ -94,7 +94,10 @@ export default function ApplicationsScreen() {
   const filterBase = sortedApplications.filter((a) => {
     if (filterUserIds.length > 0 && !filterUserIds.includes(a.user_id)) return false;
     if (filterBrokers.length > 0 && !filterBrokers.includes(a.user_broker ?? '')) return false;
-    if (filterBankNames.length > 0 && !filterBankNames.includes(a.user_bank_name ?? '')) return false;
+    if (filterBankNames.length > 0) {
+      const appBank = (a.user_bank_name || (a as any).bank_name || '').trim();
+      if (!appBank || !filterBankNames.some((b) => b.trim().toLowerCase() === appBank.toLowerCase())) return false;
+    }
     if (filterIpoNames.length > 0 && !filterIpoNames.includes(a.ipo_name ?? '')) return false;
     if (filterYear) {
       const y = a.open_date ? a.open_date.slice(0, 4) : '';
@@ -167,7 +170,7 @@ export default function ApplicationsScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
         <View style={{ flex: 1, justifyContent: 'center' }}>
           <Text style={[styles.headerEyebrow, { color: colors.primary }]}>IPO</Text>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Applications</Text>
@@ -234,7 +237,7 @@ export default function ApplicationsScreen() {
           <Text style={[styles.filterBarText, { color: colors.primary }]}>
             {filterChipLabel}
           </Text>
-          <TouchableOpacity onPress={() => { setFilterUserIds([]); setFilterBrokers([]); setFilterIpoNames([]); setFilterBankNames([]); }} hitSlop={8}>
+          <TouchableOpacity onPress={() => { setFilterUserIds([]); setFilterBrokers([]); setFilterIpoNames([]); setFilterBankNames([]); setFilterYear(null); }} hitSlop={8}>
             <Feather name="x" size={14} color={colors.primary} />
           </TouchableOpacity>
         </View>
@@ -408,7 +411,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
     overflow: 'hidden',
   },
   headerGlow: { position: 'absolute', right: 0, top: 0, width: 200, height: 130 },

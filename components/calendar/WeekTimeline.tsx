@@ -41,7 +41,7 @@ export const WeekTimeline = React.memo(function WeekTimeline({ timeline }: Props
 
   return (
     <View style={styles.container}>
-      <Text style={[styles.sectionTitle, { color: colors.primary }]}>THIS WEEK'S TIMELINE</Text>
+      <Text style={[styles.sectionTitle, { color: colors.primary }]}>THIS WEEK&apos;S TIMELINE</Text>
 
       {timeline.length === 0 ? (
         <View style={[styles.emptyBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>

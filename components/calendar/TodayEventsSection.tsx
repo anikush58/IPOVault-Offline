@@ -50,7 +50,7 @@ export const TodayEventsSection = React.memo(function TodayEventsSection({ event
 
   return (
     <View style={styles.container}>
-      <Text style={[styles.sectionTitle, { color: colors.primary }]}>TODAY'S ACTIVITY ({events.length})</Text>
+      <Text style={[styles.sectionTitle, { color: colors.primary }]}>TODAY&apos;S ACTIVITY ({events.length})</Text>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         {events.map(({ ipo, type, dateStr }, index) => {

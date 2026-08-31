@@ -17,7 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useDialog } from '@/context/DialogContext';
 import { useTheme } from '@/context/ThemeContext';
@@ -254,6 +254,7 @@ function BankCard({
 export default function BanksScreen() {
   const colors = useColors();
   const router = useRouter();
+  const { from } = useLocalSearchParams<{ from?: string }>();
   const { bankAccounts, ipos, applications, isLoading, refresh, addBankAccount, updateBankBalance, deleteBankAccount } = useDB();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
@@ -331,12 +332,17 @@ export default function BanksScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
         <IconButton
           name="chevron-left"
           variant="surface"
           size="md"
-          onPress={() => router.replace('/(tabs)/bids')}
+          onPress={() => {
+            if (from === 'bids') router.replace('/(tabs)/bids');
+            else if (from === 'dashboard') router.replace('/(tabs)');
+            else if (router.canGoBack()) router.back();
+            else router.replace('/(tabs)');
+          }}
         />
 
         <View style={{ flex: 1, alignItems: 'center' }}>
@@ -428,7 +434,6 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
     overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',

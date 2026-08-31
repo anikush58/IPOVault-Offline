@@ -8,6 +8,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
+import { useTheme } from '@/context/ThemeContext';
 import { DesignSystem } from '@/constants/DesignSystem';
 
 export type IconButtonVariant = 'surface' | 'primary' | 'ghost' | 'destructive';
@@ -17,6 +18,7 @@ export interface IconButtonProps {
   name: keyof typeof Feather.glyphMap;
   variant?: IconButtonVariant;
   size?: IconButtonSize;
+  iconSize?: number;
   color?: string;
   round?: boolean;
   disabled?: boolean;
@@ -31,6 +33,7 @@ export function IconButton({
   name,
   variant = 'surface',
   size = 'md',
+  iconSize: customIconSize,
   color: customColor,
   round = true,
   disabled = false,
@@ -41,6 +44,8 @@ export function IconButton({
   testID,
 }: IconButtonProps) {
   const colors = useColors();
+  const { resolvedScheme } = useTheme();
+  const isDark = resolvedScheme === 'dark';
 
   const handlePress = () => {
     if (disabled) return;
@@ -52,14 +57,14 @@ export function IconButton({
 
   const getSpecs = (): { dimension: number; iconSize: number; radius: number; bg: string; border: string; iconColor: string } => {
     let dimension = 44;
-    let iconSize = 18;
+    let iconSize = customIconSize ?? (name === 'x' ? 15 : 18);
 
     if (size === 'lg') {
       dimension = 50;
-      iconSize = 22;
+      iconSize = customIconSize ?? (name === 'x' ? 18 : 22);
     } else if (size === 'sm') {
       dimension = 36;
-      iconSize = 16;
+      iconSize = customIconSize ?? (name === 'x' ? 14 : 16);
     }
 
     let radius: number = round ? dimension / 2 : DesignSystem.radius.sm;
@@ -68,7 +73,12 @@ export function IconButton({
     let border = colors.border;
     let iconColor = colors.foreground;
 
-    if (variant === 'primary') {
+    if (name === 'x' && (variant === 'primary' || variant === 'surface')) {
+      iconSize = customIconSize ?? (size === 'lg' ? 16 : size === 'sm' ? 12 : 13);
+      bg = isDark ? '#FFFFFF' : '#0F172A';
+      border = 'transparent';
+      iconColor = isDark ? '#0F172A' : '#FFFFFF';
+    } else if (variant === 'primary') {
       bg = colors.primary + '18';
       border = colors.primary;
       iconColor = colors.primary;

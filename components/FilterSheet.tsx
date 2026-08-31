@@ -24,6 +24,21 @@ type Props = {
 
 type PickerType = 'bank' | 'user' | 'broker' | 'year' | 'ipo' | null;
 
+const DEFAULT_POPULAR_BANKS = [
+  'Axis Bank',
+  'Bank of Baroda',
+  'Canara Bank',
+  'HDFC Bank',
+  'ICICI Bank',
+  'IDFC FIRST Bank',
+  'IndusInd Bank',
+  'Kotak Mahindra Bank',
+  'Punjab National Bank',
+  'State Bank of India (SBI)',
+  'Union Bank of India',
+  'Yes Bank',
+];
+
 export function FilterSheet({
   visible,
   filterUserIds,
@@ -50,13 +65,17 @@ export function FilterSheet({
     () =>
       [
         ...new Set([
+          ...DEFAULT_POPULAR_BANKS,
           ...activeUsers.map((u: User) => u.bank_name),
           ...bankAccounts.map((b: BankAccount) => b.bank_name),
           ...applications.map((a: ApplicationWithDetails) => a.user_bank_name),
+          ...applications.map((a: ApplicationWithDetails) => (a as any).bank_name),
         ]),
       ]
-        .filter((b): b is string => Boolean(b))
-        .sort(),
+        .filter((b): b is string => Boolean(b && typeof b === 'string' && b.trim().length > 0))
+        .map((b) => b.trim())
+        .filter((b, idx, self) => self.findIndex((x) => x.toLowerCase() === b.toLowerCase()) === idx)
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' })),
     [activeUsers, bankAccounts, applications]
   );
 
@@ -337,12 +356,14 @@ export function FilterSheet({
                   {banks
                     .filter((b) => b.toLowerCase().includes(pickerSearch.toLowerCase()))
                     .map((b) => {
-                      const selected = filterBankNames.includes(b);
+                      const selected = filterBankNames.some((x) => x.trim().toLowerCase() === b.trim().toLowerCase());
                       return (
                         <TouchableOpacity
                           key={b}
                           onPress={() => {
-                            const next = selected ? filterBankNames.filter((x) => x !== b) : [...filterBankNames, b];
+                            const next = selected
+                              ? filterBankNames.filter((x) => x.trim().toLowerCase() !== b.trim().toLowerCase())
+                              : [...filterBankNames, b];
                             onFilterChange(filterUserIds, filterBrokers, filterYear, filterIpoNames, next);
                           }}
                           style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: selected ? colors.primary + '12' : 'transparent' }]}

@@ -703,7 +703,7 @@ export default function AllotmentCheckerScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header Bar */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
         <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
         <Text style={[styles.headerTitle, { color: colors.foreground }]}>Allotment Checker</Text>
         <View style={{ width: 44, height: 44 }} />
@@ -1212,7 +1212,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: DesignSystem.spacing.lg,
     paddingBottom: DesignSystem.spacing.md,
-    borderBottomWidth: 1,
   },
   headerIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontSize: DesignSystem.typography.size.title, fontFamily: DesignSystem.typography.fontBold, letterSpacing: -0.2 },

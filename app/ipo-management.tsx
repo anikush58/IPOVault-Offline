@@ -128,7 +128,7 @@ export default function IPOManagementScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* ── Custom Single Header (No Double Navigation Bar) ── */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
         <View style={{ flex: 1, justifyContent: 'center' }}>
           <Text style={[styles.headerEyebrow, { color: colors.mutedForeground }]}>TRACK & MANAGE</Text>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>IPOs</Text>
@@ -423,7 +423,6 @@ const styles = StyleSheet.create({
 
   header: {
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
     overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',

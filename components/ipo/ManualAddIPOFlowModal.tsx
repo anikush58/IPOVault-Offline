@@ -169,7 +169,7 @@ export const ManualAddIPOFlowModal = React.memo(function ManualAddIPOFlowModal({
               </View>
               <Text style={[styles.emptyTitle, { color: colors.foreground }]}>IPO Not Found</Text>
               <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
-                No IPO matches "{query.trim()}". You can manually create it.
+                No IPO matches &quot;{query.trim()}&quot;. You can manually create it.
               </Text>
             </View>
           ) : (

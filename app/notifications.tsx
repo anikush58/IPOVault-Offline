@@ -96,7 +96,7 @@ export default function NotificationCenterScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header Bar */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
         <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
 
         <View style={styles.titleRow}>
@@ -210,7 +210,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
   },
   headerIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },

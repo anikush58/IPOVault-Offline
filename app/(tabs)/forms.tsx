@@ -174,7 +174,7 @@ export default function FormsScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Top Header */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
         <View style={{ flex: 1, justifyContent: 'center' }}>
           <Text style={[styles.headerEyebrow, { color: colors.primary, marginTop: -2 }]}>IPO MARKET</Text>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>IPO Hub</Text>
@@ -656,7 +656,7 @@ export default function FormsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 16, borderBottomWidth: 1, overflow: 'hidden', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: { paddingHorizontal: 16, overflow: 'hidden', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   headerGlow: { position: 'absolute', right: 0, top: 0, width: 200, height: 130 },
   headerEyebrow: { fontSize: 11, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 2 },
   headerTitle: { fontSize: 30, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.8, lineHeight: 34 },

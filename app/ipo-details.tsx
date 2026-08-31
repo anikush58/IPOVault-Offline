@@ -97,7 +97,7 @@ export default function IPODetailsScreen() {
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={[styles.header, { paddingTop: topPad + 8, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+        <View style={[styles.header, { paddingTop: topPad + 8, backgroundColor: colors.background }]}>
           <TouchableOpacity onPress={() => router.back()} style={[styles.iconBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Feather name="chevron-left" size={20} color={colors.foreground} />
           </TouchableOpacity>
@@ -198,7 +198,7 @@ export default function IPODetailsScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* ── 1. COMPACT TOP NAV BAR ── */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
         <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
 
         <Text style={[styles.headerTitle, { color: colors.foreground }]} numberOfLines={1}>
@@ -771,7 +771,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
   },
   iconBtn: {
     width: 36,

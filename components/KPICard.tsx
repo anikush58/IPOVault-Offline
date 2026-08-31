@@ -10,10 +10,11 @@ type Props = {
   isPositive?: boolean;
   isNegative?: boolean;
   subtitle?: string;
+  solidBg?: boolean;
   style?: ViewStyle;
 };
 
-export function KPICard({ label, value, isPositive, isNegative, subtitle, style }: Props) {
+export function KPICard({ label, value, isPositive, isNegative, subtitle, solidBg, style }: Props) {
   const colors = useColors();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
@@ -28,6 +29,24 @@ export function KPICard({ label, value, isPositive, isNegative, subtitle, style 
   const subtitleColor = (isPercentageSubtitle && (isPositive || isNegative))
     ? (isPositive ? colors.positive : colors.negative)
     : colors.mutedForeground;
+
+  if (solidBg) {
+    return (
+      <View style={[styles.card, { backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderColor: colors.border }, style]}>
+        <Text style={[styles.label, { color: colors.mutedForeground }]} numberOfLines={1}>
+          {label}
+        </Text>
+        <Text style={[styles.value, { color: valueColor }]} numberOfLines={1} adjustsFontSizeToFit>
+          {value}
+        </Text>
+        {subtitle ? (
+          <Text style={[styles.subtitle, { color: subtitleColor }]} numberOfLines={1}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+    );
+  }
 
   // Pick gradient stops based on sentiment
   const gradColors: [string, string] = isPositive
@@ -69,7 +88,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 16,
     paddingVertical: 16,
-    borderRadius: 18,
+    borderRadius: 24,
     borderWidth: 1,
     overflow: 'hidden',
   },

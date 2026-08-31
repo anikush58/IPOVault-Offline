@@ -293,7 +293,6 @@ export default function AddIPOScreen() {
             paddingTop: topPad,
             height: topPad + 60,
             backgroundColor: colors.background,
-            borderBottomColor: colors.border,
           },
         ]}
       >
@@ -664,7 +663,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
   },
   headerCenter: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   headerEyebrow: {

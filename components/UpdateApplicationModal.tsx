@@ -290,7 +290,7 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
                 {confirmDelete ? (
                   <View style={[styles.confirmBox, { backgroundColor: colors.destructiveBg, borderColor: colors.destructive }]}>
                     <Text style={[styles.confirmText, { color: colors.foreground }]}>
-                      Are you sure you want to delete {app.user_name}'s application?
+                      Are you sure you want to delete {app.user_name}&apos;s application?
                     </Text>
                     <View style={styles.confirmRow}>
                       <TouchableOpacity

@@ -12,7 +12,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
@@ -27,6 +27,7 @@ import { SegmentedTabControl } from '@/components/ui/SegmentedTabControl';
 export default function UsersScreen() {
   const colors = useColors();
   const router = useRouter();
+  const { from } = useLocalSearchParams<{ from?: string }>();
   const { users, applications, isLoading, refresh, deleteUser, archiveUser, unarchiveUser } = useDB();
   const { showConfirm, showError } = useDialog();
   const insets = useSafeAreaInsets();
@@ -116,12 +117,17 @@ export default function UsersScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]} {...swipeHandlers}>
       {/* Header */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
         <IconButton
           name="chevron-left"
           variant="surface"
           size="md"
-          onPress={() => router.back()}
+          onPress={() => {
+            if (from === 'bids') router.replace('/(tabs)/bids');
+            else if (from === 'dashboard') router.replace('/(tabs)');
+            else if (router.canGoBack()) router.back();
+            else router.replace('/(tabs)');
+          }}
         />
 
         <View style={styles.headerCenter}>
@@ -219,7 +225,6 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: {
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
     overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',

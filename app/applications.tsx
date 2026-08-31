@@ -47,7 +47,8 @@ export default function ApplicationsScreen() {
   const [selectedApp, setSelectedApp] = useState<ApplicationWithDetails | null>(null);
   const [filterUserIds, setFilterUserIds] = useState<string[]>([]);
   const [filterBrokers, setFilterBrokers] = useState<string[]>([]);
-  const [filterYear, setFilterYear] = useState<string | null>(new Date().getFullYear().toString());
+  const [filterBankNames, setFilterBankNames] = useState<string[]>([]);
+  const [filterYear, setFilterYear] = useState<string | null>(null);
   const [filterIpoNames, setFilterIpoNames] = useState<string[]>([]);
   const [showFilter, setShowFilter] = useState(false);
 
@@ -94,12 +95,16 @@ export default function ApplicationsScreen() {
     outputRange: [0, 0, 1],
   });
 
-  const hasFilter = filterUserIds.length > 0 || filterBrokers.length > 0 || filterIpoNames.length > 0;
+  const hasFilter = filterUserIds.length > 0 || filterBrokers.length > 0 || filterIpoNames.length > 0 || filterBankNames.length > 0;
 
   // Apply user/broker/year/IPO filter first, then tab filter
   const filterBase = applications.filter((a) => {
     if (filterUserIds.length > 0 && !filterUserIds.includes(a.user_id)) return false;
     if (filterBrokers.length > 0 && !filterBrokers.includes(a.user_broker ?? '')) return false;
+    if (filterBankNames.length > 0) {
+      const appBank = (a.user_bank_name || (a as any).bank_name || '').trim();
+      if (!appBank || !filterBankNames.some((b) => b.trim().toLowerCase() === appBank.toLowerCase())) return false;
+    }
     if (filterIpoNames.length > 0 && !filterIpoNames.includes(a.ipo_name ?? '')) return false;
     if (filterYear) {
       const y = a.open_date ? a.open_date.slice(0, 4) : '';
@@ -132,7 +137,7 @@ export default function ApplicationsScreen() {
   const filterUserNames = filterUserIds
     .map((uid) => applications.find((a) => a.user_id === uid)?.user_name)
     .filter(Boolean) as string[];
-  const filterChipLabel = [...filterUserNames, ...filterBrokers, ...filterIpoNames].join(' · ');
+  const filterChipLabel = [...filterUserNames, ...filterBrokers, ...filterBankNames, ...filterIpoNames].join(' · ');
 
   // ── KPI calculations ───────────────────────────────────────────────────────
   const appliedCount = searchFiltered.length;
@@ -173,7 +178,7 @@ export default function ApplicationsScreen() {
       <View
         style={[
           styles.header,
-          { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background, borderBottomColor: colors.border },
+          { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background },
         ]}
       >
         {router.canGoBack() ? (
@@ -248,7 +253,7 @@ export default function ApplicationsScreen() {
           <Text style={[styles.filterBarText, { color: colors.primary }]}>
             {filterChipLabel}
           </Text>
-          <TouchableOpacity onPress={() => { setFilterUserIds([]); setFilterBrokers([]); setFilterIpoNames([]); }} hitSlop={8}>
+          <TouchableOpacity onPress={() => { setFilterUserIds([]); setFilterBrokers([]); setFilterIpoNames([]); setFilterBankNames([]); setFilterYear(null); }} hitSlop={8}>
             <Feather name="x" size={14} color={colors.primary} />
           </TouchableOpacity>
         </View>
@@ -367,11 +372,13 @@ export default function ApplicationsScreen() {
         filterBrokers={filterBrokers}
         filterYear={filterYear}
         filterIpoNames={filterIpoNames}
-        onFilterChange={(uids, brokers, year, ipos) => {
+        filterBankNames={filterBankNames}
+        onFilterChange={(uids, brokers, year, ipos, banks) => {
           setFilterUserIds(uids);
           setFilterBrokers(brokers);
           setFilterYear(year);
           setFilterIpoNames(ipos);
+          setFilterBankNames(banks || []);
         }}
         onClose={() => setShowFilter(false)}
       />
@@ -387,7 +394,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
     overflow: 'hidden',
   },
   headerGlow: { position: 'absolute', right: 0, top: 0, width: 200, height: 130 },

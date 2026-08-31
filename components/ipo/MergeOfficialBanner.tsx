@@ -47,7 +47,7 @@ export const MergeOfficialBanner = React.memo(function MergeOfficialBanner({
       </View>
 
       <Text style={styles.subText}>
-        An official backend listing for "{officialIpo.company_name}" is available. Merge to update details while keeping your notes & applications.
+        An official backend listing for &quot;{officialIpo.company_name}&quot; is available. Merge to update details while keeping your notes & applications.
       </Text>
 
       <TouchableOpacity

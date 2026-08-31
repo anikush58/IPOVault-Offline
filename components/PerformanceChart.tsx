@@ -920,16 +920,11 @@ const styles = StyleSheet.create({
   card: {
     marginHorizontal: 16,
     marginBottom: 20,
-    borderRadius: 22,
+    borderRadius: 24,
     borderWidth: 1,
     paddingTop: 18,
     paddingBottom: 10,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.02,
-    shadowRadius: 6,
-    elevation: 1,
   },
 
   header: {
