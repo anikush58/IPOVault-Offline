@@ -108,6 +108,10 @@ export default function FormsScreen() {
 
   const handleBankSelect = (bankName: string) => {
     setBulkBankName(bankName);
+    const bankObj = bankAccounts.find((b) => b.bank_name === bankName);
+    if (bankObj && bankObj.upi_app) {
+      setBulkUPIApp(bankObj.upi_app);
+    }
     setShowBankPicker(false);
   };
 

@@ -98,16 +98,16 @@ const badge = StyleSheet.create({
 export default function LeaderboardScreen() {
   const colors = useColors();
   const router = useRouter();
-  const params = useLocalSearchParams<{ tab?: TabKey }>();
+  const params = useLocalSearchParams<{ tab?: TabKey; q?: string }>();
   const insets = useSafeAreaInsets();
   const { applications, isLoading, refresh } = useDB();
 
   const [activeTab, setActiveTab] = useState<TabKey>(
     params.tab === 'broker' || params.tab === 'ipo' ? params.tab : 'user',
   );
-  const [showSearch, setShowSearch] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const searchAnim = useRef(new Animated.Value(0)).current;
+  const [showSearch, setShowSearch] = useState(!!params.q);
+  const [searchQuery, setSearchQuery] = useState(params.q || '');
+  const searchAnim = useRef(new Animated.Value(params.q ? 1 : 0)).current;
   const searchRef = useRef<TextInput>(null);
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
@@ -203,9 +203,9 @@ export default function LeaderboardScreen() {
 
         <IconButton
           name={showSearch ? 'x' : 'search'}
-          variant={showSearch ? 'primary' : 'surface'}
+          variant={showSearch || searchQuery.length > 0 ? 'primary' : 'surface'}
           size="md"
-          onPress={() => setShowSearch(!showSearch)}
+          onPress={toggleSearch}
         />
       </View>
 
@@ -213,7 +213,7 @@ export default function LeaderboardScreen() {
       <Animated.View
         style={[
           styles.searchBarWrap,
-          { height: searchBarHeight, opacity: searchBarOpacity, backgroundColor: colors.background, borderBottomColor: colors.border },
+          { height: searchBarHeight, opacity: searchBarOpacity, backgroundColor: colors.background },
         ]}
       >
         <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -227,13 +227,18 @@ export default function LeaderboardScreen() {
             style={[styles.searchInput, { color: colors.foreground }]}
             clearButtonMode="while-editing"
           />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
+              <Feather name="x-circle" size={14} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          )}
         </View>
       </Animated.View>
 
-      {/* Segmented Control */}
-      <View style={[styles.tabBarWrap, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      {/* Pill Control */}
+      <View style={[styles.tabBarWrap, { backgroundColor: colors.background }]}>
         <Tabs
-          variant="segmented"
+          variant="pills"
           tabs={[
             { key: 'user', label: 'By User' },
             { key: 'broker', label: 'By Broker' },
@@ -337,7 +342,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     justifyContent: 'center',
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
+    borderBottomWidth: 0,
   },
   searchBar: {
     flexDirection: 'row',
@@ -356,8 +361,8 @@ const styles = StyleSheet.create({
   },
   tabBarWrap: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
+    paddingVertical: 8,
+    borderBottomWidth: 0,
   },
   segmented: {
     flexDirection: 'row',

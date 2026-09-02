@@ -17,7 +17,8 @@ import { DesignSystem } from '@/constants/DesignSystem';
 export type TabStyleVariant = 'segmented' | 'segmented-secondary' | 'underline' | 'pills';
 
 export interface TabItem<T extends string = string> {
-  key: T;
+  key?: T;
+  id?: T;
   label: string;
   icon?: keyof typeof Feather.glyphMap;
   count?: number;
@@ -40,7 +41,7 @@ export function Tabs<T extends string = string>({
   tabs,
   activeTab,
   onChange,
-  variant = 'segmented',
+  variant = 'pills',
   scrollable = false,
   style,
   tabStyle,
@@ -61,14 +62,15 @@ export function Tabs<T extends string = string>({
   const isSegmented = variant === 'segmented' || variant === 'segmented-secondary';
   const isSecondarySegmented = variant === 'segmented-secondary';
 
-  const renderTabItem = (tab: TabItem<T>) => {
-    const isActive = tab.key === activeTab;
+  const renderTabItem = (tab: TabItem<T>, idx: number) => {
+    const itemKey = (tab.key ?? tab.id ?? String(idx)) as T;
+    const isActive = itemKey === activeTab;
 
     if (variant === 'underline') {
       return (
         <Pressable
-          key={tab.key}
-          onPress={() => handlePress(tab.key)}
+          key={itemKey}
+          onPress={() => handlePress(itemKey)}
           style={[
             styles.underlineTabBtn,
             { borderBottomColor: isActive ? colors.primary : 'transparent' },
@@ -120,15 +122,17 @@ export function Tabs<T extends string = string>({
     if (variant === 'pills') {
       return (
         <Pressable
-          key={tab.key}
-          onPress={() => handlePress(tab.key)}
+          key={itemKey}
+          onPress={() => handlePress(itemKey)}
           style={[
             styles.pillTabBtn,
             {
               backgroundColor: isActive
-                ? (isDark ? '#F8FAFC' : '#0F172A')
-                : (isDark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF'),
-              borderColor: isActive ? 'transparent' : colors.border,
+                ? (isDark ? '#F8FAFC' : '#0B132B')
+                : (isDark ? '#1E293B' : '#FFFFFF'),
+              borderColor: isActive
+                ? (isDark ? '#F8FAFC' : '#0B132B')
+                : (isDark ? '#334155' : '#E2E8F0'),
             },
             tabStyle,
           ]}
@@ -138,20 +142,94 @@ export function Tabs<T extends string = string>({
               <View
                 style={[
                   styles.dot,
-                  { backgroundColor: isActive ? (isDark ? '#0F172A' : '#FFFFFF') : tab.dotColor },
+                  { backgroundColor: isActive ? (isDark ? '#0B132B' : '#FFFFFF') : tab.dotColor },
                 ]}
               />
             ) : tab.icon ? (
               <Feather
                 name={tab.icon}
                 size={12}
-                color={isActive ? (isDark ? '#0F172A' : '#FFFFFF') : colors.mutedForeground}
+                color={isActive ? (isDark ? '#0B132B' : '#FFFFFF') : colors.mutedForeground}
               />
             ) : null}
             <Text
               style={[
                 styles.pillText,
-                { color: isActive ? (isDark ? '#0F172A' : '#FFFFFF') : colors.foreground },
+                { color: isActive ? (isDark ? '#0B132B' : '#FFFFFF') : (isDark ? '#F8FAFC' : '#0B132B') },
+                textStyle,
+              ]}
+            >
+              {tab.label}
+            </Text>
+            {tab.count != null ? (
+              <View
+                style={[
+                  styles.countBadgePill,
+                  {
+                    backgroundColor: isActive
+                      ? (isDark ? 'rgba(11, 19, 43, 0.18)' : 'rgba(255, 255, 255, 0.22)')
+                      : (isDark ? 'rgba(255, 255, 255, 0.1)' : '#F1F5F9'),
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.countTextPill,
+                    {
+                      color: isActive
+                        ? (isDark ? '#0B132B' : '#FFFFFF')
+                        : (isDark ? '#94A3B8' : '#64748B'),
+                    },
+                  ]}
+                >
+                  {tab.count}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </Pressable>
+      );
+    }
+
+    if (isSegmented) {
+      const activeBg = isSecondarySegmented
+        ? isDark
+          ? colors.surface
+          : colors.background
+        : colors.primary;
+      const activeTextColor = isSecondarySegmented
+        ? colors.foreground
+        : colors.primaryForeground;
+      const activeBorderColor = isSecondarySegmented ? colors.border : colors.primary;
+
+      return (
+        <Pressable
+          key={itemKey}
+          onPress={() => handlePress(itemKey)}
+          style={[
+            styles.segmentedTabBtn,
+            isActive && [
+              styles.segmentedActiveCard,
+              {
+                backgroundColor: activeBg,
+                borderColor: activeBorderColor,
+              },
+            ],
+            tabStyle,
+          ]}
+        >
+          <View style={styles.contentRow}>
+            {tab.icon ? (
+              <Feather
+                name={tab.icon}
+                size={14}
+                color={isActive ? activeTextColor : colors.mutedForeground}
+              />
+            ) : null}
+            <Text
+              style={[
+                styles.segmentedText,
+                { color: isActive ? activeTextColor : colors.mutedForeground },
                 isActive ? styles.fontBold : styles.fontSemiBold,
                 textStyle,
               ]}
@@ -164,7 +242,7 @@ export function Tabs<T extends string = string>({
                   styles.countBadge,
                   {
                     backgroundColor: isActive
-                      ? (isDark ? 'rgba(15, 23, 42, 0.15)' : 'rgba(255, 255, 255, 0.25)')
+                      ? activeTextColor + '20'
                       : colors.muted,
                   },
                 ]}
@@ -172,7 +250,7 @@ export function Tabs<T extends string = string>({
                 <Text
                   style={[
                     styles.countText,
-                    { color: isActive ? (isDark ? '#0F172A' : '#FFFFFF') : colors.mutedForeground },
+                    { color: isActive ? activeTextColor : colors.mutedForeground },
                   ]}
                 >
                   {tab.count}
@@ -184,99 +262,7 @@ export function Tabs<T extends string = string>({
       );
     }
 
-    // Default: 'segmented' or 'segmented-secondary'
-    return (
-      <Pressable
-        key={tab.key}
-        onPress={() => handlePress(tab.key)}
-        style={[
-          styles.segmentedTabBtn,
-          isActive && [
-            styles.segmentedActiveCard,
-            {
-              backgroundColor: isSecondarySegmented ? colors.primary : colors.card,
-              borderColor: isSecondarySegmented ? colors.primary : colors.border,
-            },
-          ],
-          tabStyle,
-        ]}
-      >
-        <View style={styles.contentRow}>
-          {tab.dotColor ? (
-            <View
-              style={[
-                styles.dot,
-                {
-                  backgroundColor: isActive
-                    ? isSecondarySegmented
-                      ? '#FFFFFF'
-                      : colors.primary
-                    : tab.dotColor,
-                },
-              ]}
-            />
-          ) : tab.icon ? (
-            <Feather
-              name={tab.icon}
-              size={13}
-              color={
-                isActive
-                  ? isSecondarySegmented
-                    ? '#FFFFFF'
-                    : colors.primary
-                  : colors.mutedForeground
-              }
-            />
-          ) : null}
-          <Text
-            style={[
-              styles.segmentedText,
-              {
-                color: isActive
-                  ? isSecondarySegmented
-                    ? '#FFFFFF'
-                    : colors.foreground
-                  : colors.mutedForeground,
-              },
-              isActive ? styles.fontBold : styles.fontSemiBold,
-              textStyle,
-            ]}
-            numberOfLines={1}
-          >
-            {tab.label}
-          </Text>
-          {tab.count != null ? (
-            <View
-              style={[
-                styles.countBadge,
-                {
-                  backgroundColor: isActive
-                    ? isSecondarySegmented
-                      ? '#FFFFFF30'
-                      : colors.surface
-                    : colors.card,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.countText,
-                  {
-                    color: isActive
-                      ? isSecondarySegmented
-                        ? '#FFFFFF'
-                        : colors.foreground
-                      : colors.mutedForeground,
-                  },
-                ]}
-              >
-                {tab.count}
-              </Text>
-            </View>
-          ) : null}
-        </View>
-      </Pressable>
-    );
+    return null;
   };
 
   if (scrollable) {
@@ -321,63 +307,59 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 10,
   },
 
   // Segmented Variant
   segmentedContainer: {
     flexDirection: 'row',
-    borderRadius: DesignSystem.tabs.radius.segmented,
+    borderRadius: 12,
     borderWidth: 1,
     padding: 3,
-    gap: 4,
+    gap: 3,
   },
   segmentedTabBtn: {
     flex: 1,
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: DesignSystem.tabs.radius.segmented - 2,
+    borderRadius: 10,
     paddingHorizontal: 10,
   },
   segmentedActiveCard: {
     borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 1,
   },
   segmentedText: {
-    fontSize: DesignSystem.tabs.fontSize.sm,
+    fontSize: 12,
   },
 
   // Underline Variant
   underlineTabBtn: {
     flex: 1,
-    height: DesignSystem.tabs.height.underline,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
     borderBottomWidth: 2.5,
     paddingHorizontal: 12,
   },
   underlineText: {
-    fontSize: DesignSystem.tabs.fontSize.md,
+    fontSize: 13,
   },
 
-  // Pills Variant
+  // Pills Variant (Height: 36px, Padding: 10px Left & Right)
   pillTabBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-    borderRadius: 24,
+    height: 36,
+    minHeight: 36,
+    paddingHorizontal: 10,
+    borderRadius: 9999,
     borderWidth: 1,
-    minHeight: 38,
     alignItems: 'center',
     justifyContent: 'center',
   },
   pillText: {
-    fontSize: 13,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
+    fontSize: 12.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.1,
   },
 
   // Common Typography & Elements
@@ -385,18 +367,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-  },
-  fontBold: {
-    fontFamily: DesignSystem.typography.fontBold,
-  },
-  fontSemiBold: {
-    fontFamily: DesignSystem.typography.fontSemiBold,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    gap: 5,
   },
   countBadge: {
     paddingHorizontal: 6,
@@ -404,7 +375,28 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   countText: {
-    fontSize: 10,
-    fontFamily: DesignSystem.typography.fontBold,
+    fontSize: 10.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  countBadgePill: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 10,
+    marginLeft: 3,
+  },
+  countTextPill: {
+    fontSize: 10.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  fontBold: {
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  fontSemiBold: {
+    fontFamily: 'GoogleSansFlex_600SemiBold',
   },
 });

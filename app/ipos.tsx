@@ -30,7 +30,7 @@ import { ManualAddIPOFlowModal } from '@/components/ipo/ManualAddIPOFlowModal';
 import { IPOOverviewTab } from '@/components/ipo/IPOOverviewTab';
 import { IPORadarTab } from '@/components/ipo/IPORadarTab';
 import { IPODiscoverTab } from '@/components/ipo/IPODiscoverTab';
-import { SegmentedTabControl } from '@/components/ui/SegmentedTabControl';
+import { Tabs } from '@/components/ui/Tabs';
 import { triggerCentralizedIPOSync, LAST_SYNCED_AT_KEY } from '@/services/ipo/centralizedSync';
 import { syncStore } from '@/services/sync/syncStatus';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
@@ -335,14 +335,14 @@ export default function IPOHubScreen() {
         </View>
       </View>
 
-      {/* Top Segmented Control (IPOs | Insights | Explore) */}
-      <View style={[styles.segmentedWrap, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-        <SegmentedTabControl
-          variant="primary"
+      {/* Top Pill Tabs Bar */}
+      <View style={[styles.segmentedWrap, { backgroundColor: colors.background, borderBottomWidth: 0 }]}>
+        <Tabs
+          variant="pills"
           tabs={[
-            { key: 'ipos', label: 'IPOs', icon: 'layers' },
-            { key: 'insights', label: 'Insights', icon: 'star' },
-            { key: 'explore', label: 'Explore', icon: 'compass' },
+            { id: 'ipos', label: 'IPOs' },
+            { id: 'insights', label: 'Insights' },
+            { id: 'explore', label: 'Explore' },
           ]}
           activeTab={segment}
           onChange={(newSeg) => setSegment(newSeg as PrimarySegment)}

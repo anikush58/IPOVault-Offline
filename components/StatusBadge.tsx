@@ -55,7 +55,6 @@ export function StatusBadge({ status, small }: Props) {
 
   return (
     <View style={[styles.badge, { backgroundColor: bg }, small && styles.badgeSmall]}>
-      <View style={[styles.dot, { backgroundColor: dot }]} />
       <Text style={[styles.text, { color: text }, small && styles.textSmall]}>{status}</Text>
     </View>
   );
@@ -65,27 +64,27 @@ const styles = StyleSheet.create({
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
     borderRadius: 100,
     alignSelf: 'flex-start',
   },
   badgeSmall: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
   dot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
+    width: 4,
+    height: 4,
+    borderRadius: 2,
   },
   text: {
-    fontSize: 11.5,
+    fontSize: 9.5,
     fontFamily: 'GoogleSansFlex_600SemiBold',
     letterSpacing: 0.1,
   },
   textSmall: {
-    fontSize: 10.5,
+    fontSize: 8.5,
   },
 });

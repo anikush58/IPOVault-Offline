@@ -242,7 +242,6 @@ export default function AddIPOScreen() {
             editingIPO.id,
           ]
         );
-        showSuccess('Saved', `${formIpoName} updated successfully.`);
       } else {
         const newId = `ipo_${Date.now()}`;
         const now = new Date().toISOString();
@@ -268,7 +267,6 @@ export default function AddIPOScreen() {
             now,
           ]
         );
-        showSuccess('Created', `${formIpoName} added to IPO listings.`);
       }
       await refresh();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

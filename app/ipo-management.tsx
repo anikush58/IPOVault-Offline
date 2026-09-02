@@ -1,6 +1,7 @@
-import React, { useRef, useMemo, useState } from 'react';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
 import {
   Animated,
+  DeviceEventEmitter,
   Image,
   Platform,
   ScrollView,
@@ -10,22 +11,46 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useColors } from '@/hooks/useColors';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDialog } from '@/context/DialogContext';
 import { useDB, type IPOListing } from '@/context/DBContext';
 import { IconButton } from '@/components/ui/IconButton';
 import { formatCurrency } from '@/utils/formatters';
-import { SegmentedTabControl } from '@/components/ui/SegmentedTabControl';
+import { Tabs } from '@/components/ui/Tabs';
 
 type TabSegment = 'active' | 'favorites' | 'archived';
 
+const AVATAR_PALETTES: [string, string][] = [
+  ['#8B5CF6', '#6D28D9'], // Purple
+  ['#10B981', '#047857'], // Emerald
+  ['#3B82F6', '#1D4ED8'], // Blue
+  ['#F59E0B', '#B45309'], // Amber
+  ['#EC4899', '#BE185D'], // Pink
+  ['#6366F1', '#4338CA'], // Indigo
+  ['#14B8A6', '#0F766E'], // Teal
+  ['#F43F5E', '#BE123C'], // Rose
+];
+
+function getAvatarGradient(name: string): [string, string] {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % AVATAR_PALETTES.length;
+  return AVATAR_PALETTES[index];
+}
+
 export default function IPOManagementScreen() {
   const colors = useColors();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const router = useRouter();
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
@@ -49,7 +74,6 @@ export default function IPOManagementScreen() {
       setTimeout(() => searchRef.current?.focus(), 100);
     }
   };
-
 
   // Counts
   const activeCount = useMemo(() => ipos.filter((i) => i.archived === 0).length, [ipos]);
@@ -78,8 +102,17 @@ export default function IPOManagementScreen() {
 
   // Navigate to Add IPO page
   const openAddPage = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push('/add-ipo');
   };
+
+  // Context-Aware Plus Button Listener from Bottom Tab Bar
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('OPEN_ADD_IPO', () => {
+      openAddPage();
+    });
+    return () => sub.remove();
+  }, []);
 
   // Navigate to Edit IPO page
   const openEditPage = (ipo: IPOListing) => {
@@ -105,48 +138,45 @@ export default function IPOManagementScreen() {
     try {
       await db.runAsync('UPDATE ipo_listings SET archived = ? WHERE id = ?', [newArchived, ipo.id]);
       await refresh();
-      showSuccess(
-        newArchived === 1 ? 'Archived' : 'Restored',
-        `${ipo.ipo_name} has been ${newArchived === 1 ? 'archived' : 'restored to active listings'}.`
-      );
     } catch {
       showError('Error', 'Failed to update archive status.');
     }
   };
 
-  const handleDeleteIPO = async (ipo: IPOListing) => {
-    try {
-      await db.runAsync('UPDATE ipo_listings SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?', [ipo.id]);
-      await refresh();
-      showSuccess('Deleted', `${ipo.ipo_name} has been deleted.`);
-    } catch {
-      showError('Error', 'Failed to delete IPO record.');
-    }
+  const handleDeleteIPO = (ipo: IPOListing) => {
+    showConfirm({
+      title: 'Delete IPO',
+      message: `Permanently delete "${ipo.ipo_name}" from listings?`,
+      confirmText: 'Delete',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await db.runAsync('UPDATE ipo_listings SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?', [ipo.id]);
+          await refresh();
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        } catch {
+          showError('Error', 'Failed to delete IPO record.');
+        }
+      },
+    });
   };
-
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* ── Custom Single Header (No Double Navigation Bar) ── */}
+      {/* ── Custom Single Header ── */}
       <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
         <View style={{ flex: 1, justifyContent: 'center' }}>
           <Text style={[styles.headerEyebrow, { color: colors.mutedForeground }]}>TRACK & MANAGE</Text>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>IPOs</Text>
         </View>
 
-        {/* header actions: search + add */}
+        {/* header actions: search only */}
         <View style={styles.headerActions}>
           <IconButton
             name={showSearch ? 'x' : 'search'}
             variant={showSearch ? 'primary' : 'surface'}
             size="md"
             onPress={toggleSearch}
-          />
-          <IconButton
-            name="plus"
-            variant="surface"
-            size="md"
-            onPress={openAddPage}
           />
         </View>
       </View>
@@ -155,69 +185,58 @@ export default function IPOManagementScreen() {
       {showSearch && (
         <View style={[styles.searchWrap, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
           <View style={[styles.searchInner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Feather name="search" size={14} color={colors.mutedForeground} />
+            <Feather name="search" size={15} color={colors.mutedForeground} />
             <TextInput
               ref={searchRef}
               value={searchQuery}
               onChangeText={setSearchQuery}
-              placeholder="Search IPOs by name or registrar…"
+              placeholder="Search by IPO name or registrar..."
               placeholderTextColor={colors.mutedForeground}
               style={[styles.searchInput, { color: colors.foreground }]}
-              returnKeyType="search"
+              autoCorrect={false}
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-                <Feather name="x" size={16} color={colors.mutedForeground} />
+                <Feather name="x-circle" size={15} color={colors.mutedForeground} />
               </TouchableOpacity>
             )}
           </View>
         </View>
       )}
 
-      {/* ── Sticky Segmented Tabs ── */}
-      <View style={[styles.stickyTabs, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-        <SegmentedTabControl
-          variant="primary"
+      {/* ── Filter Segment Tabs (Active / Favorites / Archived) ── */}
+      <View style={[styles.segmentBarWrap, { backgroundColor: colors.background }]}>
+        <Tabs
+          variant="pills"
           tabs={[
-            { key: 'active', label: 'Active', count: activeCount },
-            { key: 'favorites', label: 'Favorites', icon: 'star', count: favCount },
-            { key: 'archived', label: 'Archived', count: archivedCount },
+            { key: 'active', label: 'Active', count: activeCount > 0 ? activeCount : undefined },
+            { key: 'favorites', label: 'Favorites', count: favCount > 0 ? favCount : undefined },
+            { key: 'archived', label: 'Archived', count: archivedCount > 0 ? archivedCount : undefined },
           ]}
           activeTab={activeSegment}
-          onChange={(newSeg) => setActiveSegment(newSeg as TabSegment)}
+          onChange={(key) => setActiveSegment(key as TabSegment)}
+          style={{ paddingVertical: 10 }}
         />
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 110 }}>
-        {/* ── Listings Count Eyebrow ── */}
-        <Text style={[styles.listingsEyebrow, { color: colors.mutedForeground }]}>
-          {filteredIPOs.length} LISTING{filteredIPOs.length !== 1 ? 'S' : ''}
-        </Text>
-
+      {/* ── Content Body ── */}
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 110, paddingTop: 6 }}
+        showsVerticalScrollIndicator={false}
+      >
         {filteredIPOs.length === 0 ? (
           <View style={[styles.emptyContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {/* Multi-layered Icon Stack */}
-            <View style={[styles.emptyIconCircleOuter, { backgroundColor: colors.primary + '14' }]}>
-              <View style={[styles.emptyIconCircleInner, { backgroundColor: colors.primary + '28' }]}>
-                <Feather
-                  name={
-                    searchQuery
-                      ? 'search'
-                      : activeSegment === 'favorites'
-                      ? 'star'
-                      : activeSegment === 'archived'
-                      ? 'archive'
-                      : 'layers'
-                  }
-                  size={32}
-                  color={colors.primary}
-                />
-              </View>
+            <View style={[styles.emptyIconCircle, { backgroundColor: colors.primary + '14' }]}>
+              <Feather
+                name={activeSegment === 'favorites' ? 'star' : activeSegment === 'archived' ? 'archive' : 'layers'}
+                size={28}
+                color={colors.primary}
+              />
             </View>
 
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
               {searchQuery
-                ? 'No Matching IPO Listings'
+                ? 'No Matching IPOs Found'
                 : activeSegment === 'favorites'
                 ? 'No Favorite IPOs Saved'
                 : activeSegment === 'archived'
@@ -235,7 +254,6 @@ export default function IPOManagementScreen() {
                 : 'Create your first IPO listing to track buy price, quantity, dates, and bulk applications.'}
             </Text>
 
-            {/* Action Buttons */}
             {searchQuery ? (
               <TouchableOpacity
                 onPress={() => setSearchQuery('')}
@@ -255,157 +273,193 @@ export default function IPOManagementScreen() {
                 <Text style={styles.emptyActionBtnPrimaryText}>Add IPO Listing</Text>
               </TouchableOpacity>
             )}
-
-            {/* Feature Highlights Card */}
-            {!searchQuery && activeSegment === 'active' && (
-              <View style={[styles.emptyTipsBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <View style={styles.emptyTipRow}>
-                  <View style={[styles.emptyTipBadge, { backgroundColor: colors.primary + '1C' }]}>
-                    <Feather name="zap" size={14} color={colors.primary} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.emptyTipTitle, { color: colors.foreground }]}>Quick Auto-Fill</Text>
-                    <Text style={[styles.emptyTipDesc, { color: colors.mutedForeground }]}>
-                      Type any live company name to pre-fill price, lot size & registrar.
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={[styles.emptyTipDivider, { backgroundColor: colors.border }]} />
-
-                <View style={styles.emptyTipRow}>
-                  <View style={[styles.emptyTipBadge, { backgroundColor: '#38A1691C' }]}>
-                    <Feather name="users" size={14} color="#38A169" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.emptyTipTitle, { color: colors.foreground }]}>Bulk Applications</Text>
-                    <Text style={[styles.emptyTipDesc, { color: colors.mutedForeground }]}>
-                      Effortlessly apply for multiple user accounts from your created IPOs.
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            )}
           </View>
         ) : (
           filteredIPOs.map((ipo) => {
-            const totalAmount = ipo.buy_price * ipo.quantity;
-            const isArchivedRow = ipo.archived === 1;
+            const isFav = ipo.is_favorite === 1;
+            const isArchived = ipo.archived === 1;
+
+            const ipoApps = applications.filter(
+              (a) =>
+                a.ipo_name.toLowerCase().trim() === ipo.ipo_name.toLowerCase().trim() ||
+                (a.ipo_id && a.ipo_id === ipo.id)
+            );
+            const appliedApps = ipoApps.filter((a) => a.status === 'Applied' || a.status === 'Mandate Approved');
+            const allottedApps = ipoApps.filter((a) => a.status === 'Allotted');
 
             return (
-              <View key={ipo.id} style={[styles.ipoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                {/* Header Row with Title & 3 Action Icons */}
+              <View
+                key={ipo.id}
+                style={[
+                  styles.ipoCardNoShadow,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                {/* ── Card Header Row with Colorful Action Icons ── */}
                 <View style={styles.cardHeaderRow}>
-                  {/* Left Logo / Avatar */}
-                  <View style={[styles.cardIconAvatar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    {ipo.logo_url ? (
-                      <Image source={{ uri: ipo.logo_url }} style={styles.cardLogoImage} resizeMode="contain" />
-                    ) : (
-                      <Text style={[styles.cardAvatarText, { color: colors.foreground }]}>
-                        {ipo.ipo_name.slice(0, 1).toUpperCase()}
+                  <View style={{ flex: 1, gap: 1 }}>
+                    <Text style={[styles.ipoTitle, { color: colors.foreground }]} numberOfLines={1}>
+                      {ipo.ipo_name}
+                    </Text>
+
+                    {!!ipo.registrar && (
+                      <Text style={[styles.ipoRegistrar, { color: colors.mutedForeground }]} numberOfLines={1}>
+                        Registrar: {ipo.registrar}
                       </Text>
                     )}
                   </View>
 
-                  {/* Title & Subtitle */}
-                  <View style={{ flex: 1, paddingRight: 4 }}>
-                    <Text style={[styles.cardTitle, { color: colors.foreground }]} numberOfLines={1}>
-                      {ipo.ipo_name}
-                    </Text>
-                    <Text style={[styles.cardSub, { color: colors.mutedForeground }]} numberOfLines={1}>
-                      {ipo.issue_type || 'Mainboard'}{ipo.registrar ? ` · ${ipo.registrar}` : ''}
-                    </Text>
-                  </View>
-
-                  {/* 3 Header Action Icons: Edit, Archive/Unarchive, Favorite */}
-                  <View style={styles.cardHeaderIconsRow}>
-                    {!isArchivedRow ? (
-                      <>
-                        <TouchableOpacity
-                          onPress={() => openEditPage(ipo)}
-                          style={[styles.cardIconButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                          activeOpacity={0.7}
-                          hitSlop={4}
-                        >
-                          <Feather name="edit-2" size={14} color={colors.foreground} />
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          onPress={() => handleToggleArchive(ipo)}
-                          style={[styles.cardIconButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                          activeOpacity={0.7}
-                          hitSlop={4}
-                        >
-                          <Feather name="archive" size={14} color={colors.foreground} />
-                        </TouchableOpacity>
-                      </>
-                    ) : (
-                      <>
-                        <TouchableOpacity
-                          onPress={() => handleToggleArchive(ipo)}
-                          style={[styles.cardIconButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                          activeOpacity={0.7}
-                          hitSlop={4}
-                        >
-                          <Feather name="rotate-ccw" size={14} color={colors.foreground} />
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          onPress={() => handleDeleteIPO(ipo)}
-                          style={[styles.cardIconButton, { backgroundColor: colors.destructiveBg, borderColor: colors.destructiveBg }]}
-                          activeOpacity={0.7}
-                          hitSlop={4}
-                        >
-                          <Feather name="trash-2" size={14} color={colors.destructive} />
-                        </TouchableOpacity>
-                      </>
-                    )}
-
+                  {/* Colorful Action Buttons */}
+                  <View style={styles.cardHeaderActions}>
+                    {/* 1. Favorite (Yellow) */}
                     <TouchableOpacity
                       onPress={() => handleToggleFavorite(ipo)}
+                      hitSlop={6}
                       style={[
-                        styles.cardIconButton,
+                        styles.iconCircleBtnBigger,
                         {
-                          backgroundColor: ipo.is_favorite === 1 ? colors.primary + '18' : colors.surface,
-                          borderColor: ipo.is_favorite === 1 ? colors.primary : colors.border,
+                          backgroundColor: isFav
+                            ? (isDark ? 'rgba(234, 179, 8, 0.15)' : '#FEF9C3')
+                            : colors.surface,
+                          borderColor: isFav
+                            ? (isDark ? 'rgba(234, 179, 8, 0.3)' : '#FEF08A')
+                            : colors.border,
                         },
                       ]}
-                      activeOpacity={0.7}
-                      hitSlop={4}
                     >
                       <Feather
                         name="star"
-                        size={14}
-                        color={ipo.is_favorite === 1 ? colors.primary : colors.mutedForeground}
+                        size={16}
+                        color={isFav ? '#EAB308' : colors.mutedForeground}
                       />
+                    </TouchableOpacity>
+
+                    {/* 2. Edit (Blue) */}
+                    <TouchableOpacity
+                      onPress={() => openEditPage(ipo)}
+                      hitSlop={6}
+                      style={[
+                        styles.iconCircleBtnBigger,
+                        {
+                          backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF',
+                          borderColor: isDark ? 'rgba(59, 130, 246, 0.3)' : '#BFDBFE',
+                        },
+                      ]}
+                    >
+                      <Feather name="edit-2" size={16} color="#3B82F6" />
+                    </TouchableOpacity>
+
+                    {/* 3. Archive / Unarchive (Purple) */}
+                    <TouchableOpacity
+                      onPress={() => handleToggleArchive(ipo)}
+                      hitSlop={6}
+                      style={[
+                        styles.iconCircleBtnBigger,
+                        {
+                          backgroundColor: isDark ? 'rgba(139, 92, 246, 0.15)' : '#F5F3FF',
+                          borderColor: isDark ? 'rgba(139, 92, 246, 0.3)' : '#DDD6FE',
+                        },
+                      ]}
+                    >
+                      <Feather
+                        name={isArchived ? "rotate-ccw" : "archive"}
+                        size={16}
+                        color="#8B5CF6"
+                      />
+                    </TouchableOpacity>
+
+                    {/* 4. Delete (Red) */}
+                    <TouchableOpacity
+                      onPress={() => handleDeleteIPO(ipo)}
+                      hitSlop={6}
+                      style={[
+                        styles.iconCircleBtnBigger,
+                        {
+                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+                          borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : '#FECACA',
+                        },
+                      ]}
+                    >
+                      <Feather name="trash-2" size={16} color="#EF4444" />
                     </TouchableOpacity>
                   </View>
                 </View>
 
-                {/* Thin Horizontal Divider Line */}
-                <View style={[styles.cardDivider, { backgroundColor: colors.border }]} />
-
-                {/* 3-Column Metrics Grid (Equal width: Left, Center, Right) */}
-                <View style={styles.cardMetricsGrid}>
-                  <View style={styles.metricColLeft}>
-                    <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Price / Lot</Text>
-                    <Text style={[styles.metricVal, { color: colors.foreground }]}>
-                      ₹{ipo.buy_price} × {ipo.quantity}
+                {/* ── Key Financial Stats (Compact, Clean) ── */}
+                <View style={[styles.statsRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <View style={styles.statCol}>
+                    <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>BID / ISSUE PRICE</Text>
+                    <Text style={[styles.statValue, { color: colors.foreground }]}>
+                      {formatCurrency(ipo.buy_price)}
                     </Text>
                   </View>
-
-                  <View style={styles.metricColCenter}>
-                    <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Investment</Text>
-                    <Text style={[styles.metricVal, { color: colors.foreground }]}>
-                      {formatCurrency(totalAmount)}
+                  <View style={styles.statCol}>
+                    <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>LOT QTY</Text>
+                    <Text style={[styles.statValue, { color: colors.foreground }]}>
+                      {ipo.quantity} shares
                     </Text>
                   </View>
-
-                  <View style={styles.metricColRight}>
-                    <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Close Date</Text>
-                    <Text style={[styles.metricVal, { color: colors.foreground }]}>
-                      {ipo.close_date || 'Active'}
+                  <View style={styles.statCol}>
+                    <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>LOT VALUE</Text>
+                    <Text style={[styles.statValue, { color: colors.primary, fontFamily: 'GoogleSansFlex_700Bold' }]}>
+                      {formatCurrency(ipo.buy_price * ipo.quantity)}
                     </Text>
+                  </View>
+                </View>
+
+                {/* ── Evenly Spaced Dates Row ── */}
+                {(ipo.open_date || ipo.close_date || ipo.allotment_date || ipo.listing_date) && (
+                  <View style={styles.datesRowEvenlySpaced}>
+                    {ipo.open_date && (
+                      <View style={styles.dateBadgeFlex}>
+                        <Feather name="calendar" size={11} color={colors.mutedForeground} />
+                        <Text style={[styles.dateText, { color: colors.mutedForeground }]}>
+                          Open: <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>{ipo.open_date}</Text>
+                        </Text>
+                      </View>
+                    )}
+                    {ipo.close_date && (
+                      <View style={styles.dateBadgeFlex}>
+                        <Feather name="clock" size={11} color={colors.mutedForeground} />
+                        <Text style={[styles.dateText, { color: colors.mutedForeground }]}>
+                          Close: <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>{ipo.close_date}</Text>
+                        </Text>
+                      </View>
+                    )}
+                    {ipo.allotment_date && (
+                      <View style={styles.dateBadgeFlex}>
+                        <Feather name="check-circle" size={11} color={colors.mutedForeground} />
+                        <Text style={[styles.dateText, { color: colors.mutedForeground }]}>
+                          Allotment: <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>{ipo.allotment_date}</Text>
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {/* ── Subtly Highlighted Applied & Allotted Footer ── */}
+                <View style={styles.cardFooterCompact}>
+                  <View style={styles.appsMetaRowSubtle}>
+                    <Text style={[styles.appsMetaTextLabel, { color: colors.mutedForeground }]}>
+                      Apps: <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_700Bold' }}>{ipoApps.length}</Text> total
+                    </Text>
+
+                    {/* Subtly Highlighted Applied Pill */}
+                    <View style={[styles.subtleHighlightPill, { backgroundColor: isDark ? 'rgba(37, 99, 235, 0.2)' : '#EFF6FF' }]}>
+                      <Text style={[styles.subtleHighlightText, { color: '#2563EB' }]}>
+                        {appliedApps.length} applied
+                      </Text>
+                    </View>
+
+                    {/* Subtly Highlighted Allotted Pill */}
+                    <View style={[styles.subtleHighlightPill, { backgroundColor: isDark ? 'rgba(22, 163, 74, 0.2)' : '#DCFCE7' }]}>
+                      <Text style={[styles.subtleHighlightText, { color: '#16A34A' }]}>
+                        {allottedApps.length} allotted
+                      </Text>
+                    </View>
                   </View>
                 </View>
               </View>
@@ -417,323 +471,208 @@ export default function IPOManagementScreen() {
   );
 }
 
-
 const styles = StyleSheet.create({
   container: { flex: 1 },
-
   header: {
-    paddingHorizontal: 16,
-    overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    overflow: 'hidden',
   },
-  headerCenter: { flex: 1, alignItems: 'center', paddingHorizontal: 8 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  backBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
   headerEyebrow: {
     fontSize: 11,
     fontFamily: 'GoogleSansFlex_600SemiBold',
     letterSpacing: 1.2,
-    color: '#D4A017',
     textTransform: 'uppercase',
     marginBottom: 2,
   },
-  headerTitle: { fontSize: 28, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.6, lineHeight: 32 },
-  headerAddBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#D4A017',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 2,
-    shadowColor: '#D4A017',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
+  headerTitle: {
+    fontSize: 30,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.8,
+    lineHeight: 34,
   },
-
-  segmentBar: {
-    flexDirection: 'row',
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 4,
-    marginBottom: 14,
-    gap: 4,
-  },
-  segmentPill: {
-    flex: 1,
+  headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 12,
+    gap: 8,
   },
-  segmentPillActive: { backgroundColor: '#D4A017' },
-  segmentText: { fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold', color: '#718096' },
-  segmentTextActive: { color: '#fff' },
-
-  countBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 10,
-    marginLeft: 6,
-  },
-  countBadgeActive: { backgroundColor: 'rgba(255,255,255,0.3)' },
-  countBadgeText: { fontSize: 11, fontFamily: 'GoogleSansFlex_700Bold', color: '#4A5568' },
-
   searchWrap: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingBottom: 10,
     borderBottomWidth: 1,
   },
   searchInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
     gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    height: 40,
   },
-  searchInput: { flex: 1, fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular' },
-
-  stickyTabs: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    padding: 0,
   },
-
-  listingsEyebrow: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 1.1,
-    textTransform: 'uppercase',
-    marginBottom: 10,
+  segmentBarWrap: {
+    paddingHorizontal: 10,
+    borderBottomWidth: 0,
   },
-
   emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
     borderRadius: 20,
     borderWidth: 1,
-    padding: 24,
-    alignItems: 'center',
-    marginBottom: 16,
+    marginTop: 16,
   },
-  emptyIconCircleOuter: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+  emptyIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,
-  },
-  emptyIconCircleInner: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   emptyTitle: {
     fontSize: 17,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: -0.3,
-    marginBottom: 6,
+    marginBottom: 8,
     textAlign: 'center',
   },
   emptySubtitle: {
     fontSize: 13,
     fontFamily: 'GoogleSansFlex_400Regular',
     textAlign: 'center',
-    lineHeight: 19,
-    paddingHorizontal: 12,
+    lineHeight: 20,
     marginBottom: 18,
   },
   emptyActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
   },
   emptyActionBtnText: {
     fontSize: 13,
-    fontFamily: 'GoogleSansFlex_700Bold',
+    fontFamily: 'GoogleSansFlex_600SemiBold',
   },
   emptyActionBtnPrimary: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 16,
-    elevation: 2,
-    shadowColor: '#D4A017',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: 12,
   },
   emptyActionBtnPrimaryText: {
-    fontSize: 14,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    color: '#FFFFFF',
-  },
-  emptyTipsBox: {
-    width: '100%',
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 14,
-    marginTop: 20,
-    gap: 12,
-  },
-  emptyTipRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  emptyTipBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyTipTitle: {
+    color: '#fff',
     fontSize: 13,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
-  emptyTipDesc: {
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    marginTop: 2,
-    lineHeight: 16,
-  },
-  emptyTipDivider: {
-    height: 1,
-    width: '100%',
-  },
 
-  // IPO Card (Matching reference design)
-  ipoCard: {
-    borderRadius: 20,
+  // Compact IPO Card (No Shadows, standard border)
+  ipoCardNoShadow: {
+    borderRadius: 16,
     borderWidth: 1,
-    padding: 16,
-    marginBottom: 14,
-
-    // Soft drop shadow (reduced 50%)
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.02,
-    shadowRadius: 4,
-    elevation: 1,
+    padding: 12,
+    marginBottom: 10,
   },
   cardHeaderRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 10,
   },
-  cardIconAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  cardLogoImage: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-  },
-  cardAvatarText: {
-    fontSize: 16,
-    fontFamily: 'GoogleSansFlex_700Bold',
-  },
-  cardTitle: {
-    fontSize: 16,
+  ipoTitle: {
+    fontSize: 15,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: -0.3,
   },
-  cardSub: {
-    fontSize: 12.5,
+  ipoRegistrar: {
+    fontSize: 11,
     fontFamily: 'GoogleSansFlex_400Regular',
-    marginTop: 2,
   },
-  cardDivider: {
-    height: 1,
-    marginVertical: 14,
-    width: '100%',
-  },
-
-  cardHeaderIconsRow: {
+  cardHeaderActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  cardIconButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  iconCircleBtnBigger: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  // 3-Column Metrics Grid (Equal Width)
-  cardMetricsGrid: {
+  statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    width: '100%',
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8,
   },
-  metricColLeft: {
+  statCol: {
     flex: 1,
-    alignItems: 'flex-start',
+    gap: 2,
   },
-  metricColCenter: {
-    flex: 1,
-    alignItems: 'center',
+  statLabel: {
+    fontSize: 8.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.4,
   },
-  metricColRight: {
-    flex: 1,
-    alignItems: 'flex-end',
-  },
-  metricLabel: {
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    marginBottom: 4,
-  },
-  metricVal: {
+  statValue: {
     fontSize: 12.5,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
-    opacity: 0.8,
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
-
-  // Modal Form Sheet
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  formModalSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: '90%', borderTopWidth: 1 },
-  formModalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
-  modalCloseCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F4F5F7', alignItems: 'center', justifyContent: 'center' },
-  formModalTitle: { fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold' },
-  formSavePill: { backgroundColor: '#D4A017', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 18 },
-  formSavePillText: { color: '#fff', fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold' },
-
-  fieldLabel: { fontSize: 10, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 0.9, marginBottom: 4 },
-  inputField: { height: 46, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular' },
-  autoFillBtn: { height: 46, borderWidth: 1, borderColor: '#D4A017', borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  autoFillBtnText: { color: '#D4A017', fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold' },
-
-  issueTypeGroup: { height: 46, flexDirection: 'row', borderRadius: 12, borderWidth: 1, padding: 3, gap: 4, alignItems: 'center' },
-  issueTypePill: { flex: 1, height: '100%', borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  issueTypePillActive: { backgroundColor: '#D4A017' },
-  issueTypeText: { fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold', color: '#718096' },
-  issueTypeTextActive: { color: '#fff' },
-
-  dateInputWrap: { height: 46, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 12, paddingHorizontal: 14 },
-  dateInput: { flex: 1, height: '100%', fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular' },
+  datesRowEvenlySpaced: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 4,
+    marginBottom: 8,
+  },
+  dateBadgeFlex: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  dateText: {
+    fontSize: 10.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+  },
+  cardFooterCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 4,
+  },
+  appsMetaRowSubtle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  appsMetaTextLabel: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_400Regular',
+  },
+  subtleHighlightPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  subtleHighlightText: {
+    fontSize: 10.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
 });

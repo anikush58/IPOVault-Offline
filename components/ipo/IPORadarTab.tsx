@@ -338,10 +338,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   filterPill: {
-    paddingHorizontal: 13,
-    paddingVertical: 7,
+    height: 36,
+    minHeight: 36,
+    paddingHorizontal: 14,
     borderRadius: 20,
     borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   filterPillText: {
     fontSize: 12,

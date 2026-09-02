@@ -26,7 +26,7 @@ import { IPORepository } from '@/services/ipo/ipoRepository';
 import { IPOMasterRecord } from '@/services/ipo/types';
 import { formatCurrency } from '@/utils/formatters';
 
-const DEFAULT_UPI_APPS = ['HDFC UPI', 'GPay', 'PhonePe', 'BHIM', 'Paytm', 'ICICI iMobile'];
+const DEFAULT_UPI_APPS = ['HDFC UPI', 'GPay', 'PhonePe', 'BHIM', 'Paytm', 'ICICI iMobile', 'BoB ASBA', 'IDFC ASBA', 'Other'];
 
 export default function ApplyIPOScreen() {
   const colors = useColors();
@@ -286,7 +286,6 @@ export default function ApplyIPOScreen() {
             </View>
 
             <View style={[styles.statusBadgeLive, { borderColor: '#10B981', borderWidth: 1 }]}>
-              <View style={[styles.livePulseDot, { backgroundColor: '#10B981' }]} />
               <Text style={[styles.liveBadgeText, { color: '#10B981' }]}>LIVE BID</Text>
             </View>
           </View>

@@ -16,13 +16,13 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
-import { IconButton } from '@/components/ui/IconButton';
 import { useDialog } from '@/context/DialogContext';
 import { useDB, type User } from '@/context/DBContext';
+import { IconButton } from '@/components/ui/IconButton';
 import { UserCard } from '@/components/UserCard';
 import { AddUserModal } from '@/components/AddUserModal';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
-import { SegmentedTabControl } from '@/components/ui/SegmentedTabControl';
+import { Tabs } from '@/components/ui/Tabs';
 
 export default function UsersScreen() {
   const colors = useColors();
@@ -57,36 +57,22 @@ export default function UsersScreen() {
     return { applied, allotted, decided };
   };
 
-  const handleArchive = (user: User) => {
-    showConfirm({
-      title: 'Archive User',
-      message: `Archive ${user.name}? They will be moved to the Archived tab.`,
-      confirmText: 'Archive',
-      onConfirm: async () => {
-        try {
-          await archiveUser(user.id);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        } catch {
-          showError('Error', 'Failed to archive user.');
-        }
-      },
-    });
+  const handleArchive = async (user: User) => {
+    try {
+      await archiveUser(user.id);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      showError('Error', 'Failed to archive user.');
+    }
   };
 
-  const handleUnarchive = (user: User) => {
-    showConfirm({
-      title: 'Unarchive User',
-      message: `Restore ${user.name} back to Active users?`,
-      confirmText: 'Restore',
-      onConfirm: async () => {
-        try {
-          await unarchiveUser(user.id);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        } catch {
-          showError('Error', 'Failed to unarchive user.');
-        }
-      },
-    });
+  const handleUnarchive = async (user: User) => {
+    try {
+      await unarchiveUser(user.id);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      showError('Error', 'Failed to unarchive user.');
+    }
   };
 
   const handleDelete = (user: User) => {
@@ -114,12 +100,22 @@ export default function UsersScreen() {
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
 
+  const openAddUser = () => {
+    setEditingUser(null);
+    setShowModal(true);
+  };
+
+  const openEditUser = (user: User) => {
+    setEditingUser(user);
+    setShowModal(true);
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]} {...swipeHandlers}>
-      {/* Header */}
+      {/* Custom Header */}
       <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
         <IconButton
-          name="chevron-left"
+          name="arrow-left"
           variant="surface"
           size="md"
           onPress={() => {
@@ -131,7 +127,7 @@ export default function UsersScreen() {
         />
 
         <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>MANAGE</Text>
+          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>PROFILES</Text>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Users</Text>
         </View>
 
@@ -139,14 +135,14 @@ export default function UsersScreen() {
           name="plus"
           variant="surface"
           size="md"
-          onPress={() => router.push('/add-user')}
+          onPress={openAddUser}
         />
       </View>
 
-      {/* Segmented Control Bar */}
-      <View style={[styles.tabBarWrap, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
-        <SegmentedTabControl
-          variant="primary"
+      {/* Pill Style Tab Control Bar */}
+      <View style={{ paddingHorizontal: 10, marginTop: 10, marginBottom: 4 }}>
+        <Tabs
+          variant="pills"
           tabs={[
             { key: 'active', label: 'Active', count: activeUsers.length },
             { key: 'archived', label: 'Archived', count: archivedUsers.length },
@@ -156,65 +152,67 @@ export default function UsersScreen() {
         />
       </View>
 
+      {/* Users list */}
       <FlatList
         data={displayedUsers}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={(item) => item.id}
         refreshControl={
           <RefreshControl refreshing={isLoading} onRefresh={refresh} tintColor={colors.primary} />
         }
         renderItem={({ item }) => {
-          const { applied, allotted, decided } = statsForUser(item.id);
+          const stats = statsForUser(item.id);
           return (
             <UserCard
               user={item}
-              applied={applied}
-              allotted={allotted}
-              decided={decided}
-              onEdit={() => router.push({ pathname: '/add-user', params: { userId: item.id } })}
-              onArchive={activeTab === 'active' ? () => handleArchive(item) : undefined}
-              onUnarchive={activeTab === 'archived' ? () => handleUnarchive(item) : undefined}
-              onDelete={() => handleDelete(item)}
+              appliedCount={stats.applied}
+              allottedCount={stats.allotted}
+              decidedCount={stats.decided}
+              onEdit={openEditUser}
+              onArchive={handleArchive}
+              onUnarchive={handleUnarchive}
+              onDelete={handleDelete}
             />
           );
         }}
-        contentContainerStyle={{ paddingTop: 16, paddingBottom: insets.bottom + 90 }}
-        ListHeaderComponent={() =>
-          displayedUsers.length > 0 ? (
-            <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
-              {displayedUsers.length} {displayedUsers.length === 1 ? 'user' : 'users'}
-            </Text>
-          ) : null
-        }
         ListEmptyComponent={() => (
-          <View style={styles.empty}>
-            <View style={[styles.emptyIcon, { backgroundColor: colors.surface }]}>
-              <Feather name="users" size={28} color={colors.mutedForeground} />
+          <View style={styles.emptyContainer}>
+            <View style={[styles.emptyIconCircle, { backgroundColor: colors.surface }]}>
+              <Feather
+                name={activeTab === 'archived' ? 'archive' : 'users'}
+                size={28}
+                color={colors.mutedForeground}
+              />
             </View>
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-              {activeTab === 'active' ? 'No Active Users' : 'No Archived Users'}
+              {activeTab === 'archived' ? 'No Archived Users' : 'No Users Added'}
             </Text>
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              {activeTab === 'active'
-                ? 'Add users to start tracking their IPO applications and allotment strike rate.'
-                : 'Archived users will appear here for record keeping.'}
+            <Text style={[styles.emptySubtitle, { color: colors.mutedForeground }]}>
+              {activeTab === 'archived'
+                ? 'Users you archive will appear here to keep your active list clean.'
+                : 'Add family members or accounts to manage their IPO applications.'}
             </Text>
             {activeTab === 'active' && (
               <TouchableOpacity
-                onPress={() => router.push('/add-user')}
-                style={[styles.emptyBtn, { overflow: 'hidden' }]}
+                onPress={openAddUser}
+                style={[styles.emptyAddBtn, { backgroundColor: colors.primary }]}
+                activeOpacity={0.85}
               >
-                <LinearGradient
-                  colors={[colors.primary, colors.primaryLight]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={StyleSheet.absoluteFill}
-                />
-                <Feather name="plus" size={16} color="#fff" />
-                <Text style={styles.emptyBtnText}>Add First User</Text>
+                <Feather name="plus" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.emptyAddBtnText}>Add First User</Text>
               </TouchableOpacity>
             )}
           </View>
         )}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 90, paddingTop: 6 }}
+      />
+
+      <AddUserModal
+        visible={showModal}
+        user={editingUser}
+        onClose={() => {
+          setShowModal(false);
+          setEditingUser(null);
+        }}
       />
     </View>
   );
@@ -229,69 +227,44 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  headerGlow: { position: 'absolute', right: 0, top: 0, width: 200, height: 130 },
-  backBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
-  addBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 2,
-    shadowColor: '#D4A017',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
-  },
   headerEyebrow: { fontSize: 11, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 2, textAlign: 'center' },
   headerTitle: { fontSize: 28, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.6, lineHeight: 32, textAlign: 'center' },
-
-  // Tabs
-  tabBarWrap: {
-    borderBottomWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+  emptyContainer: {
+    alignItems: 'center',
+    paddingVertical: 56,
+    paddingHorizontal: 36,
   },
-  tabContainer: {
-    flexDirection: 'row',
-    borderRadius: 16,
-    padding: 4,
-    borderWidth: 1,
-  },
-  tabSegment: {
-    flex: 1,
-    flexDirection: 'row',
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 9,
-    borderRadius: 12,
+    marginBottom: 16,
   },
-  tabSegmentActive: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 2,
+  emptyTitle: {
+    fontSize: 17,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
+    marginBottom: 8,
   },
-  tabLabel: { fontSize: 13 },
-  tabBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 100 },
-  tabBadgeText: { fontSize: 11, fontFamily: 'GoogleSansFlex_700Bold' },
-  sectionLabel: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_500Medium',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
+  emptySubtitle: {
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 20,
+  },
+  emptyAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 14,
-    paddingBottom: 4,
+    paddingVertical: 12,
+    borderRadius: 14,
   },
-
-  empty: { alignItems: 'center', paddingVertical: 56, paddingHorizontal: 36 },
-  emptyIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  emptyTitle: { fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3, marginBottom: 8 },
-  emptyText: { fontSize: 14, fontFamily: 'GoogleSansFlex_400Regular', textAlign: 'center', lineHeight: 22, marginBottom: 24 },
-  emptyBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 22, paddingVertical: 13, borderRadius: 14 },
-  emptyBtnText: { color: '#fff', fontSize: 15, fontFamily: 'GoogleSansFlex_600SemiBold' },
+  emptyAddBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
 });

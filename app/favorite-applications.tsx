@@ -62,10 +62,10 @@ export default function FavoriteApplicationsScreen() {
             onPress={() => setSelectedApp(item)}
           />
         )}
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40 }}
+        contentContainerStyle={{ paddingVertical: 12, paddingBottom: insets.bottom + 40 }}
         ListHeaderComponent={() =>
           favoriteApps.length > 0 ? (
-            <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
+            <Text style={[styles.sectionLabel, { color: colors.mutedForeground, marginHorizontal: 16 }]}>
               {favoriteApps.length} favorite {favoriteApps.length === 1 ? 'application' : 'applications'}
             </Text>
           ) : null

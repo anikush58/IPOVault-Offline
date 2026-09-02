@@ -81,7 +81,6 @@ export function UpcomingEventsWidget() {
               activeOpacity={0.8}
             >
               <View style={[styles.badge, { backgroundColor: color + '18' }]}>
-                <View style={[styles.dot, { backgroundColor: color }]} />
                 <Text style={[styles.badgeText, { color }]}>{label}</Text>
               </View>
               <Text style={[styles.name, { color: colors.foreground }]} numberOfLines={1}>

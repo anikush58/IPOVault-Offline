@@ -1,7 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import {
   Animated,
+  DeviceEventEmitter,
   FlatList,
   Platform,
   RefreshControl,
@@ -13,15 +14,17 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { IconButton } from '@/components/ui/IconButton';
-import { useDB, type ApplicationWithDetails } from '@/context/DBContext';
+import { useDB, type ApplicationStatus, type ApplicationWithDetails } from '@/context/DBContext';
 import { ApplicationCard } from '@/components/ApplicationCard';
 import { FilterSheet } from '@/components/FilterSheet';
 import { UpdateApplicationModal } from '@/components/UpdateApplicationModal';
-import { KPICard } from '@/components/KPICard';
+import { ApplicationsOverviewCard } from '@/components/ApplicationsOverviewCard';
+import { Tabs } from '@/components/ui/Tabs';
 import { FeatureFlags } from '@/constants/FeatureFlags';
 import { calcBuyValue, calcNetProfit, calcProfitLoss, calcSaleValue } from '@/utils/calculations';
 import { formatCurrency } from '@/utils/formatters';
@@ -41,7 +44,7 @@ export default function ApplicationsScreen() {
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
   const router = useRouter();
-  const { applications, isLoading, refresh } = useDB();
+  const { applications, isLoading, refresh, updateBulkApplications } = useDB();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
@@ -53,6 +56,34 @@ export default function ApplicationsScreen() {
   const [filterYear, setFilterYear] = useState<string | null>(null);
   const [filterIpoNames, setFilterIpoNames] = useState<string[]>([]);
   const [showFilter, setShowFilter] = useState(false);
+
+  // Bulk Selection Mode State for Applied Tab
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedAppIds, setSelectedAppIds] = useState<string[]>([]);
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
+
+  // Notify Tab Bar layout of active Applications tab name
+  useEffect(() => {
+    DeviceEventEmitter.emit('APPLICATIONS_TAB_CHANGED', activeTab);
+  }, [activeTab]);
+
+  // Notify Tab Bar layout of Selection Mode state changes for dynamic Check/Cross FAB button icon
+  useEffect(() => {
+    DeviceEventEmitter.emit('SELECTION_MODE_CHANGED', isSelectionMode);
+  }, [isSelectionMode]);
+
+  // Context-Aware Button Listener from Bottom Tab Bar
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('TOGGLE_BULK_MARK', () => {
+      if (activeTab === 'Applied') {
+        setIsSelectionMode((prev) => {
+          if (prev) setSelectedAppIds([]);
+          return !prev;
+        });
+      }
+    });
+    return () => sub.remove();
+  }, [activeTab]);
 
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -118,7 +149,7 @@ export default function ApplicationsScreen() {
   });
 
   const isAppliedStatus = (st: string) =>
-    st === 'Mandate Approved';
+    st === 'Applied' || st === 'Mandate Approved';
 
   const filtered = activeTab === 'Applied'
     ? searchFiltered.filter((a) => isAppliedStatus(a.status))
@@ -134,38 +165,48 @@ export default function ApplicationsScreen() {
     .filter(Boolean) as string[];
   const filterChipLabel = [...filterUserNames, ...filterBrokers, ...filterBankNames, ...filterIpoNames].join(' · ');
 
-  // ── KPI calculations ───────────────────────────────────────────────────────
-  const appliedCount = searchFiltered.length;
-  const allottedCount = searchFiltered.filter((a) => a.status === 'Allotted' || a.status === 'Holding' || a.status === 'Sold').length;
+  // Selection Mode Helpers
+  const toggleSelectApp = (id: string) => {
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+    setSelectedAppIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
 
-  const ipoProfitMap: Record<string, number> = {};
-  const userProfitMap: Record<string, number> = {};
-  for (const a of searchFiltered) {
-    if (a.status !== 'Sold') continue;
-    const bv = calcBuyValue(a.buy_price, a.quantity);
-    const sv = calcSaleValue(a.sell_price ?? 0, a.quantity);
-    const net = calcNetProfit(calcProfitLoss(sv, bv), a.tax ?? 0, a.user_cut ?? 0);
-    ipoProfitMap[a.ipo_name] = (ipoProfitMap[a.ipo_name] ?? 0) + net;
-    userProfitMap[a.user_name] = (userProfitMap[a.user_name] ?? 0) + net;
-  }
-
-  let bestIpoName = '—';
-  let maxIpoProfit = -Infinity;
-  for (const [name, profit] of Object.entries(ipoProfitMap)) {
-    if (profit > maxIpoProfit && profit > 0) {
-      maxIpoProfit = profit;
-      bestIpoName = name;
+  const handleSelectAll = () => {
+    if (selectedAppIds.length === filtered.length) {
+      setSelectedAppIds([]);
+    } else {
+      setSelectedAppIds(filtered.map((a) => a.id));
     }
-  }
+  };
 
-  let bestUserName = '—';
-  let maxUserProfit = -Infinity;
-  for (const [name, profit] of Object.entries(userProfitMap)) {
-    if (profit > maxUserProfit && profit > 0) {
-      maxUserProfit = profit;
-      bestUserName = name;
+  const handleBulkStatusUpdate = async (status: ApplicationStatus) => {
+    if (selectedAppIds.length === 0) return;
+    setBulkActionLoading(true);
+    try {
+      if (status === 'Allotted') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      }
+      await updateBulkApplications(selectedAppIds, status);
+      setSelectedAppIds([]);
+      setIsSelectionMode(false);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setBulkActionLoading(false);
     }
-  }
+  };
+
+  const handleTabChange = (key: string) => {
+    setActiveTab(key as TabKey);
+    setIsSelectionMode(false);
+    setSelectedAppIds([]);
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -205,7 +246,6 @@ export default function ApplicationsScreen() {
             height: searchBarHeight,
             opacity: searchBarOpacity,
             backgroundColor: colors.background,
-            borderBottomColor: colors.border,
           },
         ]}
         pointerEvents={showSearch ? 'auto' : 'none'}
@@ -243,35 +283,8 @@ export default function ApplicationsScreen() {
         </View>
       )}
 
-      {/* KPI Cards Grid */}
-      <View style={styles.kpiGrid}>
-        <View style={styles.kpiRow}>
-          <KPICard
-            label="Applied"
-            value={String(appliedCount)}
-            subtitle="total applications"
-          />
-          <KPICard
-            label="Allotted"
-            value={String(allottedCount)}
-            subtitle="allotted or sold"
-          />
-        </View>
-        <View style={styles.kpiRow}>
-          <KPICard
-            label="Best IPO"
-            value={bestIpoName}
-            subtitle={maxIpoProfit > 0 ? `+${formatCurrency(maxIpoProfit, false)}` : 'no profit yet'}
-            isPositive={maxIpoProfit > 0}
-          />
-          <KPICard
-            label="Top User"
-            value={bestUserName}
-            subtitle={maxUserProfit > 0 ? `+${formatCurrency(maxUserProfit, false)}` : 'no profit yet'}
-            isPositive={maxUserProfit > 0}
-          />
-        </View>
-      </View>
+      {/* Applications Overview Card */}
+      <ApplicationsOverviewCard applications={applications} />
 
       {/* Check Allotment Button */}
       {FeatureFlags.ENABLE_AUTO_ALLOTMENT && (
@@ -290,57 +303,18 @@ export default function ApplicationsScreen() {
       )}
 
       {/* Tab pills */}
-      <View style={[styles.tabBar, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
-        <FlatList
-          data={TABS}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyExtractor={(t) => t.key}
-          contentContainerStyle={styles.tabScroll}
-          renderItem={({ item: tab }) => {
-            const active = activeTab === tab.key;
-            const count = countFor(tab.key);
-            return (
-              <TouchableOpacity
-                onPress={() => setActiveTab(tab.key)}
-                style={[
-                  styles.tab,
-                  active
-                    ? { backgroundColor: colors.primary }
-                    : { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
-                ]}
-              >
-                <Text style={[styles.tabLabel, { color: active ? '#fff' : colors.mutedForeground }]}>
-                  {tab.label}
-                </Text>
-                {count > 0 && (
-                  <View
-                    style={[
-                      styles.tabBadge,
-                      {
-                        backgroundColor: active
-                          ? (isDark ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.25)')
-                          : (isDark ? 'rgba(255,255,255,0.08)' : (colors.borderStrong || '#D1D5DB')),
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.tabBadgeText,
-                        {
-                          color: active
-                            ? (isDark ? '#14120F' : '#FFFFFF')
-                            : (isDark ? colors.mutedForeground : colors.secondaryForeground),
-                        },
-                      ]}
-                    >
-                      {count}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          }}
+      <View style={[styles.tabBar, { backgroundColor: colors.background }]}>
+        <Tabs
+          variant="pills"
+          scrollable
+          tabs={TABS.map((t) => ({
+            key: t.key,
+            label: t.label,
+            count: countFor(t.key) > 0 ? countFor(t.key) : undefined,
+          }))}
+          activeTab={activeTab}
+          onChange={handleTabChange}
+          style={{ paddingVertical: 10 }}
         />
       </View>
 
@@ -352,7 +326,20 @@ export default function ApplicationsScreen() {
           <RefreshControl refreshing={isLoading} onRefresh={refresh} tintColor={colors.primary} />
         }
         renderItem={({ item }) => (
-          <ApplicationCard application={item} onPress={() => setSelectedApp(item)} />
+          <ApplicationCard
+            application={item}
+            onPress={() => {
+              if (isSelectionMode) {
+                toggleSelectApp(item.id);
+              } else {
+                setSelectedApp(item);
+              }
+            }}
+            isAppliedTab={activeTab === 'Applied'}
+            isSelectionMode={isSelectionMode}
+            isSelected={selectedAppIds.includes(item.id)}
+            onSelectToggle={() => toggleSelectApp(item.id)}
+          />
         )}
         ListHeaderComponent={() => (
           <View style={styles.listHeader}>
@@ -380,8 +367,97 @@ export default function ApplicationsScreen() {
             </Text>
           </View>
         )}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 90, paddingTop: 8 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + (isSelectionMode ? 170 : 90), paddingTop: 8 }}
       />
+
+      {/* Floating Action Bar (White Surface, Topmost Layer Above Menu) */}
+      {isSelectionMode && (
+        <View
+          style={[
+            styles.floatingBulkContainer,
+            {
+              backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+              borderColor: colors.border,
+              bottom: Platform.OS === 'web' ? 30 : Math.max(insets.bottom + 76, 92),
+            },
+          ]}
+        >
+          {/* Top Info Row */}
+          <View style={styles.floatingBulkHeaderRow}>
+            <View style={[styles.selectedBadgePill, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#F1F5F9' }]}>
+              <View style={styles.selectedDot} />
+              <Text style={[styles.selectedCountText, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                {selectedAppIds.length} Selected
+              </Text>
+            </View>
+
+            <TouchableOpacity onPress={handleSelectAll} hitSlop={8}>
+              <Text style={[styles.deselectAllText, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                {selectedAppIds.length === filtered.length ? 'Deselect All' : 'Select All'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* 4 Action Buttons Row */}
+          <View style={styles.floating4ButtonsRow}>
+            {/* 1. Mandate */}
+            <TouchableOpacity
+              onPress={() => handleBulkStatusUpdate('Mandate Approved')}
+              disabled={bulkActionLoading || selectedAppIds.length === 0}
+              style={[
+                styles.bulk4Btn,
+                { backgroundColor: '#1E40AF' },
+                selectedAppIds.length === 0 && { opacity: 0.5 },
+              ]}
+            >
+              <Feather name="clock" size={13} color="#FFFFFF" />
+              <Text style={styles.bulk4BtnText}>Mandate</Text>
+            </TouchableOpacity>
+
+            {/* 2. Allotted */}
+            <TouchableOpacity
+              onPress={() => handleBulkStatusUpdate('Allotted')}
+              disabled={bulkActionLoading || selectedAppIds.length === 0}
+              style={[
+                styles.bulk4Btn,
+                { backgroundColor: '#16A34A' },
+                selectedAppIds.length === 0 && { opacity: 0.5 },
+              ]}
+            >
+              <Feather name="check" size={13} color="#FFFFFF" />
+              <Text style={styles.bulk4BtnText}>Allotted</Text>
+            </TouchableOpacity>
+
+            {/* 3. Not Allotted */}
+            <TouchableOpacity
+              onPress={() => handleBulkStatusUpdate('Not Allotted')}
+              disabled={bulkActionLoading || selectedAppIds.length === 0}
+              style={[
+                styles.bulk4Btn,
+                { backgroundColor: '#DC2626' },
+                selectedAppIds.length === 0 && { opacity: 0.5 },
+              ]}
+            >
+              <Feather name="x" size={13} color="#FFFFFF" />
+              <Text style={styles.bulk4BtnText}>Not Allotted</Text>
+            </TouchableOpacity>
+
+            {/* 4. Cancelled */}
+            <TouchableOpacity
+              onPress={() => handleBulkStatusUpdate('Cancelled')}
+              disabled={bulkActionLoading || selectedAppIds.length === 0}
+              style={[
+                styles.bulk4Btn,
+                { backgroundColor: '#475569' },
+                selectedAppIds.length === 0 && { opacity: 0.5 },
+              ]}
+            >
+              <Feather name="slash" size={13} color="#FFFFFF" />
+              <Text style={styles.bulk4BtnText}>Cancelled</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       <UpdateApplicationModal application={selectedApp} onClose={() => setSelectedApp(null)} />
       <FilterSheet
@@ -413,20 +489,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     overflow: 'hidden',
   },
-  headerGlow: { position: 'absolute', right: 0, top: 0, width: 200, height: 130 },
   headerEyebrow: { fontSize: 11, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 2 },
   headerTitle: { fontSize: 30, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.8, lineHeight: 34 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   searchBar: {
-    borderBottomWidth: 1,
+    borderBottomWidth: 0,
     justifyContent: 'center',
     paddingHorizontal: 16,
     overflow: 'hidden',
@@ -452,35 +519,81 @@ const styles = StyleSheet.create({
     borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, borderWidth: 1,
   },
   filterBarText: { flex: 1, fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold' },
-  tabBar: { borderBottomWidth: 1 },
-  tabScroll: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
-  tab: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
-  tabLabel: { fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold' },
-  tabBadge: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: 10, minWidth: 20, alignItems: 'center' },
-  tabBadgeText: { fontSize: 11, fontFamily: 'GoogleSansFlex_700Bold' },
-  listHeader: { paddingHorizontal: 16, paddingVertical: 6 },
+  tabBar: { borderBottomWidth: 0 },
+  listHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    height: 28,
+  },
   listCount: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular' },
   empty: { alignItems: 'center', paddingVertical: 56, paddingHorizontal: 36 },
   emptyIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   emptyTitle: { fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3, marginBottom: 8 },
   emptyText: { fontSize: 14, fontFamily: 'GoogleSansFlex_400Regular', textAlign: 'center', lineHeight: 22 },
-  kpiGrid: { paddingHorizontal: 16, paddingTop: 18, gap: 10, marginBottom: 6 },
-  kpiRow: { flexDirection: 'row', gap: 10 },
-  checkAllotmentBtn: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 14,
+
+  // ── Floating Action Bar ──
+  floatingBulkContainer: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    borderRadius: 24,
+    padding: 14,
+    gap: 12,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 20,
+    zIndex: 9999,
+  },
+  floatingBulkHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+  },
+  selectedBadgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     borderRadius: 14,
-    overflow: 'hidden',
-    paddingVertical: 14,
+  },
+  selectedDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#0EA5E9',
+  },
+  selectedCountText: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  deselectAllText: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  floating4ButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  bulk4Btn: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
+    gap: 4,
+    paddingVertical: 10,
+    borderRadius: 14,
   },
-  checkAllotmentBtnText: {
-    color: '#fff',
-    fontSize: 14,
+  bulk4BtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
     fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 0.1,
   },
 });

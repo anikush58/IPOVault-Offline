@@ -69,7 +69,7 @@ export function IntelEmptyState({ message = 'Information will be available soon'
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 20,
+    borderRadius: 24,
     borderWidth: 1,
     marginBottom: 14,
     overflow: 'hidden',

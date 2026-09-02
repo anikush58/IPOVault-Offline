@@ -46,7 +46,7 @@ export default function DashboardScreen() {
   const router = useRouter();
 
   const openIpoList = useMemo(() => {
-    const active = ipos.filter((i) => i.archived === 0);
+    const active = ipos.filter((i) => i.archived !== 1 && (i as any).archived !== true);
     if (active.length > 0) {
       return [...active].sort((a, b) => {
         if (a.close_date && b.close_date) {
@@ -57,12 +57,16 @@ export default function DashboardScreen() {
         return 0;
       });
     }
-    return [
-      { id: 'ola-elec', ipo_name: 'Ola Electric Mobility IPO', buy_price: 15000, quantity: 195, issue_type: 'Mainboard', close_date: '2026-08-31', gmp_percent: 16, gmp_value: 234 },
-      { id: 'premier-eng', ipo_name: 'Premier Energies IPO', buy_price: 14700, quantity: 33, issue_type: 'Mainboard', close_date: '2026-09-02', gmp_percent: 42, gmp_value: 185 },
-      { id: 'firstcry', ipo_name: 'Brainbees Solutions (FirstCry) IPO', buy_price: 14960, quantity: 32, issue_type: 'Mainboard', close_date: '2026-09-04', gmp_percent: 12, gmp_value: 56 },
-      { id: 'unicommerce', ipo_name: 'Unicommerce eSolutions IPO', buy_price: 14850, quantity: 135, issue_type: 'SME', close_date: '2026-09-05', gmp_percent: 68, gmp_value: 74 },
-    ];
+    // Only return mock fallback if DB has ZERO IPOs total (first fresh launch before any IPO is created in DB)
+    if (ipos.length === 0) {
+      return [
+        { id: 'ola-elec', ipo_name: 'Ola Electric Mobility IPO', buy_price: 15000, quantity: 195, issue_type: 'Mainboard', close_date: '2026-08-31', gmp_percent: 16, gmp_value: 234 },
+        { id: 'premier-eng', ipo_name: 'Premier Energies IPO', buy_price: 14700, quantity: 33, issue_type: 'Mainboard', close_date: '2026-09-02', gmp_percent: 42, gmp_value: 185 },
+        { id: 'firstcry', ipo_name: 'Brainbees Solutions (FirstCry) IPO', buy_price: 14960, quantity: 32, issue_type: 'Mainboard', close_date: '2026-09-04', gmp_percent: 12, gmp_value: 56 },
+        { id: 'unicommerce', ipo_name: 'Unicommerce eSolutions IPO', buy_price: 14850, quantity: 135, issue_type: 'SME', close_date: '2026-09-05', gmp_percent: 68, gmp_value: 74 },
+      ];
+    }
+    return [];
   }, [ipos]);
 
   // ── filter state ───────────────────────────────────────────────────────────
@@ -473,31 +477,7 @@ export default function DashboardScreen() {
           </Text>
 
           <View style={styles.quickActionsRow}>
-            {/* 1. Apply IPO */}
-            <TouchableOpacity
-              activeOpacity={0.75}
-              onPress={() => setShowBulkSheet(true)}
-              style={styles.quickActionItem}
-            >
-              <BlurView
-                intensity={Platform.OS === 'web' ? 0 : 35}
-                tint={isDark ? 'dark' : 'light'}
-                style={[
-                  styles.quickActionIconWrap,
-                  {
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
-                    borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.08)',
-                  },
-                ]}
-              >
-                <Feather name="plus-circle" size={20} color={colors.foreground} />
-              </BlurView>
-              <Text style={[styles.quickActionLabel, { color: colors.foreground }]}>
-                Apply IPO
-              </Text>
-            </TouchableOpacity>
-
-            {/* 2. Allotment Checker */}
+            {/* 1. Allotment Checker */}
             <TouchableOpacity
               activeOpacity={0.75}
               onPress={() => router.push('/allotment-checker')}
@@ -526,7 +506,7 @@ export default function DashboardScreen() {
               </Text>
             </TouchableOpacity>
 
-            {/* 3. Users */}
+            {/* 2. Users */}
             <TouchableOpacity
               activeOpacity={0.75}
               onPress={() => router.push({ pathname: '/users', params: { from: 'dashboard' } })}
@@ -550,7 +530,7 @@ export default function DashboardScreen() {
               </Text>
             </TouchableOpacity>
 
-            {/* 4. Banks */}
+            {/* 3. Banks */}
             <TouchableOpacity
               activeOpacity={0.75}
               onPress={() => router.push({ pathname: '/banks', params: { from: 'dashboard' } })}
@@ -573,122 +553,172 @@ export default function DashboardScreen() {
                 Banks
               </Text>
             </TouchableOpacity>
+
+            {/* 4. Leaderboard */}
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() => router.push('/leaderboard')}
+              style={styles.quickActionItem}
+            >
+              <BlurView
+                intensity={Platform.OS === 'web' ? 0 : 35}
+                tint={isDark ? 'dark' : 'light'}
+                style={[
+                  styles.quickActionIconWrap,
+                  {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.08)',
+                  },
+                ]}
+              >
+                <MaterialCommunityIcons name="trophy-outline" size={20} color={colors.foreground} />
+              </BlurView>
+              <Text style={[styles.quickActionLabel, { color: colors.foreground }]} numberOfLines={1}>
+                Leaderboard
+              </Text>
+            </TouchableOpacity>
+
+            {/* 5. IPO Calendar (Hidden for now) */}
+            {/* <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() => router.push('/ipo-calendar')}
+              style={styles.quickActionItem}
+            >
+              <BlurView
+                intensity={Platform.OS === 'web' ? 0 : 35}
+                tint={isDark ? 'dark' : 'light'}
+                style={[
+                  styles.quickActionIconWrap,
+                  {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.08)',
+                  },
+                ]}
+              >
+                <Feather name="calendar" size={20} color={colors.foreground} />
+              </BlurView>
+              <Text style={[styles.quickActionLabel, { color: colors.foreground }]} numberOfLines={1}>
+                Calendar
+              </Text>
+            </TouchableOpacity> */}
           </View>
         </View>
 
         {/* ── Open IPOs Horizontal Scrolling Section (Matching reference design) ── */}
-        <View style={styles.openIposSection}>
-          <Text style={[styles.openIposEyebrow, { color: colors.mutedForeground }]}>
-            OPEN IPOS
-          </Text>
+        {openIpoList.length > 0 && (
+          <View style={styles.openIposSection}>
+            <Text style={[styles.openIposEyebrow, { color: colors.mutedForeground }]}>
+              OPEN IPOS
+            </Text>
 
-          <Animated.ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.openIposScrollContent}
-            snapToInterval={307}
-            snapToAlignment="start"
-            decelerationRate="fast"
-            scrollEventThrottle={16}
-            onScroll={Animated.event(
-              [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-              { useNativeDriver: true }
-            )}
-          >
-            {openIpoList.map((ipo, idx) => {
-              const CARD_SIZE = 307;
-              const inputRange = [
-                (idx - 1) * CARD_SIZE,
-                idx * CARD_SIZE,
-                (idx + 1) * CARD_SIZE,
-              ];
+            <Animated.ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.openIposScrollContent}
+              snapToInterval={307}
+              snapToAlignment="start"
+              decelerationRate="fast"
+              scrollEventThrottle={16}
+              onScroll={Animated.event(
+                [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+                { useNativeDriver: true }
+              )}
+            >
+              {openIpoList.map((ipo, idx) => {
+                const CARD_SIZE = 307;
+                const inputRange = [
+                  (idx - 1) * CARD_SIZE,
+                  idx * CARD_SIZE,
+                  (idx + 1) * CARD_SIZE,
+                ];
 
-              const cardScale = scrollX.interpolate({
-                inputRange,
-                outputRange: [0.95, 1, 0.95],
-                extrapolate: 'clamp',
-              });
+                const cardScale = scrollX.interpolate({
+                  inputRange,
+                  outputRange: [0.95, 1, 0.95],
+                  extrapolate: 'clamp',
+                });
 
-              const cardOpacity = scrollX.interpolate({
-                inputRange,
-                outputRange: [0.82, 1, 0.82],
-                extrapolate: 'clamp',
-              });
+                const cardOpacity = scrollX.interpolate({
+                  inputRange,
+                  outputRange: [0.82, 1, 0.82],
+                  extrapolate: 'clamp',
+                });
 
-              const pct = (ipo as any).gmp_percent;
-              const val = (ipo as any).gmp_value;
-              const hasGmp = pct !== undefined && pct !== null;
-              const isPos = (pct ?? 0) >= 0;
+                const pct = (ipo as any).gmp_percent;
+                const val = (ipo as any).gmp_value;
+                const hasGmp = pct !== undefined && pct !== null;
+                const isPos = (pct ?? 0) >= 0;
 
-              return (
-                <Animated.View
-                  key={ipo.id || idx}
-                  style={{
-                    transform: [{ scale: cardScale }],
-                    opacity: cardOpacity,
-                  }}
-                >
-                  <TouchableOpacity
-                    activeOpacity={0.88}
-                    onPress={() => router.push({ pathname: '/bids', params: { ipoId: ipo.id } })}
-                    style={[
-                      styles.openIpoCard,
-                      { backgroundColor: colors.card, borderColor: colors.border },
-                    ]}
+                return (
+                  <Animated.View
+                    key={ipo.id || idx}
+                    style={{
+                      transform: [{ scale: cardScale }],
+                      opacity: cardOpacity,
+                    }}
                   >
-                    <View style={styles.openIpoCardMain}>
-                      <View style={styles.openIpoLeftCol}>
-                        <Text style={[styles.openIpoTitle, { color: colors.foreground }]} numberOfLines={1}>
-                          {ipo.ipo_name}
-                        </Text>
-                        <Text style={[styles.openIpoSub, { color: colors.mutedForeground }]} numberOfLines={1}>
-                          {formatCurrency(ipo.buy_price)} / lot · {ipo.quantity} shares
-                        </Text>
-
-                        <View style={styles.openIpoBottomRow}>
-                          <Text style={[styles.openIpoCtaText, { color: colors.foreground }]}>
-                            APPLY NOW
+                    <TouchableOpacity
+                      activeOpacity={0.88}
+                      onPress={() => router.push({ pathname: '/bids', params: { ipoId: ipo.id } })}
+                      style={[
+                        styles.openIpoCard,
+                        { backgroundColor: colors.card, borderColor: colors.border },
+                      ]}
+                    >
+                      <View style={styles.openIpoCardMain}>
+                        <View style={styles.openIpoLeftCol}>
+                          <Text style={[styles.openIpoTitle, { color: colors.foreground }]} numberOfLines={1}>
+                            {ipo.ipo_name}
                           </Text>
-                          <Feather name="arrow-right" size={13} color={colors.foreground} />
-                        </View>
-                      </View>
+                          <Text style={[styles.openIpoSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+                            {formatCurrency(ipo.buy_price)} / lot · {ipo.quantity} shares
+                          </Text>
 
-                      <View style={styles.openIpoRightCol}>
-                        <View
-                          style={[
-                            styles.openIpoCategoryBadge,
-                            {
-                              backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#E6F4EA',
-                              borderColor: isDark ? 'rgba(16, 185, 129, 0.3)' : '#CEEAD6',
-                            },
-                          ]}
-                        >
-                          <Text
+                          <View style={styles.openIpoBottomRow}>
+                            <Text style={[styles.openIpoCtaText, { color: colors.foreground }]}>
+                              APPLY NOW
+                            </Text>
+                            <Feather name="arrow-right" size={13} color={colors.foreground} />
+                          </View>
+                        </View>
+
+                        <View style={styles.openIpoRightCol}>
+                          <View
                             style={[
-                              styles.openIpoCategoryText,
-                              { color: isDark ? '#34D399' : '#137333' },
+                              styles.openIpoCategoryBadge,
+                              {
+                                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#E6F4EA',
+                                borderColor: isDark ? 'rgba(16, 185, 129, 0.3)' : '#CEEAD6',
+                              },
                             ]}
                           >
-                            {ipo.issue_type || 'Mainboard'}
-                          </Text>
-                        </View>
+                            <Text
+                              style={[
+                                styles.openIpoCategoryText,
+                                { color: isDark ? '#34D399' : '#137333' },
+                              ]}
+                            >
+                              {ipo.issue_type || 'Mainboard'}
+                            </Text>
+                          </View>
 
-                        <View style={styles.openIpoGmpStack}>
-                          <Text style={[styles.openIpoGmpLabel, { color: colors.mutedForeground }]}>
-                            GMP
-                          </Text>
-                          <Text style={[styles.openIpoGmpValue, { color: isPos ? '#10B981' : colors.destructive }]} numberOfLines={1}>
-                            {hasGmp ? `${pct}%${val != null ? ` (${val})` : ''}` : '—'}
-                          </Text>
+                          <View style={styles.openIpoGmpStack}>
+                            <Text style={[styles.openIpoGmpLabel, { color: colors.mutedForeground }]}>
+                              GMP
+                            </Text>
+                            <Text style={[styles.openIpoGmpValue, { color: isPos ? '#10B981' : colors.destructive }]} numberOfLines={1}>
+                              {hasGmp ? `${pct}%${val != null ? ` (${val})` : ''}` : '—'}
+                            </Text>
+                          </View>
                         </View>
                       </View>
-                    </View>
-                  </TouchableOpacity>
-                </Animated.View>
-              );
-            })}
-          </Animated.ScrollView>
-        </View>
+                    </TouchableOpacity>
+                  </Animated.View>
+                );
+              })}
+            </Animated.ScrollView>
+          </View>
+        )}
 
         {/* Performance chart */}
         <PerformanceChart applications={baseFilteredApps} />

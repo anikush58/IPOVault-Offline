@@ -18,8 +18,8 @@ export interface IUserRepository {
 
 export interface IBankRepository {
   getAll(): Promise<BankAccount[]>;
-  add(bankName: string, balance: number): Promise<void>;
-  updateBalance(id: string, balance: number, bankName?: string): Promise<void>;
+  add(bankName: string, balance: number, upiApp?: string): Promise<void>;
+  updateBalance(id: string, balance: number, bankName?: string, upiApp?: string): Promise<void>;
   delete(id: string): Promise<void>;
 }
 
@@ -68,6 +68,7 @@ export class UserRepository implements IUserRepository {
       tpin: user.tpin || '',
       upi_app: user.upi_app || '',
       bank_name: user.bank_name || '',
+      avatar_url: user.avatar_url || '',
       default_amount_blocked: user.default_amount_blocked || 0,
       archived: 0,
       sync_version: 0,
@@ -87,6 +88,7 @@ export class UserRepository implements IUserRepository {
       tpin: user.tpin || '',
       upi_app: user.upi_app || '',
       bank_name: user.bank_name || '',
+      avatar_url: user.avatar_url || '',
       default_amount_blocked: user.default_amount_blocked || 0,
     };
     await repositoryAdapter.users.update(this.db, id, row);
@@ -180,9 +182,10 @@ export class ApplicationRepository implements IApplicationRepository {
              a.is_favorite,
              u.name    AS user_name,
              u.broker  AS user_broker,
+             u.avatar_url AS user_avatar_url,
              COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
              COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
-             i.ipo_name, i.buy_price, i.quantity, i.open_date
+             i.ipo_name, i.buy_price, i.quantity, i.open_date, i.logo_url AS ipo_logo_url
       FROM   ipo_applications a
       JOIN   users_table u ON a.user_id = u.id
       JOIN   ipo_listings i ON a.ipo_id = i.id
@@ -291,13 +294,14 @@ export class BankRepository implements IBankRepository {
     return await repositoryAdapter.banks.getAll(this.db);
   }
 
-  async add(bankName: string, balance: number): Promise<void> {
+  async add(bankName: string, balance: number, upiApp?: string): Promise<void> {
     const id = Crypto.randomUUID();
     const now = getCurrentTime();
     const row = {
       id,
       bank_name: bankName.trim(),
       balance,
+      upi_app: upiApp ? upiApp.trim() : '',
       sync_version: 0,
       created_at: now,
       updated_at: now,
@@ -305,14 +309,17 @@ export class BankRepository implements IBankRepository {
     await repositoryAdapter.banks.insert(this.db, row);
   }
 
-  async updateBalance(id: string, balance: number, bankName?: string): Promise<void> {
+  async updateBalance(id: string, balance: number, bankName?: string, upiApp?: string): Promise<void> {
     if (!id) {
       if (__DEV__) console.warn('[BankRepository.updateBalance] Called with invalid/null id');
       return;
     }
     const row: any = { balance };
-    if (bankName) {
+    if (bankName !== undefined) {
       row.bank_name = bankName.trim();
+    }
+    if (upiApp !== undefined) {
+      row.upi_app = upiApp.trim();
     }
     await repositoryAdapter.banks.update(this.db, id, row);
   }

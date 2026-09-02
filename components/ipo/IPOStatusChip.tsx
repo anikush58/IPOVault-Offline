@@ -77,7 +77,6 @@ export function IPOStatusChip({ status }: { status: IPOStatusType }) {
 
   return (
     <View style={[styles.chip, { backgroundColor: styleConfig.bg, borderColor: styleConfig.border }]}>
-      <View style={[styles.dot, { backgroundColor: styleConfig.dot }]} />
       <Text style={[styles.text, { color: styleConfig.text }]}>
         {status || 'Unknown'}
       </Text>
@@ -89,19 +88,13 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
     borderWidth: 1,
   },
-  dot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-  },
   text: {
-    fontSize: 10,
+    fontSize: 8,
     fontFamily: 'GoogleSansFlex_700Bold',
     textTransform: 'uppercase',
     letterSpacing: 0.3,

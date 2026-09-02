@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  Image,
   Modal,
   PanResponder,
   Platform,
@@ -30,6 +31,37 @@ import { BulkApplySheet } from '@/components/BulkApplySheet';
 
 type ViewMode = 'home' | 'attention' | 'allBids';
 type FilterStatus = 'All' | 'Applied' | 'Allotted' | 'Not Allotted' | 'Cancelled';
+
+const AVATAR_PALETTES: [string, string][] = [
+  ['#8B5CF6', '#6D28D9'], // Purple
+  ['#10B981', '#047857'], // Emerald
+  ['#3B82F6', '#1D4ED8'], // Blue
+  ['#F59E0B', '#B45309'], // Amber
+  ['#EC4899', '#BE185D'], // Pink
+  ['#6366F1', '#4338CA'], // Indigo
+  ['#14B8A6', '#0F766E'], // Teal
+  ['#F43F5E', '#BE123C'], // Rose
+];
+
+function getAvatarGradient(name: string): [string, string] {
+  let hash = 0;
+  const str = name || '';
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % AVATAR_PALETTES.length;
+  return AVATAR_PALETTES[index];
+}
+
+function getInitials(name: string): string {
+  if (!name) return 'I';
+  const clean = name.replace(/[^a-zA-Z0-9\s]/g, '').trim();
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+  return clean.slice(0, 2).toUpperCase() || 'I';
+}
 
 function SwipeableBidCard({
   bid,
@@ -104,7 +136,6 @@ function SwipeableBidCard({
     extrapolate: 'clamp',
   });
 
-  const firstLetter = (bid.ipo_name || 'I').charAt(0).toUpperCase();
 
   return (
     <View style={styles.swipeCardWrapper}>
@@ -185,11 +216,20 @@ function SwipeableBidCard({
                 </View>
               )}
 
-              <View style={[styles.ipoAvatarBox, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
-                <Text style={[styles.ipoAvatarLetter, { color: colors.foreground }]}>
-                  {firstLetter}
-                </Text>
-              </View>
+              {bid.ipo_logo_url ? (
+                <Image source={{ uri: bid.ipo_logo_url }} style={[styles.ipoAvatarBox, { backgroundColor: colors.surface }]} resizeMode="contain" />
+              ) : (
+                <LinearGradient
+                  colors={getAvatarGradient(bid.ipo_name)}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.ipoAvatarBox}
+                >
+                  <Text style={styles.ipoAvatarLetter}>
+                    {getInitials(bid.ipo_name)}
+                  </Text>
+                </LinearGradient>
+              )}
 
               <View style={{ flex: 1 }}>
                 <Text style={[styles.cardIpoTitle, { color: colors.foreground }]} numberOfLines={1}>
@@ -210,7 +250,6 @@ function SwipeableBidCard({
           {/* Bottom Row: User Name & Bank Badge */}
           <View style={styles.cardBottomRow}>
             <View style={styles.userNameWrap}>
-              <View style={[styles.userDot, { backgroundColor: isDark ? '#94A3B8' : '#64748B' }]} />
               <Text style={[styles.userNameText, { color: colors.foreground }]} numberOfLines={1}>
                 {bid.user_name}
               </Text>
@@ -382,7 +421,7 @@ export default function BidsScreen() {
     }
   };
 
-  const handleExecuteBulkStatusUpdate = async (newStatus: 'Allotted' | 'Not Allotted' | 'Cancelled') => {
+  const handleExecuteBulkStatusUpdate = async (newStatus: ApplicationStatus) => {
     if (bulkSelectedBidIds.size === 0) {
       showError('', 'Please select at least one bid.');
       return;
@@ -452,8 +491,8 @@ export default function BidsScreen() {
                 activeOpacity={0.78}
                 style={[styles.shortcutCard, { backgroundColor: colors.card, borderColor: colors.border }]}
               >
-                <View style={[styles.shortcutIconWrap, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
-                  <Feather name="users" size={18} color={colors.foreground} />
+                <View style={[styles.shortcutIconWrap, { backgroundColor: isDark ? 'rgba(139,92,246,0.18)' : '#F5F3FF' }]}>
+                  <Feather name="users" size={18} color="#8B5CF6" />
                 </View>
                 <Text style={[styles.shortcutTitle, { color: colors.foreground }]} numberOfLines={1}>Users</Text>
                 <Text style={[styles.shortcutSub, { color: colors.mutedForeground }]} numberOfLines={1}>
@@ -467,8 +506,8 @@ export default function BidsScreen() {
                 activeOpacity={0.78}
                 style={[styles.shortcutCard, { backgroundColor: colors.card, borderColor: colors.border }]}
               >
-                <View style={[styles.shortcutIconWrap, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
-                  <Feather name="credit-card" size={18} color={colors.foreground} />
+                <View style={[styles.shortcutIconWrap, { backgroundColor: isDark ? 'rgba(59,130,246,0.18)' : '#EFF6FF' }]}>
+                  <Feather name="credit-card" size={18} color="#3B82F6" />
                 </View>
                 <Text style={[styles.shortcutTitle, { color: colors.foreground }]} numberOfLines={1}>Banks</Text>
                 <Text style={[styles.shortcutSub, { color: colors.mutedForeground }]} numberOfLines={1}>
@@ -666,15 +705,24 @@ export default function BidsScreen() {
               attentionItems.map((app) => (
                 <View key={app.id} style={[styles.attentionItemCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <View style={styles.attentionItemLeft}>
-                    <View style={styles.ipoAvatar}>
-                      <Text style={styles.ipoAvatarText}>{app.ipo_name.slice(0, 1).toUpperCase()}</Text>
-                    </View>
+                    {app.ipo_logo_url ? (
+                      <Image source={{ uri: app.ipo_logo_url }} style={[styles.ipoAvatar, { backgroundColor: colors.surface }]} resizeMode="contain" />
+                    ) : (
+                      <LinearGradient
+                        colors={getAvatarGradient(app.ipo_name)}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.ipoAvatar}
+                      >
+                        <Text style={styles.ipoAvatarText}>{getInitials(app.ipo_name)}</Text>
+                      </LinearGradient>
+                    )}
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.attentionItemTitle, { color: colors.foreground }]} numberOfLines={1}>
                         {app.ipo_name}
                       </Text>
                       <Text style={[styles.attentionItemSub, { color: colors.mutedForeground }]} numberOfLines={1}>
-                        {app.user_name}{app.user_bank_name ? ` · ${app.user_bank_name}` : ''}
+                        {app.user_name}{app.user_bank_name ? ` (${app.user_bank_name})` : ''}
                       </Text>
                       <Text style={[styles.attentionItemDate, { color: colors.mutedForeground }]}>
                         Applied on {app.open_date || 'recent date'}
@@ -791,9 +839,19 @@ export default function BidsScreen() {
 
       {/* ── SCREEN 4: UPDATE APPLICATION STATUS MODAL ── */}
       {selectedAppForUpdate && (
-        <Modal visible transparent animationType="slide" onRequestClose={() => setSelectedAppForUpdate(null)}>
+        <Modal visible transparent animationType="slide" statusBarTranslucent onRequestClose={() => setSelectedAppForUpdate(null)}>
           <Pressable style={styles.modalOverlay} onPress={() => setSelectedAppForUpdate(null)}>
-            <Pressable style={[styles.sheetContainer, { backgroundColor: colors.background, borderTopColor: colors.border }]} onPress={() => {}}>
+            <Pressable
+              style={[
+                styles.sheetContainer,
+                {
+                  backgroundColor: colors.background,
+                  borderTopColor: colors.border,
+                  paddingBottom: Math.max(Math.floor(insets.bottom / 2), 13),
+                },
+              ]}
+              onPress={() => {}}
+            >
               <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
 
               <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
@@ -803,12 +861,12 @@ export default function BidsScreen() {
                 </TouchableOpacity>
               </View>
 
-              <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
+              <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 13, gap: 12 }}>
                 {/* Application Card Summary */}
                 <View style={[styles.appSummaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <Text style={[styles.summaryIpoName, { color: colors.foreground }]}>{selectedAppForUpdate.ipo_name}</Text>
                   <Text style={[styles.summarySub, { color: colors.mutedForeground }]}>
-                    {selectedAppForUpdate.user_name}{selectedAppForUpdate.user_bank_name ? ` · ${selectedAppForUpdate.user_bank_name}` : ''}
+                    {selectedAppForUpdate.user_name}{selectedAppForUpdate.user_bank_name ? ` (${selectedAppForUpdate.user_bank_name})` : ''}
                   </Text>
                   <Text style={[styles.summarySub, { color: colors.mutedForeground, marginTop: 2 }]}>
                     Applied on {selectedAppForUpdate.open_date || 'recent date'}
@@ -1049,8 +1107,22 @@ export default function BidsScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Action Row: 3 Equal-Width Status Buttons */}
+          {/* Action Row: 4 Equal-Width Status Buttons */}
           <View style={styles.bulkBarActionsRow}>
+            <TouchableOpacity
+              onPress={() => handleExecuteBulkStatusUpdate('Mandate Approved')}
+              disabled={bulkSelectedBidIds.size === 0 || bulkActionLoading}
+              style={[
+                styles.bulkBarBtn,
+                { backgroundColor: '#3B82F6' },
+                (bulkSelectedBidIds.size === 0 || bulkActionLoading) && { opacity: 0.4 },
+              ]}
+              activeOpacity={0.85}
+            >
+              <Feather name="clock" size={13} color="#FFFFFF" />
+              <Text style={styles.bulkBarBtnText} numberOfLines={1} adjustsFontSizeToFit>Mandate</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               onPress={() => handleExecuteBulkStatusUpdate('Allotted')}
               disabled={bulkSelectedBidIds.size === 0 || bulkActionLoading}
@@ -1061,8 +1133,8 @@ export default function BidsScreen() {
               ]}
               activeOpacity={0.85}
             >
-              <Feather name="check" size={14} color="#FFFFFF" />
-              <Text style={styles.bulkBarBtnText}>Allotted</Text>
+              <Feather name="check" size={13} color="#FFFFFF" />
+              <Text style={styles.bulkBarBtnText} numberOfLines={1} adjustsFontSizeToFit>Allotted</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1075,8 +1147,8 @@ export default function BidsScreen() {
               ]}
               activeOpacity={0.85}
             >
-              <Feather name="x" size={14} color="#FFFFFF" />
-              <Text style={styles.bulkBarBtnText}>Not Allotted</Text>
+              <Feather name="x" size={13} color="#FFFFFF" />
+              <Text style={styles.bulkBarBtnText} numberOfLines={1} adjustsFontSizeToFit>Not Allotted</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -1090,7 +1162,7 @@ export default function BidsScreen() {
               activeOpacity={0.85}
             >
               <Feather name="slash" size={13} color="#FFFFFF" />
-              <Text style={styles.bulkBarBtnText}>Cancelled</Text>
+              <Text style={styles.bulkBarBtnText} numberOfLines={1} adjustsFontSizeToFit>Cancelled</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1257,8 +1329,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   attentionItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  ipoAvatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(100,116,139,0.12)', alignItems: 'center', justifyContent: 'center' },
-  ipoAvatarText: { color: '#64748B', fontFamily: 'GoogleSansFlex_700Bold', fontSize: 16 },
+  ipoAvatar: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  ipoAvatarText: { color: '#FFFFFF', fontFamily: 'GoogleSansFlex_700Bold', fontSize: 15 },
   attentionItemTitle: { fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold' },
   attentionItemSub: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 2 },
   attentionItemDate: { fontSize: 11, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 1 },
@@ -1342,13 +1414,14 @@ const styles = StyleSheet.create({
   ipoAvatarBox: {
     width: 44,
     height: 44,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   ipoAvatarLetter: {
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: 'GoogleSansFlex_700Bold',
+    color: '#FFFFFF',
   },
   cardIpoTitle: {
     fontSize: 16,
@@ -1418,7 +1491,6 @@ const styles = StyleSheet.create({
     maxHeight: '92%',
     borderTopWidth: 1,
     borderBottomWidth: 0,
-    marginBottom: -60,
   },
   sheetHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12 },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
@@ -1582,7 +1654,7 @@ const styles = StyleSheet.create({
   bulkBarActionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   bulkBarBtn: {
     flex: 1,
@@ -1591,11 +1663,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
+    paddingHorizontal: 3,
+    gap: 3,
   },
   bulkBarBtnText: {
     color: '#FFFFFF',
-    fontSize: 12.5,
+    fontSize: 11,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
 

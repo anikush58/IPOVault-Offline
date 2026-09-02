@@ -14,14 +14,14 @@ interface ThemeContextValue {
 const STORAGE_KEY = '@ipo_tracker/theme';
 
 const ThemeContext = createContext<ThemeContextValue>({
-  preference: 'system',
+  preference: 'light',
   setPreference: () => {},
   resolvedScheme: 'light',
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useColorScheme();
-  const [preference, setPreferenceState] = useState<ThemePreference>('system');
+  const [preference, setPreferenceState] = useState<ThemePreference>('light');
   const [hydrated, setHydrated] = useState(false);
 
   // Load saved preference on mount
@@ -30,6 +30,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       .then((val) => {
         if (val === 'light' || val === 'dark' || val === 'system') {
           setPreferenceState(val);
+        } else {
+          setPreferenceState('light');
         }
       })
       .finally(() => setHydrated(true));

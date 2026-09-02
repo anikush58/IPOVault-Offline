@@ -19,6 +19,7 @@ export async function initDB(db: SQLiteDatabase) {
       tpin TEXT DEFAULT '',
       upi_app TEXT DEFAULT '',
       bank_name TEXT DEFAULT '',
+      avatar_url TEXT DEFAULT '',
       default_amount_blocked REAL DEFAULT 0,
       archived INTEGER DEFAULT 0,
       sync_version INTEGER DEFAULT 0,
@@ -89,6 +90,7 @@ export async function initDB(db: SQLiteDatabase) {
       owner_id TEXT, -- Supabase auth user_id
       bank_name TEXT NOT NULL,
       balance REAL DEFAULT 0,
+      upi_app TEXT DEFAULT '',
       sync_version INTEGER DEFAULT 0,
       sync_status TEXT NOT NULL DEFAULT 'SYNCED',
       last_synced_at TEXT,
@@ -272,6 +274,7 @@ export async function initDB(db: SQLiteDatabase) {
     'ALTER TABLE users_table ADD COLUMN created_at TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE users_table ADD COLUMN updated_at TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE users_table ADD COLUMN deleted_at TEXT',
+    'ALTER TABLE users_table ADD COLUMN avatar_url TEXT DEFAULT ""',
 
     // ipo_listings migrations
     'ALTER TABLE ipo_listings ADD COLUMN owner_id TEXT',
@@ -305,6 +308,7 @@ export async function initDB(db: SQLiteDatabase) {
 
     // bank_accounts migrations
     'ALTER TABLE bank_accounts ADD COLUMN owner_id TEXT',
+    'ALTER TABLE bank_accounts ADD COLUMN upi_app TEXT DEFAULT ""',
     'ALTER TABLE bank_accounts ADD COLUMN sync_version INTEGER DEFAULT 0',
     'ALTER TABLE bank_accounts ADD COLUMN sync_status TEXT DEFAULT "SYNCED"',
     'ALTER TABLE bank_accounts ADD COLUMN last_synced_at TEXT',

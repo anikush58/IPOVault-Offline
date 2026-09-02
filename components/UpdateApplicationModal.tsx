@@ -18,7 +18,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useDialog } from '@/context/DialogContext';
 import { Button } from '@/components/ui/Button';
-import { IconButton } from '@/components/ui/IconButton';
 import { useDB, type ApplicationStatus, type ApplicationWithDetails } from '@/context/DBContext';
 import { StatusBadge } from './StatusBadge';
 import { formatCurrency, todayISO } from '@/utils/formatters';
@@ -98,53 +97,49 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
     }
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!app) return;
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
-    try {
-      setSaving(true);
-      await deleteApplication(app.id);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      setConfirmDelete(false);
-      onClose();
-    } catch {
-      showError('Error', 'Failed to delete application.');
-    } finally {
-      setSaving(false);
-    }
+    showConfirm({
+      title: 'Delete Application',
+      message: 'Are you sure you want to delete this application record?',
+      confirmText: 'Delete',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          setSaving(true);
+          await deleteApplication(app.id);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          onClose();
+        } catch {
+          showError('Error', 'Failed to delete application.');
+        } finally {
+          setSaving(false);
+        }
+      },
+    });
   };
 
   return (
-    <Modal visible={!!app} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={!!app} animationType="fade" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <Pressable style={styles.overlay} onPress={onClose}>
-          <Pressable style={[styles.sheet, { backgroundColor: colors.background, borderTopColor: colors.border, paddingBottom: Math.max(Math.round(insets.bottom * 0.5) + 8, 12) }]}>
-            {/* Drag handle */}
-            <View style={[styles.handle, { backgroundColor: colors.border }]} />
-
-            {/* Header — same layout as AddIPOModal / AddUserModal */}
-            <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
-              <IconButton name="x" variant="surface" size="sm" onPress={onClose} />
-              <Text style={[styles.headerTitle, { color: colors.foreground }]}>Update Application</Text>
-              <Button
-                variant="primary"
-                size="sm"
-                title="Save"
-                loading={saving}
-                disabled={saving}
-                onPress={handleSave}
-              />
+        {/* Centered Modal Backdrop */}
+        <Pressable style={styles.centerModalOverlay} onPress={onClose}>
+          {/* Centered Card Dialog Box (Matching AddUserModal) */}
+          <Pressable style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {/* Header: Title on left, Close Cross Icon on top right (matching AddUserModal) */}
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Update Application</Text>
+              <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={8}>
+                <Feather name="x" size={20} color={colors.mutedForeground} />
+              </TouchableOpacity>
             </View>
 
             {app ? (
               <ScrollView
-                contentContainerStyle={[styles.content, { paddingBottom: Math.max(Math.round(insets.bottom * 0.5) + 16, 24) }]}
+                contentContainerStyle={styles.content}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
               >
@@ -158,18 +153,6 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
                       </Text>
                     </View>
                     <StatusBadge status={app.status} />
-                  </View>
-                  <View style={[styles.infoDivider, { backgroundColor: colors.border }]} />
-                  <View style={styles.infoStats}>
-                    <View>
-                      <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>PRICE × QTY</Text>
-                      <Text style={[styles.statVal, { color: colors.foreground }]}>₹{app.buy_price} × {app.quantity}</Text>
-                    </View>
-                    <View style={[styles.statSep, { backgroundColor: colors.border }]} />
-                    <View>
-                      <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>BUY VALUE</Text>
-                      <Text style={[styles.statVal, { color: colors.primary }]}>{formatCurrency(buyValue)}</Text>
-                    </View>
                   </View>
                 </View>
 
@@ -221,13 +204,13 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
                         {
                           backgroundColor: isHoldingProfit ? colors.positiveBg : colors.negativeBg,
                           borderColor: isHoldingProfit ? colors.positiveDim : colors.negativeDim,
-                          paddingVertical: 18,
+                          paddingVertical: 14,
                         },
                       ]}
                     >
                       <View style={styles.previewRow}>
                         <Text style={[styles.previewLabel, { color: colors.mutedForeground }]}>Current Value</Text>
-                        <Text style={[styles.previewVal, { color: colors.foreground, fontSize: 17 }]}>{formatCurrency(holdingValue)}</Text>
+                        <Text style={[styles.previewVal, { color: colors.foreground, fontSize: 16 }]}>{formatCurrency(holdingValue)}</Text>
                       </View>
                       <View style={[styles.previewRow, styles.previewNetRow, { borderTopColor: isHoldingProfit ? colors.positiveDim : colors.negativeDim }]}>
                         <View>
@@ -287,6 +270,8 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
                     ) : null}
                   </>
                 ) : null}
+
+                {/* Bottom Actions Row: Delete & Save Side-by-Side */}
                 {confirmDelete ? (
                   <View style={[styles.confirmBox, { backgroundColor: colors.destructiveBg, borderColor: colors.destructive }]}>
                     <Text style={[styles.confirmText, { color: colors.foreground }]}>
@@ -309,10 +294,26 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
                     </View>
                   </View>
                 ) : (
-                  <TouchableOpacity onPress={handleDelete} style={[styles.deleteBtn, { borderColor: colors.destructive, backgroundColor: colors.destructiveBg }]}>
-                    <Feather name="trash-2" size={15} color={colors.destructive} />
-                    <Text style={[styles.deleteBtnText, { color: colors.destructive }]}>Delete Application</Text>
-                  </TouchableOpacity>
+                  <View style={styles.actionButtonsRow}>
+                    <TouchableOpacity
+                      onPress={handleDelete}
+                      style={[styles.deleteBtnHalf, { borderColor: colors.destructive, backgroundColor: colors.destructiveBg }]}
+                    >
+                      <Feather name="trash-2" size={15} color={colors.destructive} />
+                      <Text style={[styles.deleteBtnText, { color: colors.destructive }]}>Delete</Text>
+                    </TouchableOpacity>
+
+                    <View style={{ flex: 1 }}>
+                      <Button
+                        variant="primary"
+                        size="md"
+                        title="Save Changes"
+                        loading={saving}
+                        disabled={saving}
+                        onPress={handleSave}
+                      />
+                    </View>
+                  </View>
                 )}
               </ScrollView>
             ) : null}
@@ -325,26 +326,28 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  overlay: {
+  // Centered Backdrop and Floating Modal Box (Matching AddUserModal)
+  centerModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
   },
-  sheet: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderTopWidth: 1,
-    maxHeight: '92%',
+  modalCard: {
+    width: '100%',
+    maxWidth: 440,
+    maxHeight: '85%',
+    borderRadius: 24,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
   },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  header: {
+  modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -352,42 +355,52 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: 1,
   },
-  headerIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.2 },
-  saveChip: { paddingHorizontal: 18, paddingVertical: 9, borderRadius: 20 },
-  saveBtnText: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold' },
-  content: { padding: 20, gap: 0 },
-  infoCard: { borderRadius: 18, borderWidth: 1, padding: 16, marginBottom: 22 },
-  infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 12 },
-  ipoName: { fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
+  modalTitle: { fontSize: 18, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
+  closeBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18 },
+  content: { padding: 18, gap: 0 },
+  infoCard: { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 16 },
+  infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  ipoName: { fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
   metaLine: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 3 },
-  infoDivider: { height: 1, marginBottom: 12 },
-  infoStats: { flexDirection: 'row', alignItems: 'center' },
-  statLabel: { fontSize: 10, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 0.8, marginBottom: 4, textTransform: 'uppercase' },
-  statVal: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold' },
-  statSep: { width: 1, height: 28, marginHorizontal: 16 },
-  sectionLabel: { fontSize: 10, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1, marginBottom: 12, marginTop: 4, textTransform: 'uppercase' },
-  statusGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 22 },
-  statusBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 11, borderRadius: 10, borderWidth: 1.5 },
+  sectionLabel: { fontSize: 10, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1, marginBottom: 10, marginTop: 2, textTransform: 'uppercase' },
+  statusGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  statusBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5 },
   statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.7)' },
   statusBtnText: { fontSize: 13, fontFamily: 'GoogleSansFlex_500Medium' },
-  field: { marginBottom: 14 },
-  fieldLabel: { fontSize: 10, fontFamily: 'GoogleSansFlex_600SemiBold', marginBottom: 8, letterSpacing: 0.8, textTransform: 'uppercase' },
-  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14, fontSize: 15, fontFamily: 'GoogleSansFlex_400Regular' },
-  preview: { borderRadius: 16, padding: 16, marginBottom: 14, gap: 8, borderWidth: 1 },
+  field: { marginBottom: 12 },
+  fieldLabel: { fontSize: 10, fontFamily: 'GoogleSansFlex_600SemiBold', marginBottom: 6, letterSpacing: 0.8, textTransform: 'uppercase' },
+  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, fontFamily: 'GoogleSansFlex_400Regular' },
+  preview: { borderRadius: 14, padding: 14, marginBottom: 12, gap: 8, borderWidth: 1 },
   previewRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  previewNetRow: { paddingTop: 12, marginTop: 4, borderTopWidth: 1 },
-  previewLabel: { fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular' },
-  previewVal: { fontSize: 15, fontFamily: 'GoogleSansFlex_600SemiBold' },
-  netVal: { fontSize: 22, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.5 },
-  row2: { flexDirection: 'row', gap: 12 },
-  deleteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1.5, borderRadius: 14, paddingVertical: 14, marginTop: 22 },
+  previewNetRow: { paddingTop: 10, marginTop: 2, borderTopWidth: 1 },
+  previewLabel: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular' },
+  previewVal: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold' },
+  netVal: { fontSize: 20, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.5 },
+
+  // Side-by-Side Action Buttons Container
+  actionButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 16,
+  },
+  deleteBtnHalf: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingVertical: 10,
+    height: 44,
+  },
   deleteBtnText: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold' },
-  confirmBox: { borderWidth: 1.5, borderRadius: 16, padding: 16, marginTop: 22, gap: 12 },
-  confirmText: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold', textAlign: 'center' },
+  confirmBox: { borderWidth: 1.5, borderRadius: 14, padding: 14, marginTop: 16, gap: 10 },
+  confirmText: { fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold', textAlign: 'center' },
   confirmRow: { flexDirection: 'row', gap: 10 },
-  confirmCancelBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
-  confirmCancelText: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold' },
-  confirmDeleteBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
-  confirmDeleteText: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold', color: '#fff' },
+  confirmCancelBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, alignItems: 'center' },
+  confirmCancelText: { fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold' },
+  confirmDeleteBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
+  confirmDeleteText: { fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold', color: '#fff' },
 });

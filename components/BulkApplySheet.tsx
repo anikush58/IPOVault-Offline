@@ -17,8 +17,7 @@ import { useDialog } from '@/context/DialogContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatCurrency } from '@/utils/formatters';
 
-const DEFAULT_BANKS = ['HDFC Bank', 'ICICI Bank', 'SBI', 'Axis Bank', 'Kotak Mahindra'];
-const UPI_APPS = ['GPay', 'PhonePe', 'Paytm', 'BHIM', 'Other'];
+const UPI_APPS = ['GPay', 'PhonePe', 'Paytm', 'BHIM', 'BoB ASBA', 'IDFC ASBA', 'Other'];
 
 type Props = {
   visible: boolean;
@@ -48,9 +47,11 @@ export function BulkApplySheet({ visible, onClose }: Props) {
   const selectedIPO = useMemo(() => ipos.find((i) => i.id === bulkIPOId), [ipos, bulkIPOId]);
 
   const availableBankNames = useMemo(() => {
-    const list = bankAccounts.map((b) => b.bank_name);
-    for (const b of DEFAULT_BANKS) {
-      if (!list.includes(b)) list.push(b);
+    const list: string[] = [];
+    for (const b of bankAccounts) {
+      if (b.bank_name && !list.includes(b.bank_name)) {
+        list.push(b.bank_name);
+      }
     }
     return list;
   }, [bankAccounts]);
@@ -120,7 +121,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
               {
                 backgroundColor: colors.background,
                 borderTopColor: colors.border,
-                paddingBottom: 60 + Math.max(insets.bottom, 12),
+                paddingBottom: Math.max(Math.floor(insets.bottom / 2), 13),
               },
             ]}
             onPress={() => {}}
@@ -135,7 +136,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
+            <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 13, gap: 12 }}>
               {/* 1. SELECT IPO */}
               <View>
                 <Text style={[styles.stepLabel, { color: colors.mutedForeground }]}>1. SELECT IPO</Text>
@@ -379,7 +380,6 @@ const styles = StyleSheet.create({
     maxHeight: '92%',
     borderTopWidth: 1,
     borderBottomWidth: 0,
-    marginBottom: -60,
   },
   sheetHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12 },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },

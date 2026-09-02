@@ -11,6 +11,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useColors } from '@/hooks/useColors';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IPOService } from '@/services/ipo/ipoService';
 import { ipoDiagnosticsStore, mapSyncErrorToUserMessage, IPODiagnostics } from '@/services/ipo/ipoUpdater';
 
@@ -49,12 +50,21 @@ export function InfoBanner({
   description?: string;
   icon?: string;
 }) {
+  const isDark = useColorScheme() === 'dark';
   return (
-    <View style={styles.banner}>
-      <Feather name={icon as any} size={16} color="#D97706" style={{ marginTop: 1 }} accessibilityLabel="Information" />
+    <View
+      style={[
+        styles.banner,
+        {
+          backgroundColor: isDark ? 'rgba(245, 158, 11, 0.12)' : '#FEF3C7',
+          borderColor: isDark ? 'rgba(245, 158, 11, 0.25)' : '#FDE68A',
+        },
+      ]}
+    >
+      <Feather name={icon as any} size={15} color="#D97706" style={{ marginTop: 1 }} accessibilityLabel="Information" />
       <View style={{ flex: 1, gap: 2 }}>
-        <Text style={styles.bannerTitle}>{title}</Text>
-        <Text style={styles.bannerSub}>{description}</Text>
+        <Text style={[styles.bannerTitle, { color: isDark ? '#F59E0B' : '#B45309' }]}>{title}</Text>
+        <Text style={[styles.bannerSub, { color: isDark ? '#FBBF24' : '#92400E' }]}>{description}</Text>
       </View>
     </View>
   );
@@ -151,25 +161,23 @@ export function DatabaseStatusCard() {
     : 'Your IPO data is available offline. Live synchronization will be available in a future update.';
 
   return (
-    <View style={[styles.card, { borderColor: colors.border, marginTop: 14 }]}>
-      <LinearGradient
-        colors={[colors.primary + '14', colors.card]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[StyleSheet.absoluteFill, { borderRadius: 22 }]}
-      />
-
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 14 }]}>
       {/* ── Card Header ── */}
       <View style={styles.headerRow}>
         <View style={styles.headerTitleGroup}>
-          <Feather name="database" size={15} color={colors.primary} accessibilityLabel="Database" />
-          <Text style={[styles.headerTitleText, { color: colors.foreground }]}>IPO Database</Text>
+          <View style={[styles.headerIconWrap, { backgroundColor: useColorScheme() === 'dark' ? 'rgba(59,130,246,0.15)' : '#EFF6FF' }]}>
+            <Feather name="database" size={15} color="#3B82F6" accessibilityLabel="Database" />
+          </View>
+          <View>
+            <Text style={[styles.headerTitleText, { color: colors.foreground }]}>IPO Database</Text>
+            <Text style={[styles.headerSubText, { color: colors.mutedForeground }]}>Local SQLite Engine</Text>
+          </View>
         </View>
         <StatusBadge state={cardState} />
       </View>
 
-      {/* ── Statistics Row (Exactly 3 Metrics) ── */}
-      <View style={[styles.statsRow, { marginTop: 16 }]}>
+      {/* ── Statistics Row (Inside Surface Inner Box) ── */}
+      <View style={[styles.statsBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <View style={styles.statCell}>
           <Text style={[styles.statValueText, { color: colors.foreground }]}>{masterCount}</Text>
           <Text style={[styles.statLabelText, { color: colors.mutedForeground }]}>Total IPOs</Text>
@@ -193,7 +201,7 @@ export function DatabaseStatusCard() {
       </View>
 
       {/* ── Information Banner (Amber Themed) ── */}
-      <View style={{ marginTop: 16 }}>
+      <View style={{ marginTop: 12 }}>
         <InfoBanner description={bannerDescription} />
       </View>
 
@@ -235,9 +243,9 @@ export function DatabaseStatusCard() {
 const styles = StyleSheet.create({
   card: {
     marginHorizontal: 16,
-    borderRadius: 22,
+    borderRadius: 24,
     borderWidth: 1,
-    padding: 20,
+    padding: 18,
     overflow: 'hidden',
   },
   headerRow: {
@@ -248,18 +256,30 @@ const styles = StyleSheet.create({
   headerTitleGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
+  },
+  headerIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitleText: {
-    fontSize: 17,
+    fontSize: 16,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: -0.3,
+  },
+  headerSubText: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_500Medium',
+    marginTop: 1,
   },
 
   badge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 9999,
     borderWidth: 1,
   },
   badgeText: {
@@ -268,22 +288,27 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
 
-  statsRow: {
+  statsBox: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginTop: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 16,
+    borderWidth: 1,
   },
   statCell: {
     flex: 1,
     alignItems: 'center',
-    gap: 3,
+    gap: 2,
   },
   statDivider: {
     width: 1,
-    height: 28,
+    height: 24,
   },
   statValueText: {
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: -0.3,
   },

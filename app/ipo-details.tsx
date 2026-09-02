@@ -2,11 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Image,
   Linking,
+  Modal,
   Platform,
   ScrollView,
   Share,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -46,6 +48,51 @@ export default function IPODetailsScreen() {
   const [loading, setLoading] = useState(true);
   const [logoError, setLogoError] = useState(false);
   const [readMoreAbout, setReadMoreAbout] = useState(false);
+  const [showEditGmpModal, setShowEditGmpModal] = useState(false);
+  const [editGmpPercent, setEditGmpPercent] = useState('');
+  const [editGmpAmount, setEditGmpAmount] = useState('');
+
+  const openGmpModal = () => {
+    setEditGmpAmount(ipo?.gmp_amount != null ? String(ipo.gmp_amount) : '');
+    setEditGmpPercent(ipo?.gmp_percent != null ? String(ipo.gmp_percent) : '');
+    setShowEditGmpModal(true);
+  };
+
+  const handleEditGmpPercentChange = (val: string) => {
+    setEditGmpPercent(val);
+    const pct = parseFloat(val);
+    const price = ipo?.price_band_max || ipo?.price_band_min || 0;
+    if (!isNaN(pct) && price > 0) {
+      const amt = (pct * price) / 100;
+      setEditGmpAmount(Number.isInteger(amt) ? String(amt) : amt.toFixed(2).replace(/\.?0+$/, ''));
+    } else if (!val) {
+      setEditGmpAmount('');
+    }
+  };
+
+  const handleEditGmpAmountChange = (val: string) => {
+    setEditGmpAmount(val);
+    const amt = parseFloat(val);
+    const price = ipo?.price_band_max || ipo?.price_band_min || 0;
+    if (!isNaN(amt) && price > 0) {
+      const pct = (amt / price) * 100;
+      setEditGmpPercent(Number.isInteger(pct) ? String(pct) : pct.toFixed(2).replace(/\.?0+$/, ''));
+    } else if (!val) {
+      setEditGmpPercent('');
+    }
+  };
+
+  const saveGmp = async () => {
+    if (!ipo) return;
+    const amt = editGmpAmount ? parseFloat(editGmpAmount) : null;
+    const pct = editGmpPercent ? parseFloat(editGmpPercent) : null;
+    const profitLot = (amt != null && ipo.lot_size != null) ? amt * ipo.lot_size : null;
+    await repo.updateGmp(ipo.id, amt, pct, profitLot);
+    const updated = await repo.getById(ipo.id);
+    if (updated) setIpo(updated);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setShowEditGmpModal(false);
+  };
 
   useEffect(() => {
     async function fetchDetails() {
@@ -289,9 +336,15 @@ export default function IPODetailsScreen() {
 
         {/* ── 3. LIVE MARKET SIGNALS & GMP ── */}
         <View style={styles.sectionWrap}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <Feather name="zap" size={13} color={colors.primary} />
-            <Text style={[styles.sectionEyebrow, { color: colors.mutedForeground, marginBottom: 0 }]}>LIVE MARKET SIGNALS</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Feather name="zap" size={13} color={colors.primary} />
+              <Text style={[styles.sectionEyebrow, { color: colors.mutedForeground, marginBottom: 0 }]}>LIVE MARKET SIGNALS</Text>
+            </View>
+            <TouchableOpacity onPress={openGmpModal} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Feather name="edit-3" size={12} color={colors.primary} />
+              <Text style={{ fontSize: 12, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary }}>Edit GMP</Text>
+            </TouchableOpacity>
           </View>
           <View style={[styles.dashboardPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.dashboardGrid}>
@@ -758,6 +811,70 @@ export default function IPODetailsScreen() {
           )}
         </View>
       </View>
+
+      {/* ── Quick Edit GMP Modal ── */}
+      {ipo ? (
+        <Modal visible={showEditGmpModal} transparent animationType="slide" onRequestClose={() => setShowEditGmpModal(false)}>
+          <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setShowEditGmpModal(false)} activeOpacity={1} />
+          <View style={{ backgroundColor: colors.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, borderTopWidth: 1, borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom + 12, 20) }}>
+            <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: 16 }} />
+            
+            <Text style={{ fontSize: 18, fontFamily: 'GoogleSansFlex_700Bold', color: colors.foreground, marginBottom: 4 }}>
+              Update Expected GMP
+            </Text>
+            <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground, marginBottom: 16 }}>
+              {ipo.ipo_name} (Max Price: ₹{ipo.price_band_max || ipo.price_band_min || '—'})
+            </Text>
+
+            <View style={{ marginBottom: 14 }}>
+              <Text style={{ fontSize: 11, fontFamily: 'GoogleSansFlex_700Bold', color: colors.mutedForeground, textTransform: 'uppercase', marginBottom: 6 }}>
+                GMP PERCENTAGE (%)
+              </Text>
+              <TextInput
+                value={editGmpPercent}
+                onChangeText={handleEditGmpPercentChange}
+                placeholder="e.g. 25"
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={{ borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, fontFamily: 'GoogleSansFlex_600SemiBold' }}
+              />
+            </View>
+
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ fontSize: 11, fontFamily: 'GoogleSansFlex_700Bold', color: colors.mutedForeground, textTransform: 'uppercase', marginBottom: 6 }}>
+                GMP AMOUNT (₹ / SHARE)
+              </Text>
+              <TextInput
+                value={editGmpAmount}
+                onChangeText={handleEditGmpAmountChange}
+                placeholder="Auto-calculated from %"
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={{ borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, fontFamily: 'GoogleSansFlex_600SemiBold' }}
+              />
+            </View>
+
+            {editGmpAmount && ipo.lot_size ? (
+              <View style={{ backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 12, marginBottom: 18, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Feather name="trending-up" size={16} color={colors.primary} />
+                <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground }}>
+                  Estimated profit: <Text style={{ fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary }}>₹{(parseFloat(editGmpAmount || '0') * ipo.lot_size).toLocaleString('en-IN')}</Text> / lot ({ipo.lot_size} shares)
+                </Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity
+              onPress={saveGmp}
+              style={{ backgroundColor: colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' }}
+              activeOpacity={0.85}
+            >
+              <Text style={{ color: '#FFFFFF', fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold' }}>
+                Save GMP Update
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </Modal>
+      ) : null}
     </View>
   );
 }

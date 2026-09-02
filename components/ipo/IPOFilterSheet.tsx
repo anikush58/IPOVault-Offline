@@ -334,15 +334,16 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   chip: {
+    height: 36,
+    minHeight: 36,
     paddingHorizontal: 14,
-    paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    minHeight: 38,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   chipText: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: 'GoogleSansFlex_500Medium',
   },
   footer: {

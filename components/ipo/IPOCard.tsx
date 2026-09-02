@@ -1,13 +1,35 @@
 import React from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IPOMasterRecord } from '@/services/ipo/types';
 import { formatCurrency } from '@/utils/formatters';
 import { IPOStatusChip } from './IPOStatusChip';
 import { useCompare } from '@/context/CompareContext';
+
+const AVATAR_PALETTES: [string, string][] = [
+  ['#8B5CF6', '#6D28D9'], // Purple
+  ['#10B981', '#047857'], // Emerald
+  ['#3B82F6', '#1D4ED8'], // Blue
+  ['#F59E0B', '#B45309'], // Amber
+  ['#EC4899', '#BE185D'], // Pink
+  ['#6366F1', '#4338CA'], // Indigo
+  ['#14B8A6', '#0F766E'], // Teal
+  ['#F43F5E', '#BE123C'], // Rose
+];
+
+function getAvatarGradient(name: string): [string, string] {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % AVATAR_PALETTES.length;
+  return AVATAR_PALETTES[index];
+}
 
 type Props = {
   ipo: IPOMasterRecord;
@@ -18,12 +40,17 @@ type Props = {
 
 export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavorite, onLongPress }: Props) {
   const colors = useColors();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const router = useRouter();
   const { isInCompare, toggleCompare } = useCompare();
   const [logoError, setLogoError] = React.useState(false);
 
   const isFav = ipo.is_favorite === 1;
   const isCompared = isInCompare(ipo.id);
+
+  const companyNameStr = ipo.company_name || ipo.ipo_name || 'IPO';
+  const avatarGradient = getAvatarGradient(companyNameStr);
 
   // Format Price Band
   const priceBandText = React.useMemo(() => {
@@ -48,7 +75,7 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
   }, [ipo.price_band_max, ipo.price_band_min, ipo.lot_size]);
 
   // Fallback Initials
-  const initials = (ipo.company_name || ipo.ipo_name || 'I')
+  const initials = companyNameStr
     .replace(/[^a-zA-Z0-9\s]/g, '')
     .split(' ')
     .slice(0, 2)
@@ -198,14 +225,19 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
               onError={() => setLogoError(true)}
             />
           ) : (
-            <View style={[styles.avatar, { backgroundColor: colors.primary + '18' }]}>
-              <Text style={[styles.avatarText, { color: colors.primary }]}>{initials}</Text>
-            </View>
+            <LinearGradient
+              colors={avatarGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.avatar}
+            >
+              <Text style={styles.avatarText}>{initials}</Text>
+            </LinearGradient>
           )}
 
           <View style={styles.identityWrap}>
             <Text style={[styles.companyName, { color: colors.foreground }]} numberOfLines={1}>
-              {ipo.company_name || ipo.ipo_name}
+              {companyNameStr}
             </Text>
 
             {/* Date Range directly below IPO Name */}
@@ -221,25 +253,39 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
           <View style={styles.iconActionsWrap}>
             <TouchableOpacity
               onPress={handleComparePress}
-              hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
-              style={styles.iconBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+              style={[
+                styles.softIconBtn,
+                {
+                  backgroundColor: isCompared
+                    ? (isDark ? 'rgba(99,102,241,0.2)' : '#EEF2FF')
+                    : (isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9'),
+                },
+              ]}
             >
               <Feather
                 name="columns"
-                size={15}
-                color={isCompared ? colors.primary : colors.mutedForeground + '80'}
+                size={14}
+                color={isCompared ? '#6366F1' : colors.mutedForeground}
               />
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={handleFavoritePress}
-              hitSlop={{ top: 10, bottom: 10, left: 6, right: 10 }}
-              style={styles.iconBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+              style={[
+                styles.softIconBtn,
+                {
+                  backgroundColor: isFav
+                    ? (isDark ? 'rgba(245,158,11,0.2)' : '#FEF3C7')
+                    : (isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9'),
+                },
+              ]}
             >
               <Feather
                 name="bookmark"
-                size={17}
-                color={isFav ? colors.primary : colors.borderStrong}
+                size={14}
+                color={isFav ? '#D97706' : colors.mutedForeground}
               />
             </TouchableOpacity>
           </View>
@@ -419,49 +465,51 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
 const styles = StyleSheet.create({
   snapshotCard: {
     marginHorizontal: 16,
-    marginBottom: 10,
-    borderRadius: 16,
+    marginBottom: 12,
+    borderRadius: 24,
     borderWidth: 1,
-    paddingVertical: 11,
-    paddingHorizontal: 13,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
   },
   headerBlock: {
-    marginBottom: 8,
+    marginBottom: 10,
   },
   headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
   logoImage: {
-    width: 42,
-    height: 42,
-    borderRadius: 11,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     resizeMode: 'contain',
   },
   avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 11,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
     fontSize: 16,
     fontFamily: 'GoogleSansFlex_700Bold',
+    color: '#FFFFFF',
   },
   identityWrap: {
     flex: 1,
   },
   companyName: {
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.2,
   },
   headerDateRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 2,
+    marginTop: 3,
   },
   headerDateText: {
     fontSize: 11,
@@ -470,20 +518,20 @@ const styles = StyleSheet.create({
   badgeRowFullWidth: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    marginTop: 7,
+    gap: 6,
+    marginTop: 9,
     flexWrap: 'wrap',
   },
   tagBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   tagText: {
-    fontSize: 10,
+    fontSize: 8,
     fontFamily: 'GoogleSansFlex_700Bold',
     textTransform: 'uppercase',
     letterSpacing: 0.3,
@@ -491,20 +539,25 @@ const styles = StyleSheet.create({
   iconActionsWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 6,
   },
   iconBtn: {
-    padding: 5,
+    padding: 6,
   },
-
-  /* Hero Market Signal Banner */
+  softIconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   heroSignalBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
-    paddingVertical: 8,
+    borderRadius: 14,
+    paddingVertical: 10,
     paddingHorizontal: 12,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   signalCell: {
     flex: 1.2,
@@ -535,7 +588,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 2,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   investCell: {
     flex: 1,
@@ -560,19 +613,6 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
 
-  /* Timeline Indicator */
-  timelineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginBottom: 10,
-    paddingHorizontal: 2,
-  },
-  timelineText: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_500Medium',
-  },
-
   /* Actions */
   actionRow: {
     flexDirection: 'row',
@@ -580,8 +620,9 @@ const styles = StyleSheet.create({
   },
   btnSecondary: {
     flex: 1,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 9,
+    minHeight: 40,
+    borderRadius: 12,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -593,8 +634,9 @@ const styles = StyleSheet.create({
   btnPrimary: {
     flex: 1,
     flexDirection: 'row',
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingVertical: 9,
+    minHeight: 40,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,

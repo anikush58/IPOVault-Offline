@@ -22,6 +22,7 @@ export type User = {
   tpin: string;
   upi_app: string;
   bank_name: string;
+  avatar_url?: string;
   default_amount_blocked: number;
   archived?: number;
 };
@@ -60,10 +61,12 @@ export type ApplicationWithDetails = {
   user_broker: string;
   user_bank_name: string;
   user_upi_app: string;
+  user_avatar_url?: string;
   ipo_name: string;
   buy_price: number;
   quantity: number;
   open_date: string;
+  ipo_logo_url?: string;
   is_favorite: number; // 0 = no, 1 = yes
 };
 
@@ -71,6 +74,7 @@ export type BankAccount = {
   id: string;
   bank_name: string;
   balance: number;
+  upi_app?: string;
 };
 
 type ImportResult = { users: number; ipos: number; applications: number };
@@ -164,8 +168,8 @@ type DBContextType = {
   getAllotmentByAppId: (appId: string) => Promise<IPOAllotmentRecord | null>;
   saveAllotmentResult: (params: SaveAllotmentParams) => Promise<IPOAllotmentRecord>;
   // Bank accounts
-  addBankAccount: (bankName: string, balance: number) => Promise<void>;
-  updateBankBalance: (id: string, balance: number, bankName?: string) => Promise<void>;
+  addBankAccount: (bankName: string, balance: number, upiApp?: string) => Promise<void>;
+  updateBankBalance: (id: string, balance: number, bankName?: string, upiApp?: string) => Promise<void>;
   deleteBankAccount: (id: string) => Promise<void>;
   // Data management
   loadSampleData: () => Promise<void>;
@@ -262,9 +266,10 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
              a.is_favorite,
              u.name    AS user_name,
              u.broker  AS user_broker,
+             u.avatar_url AS user_avatar_url,
              COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
              COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
-             i.ipo_name, i.buy_price, i.quantity, i.open_date
+             i.ipo_name, i.buy_price, i.quantity, i.open_date, i.logo_url AS ipo_logo_url
       FROM   ipo_applications a
       JOIN   users_table u ON a.user_id = u.id
       JOIN   ipo_listings i ON a.ipo_id = i.id
@@ -689,15 +694,15 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
   // ── Bank accounts ──────────────────────────────────────────────────────────
 
-  const addBankAccount = async (bankName: string, balance: number) => {
+  const addBankAccount = async (bankName: string, balance: number, upiApp?: string) => {
     const repo = new BankRepository(db);
-    await repo.add(bankName, balance);
+    await repo.add(bankName, balance, upiApp);
     await refresh();
   };
 
-  const updateBankBalance = async (id: string, balance: number, bankName?: string) => {
+  const updateBankBalance = async (id: string, balance: number, bankName?: string, upiApp?: string) => {
     const repo = new BankRepository(db);
-    await repo.updateBalance(id, balance, bankName);
+    await repo.updateBalance(id, balance, bankName, upiApp);
     await refresh();
   };
 
@@ -811,6 +816,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           tpin: u.tpin,
           upi_app: u.upi_app,
           bank_name: u.bank_name,
+          avatar_url: u.avatar_url,
           default_amount_blocked: u.default_amount_blocked,
           archived: u.archived ?? 0,
         })),
@@ -828,6 +834,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           exchange: i.exchange,
           issue_type: i.issue_type,
           allotment_date: i.allotment_date,
+          logo_url: i.logo_url,
         })),
         applications: applications.map((a) => ({
           id: a.id,
@@ -904,11 +911,11 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       const archivedVal = u.archived ? 1 : 0;
       if (existing) {
         userIdMap.set(uId, existing.id);
-        if (u.archived !== undefined) {
+        if (u.archived !== undefined || u.avatar_url) {
           await safeRunAsync(
             db,
-            'UPDATE users_table SET archived = ? WHERE id = ?',
-            [archivedVal, existing.id],
+            'UPDATE users_table SET archived = COALESCE(?, archived), avatar_url = CASE WHEN ? != "" THEN ? ELSE avatar_url END WHERE id = ?',
+            [u.archived !== undefined ? archivedVal : null, u.avatar_url || '', u.avatar_url || '', existing.id],
             'DBContext.importJSON.updateUserArchived'
           );
         }
@@ -917,8 +924,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         const defaultAmount = u.default_amount_blocked ?? 0;
         await safeRunAsync(
           db,
-          'INSERT INTO users_table (id, name, pan_number, broker, tpin, upi_app, bank_name, default_amount_blocked, archived, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-          [newId, name, pan, u.broker || '', u.tpin || '', u.upi_app || '', u.bank_name || '', defaultAmount, archivedVal, now, now],
+          'INSERT INTO users_table (id, name, pan_number, broker, tpin, upi_app, bank_name, avatar_url, default_amount_blocked, archived, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+          [newId, name, pan, u.broker || '', u.tpin || '', u.upi_app || '', u.bank_name || '', u.avatar_url || '', defaultAmount, archivedVal, now, now],
           'DBContext.importJSON.insertUser'
         );
         userIdMap.set(uId, newId);
@@ -954,11 +961,11 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
       if (existing) {
         ipoIdMap.set(ipoId, existing.id);
-        if (ipo.archived !== undefined || ipo.is_favorite !== undefined) {
+        if (ipo.archived !== undefined || ipo.is_favorite !== undefined || ipo.logo_url) {
           await safeRunAsync(
             db,
-            'UPDATE ipo_listings SET archived = COALESCE(?, archived), is_favorite = COALESCE(?, is_favorite) WHERE id = ?',
-            [ipo.archived !== undefined ? archivedVal : null, ipo.is_favorite !== undefined ? isFavVal : null, existing.id],
+            'UPDATE ipo_listings SET archived = COALESCE(?, archived), is_favorite = COALESCE(?, is_favorite), logo_url = CASE WHEN ? != "" THEN ? ELSE logo_url END WHERE id = ?',
+            [ipo.archived !== undefined ? archivedVal : null, ipo.is_favorite !== undefined ? isFavVal : null, ipo.logo_url || '', ipo.logo_url || '', existing.id],
             'DBContext.importJSON.updateIPOArchived'
           );
         }
@@ -966,8 +973,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         const newId = ipoId || Crypto.randomUUID();
         await safeRunAsync(
           db,
-          'INSERT INTO ipo_listings (id, ipo_name, buy_price, quantity, open_date, close_date, listing_date, archived, is_favorite, registrar, exchange, issue_type, allotment_date, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-          [newId, ipoName, ipo.buy_price || 0, ipo.quantity || 0, ipo.open_date || '', ipo.close_date || '', ipo.listing_date || '', archivedVal, isFavVal, ipo.registrar || '', ipo.exchange || '', ipo.issue_type || '', ipo.allotment_date || '', now, now],
+          'INSERT INTO ipo_listings (id, ipo_name, buy_price, quantity, open_date, close_date, listing_date, logo_url, archived, is_favorite, registrar, exchange, issue_type, allotment_date, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          [newId, ipoName, ipo.buy_price || 0, ipo.quantity || 0, ipo.open_date || '', ipo.close_date || '', ipo.listing_date || '', ipo.logo_url || '', archivedVal, isFavVal, ipo.registrar || '', ipo.exchange || '', ipo.issue_type || '', ipo.allotment_date || '', now, now],
           'DBContext.importJSON.insertIPO'
         );
         ipoIdMap.set(ipoId, newId);

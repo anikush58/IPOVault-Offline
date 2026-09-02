@@ -60,6 +60,32 @@ export default function AddIPOManualScreen() {
   const [priceBandMax, setPriceBandMax] = useState('');
   const [lotSize, setLotSize] = useState('');
   const [issueSize, setIssueSize] = useState('');
+  const [gmpPercent, setGmpPercent] = useState('');
+  const [gmpAmount, setGmpAmount] = useState('');
+
+  const handleGmpPercentChange = (val: string) => {
+    setGmpPercent(val);
+    const pct = parseFloat(val);
+    const price = parseFloat(priceBandMax || priceBandMin);
+    if (!isNaN(pct) && !isNaN(price) && price > 0) {
+      const amt = (pct * price) / 100;
+      setGmpAmount(Number.isInteger(amt) ? String(amt) : amt.toFixed(2).replace(/\.?0+$/, ''));
+    } else if (!val) {
+      setGmpAmount('');
+    }
+  };
+
+  const handleGmpAmountChange = (val: string) => {
+    setGmpAmount(val);
+    const amt = parseFloat(val);
+    const price = parseFloat(priceBandMax || priceBandMin);
+    if (!isNaN(amt) && !isNaN(price) && price > 0) {
+      const pct = (amt / price) * 100;
+      setGmpPercent(Number.isInteger(pct) ? String(pct) : pct.toFixed(2).replace(/\.?0+$/, ''));
+    } else if (!val) {
+      setGmpPercent('');
+    }
+  };
 
   const [openDate, setOpenDate] = useState('');
   const [closeDate, setCloseDate] = useState('');
@@ -268,6 +294,9 @@ export default function AddIPOManualScreen() {
         lead_manager: leadManager.trim(),
         website: website.trim(),
         description: notes.trim() || 'Manually created IPO entry',
+        gmp_amount: gmpAmount ? parseFloat(gmpAmount) : null,
+        gmp_percent: gmpPercent ? parseFloat(gmpPercent) : null,
+        profit_per_lot: (gmpAmount && lotSize) ? parseFloat(gmpAmount) * parseInt(lotSize, 10) : null,
       };
 
       const savedRecord = await repo.createManual(recordData);
@@ -600,6 +629,31 @@ export default function AddIPOManualScreen() {
                 value={issueSize}
                 onChangeText={setIssueSize}
                 placeholder="e.g. 450"
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              />
+            </View>
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>GMP Percentage (%)</Text>
+              <TextInput
+                value={gmpPercent}
+                onChangeText={handleGmpPercentChange}
+                placeholder="e.g. 25"
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              />
+            </View>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>GMP Amount (₹/share)</Text>
+              <TextInput
+                value={gmpAmount}
+                onChangeText={handleGmpAmountChange}
+                placeholder="Auto-calculated"
                 keyboardType="numeric"
                 placeholderTextColor={colors.mutedForeground + '70'}
                 style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}

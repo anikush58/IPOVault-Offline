@@ -70,7 +70,7 @@ export const DesignSystem = {
     },
     radius: {
       segmented: 12,
-      pills: 20,
+      pills: 9999,
     },
     fontSize: {
       sm: 12,
@@ -79,6 +79,6 @@ export const DesignSystem = {
     },
     fontActive: 'GoogleSansFlex_700Bold',
     fontInactive: 'GoogleSansFlex_600SemiBold',
-    activeColor: '#D4A017',
+    activeColor: '#0F172A',
   },
 } as const;

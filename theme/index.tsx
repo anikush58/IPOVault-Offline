@@ -4,7 +4,7 @@ import { themeColors, ThemeColors } from "./colors";
 import { ThemeContextType, ThemeMode, ColorScheme } from "../types/theme";
 
 const ThemeContext = createContext<ThemeContextType>({
-  mode: "system",
+  mode: "light",
   colorScheme: "light",
   colors: themeColors.light,
   setMode: () => {},
@@ -13,7 +13,7 @@ const ThemeContext = createContext<ThemeContextType>({
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const systemColorScheme = useColorScheme();
-  const [mode, setMode] = useState<ThemeMode>("system");
+  const [mode, setMode] = useState<ThemeMode>("light");
 
   const colorScheme: ColorScheme = useMemo(() => {
     if (mode === "system") {

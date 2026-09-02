@@ -23,6 +23,24 @@ import { formatCurrency } from '@/utils/formatters';
 
 type TabType = 'profits' | 'holding' | 'charges';
 
+function parseAppDate(dateStr: string | null | undefined): Date | null {
+  if (!dateStr) return null;
+  const isoStr = dateStr.trim().replace(' ', 'T');
+  const d = new Date(isoStr);
+  if (!isNaN(d.getTime())) return d;
+
+  const parts = dateStr.split(/[-/ T]/);
+  if (parts.length >= 3) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+      return new Date(year, month, day);
+    }
+  }
+  return null;
+}
+
 export default function PortfolioReportScreen() {
   const colors = useColors();
   const router = useRouter();
@@ -34,25 +52,58 @@ export default function PortfolioReportScreen() {
   const [activeTab, setActiveTab] = useState<TabType>('profits');
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('All Time');
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
-  // Compute portfolio totals
-  const totals = useMemo(() => {
+  // Compute portfolio totals and vs last month comparison according to selected period
+  const { totals, vsLastMonthPct, isVsLastMonthUp } = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    const lastMonthIndex = currentMonth === 0 ? 11 : currentMonth - 1;
+    const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+
     let grossProfit = 0;
     let holdingProfit = 0;
     let totalTax = 0;
     let totalUserCut = 0;
+    let lastMonthGross = 0;
 
     for (const a of applications) {
       if (a.status === 'Sold' || a.status === 'Holding') {
         const { grossPL, tax, userCut, netPL, isHolding } = calculateAppTaxAndNet(a);
-        if (isHolding) {
-          holdingProfit += netPL;
-        } else {
-          grossProfit += grossPL;
-          totalTax += tax;
-          totalUserCut += userCut;
+
+        // Date check for period filtering
+        const dateStr = a.sale_date || a.updated_at || a.created_at;
+        const appDate = parseAppDate(dateStr);
+
+        let matchPeriod = true;
+        if (selectedPeriod !== 'All Time') {
+          if (appDate) {
+            if (selectedPeriod === 'This Month') {
+              matchPeriod = appDate.getMonth() === currentMonth && appDate.getFullYear() === currentYear;
+            } else if (selectedPeriod === 'Last Month') {
+              matchPeriod = appDate.getMonth() === lastMonthIndex && appDate.getFullYear() === lastMonthYear;
+            } else if (selectedPeriod === 'This Year') {
+              matchPeriod = appDate.getFullYear() === currentYear;
+            }
+          }
+        }
+
+        if (appDate && appDate.getMonth() === lastMonthIndex && appDate.getFullYear() === lastMonthYear && !isHolding) {
+          lastMonthGross += grossPL;
+        }
+
+        if (matchPeriod) {
+          if (isHolding) {
+            holdingProfit += netPL;
+          } else {
+            grossProfit += grossPL;
+            totalTax += tax;
+            totalUserCut += userCut;
+          }
         }
       }
     }
@@ -60,8 +111,20 @@ export default function PortfolioReportScreen() {
     const totalCharges = totalTax + totalUserCut;
     const netRealizedProfit = grossProfit - totalCharges;
 
-    return { grossProfit, holdingProfit, totalTax, totalUserCut, totalCharges, netRealizedProfit };
-  }, [applications]);
+    let vsPct = 0;
+    let isUp = true;
+    if (lastMonthGross > 0) {
+      const diff = grossProfit - lastMonthGross;
+      vsPct = Math.abs((diff / lastMonthGross) * 100);
+      isUp = diff >= 0;
+    }
+
+    return {
+      totals: { grossProfit, holdingProfit, totalTax, totalUserCut, totalCharges, netRealizedProfit },
+      vsLastMonthPct: vsPct,
+      isVsLastMonthUp: isUp,
+    };
+  }, [applications, selectedPeriod]);
 
   // Filter applications by search query and tab
   const filteredApps = useMemo(() => {
@@ -156,6 +219,10 @@ export default function PortfolioReportScreen() {
             holdingProfit={totals.holdingProfit}
             totalCharges={totals.totalCharges}
             netRealizedProfit={totals.netRealizedProfit}
+            vsLastMonthPct={vsLastMonthPct}
+            isVsLastMonthUp={isVsLastMonthUp}
+            selectedPeriod={selectedPeriod}
+            onPeriodChange={setSelectedPeriod}
           />
         </View>
 
@@ -217,7 +284,7 @@ export default function PortfolioReportScreen() {
                         {
                           backgroundColor:
                             item.status === 'Sold'
-                              ? isDark ? 'rgba(16,185,129,0.18)' : '#ECFDF5'
+                              ? colors.statusSoldBg
                               : isDark ? 'rgba(139,92,246,0.18)' : '#F5F3FF',
                         },
                       ]}
@@ -228,7 +295,7 @@ export default function PortfolioReportScreen() {
                           {
                             color:
                               item.status === 'Sold'
-                                ? colors.positive
+                                ? colors.statusSold
                                 : colors.statusHolding,
                           },
                         ]}
@@ -238,7 +305,44 @@ export default function PortfolioReportScreen() {
                     </View>
                   </View>
 
-                  <View style={[styles.cardDivider, { backgroundColor: colors.border }]} />
+                  {/* Buy & Sell Price Info Row */}
+                  <View
+                    style={[
+                      styles.priceRow,
+                      {
+                        backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#F8FAFC',
+                        borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#E2E8F0',
+                      },
+                    ]}
+                  >
+                    <View style={styles.priceCell}>
+                      <Text style={[styles.priceLabel, { color: colors.mutedForeground }]}>BUY PRICE:</Text>
+                      <Text style={[styles.priceVal, { color: colors.foreground }]}>
+                        {formatCurrency(item.buy_price || 0)}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.priceDivider, { backgroundColor: colors.border }]} />
+
+                    <View style={styles.priceCell}>
+                      <Text style={[styles.priceLabel, { color: colors.mutedForeground }]}>SELL PRICE:</Text>
+                      <Text
+                        style={[
+                          styles.priceVal,
+                          {
+                            color:
+                              item.sell_price != null
+                                ? item.sell_price >= (item.buy_price || 0)
+                                  ? colors.positive
+                                  : colors.negative
+                                : colors.mutedForeground,
+                          },
+                        ]}
+                      >
+                        {item.sell_price != null ? formatCurrency(item.sell_price) : '—'}
+                      </Text>
+                    </View>
+                  </View>
 
                   {/* Compact 3-Column Metrics Row */}
                   <View style={styles.metricsRow}>
@@ -327,18 +431,17 @@ const styles = StyleSheet.create({
   chipTabContainer: { marginTop: 14 },
   listSection: { paddingHorizontal: 16, paddingTop: 14, gap: 10 },
   reportCard: {
-    borderRadius: 24,
+    borderRadius: 20,
     borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   reportCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   appName: { fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.2 },
   appSub: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 1 },
   badge: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 8 },
   badgeText: { fontSize: 11, fontFamily: 'GoogleSansFlex_700Bold' },
-  cardDivider: { height: 1, marginVertical: 10 },
-  metricsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  metricsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
   metricCell: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   metricVal: { fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold' },
   metricLabel: { fontSize: 9, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 0.6, marginTop: 2 },
@@ -346,4 +449,32 @@ const styles = StyleSheet.create({
   emptyCard: { borderRadius: 24, borderWidth: 1, alignItems: 'center', paddingVertical: 32, gap: 6 },
   emptyTitle: { fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold' },
   emptyText: { fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', textAlign: 'center' },
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    marginTop: 8,
+  },
+  priceCell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  priceLabel: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.5,
+  },
+  priceVal: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  priceDivider: {
+    width: 1,
+    height: 16,
+  },
 });
