@@ -11,10 +11,10 @@ type Props = {
   applied: number;
   allotted: number;
   decided?: number;
-  onEdit: () => void;
-  onDelete: () => void;
-  onArchive?: () => void;
-  onUnarchive?: () => void;
+  onEdit: (user: User) => void;
+  onDelete: (user: User) => void;
+  onArchive?: (user: User) => void;
+  onUnarchive?: (user: User) => void;
 };
 
 const AVATAR_PALETTES: [string, string][] = [
@@ -87,7 +87,7 @@ export function UserCard({ user, applied, allotted, decided, onEdit, onDelete, o
         <View style={styles.actions}>
           {onArchive ? (
             <TouchableOpacity
-              onPress={onArchive}
+              onPress={() => onArchive(user)}
               activeOpacity={0.7}
               style={[styles.softActionBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9' }]}
             >
@@ -97,7 +97,7 @@ export function UserCard({ user, applied, allotted, decided, onEdit, onDelete, o
 
           {onUnarchive ? (
             <TouchableOpacity
-              onPress={onUnarchive}
+              onPress={() => onUnarchive(user)}
               activeOpacity={0.7}
               style={[styles.softActionBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9' }]}
             >
@@ -106,7 +106,7 @@ export function UserCard({ user, applied, allotted, decided, onEdit, onDelete, o
           ) : null}
 
           <TouchableOpacity
-            onPress={onEdit}
+            onPress={() => onEdit(user)}
             activeOpacity={0.7}
             style={[styles.softActionBtn, { backgroundColor: isDark ? 'rgba(59,130,246,0.15)' : '#EFF6FF' }]}
           >
@@ -114,7 +114,7 @@ export function UserCard({ user, applied, allotted, decided, onEdit, onDelete, o
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={onDelete}
+            onPress={() => onDelete(user)}
             activeOpacity={0.7}
             style={[styles.softActionBtn, { backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : '#FEE2E2' }]}
           >

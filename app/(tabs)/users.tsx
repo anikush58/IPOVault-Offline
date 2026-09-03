@@ -164,13 +164,13 @@ export default function UsersScreen() {
           return (
             <UserCard
               user={item}
-              appliedCount={stats.applied}
-              allottedCount={stats.allotted}
-              decidedCount={stats.decided}
-              onEdit={openEditUser}
-              onArchive={handleArchive}
-              onUnarchive={handleUnarchive}
-              onDelete={handleDelete}
+              applied={stats.applied}
+              allotted={stats.allotted}
+              decided={stats.decided}
+              onEdit={() => openEditUser(item)}
+              onArchive={activeTab === 'active' ? () => handleArchive(item) : undefined}
+              onUnarchive={activeTab === 'archived' ? () => handleUnarchive(item) : undefined}
+              onDelete={() => handleDelete(item)}
             />
           );
         }}

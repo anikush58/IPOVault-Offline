@@ -172,7 +172,6 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
                         }}
                         style={[styles.statusBtn, { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary : colors.card }]}
                       >
-                        {active && <View style={styles.statusDot} />}
                         <Text style={[styles.statusBtnText, { color: active ? '#fff' : colors.foreground }]}>{s}</Text>
                       </TouchableOpacity>
                     );
@@ -227,28 +226,62 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
                   </>
                 ) : null}
 
-                {/* Sold fields */}
+                {/* Sold fields (2 Columns x 2 Rows) */}
                 {isSold ? (
                   <>
                     <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>SALE DETAILS</Text>
-                    {([
-                      { label: 'Sell Price (₹)', value: sellPrice, setter: setSellPrice, placeholder: 'e.g. 85' },
-                      { label: 'Sale Date (YYYY-MM-DD)', value: saleDate, setter: setSaleDate, placeholder: todayISO() },
-                      { label: 'Tax / Charges (₹)', value: tax, setter: setTax, placeholder: '0' },
-                      { label: 'User Cut (₹)', value: userCut, setter: setUserCut, placeholder: '0' },
-                    ] as any[]).map(({ label, value, setter, placeholder }) => (
-                      <View key={label} style={styles.field}>
-                        <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>{label}</Text>
-                        <TextInput
-                          style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground }]}
-                          value={value}
-                          onChangeText={setter}
-                          placeholder={placeholder}
-                          placeholderTextColor={colors.mutedForeground}
-                          keyboardType="decimal-pad"
-                        />
+                    <View style={{ gap: 10, marginBottom: 12 }}>
+                      {/* Row 1: Sell Price & Sale Date */}
+                      <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Sell Price (₹)</Text>
+                          <TextInput
+                            style={[styles.input, { borderColor: colors.border + '40', backgroundColor: colors.surface, color: colors.foreground }]}
+                            value={sellPrice}
+                            onChangeText={setSellPrice}
+                            placeholder="e.g. 85"
+                            placeholderTextColor={colors.mutedForeground}
+                            keyboardType="decimal-pad"
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Sale Date (YYYY-MM-DD)</Text>
+                          <TextInput
+                            style={[styles.input, { borderColor: colors.border + '40', backgroundColor: colors.surface, color: colors.foreground }]}
+                            value={saleDate}
+                            onChangeText={setSaleDate}
+                            placeholder={todayISO()}
+                            placeholderTextColor={colors.mutedForeground}
+                          />
+                        </View>
                       </View>
-                    ))}
+
+                      {/* Row 2: Tax / Charges & User Cut */}
+                      <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Tax / Charges (₹)</Text>
+                          <TextInput
+                            style={[styles.input, { borderColor: colors.border + '40', backgroundColor: colors.surface, color: colors.foreground }]}
+                            value={tax}
+                            onChangeText={setTax}
+                            placeholder="0"
+                            placeholderTextColor={colors.mutedForeground}
+                            keyboardType="decimal-pad"
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>User Cut (₹)</Text>
+                          <TextInput
+                            style={[styles.input, { borderColor: colors.border + '40', backgroundColor: colors.surface, color: colors.foreground }]}
+                            value={userCut}
+                            onChangeText={setUserCut}
+                            placeholder="0"
+                            placeholderTextColor={colors.mutedForeground}
+                            keyboardType="decimal-pad"
+                          />
+                        </View>
+                      </View>
+                    </View>
 
                     {sellPrice ? (
                       <View style={[styles.preview, { backgroundColor: isProfit ? colors.positiveBg : colors.negativeBg, borderColor: isProfit ? colors.positiveDim : colors.negativeDim }]}>
@@ -364,7 +397,7 @@ const styles = StyleSheet.create({
   metaLine: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 3 },
   sectionLabel: { fontSize: 10, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1, marginBottom: 10, marginTop: 2, textTransform: 'uppercase' },
   statusGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
-  statusBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5 },
+  statusBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 14, height: 36, borderRadius: 18, borderWidth: 1.5 },
   statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.7)' },
   statusBtnText: { fontSize: 13, fontFamily: 'GoogleSansFlex_500Medium' },
   field: { marginBottom: 12 },

@@ -76,14 +76,14 @@ export function IPOFilterSheet({
     (draft.onlyFavorites ? 1 : 0);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.overlay} onPress={onClose}>
         <Pressable
           style={[
             styles.sheet,
             {
               backgroundColor: colors.background,
-              borderTopColor: colors.border,
+              borderColor: colors.border,
             },
           ]}
           onPress={() => {}}
@@ -240,7 +240,7 @@ export function IPOFilterSheet({
           </ScrollView>
 
           {/* Sticky Apply button */}
-          <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 10) + 12, backgroundColor: colors.background, borderTopColor: colors.border }]}>
+          <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) + 12, backgroundColor: colors.background, borderTopColor: colors.border }]}>
             <TouchableOpacity
               onPress={handleApply}
               style={[styles.applyBtn, { backgroundColor: colors.primary }]}
@@ -259,14 +259,17 @@ export function IPOFilterSheet({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
   },
   sheet: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderTopWidth: 1,
-    maxHeight: 600,
+    width: '92%',
+    maxWidth: 440,
+    borderRadius: 24,
+    borderWidth: 1,
+    maxHeight: '85%',
   },
   handle: {
     width: 36,

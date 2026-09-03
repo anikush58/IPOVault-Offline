@@ -36,7 +36,7 @@ export function ProfitSummaryDonutCard({
 
   // Exact Color Tokens
   const COLOR_GROSS = isDark ? '#10B981' : '#059669'; // Emerald Green
-  const COLOR_CHARGES = '#F97316'; // Vibrant Orange
+  const COLOR_CHARGES = '#F44336'; // Red (#F44336)
   const COLOR_HOLDING = '#8B5CF6'; // Vibrant Purple
   const COLOR_NET = '#10B981'; // Green
 

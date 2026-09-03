@@ -285,7 +285,9 @@ export default function IPOManagementScreen() {
                 (a.ipo_id && a.ipo_id === ipo.id)
             );
             const appliedApps = ipoApps.filter((a) => a.status === 'Applied' || a.status === 'Mandate Approved');
-            const allottedApps = ipoApps.filter((a) => a.status === 'Allotted');
+            const allottedApps = ipoApps.filter(
+              (a) => a.status === 'Allotted' || a.status === 'Partially Allotted' || a.status === 'Holding' || a.status === 'Sold'
+            );
 
             return (
               <View

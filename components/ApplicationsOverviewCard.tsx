@@ -63,29 +63,54 @@ export function ApplicationsOverviewCard({
 
   // Compute status counts & percentages (including Waiting Allotment)
   const stats = useMemo(() => {
-    const waiting = filteredApps.filter((a) => a.status === 'Applied' || a.status === 'Mandate Approved').length;
-    const allotted = filteredApps.filter((a) => a.status === 'Allotted' || a.status === 'Partially Allotted').length;
-    const sold = filteredApps.filter((a) => a.status === 'Sold').length;
-    const holding = filteredApps.filter((a) => a.status === 'Holding').length;
-    const notAllotted = filteredApps.filter((a) => a.status === 'Not Allotted' || a.status === 'Cancelled').length;
+    const isStatus = (st: string, ...targets: string[]) => {
+      const s = (st || '').trim().toLowerCase();
+      return targets.some((t) => s === t.toLowerCase());
+    };
 
-    const total = waiting + allotted + sold + holding + notAllotted;
+    const waiting = filteredApps.filter((a) => isStatus(a.status, 'Applied', 'Mandate Approved')).length;
+    // Cumulative Allotted count (Allotted + Holding + Sold) matching Allotted tab
+    const allottedCumulative = filteredApps.filter((a) => isStatus(a.status, 'Allotted', 'Partially Allotted', 'Holding', 'Sold')).length;
+    const sold = filteredApps.filter((a) => isStatus(a.status, 'Sold')).length;
+    const holding = filteredApps.filter((a) => isStatus(a.status, 'Holding')).length;
+    const notAllotted = filteredApps.filter((a) => isStatus(a.status, 'Not Allotted', 'Cancelled')).length;
+
+    const total = filteredApps.length;
 
     const calcPct = (cnt: number) => (total > 0 ? ((cnt / total) * 100).toFixed(1) : '0.0');
 
     return [
-      { key: 'Waiting Allotment', label: 'Waiting Allotment', count: waiting,     pct: calcPct(waiting),     color: colors.statusApplied },
-      { key: 'Allotted',          label: 'Allotted',          count: allotted,    pct: calcPct(allotted),    color: colors.statusAllotted },
-      { key: 'Sold',              label: 'Sold',              count: sold,        pct: calcPct(sold),        color: colors.statusSold },
-      { key: 'Holding',           label: 'Holding',           count: holding,     pct: calcPct(holding),     color: colors.statusHolding },
-      { key: 'Not Allotted',      label: 'Not Allotted',      count: notAllotted, pct: calcPct(notAllotted), color: colors.statusNotAllotted },
+      { key: 'Waiting Allotment', label: 'Waiting Allotment', count: waiting,            pct: calcPct(waiting),            color: colors.statusApplied },
+      { key: 'Allotted',          label: 'Allotted',          count: allottedCumulative,  pct: calcPct(allottedCumulative), color: colors.statusAllotted },
+      { key: 'Sold',              label: 'Sold',              count: sold,                pct: calcPct(sold),               color: colors.statusSold },
+      { key: 'Holding',           label: 'Holding',           count: holding,             pct: calcPct(holding),            color: colors.statusHolding },
+      { key: 'Not Allotted',      label: 'Not Allotted',      count: notAllotted,         pct: calcPct(notAllotted),        color: colors.statusNotAllotted },
     ];
   }, [filteredApps, colors]);
 
-  const totalCount = useMemo(() => stats.reduce((sum, s) => sum + s.count, 0), [stats]);
+  const totalCount = useMemo(() => filteredApps.length, [filteredApps]);
 
-  // SVG Donut Segments Math
+  // SVG Donut Segments Math (Mutually Exclusive Current Status Breakdown)
   const donutSegments = useMemo(() => {
+    const isStatus = (st: string, ...targets: string[]) => {
+      const s = (st || '').trim().toLowerCase();
+      return targets.some((t) => s === t.toLowerCase());
+    };
+
+    const waiting = filteredApps.filter((a) => isStatus(a.status, 'Applied', 'Mandate Approved')).length;
+    const allottedPure = filteredApps.filter((a) => isStatus(a.status, 'Allotted', 'Partially Allotted')).length;
+    const sold = filteredApps.filter((a) => isStatus(a.status, 'Sold')).length;
+    const holding = filteredApps.filter((a) => isStatus(a.status, 'Holding')).length;
+    const notAllotted = filteredApps.filter((a) => isStatus(a.status, 'Not Allotted', 'Cancelled')).length;
+
+    const slices = [
+      { key: 'Waiting Allotment', count: waiting,     color: colors.statusApplied },
+      { key: 'Allotted',          count: allottedPure,color: colors.statusAllotted },
+      { key: 'Sold',              count: sold,        color: colors.statusSold },
+      { key: 'Holding',           count: holding,     color: colors.statusHolding },
+      { key: 'Not Allotted',      count: notAllotted, color: colors.statusNotAllotted },
+    ];
+
     const R = 64;
     const C = 2 * Math.PI * R;
     let accumulatedAngle = -90; // Start at 12 o'clock
@@ -94,7 +119,7 @@ export function ApplicationsOverviewCard({
       return [{ key: 'empty', color: isDark ? '#334155' : '#E2E8F0', dashArray: `${C} 0`, strokeOffset: 0 }];
     }
 
-    return stats
+    return slices
       .filter((s) => s.count > 0)
       .map((s) => {
         const fraction = s.count / totalCount;
@@ -110,7 +135,7 @@ export function ApplicationsOverviewCard({
           strokeOffset,
         };
       });
-  }, [stats, totalCount, isDark]);
+  }, [filteredApps, colors, totalCount, isDark]);
 
   return (
     <View

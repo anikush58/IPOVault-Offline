@@ -28,7 +28,7 @@ import { Tabs } from '@/components/ui/Tabs';
 type TabKey = 'Applied' | 'Allotted' | 'Sold' | 'Holding' | 'Not Allotted';
 
 const TABS: { key: TabKey; label: string }[] = [
-  { key: 'Applied',      label: 'Applied' },
+  { key: 'Applied',      label: 'Active' },
   { key: 'Allotted',     label: 'Allotted' },
   { key: 'Sold',         label: 'Sold' },
   { key: 'Holding',      label: 'Holding' },
@@ -147,12 +147,18 @@ export default function ApplicationsScreen() {
   const isAppliedStatus = (st: string) =>
     st === 'Applied' || st === 'Mandate Approved';
 
+  const isAllottedStatus = (st: string) =>
+    st === 'Allotted' || st === 'Partially Allotted' || st === 'Holding' || st === 'Sold';
+
   const filtered = activeTab === 'Applied'
     ? searchFiltered.filter((a) => isAppliedStatus(a.status))
+    : activeTab === 'Allotted'
+    ? searchFiltered.filter((a) => isAllottedStatus(a.status))
     : searchFiltered.filter((a) => a.status === activeTab);
 
   const countFor = (key: TabKey) => {
     if (key === 'Applied') return searchFiltered.filter((a) => isAppliedStatus(a.status)).length;
+    if (key === 'Allotted') return searchFiltered.filter((a) => isAllottedStatus(a.status)).length;
     return searchFiltered.filter((a) => a.status === key).length;
   };
 

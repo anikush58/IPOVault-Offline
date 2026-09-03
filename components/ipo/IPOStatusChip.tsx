@@ -57,6 +57,14 @@ export function IPOStatusChip({ status }: { status: IPOStatusType }) {
         dot: '#10B981',
       };
     }
+    if (s === 'sold') {
+      return {
+        bg: 'rgba(175, 180, 43, 0.15)',
+        border: 'rgba(175, 180, 43, 0.3)',
+        text: '#AFB42B',
+        dot: '#AFB42B',
+      };
+    }
     if (s === 'listed') {
       return {
         bg: 'rgba(139, 92, 246, 0.10)',

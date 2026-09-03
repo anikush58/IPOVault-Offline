@@ -188,7 +188,7 @@ export function AddUserModal({ visible, user, onClose }: Props) {
                 <View key={label}>
                   <Text style={[styles.stepLabel, { color: colors.mutedForeground }]}>{label}</Text>
                   <TextInput
-                    style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground }]}
+                    style={[styles.input, { borderColor: colors.border + '40', backgroundColor: colors.surface, color: colors.foreground }]}
                     value={value}
                     onChangeText={setter}
                     placeholder={placeholder}

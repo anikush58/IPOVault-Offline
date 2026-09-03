@@ -137,15 +137,14 @@ export function FilterSheet({
   return (
     <>
       {/* Main Filter Sheet */}
-      <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
         <Pressable style={styles.overlay} onPress={onClose}>
           <Pressable
             style={[
               styles.sheet,
               {
                 backgroundColor: colors.background,
-                borderTopColor: colors.border,
-                paddingBottom: Math.max(Math.round(insets.bottom * 0.5) + 12, 16),
+                borderColor: colors.border,
               },
             ]}
             onPress={() => {}}
@@ -518,12 +517,13 @@ export function FilterSheet({
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center', padding: 16 },
   sheet: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 22,
-    borderTopWidth: 1,
+    width: '92%',
+    maxWidth: 440,
+    borderRadius: 24,
+    padding: 20,
+    borderWidth: 1,
     maxHeight: '85%',
   },
   handle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 18 },

@@ -324,7 +324,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 10,
-    paddingHorizontal: 10,
+    paddingHorizontal: 15,
   },
   segmentedActiveCard: {
     borderWidth: 1,
@@ -340,17 +340,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderBottomWidth: 2.5,
-    paddingHorizontal: 12,
+    paddingHorizontal: 15,
   },
   underlineText: {
     fontSize: 13,
   },
 
-  // Pills Variant (Height: 36px, Padding: 10px Left & Right)
+  // Pills Variant (Height: 36px, Padding: 15px Left & Right)
   pillTabBtn: {
     height: 36,
     minHeight: 36,
-    paddingHorizontal: 10,
+    paddingHorizontal: 15,
     borderRadius: 9999,
     borderWidth: 1,
     alignItems: 'center',

@@ -615,7 +615,7 @@ export default function DashboardScreen() {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.openIposScrollContent}
-              snapToInterval={307}
+              snapToInterval={300}
               snapToAlignment="start"
               decelerationRate="fast"
               scrollEventThrottle={16}
@@ -625,7 +625,7 @@ export default function DashboardScreen() {
               )}
             >
               {openIpoList.map((ipo, idx) => {
-                const CARD_SIZE = 307;
+                const CARD_SIZE = 300;
                 const inputRange = [
                   (idx - 1) * CARD_SIZE,
                   idx * CARD_SIZE,
@@ -1045,7 +1045,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 4,
     paddingBottom: 14,
-    gap: 12,
+    gap: 5,
   },
   openIpoCard: {
     width: 295,

@@ -113,10 +113,10 @@ export function ApplicationCard({
         };
       case 'Sold':
         return {
-          bg: isDark ? '#064E3B44' : '#F0FDF4',
-          text: isDark ? '#6EE7B7' : '#16A34A',
+          bg: colors.statusSoldBg,
+          text: colors.statusSold,
           label: 'Sold',
-          hasChevron: true,
+          hasChevron: false,
         };
       case 'Holding':
       default:
@@ -124,7 +124,7 @@ export function ApplicationCard({
           bg: isDark ? '#581C8744' : '#F3E8FF',
           text: isDark ? '#E9D5FF' : '#9333EA',
           label: 'Holding',
-          hasChevron: true,
+          hasChevron: false,
         };
     }
   };
@@ -222,7 +222,7 @@ export function ApplicationCard({
           styles.cardContainer,
           {
             backgroundColor: isDark ? '#161622' : '#F3F4F6',
-            borderColor: isSelectionMode && isSelected ? colors.primary : colors.border,
+            borderColor: isSelectionMode && isSelected ? (isDark ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.25)') : colors.border,
             transform: [{ translateX: pan.x }, { rotate: cardRotate }],
           },
         ]}

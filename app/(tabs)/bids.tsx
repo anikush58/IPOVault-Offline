@@ -189,7 +189,7 @@ function SwipeableBidCard({
             backgroundColor: isChecked
               ? (isDark ? '#27272A' : '#F1F5F9')
               : colors.card,
-            borderColor: isChecked ? (isDark ? '#64748B' : '#475569') : colors.border,
+            borderColor: isChecked ? (isDark ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.25)') : colors.border,
           },
         ]}
         {...panResponder.panHandlers}

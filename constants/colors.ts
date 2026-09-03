@@ -70,8 +70,8 @@ const colors = {
     statusListedBg: '#F5F3FF',
     statusRefund: '#6B7280',
     statusRefundBg: '#F3F4F6',
-    statusSold: '#65A30D',
-    statusSoldBg: '#F7FEE7',
+    statusSold: '#AFB42B',
+    statusSoldBg: 'rgba(175, 180, 43, 0.15)',
 
     // Shadow helper
     shadowCard: '0 1px 3px rgba(0,0,0,0.04), 0 4px 14px rgba(0,0,0,0.03)',
@@ -131,8 +131,8 @@ const colors = {
     statusListedBg: '#4C1D9533',
     statusRefund: '#9CA3AF',
     statusRefundBg: '#37415133',
-    statusSold: '#A3E635',
-    statusSoldBg: '#36531433',
+    statusSold: '#AFB42B',
+    statusSoldBg: 'rgba(175, 180, 43, 0.20)',
 
     shadowCard: '0 2px 8px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.3)',
     shadowModal: '0 12px 48px rgba(0,0,0,0.65)',
