@@ -193,8 +193,20 @@ export default function AddIPOScreen() {
         copyToCacheDirectory: true,
       });
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setFormLogoUrl(result.assets[0].uri);
-        Haptics.selectionAsync();
+        const asset = result.assets[0];
+        if (Platform.OS === 'web' && asset.file) {
+          const reader = new FileReader();
+          reader.onload = () => {
+            if (typeof reader.result === 'string') {
+              setFormLogoUrl(reader.result);
+              Haptics.selectionAsync();
+            }
+          };
+          reader.readAsDataURL(asset.file);
+        } else {
+          setFormLogoUrl(asset.uri);
+          Haptics.selectionAsync();
+        }
       }
     } catch (err) {
       console.error('Failed to pick logo image:', err);

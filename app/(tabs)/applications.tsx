@@ -6,6 +6,7 @@ import {
   FlatList,
   Platform,
   RefreshControl,
+  SectionList,
   StyleSheet,
   Text,
   TextInput,
@@ -244,93 +245,100 @@ export default function ApplicationsScreen() {
         </View>
       </View>
 
-      {/* ── Collapsible search bar ── */}
-      <Animated.View
-        style={[
-          styles.searchBar,
-          {
-            height: searchBarHeight,
-            opacity: searchBarOpacity,
-            backgroundColor: colors.background,
-          },
-        ]}
-        pointerEvents={showSearch ? 'auto' : 'none'}
-      >
-        <View style={[styles.searchInner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Feather name="search" size={14} color={colors.mutedForeground} />
-          <TextInput
-            ref={searchRef}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search users, brokers or IPOs…"
-            placeholderTextColor={colors.mutedForeground}
-            style={[styles.searchInput, { color: colors.foreground }]}
-            returnKeyType="search"
-            autoCorrect={false}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-              <Feather name="x-circle" size={14} color={colors.mutedForeground} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </Animated.View>
-
-      {/* Active filter chip */}
-      {hasFilter && (
-        <View style={[styles.filterBar, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
-          <Feather name="filter" size={12} color={colors.primary} />
-          <Text style={[styles.filterBarText, { color: colors.primary }]}>
-            {filterChipLabel}
-          </Text>
-          <TouchableOpacity onPress={() => { setFilterUserIds([]); setFilterBrokers([]); setFilterIpoNames([]); setFilterBankNames([]); setFilterYear(null); }} hitSlop={8}>
-            <Feather name="x" size={14} color={colors.primary} />
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Applications Overview Card */}
-      <ApplicationsOverviewCard applications={applications} />
-
-      {/* Check Allotment Button */}
-      {FeatureFlags.ENABLE_AUTO_ALLOTMENT && (
-        <TouchableOpacity
-          onPress={() => router.push('/allotment-checker')}
-          style={[styles.checkAllotmentBtn, { borderColor: colors.primary }]}
-        >
-          <LinearGradient
-            colors={[colors.primary, colors.primaryLight]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <Text style={styles.checkAllotmentBtnText}>🔍 Check Allotment</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Tab pills */}
-      <View style={[styles.tabBar, { backgroundColor: colors.background }]}>
-        <Tabs
-          variant="pills"
-          scrollable
-          tabs={TABS.map((t) => ({
-            key: t.key,
-            label: t.label,
-            count: countFor(t.key) > 0 ? countFor(t.key) : undefined,
-          }))}
-          activeTab={activeTab}
-          onChange={handleTabChange}
-          style={{ paddingVertical: 10 }}
-        />
-      </View>
-
-      {/* List */}
-      <FlatList
-        data={filtered}
+      {/* SectionList with Sticky Tab Pills Header */}
+      <SectionList
+        sections={[{ title: 'Applications', data: filtered }]}
         keyExtractor={(item) => item.id.toString()}
+        stickySectionHeadersEnabled={true}
         refreshControl={
           <RefreshControl refreshing={isLoading} onRefresh={refresh} tintColor={colors.primary} />
         }
+        ListHeaderComponent={() => (
+          <View>
+            {/* Expandable Search Input */}
+            <Animated.View
+              style={[
+                styles.searchBar,
+                {
+                  height: searchBarHeight,
+                  opacity: searchBarOpacity,
+                  backgroundColor: colors.background,
+                },
+              ]}
+            >
+              <View style={[styles.searchInner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Feather name="search" size={16} color={colors.mutedForeground} />
+                <TextInput
+                  ref={searchRef}
+                  style={[styles.searchInput, { color: colors.foreground }]}
+                  placeholder="Search applications..."
+                  placeholderTextColor={colors.mutedForeground}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  autoCorrect={false}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
+                    <Feather name="x-circle" size={14} color={colors.mutedForeground} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </Animated.View>
+
+            {/* Active filter chip */}
+            {hasFilter && (
+              <View style={[styles.filterBar, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
+                <Feather name="filter" size={12} color={colors.primary} />
+                <Text style={[styles.filterBarText, { color: colors.primary }]}>
+                  {filterChipLabel}
+                </Text>
+                <TouchableOpacity onPress={() => { setFilterUserIds([]); setFilterBrokers([]); setFilterIpoNames([]); setFilterBankNames([]); setFilterYear(null); }} hitSlop={8}>
+                  <Feather name="x" size={14} color={colors.primary} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Applications Overview Card */}
+            <ApplicationsOverviewCard applications={applications} />
+
+            {/* Check Allotment Button */}
+            {FeatureFlags.ENABLE_AUTO_ALLOTMENT && (
+              <TouchableOpacity
+                onPress={() => router.push('/allotment-checker')}
+                style={[styles.checkAllotmentBtn, { borderColor: colors.primary }]}
+              >
+                <LinearGradient
+                  colors={[colors.primary, colors.primaryLight]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Text style={styles.checkAllotmentBtnText}>🔍 Check Allotment</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+        renderSectionHeader={() => (
+          <View style={[styles.tabBar, { backgroundColor: colors.background }]}>
+            <Tabs
+              variant="pills"
+              scrollable
+              tabs={TABS.map((t) => ({
+                key: t.key,
+                label: t.label,
+                count: countFor(t.key) > 0 ? countFor(t.key) : undefined,
+              }))}
+              activeTab={activeTab}
+              onChange={handleTabChange}
+              style={{ paddingVertical: 8 }}
+            />
+            <View style={styles.listHeader}>
+              <Text style={[styles.listCount, { color: colors.mutedForeground }]}>
+                {filtered.length} {filtered.length === 1 ? 'application' : 'applications'}
+              </Text>
+            </View>
+          </View>
+        )}
         renderItem={({ item }) => (
           <ApplicationCard
             application={item}
@@ -346,13 +354,6 @@ export default function ApplicationsScreen() {
             isSelected={selectedAppIds.includes(item.id)}
             onSelectToggle={() => toggleSelectApp(item.id)}
           />
-        )}
-        ListHeaderComponent={() => (
-          <View style={styles.listHeader}>
-            <Text style={[styles.listCount, { color: colors.mutedForeground }]}>
-              {filtered.length} {filtered.length === 1 ? 'application' : 'applications'}
-            </Text>
-          </View>
         )}
         ListEmptyComponent={() => (
           <View style={styles.empty}>

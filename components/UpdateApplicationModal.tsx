@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -12,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,16 +22,36 @@ import { useDialog } from '@/context/DialogContext';
 import { Button } from '@/components/ui/Button';
 import { useDB, type ApplicationStatus, type ApplicationWithDetails } from '@/context/DBContext';
 import { StatusBadge } from './StatusBadge';
-import { formatCurrency, todayISO } from '@/utils/formatters';
+import { formatCurrency, getResolvedLogoUrl, todayISO } from '@/utils/formatters';
 import { calcBuyValue, calcNetProfit, calcProfitLoss, calcSaleValue } from '@/utils/calculations';
 
 type Props = { application: ApplicationWithDetails | null; onClose: () => void };
 
 const STATUSES: ApplicationStatus[] = ['Applied', 'Mandate Approved', 'Allotted', 'Not Allotted', 'Holding', 'Sold'];
 
+const AVATAR_PALETTES: [string, string][] = [
+  ['#8B5CF6', '#6D28D9'],
+  ['#10B981', '#047857'],
+  ['#3B82F6', '#1D4ED8'],
+  ['#F59E0B', '#B45309'],
+  ['#EC4899', '#BE185D'],
+  ['#6366F1', '#4338CA'],
+  ['#14B8A6', '#0F766E'],
+  ['#F43F5E', '#BE123C'],
+];
+
+function getAvatarGradient(name: string): [string, string] {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % AVATAR_PALETTES.length;
+  return AVATAR_PALETTES[index];
+}
+
 export function UpdateApplicationModal({ application: app, onClose }: Props) {
   const colors = useColors();
-  const { updateApplication, deleteApplication } = useDB();
+  const { ipos, updateApplication, deleteApplication } = useDB();
   const { showError, showConfirm, showSuccess } = useDialog();
   const insets = useSafeAreaInsets();
 
@@ -41,6 +63,22 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
   const [userCut, setUserCut] = useState('0');
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [logoError, setLogoError] = useState(false);
+
+  const matchingIPO = ipos.find(
+    (i) => (app?.ipo_id && i.id === app.ipo_id) || (app?.ipo_name && i.ipo_name.toLowerCase().trim() === app.ipo_name.toLowerCase().trim())
+  );
+  const rawLogo = app?.ipo_logo_url || (app as any)?.logo_url || matchingIPO?.logo_url;
+  const companyNameStr = app?.ipo_name || 'IPO';
+  const logoUrl = getResolvedLogoUrl(rawLogo);
+  const avatarGradient = getAvatarGradient(companyNameStr);
+  const initials = companyNameStr
+    .replace(/[^a-zA-Z0-9\s]/g, '')
+    .split(' ')
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase();
 
   useEffect(() => {
     if (app) {
@@ -51,6 +89,7 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
       setTax((app.tax ?? 0).toString());
       setUserCut((app.user_cut ?? 0).toString());
       setConfirmDelete(false);
+      setLogoError(false);
     }
   }, [app]);
 
@@ -143,9 +182,27 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
               >
-                {/* Info card */}
+                {/* Info card with Company Logo Avatar */}
                 <View style={[styles.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                   <View style={styles.infoRow}>
+                    {logoUrl && !logoError ? (
+                      <Image
+                        source={{ uri: logoUrl }}
+                        style={styles.modalLogoImage}
+                        resizeMode="contain"
+                        onError={() => setLogoError(true)}
+                      />
+                    ) : (
+                      <LinearGradient
+                        colors={avatarGradient}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.modalAvatar}
+                      >
+                        <Text style={styles.modalAvatarText}>{initials}</Text>
+                      </LinearGradient>
+                    )}
+
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.ipoName, { color: colors.foreground }]}>{app.ipo_name}</Text>
                       <Text style={[styles.metaLine, { color: colors.mutedForeground }]}>
@@ -392,7 +449,10 @@ const styles = StyleSheet.create({
   closeBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18 },
   content: { padding: 18, gap: 0 },
   infoCard: { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 16 },
-  infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  modalLogoImage: { width: 40, height: 40, borderRadius: 12, resizeMode: 'contain' },
+  modalAvatar: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  modalAvatarText: { fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', color: '#FFFFFF' },
   ipoName: { fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
   metaLine: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 3 },
   sectionLabel: { fontSize: 10, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1, marginBottom: 10, marginTop: 2, textTransform: 'uppercase' },

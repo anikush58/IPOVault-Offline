@@ -525,8 +525,8 @@ export default function DashboardScreen() {
               >
                 <Feather name="users" size={20} color={colors.foreground} />
               </BlurView>
-              <Text style={[styles.quickActionLabel, { color: colors.foreground }]}>
-                Users
+              <Text style={[styles.quickActionLabel, { color: colors.foreground }]} numberOfLines={1}>
+                Manage Users
               </Text>
             </TouchableOpacity>
 
@@ -549,8 +549,8 @@ export default function DashboardScreen() {
               >
                 <MaterialCommunityIcons name="bank-outline" size={20} color={colors.foreground} />
               </BlurView>
-              <Text style={[styles.quickActionLabel, { color: colors.foreground }]}>
-                Banks
+              <Text style={[styles.quickActionLabel, { color: colors.foreground }]} numberOfLines={1}>
+                Manage Banks
               </Text>
             </TouchableOpacity>
 

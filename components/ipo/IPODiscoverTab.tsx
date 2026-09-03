@@ -6,7 +6,9 @@ import {
   TouchableOpacity,
   ScrollView,
   RefreshControl,
+  Image,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -14,6 +16,27 @@ import { useColors } from '@/hooks/useColors';
 import { IPOMasterRecord } from '@/services/ipo/types';
 import { useCompare } from '@/context/CompareContext';
 import { SegmentedTabControl } from '@/components/ui/SegmentedTabControl';
+import { getResolvedLogoUrl } from '@/utils/formatters';
+
+const AVATAR_PALETTES: [string, string][] = [
+  ['#8B5CF6', '#6D28D9'],
+  ['#10B981', '#047857'],
+  ['#3B82F6', '#1D4ED8'],
+  ['#F59E0B', '#B45309'],
+  ['#EC4899', '#BE185D'],
+  ['#6366F1', '#4338CA'],
+  ['#14B8A6', '#0F766E'],
+  ['#F43F5E', '#BE123C'],
+];
+
+function getAvatarGradient(name: string): [string, string] {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % AVATAR_PALETTES.length;
+  return AVATAR_PALETTES[index];
+}
 
 interface IPOExploreTabProps {
   repo?: any;
@@ -131,6 +154,15 @@ export function IPOExploreTab({
               const gmpAmt = ipo.gmp_amount;
               const sub = ipo.total_sub;
               const gain = ipo.listing_gain_percent;
+              const companyNameStr = ipo.company_name || ipo.ipo_name || 'IPO';
+              const resolvedLogo = getResolvedLogoUrl(ipo.logo_url, ipo.website, companyNameStr);
+              const initials = companyNameStr
+                .replace(/[^a-zA-Z0-9\s]/g, '')
+                .split(' ')
+                .slice(0, 2)
+                .map((w) => w[0])
+                .join('')
+                .toUpperCase();
 
               return (
                 <TouchableOpacity
@@ -143,12 +175,29 @@ export function IPOExploreTab({
                     <Text style={[styles.rankText, { color: colors.primary }]}>#{rank + 1}</Text>
                   </View>
 
+                  {/* IPO/Company Logo Avatar */}
+                  {resolvedLogo ? (
+                    <Image
+                      source={{ uri: resolvedLogo }}
+                      style={styles.logoImageSmall}
+                    />
+                  ) : (
+                    <LinearGradient
+                      colors={getAvatarGradient(companyNameStr)}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.avatarSmall}
+                    >
+                      <Text style={styles.avatarTextSmall}>{initials}</Text>
+                    </LinearGradient>
+                  )}
+
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.leaderboardTitle, { color: colors.foreground }]} numberOfLines={1}>
-                      {ipo.company_name || ipo.ipo_name}
+                      {companyNameStr}
                     </Text>
                     <Text style={[styles.leaderboardSub, { color: colors.mutedForeground }]}>
-                      {ipo.issue_type} • {ipo.exchange || 'NSE'}
+                      {ipo.issue_type || 'Mainboard'} • {ipo.exchange || 'NSE'}
                     </Text>
                   </View>
 
@@ -393,15 +442,33 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   rankBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rankText: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  logoImageSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    resizeMode: 'contain',
+  },
+  avatarSmall: {
     width: 32,
     height: 32,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rankText: {
-    fontSize: 13,
+  avatarTextSmall: {
+    fontSize: 11,
     fontFamily: 'GoogleSansFlex_700Bold',
+    color: '#FFFFFF',
   },
   leaderboardTitle: {
     fontSize: 14,

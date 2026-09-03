@@ -12,8 +12,6 @@ type Props = {
   onPeriodChange?: (period: string) => void;
 };
 
-const PERIOD_OPTIONS = ['All Time', 'This Year', 'This Month', 'Last Month'];
-
 export function ApplicationsOverviewCard({
   applications,
   selectedPeriod = 'All Time',
@@ -61,68 +59,82 @@ export function ApplicationsOverviewCard({
     return applications;
   }, [applications, period]);
 
-  // Compute status counts & percentages (including Waiting Allotment)
-  const stats = useMemo(() => {
-    const isStatus = (st: string, ...targets: string[]) => {
-      const s = (st || '').trim().toLowerCase();
-      return targets.some((t) => s === t.toLowerCase());
-    };
+  const isStatus = (st: string, ...targets: string[]) => {
+    const s = (st || '').trim().toLowerCase();
+    return targets.some((t) => s === t.toLowerCase());
+  };
 
-    const waiting = filteredApps.filter((a) => isStatus(a.status, 'Applied', 'Mandate Approved')).length;
-    // Cumulative Allotted count (Allotted + Holding + Sold) matching Allotted tab
-    const allottedCumulative = filteredApps.filter((a) => isStatus(a.status, 'Allotted', 'Partially Allotted', 'Holding', 'Sold')).length;
-    const sold = filteredApps.filter((a) => isStatus(a.status, 'Sold')).length;
-    const holding = filteredApps.filter((a) => isStatus(a.status, 'Holding')).length;
-    const notAllotted = filteredApps.filter((a) => isStatus(a.status, 'Not Allotted', 'Cancelled')).length;
+  // Main Counts
+  const totalApps = useMemo(() => filteredApps.length, [filteredApps]);
+  const waitingCount = useMemo(
+    () => filteredApps.filter((a) => isStatus(a.status, 'Applied', 'Mandate Approved')).length,
+    [filteredApps]
+  );
+  const allottedTotalCount = useMemo(
+    () => filteredApps.filter((a) => isStatus(a.status, 'Allotted', 'Partially Allotted', 'Holding', 'Sold')).length,
+    [filteredApps]
+  );
+  const notAllottedCount = useMemo(
+    () => filteredApps.filter((a) => isStatus(a.status, 'Not Allotted', 'Cancelled')).length,
+    [filteredApps]
+  );
 
-    const total = filteredApps.length;
+  // Allotted Portfolio Sub-counts
+  const soldCount = useMemo(
+    () => filteredApps.filter((a) => isStatus(a.status, 'Sold')).length,
+    [filteredApps]
+  );
+  const holdingCount = useMemo(
+    () => filteredApps.filter((a) => isStatus(a.status, 'Holding')).length,
+    [filteredApps]
+  );
+  const currentlyAllottedCount = useMemo(
+    () => filteredApps.filter((a) => isStatus(a.status, 'Allotted', 'Partially Allotted')).length,
+    [filteredApps]
+  );
 
-    const calcPct = (cnt: number) => (total > 0 ? ((cnt / total) * 100).toFixed(1) : '0.0');
+  // Percentages out of total apps
+  const calcPct = (cnt: number) => (totalApps > 0 ? ((cnt / totalApps) * 100).toFixed(1) : '0.0');
+  const waitingPct = calcPct(waitingCount);
+  const allottedTotalPct = calcPct(allottedTotalCount);
+  const notAllottedPct = calcPct(notAllottedCount);
 
+  // Percentages out of allotted total
+  const calcAllottedPct = (cnt: number) =>
+    allottedTotalCount > 0 ? ((cnt / allottedTotalCount) * 100).toFixed(1) : '0.0';
+  const soldPct = calcAllottedPct(soldCount);
+  const holdingPct = calcAllottedPct(holdingCount);
+  const currentlyAllottedPct = calcAllottedPct(currentlyAllottedCount);
+
+  // Main 3 Legend Rows: Waiting Allotment, Allotted, Not Allotted
+  const mainStats = useMemo(() => {
     return [
-      { key: 'Waiting Allotment', label: 'Waiting Allotment', count: waiting,            pct: calcPct(waiting),            color: colors.statusApplied },
-      { key: 'Allotted',          label: 'Allotted',          count: allottedCumulative,  pct: calcPct(allottedCumulative), color: colors.statusAllotted },
-      { key: 'Sold',              label: 'Sold',              count: sold,                pct: calcPct(sold),               color: colors.statusSold },
-      { key: 'Holding',           label: 'Holding',           count: holding,             pct: calcPct(holding),            color: colors.statusHolding },
-      { key: 'Not Allotted',      label: 'Not Allotted',      count: notAllotted,         pct: calcPct(notAllotted),        color: colors.statusNotAllotted },
+      { key: 'Waiting Allotment', label: 'Waiting Allotment', count: waitingCount,       pct: waitingPct,       color: colors.statusApplied },
+      { key: 'Allotted',          label: 'Allotted',          count: allottedTotalCount, pct: allottedTotalPct, color: colors.statusAllotted },
+      { key: 'Not Allotted',      label: 'Not Allotted',      count: notAllottedCount,   pct: notAllottedPct,   color: colors.statusNotAllotted },
     ];
-  }, [filteredApps, colors]);
+  }, [waitingCount, allottedTotalCount, notAllottedCount, waitingPct, allottedTotalPct, notAllottedPct, colors]);
 
-  const totalCount = useMemo(() => filteredApps.length, [filteredApps]);
-
-  // SVG Donut Segments Math (Mutually Exclusive Current Status Breakdown)
-  const donutSegments = useMemo(() => {
-    const isStatus = (st: string, ...targets: string[]) => {
-      const s = (st || '').trim().toLowerCase();
-      return targets.some((t) => s === t.toLowerCase());
-    };
-
-    const waiting = filteredApps.filter((a) => isStatus(a.status, 'Applied', 'Mandate Approved')).length;
-    const allottedPure = filteredApps.filter((a) => isStatus(a.status, 'Allotted', 'Partially Allotted')).length;
-    const sold = filteredApps.filter((a) => isStatus(a.status, 'Sold')).length;
-    const holding = filteredApps.filter((a) => isStatus(a.status, 'Holding')).length;
-    const notAllotted = filteredApps.filter((a) => isStatus(a.status, 'Not Allotted', 'Cancelled')).length;
-
+  // Main SVG Donut Chart Math (3 Slices: Applied, Allotted, Not Allotted)
+  const mainDonutSegments = useMemo(() => {
     const slices = [
-      { key: 'Waiting Allotment', count: waiting,     color: colors.statusApplied },
-      { key: 'Allotted',          count: allottedPure,color: colors.statusAllotted },
-      { key: 'Sold',              count: sold,        color: colors.statusSold },
-      { key: 'Holding',           count: holding,     color: colors.statusHolding },
-      { key: 'Not Allotted',      count: notAllotted, color: colors.statusNotAllotted },
+      { key: 'applied', count: waitingCount, color: colors.statusApplied },
+      { key: 'allotted', count: allottedTotalCount, color: colors.statusAllotted },
+      { key: 'notAllotted', count: notAllottedCount, color: colors.statusNotAllotted },
     ];
 
-    const R = 64;
+    const R = 62;
     const C = 2 * Math.PI * R;
-    let accumulatedAngle = -90; // Start at 12 o'clock
+    let accumulatedAngle = -90;
 
-    if (totalCount === 0) {
+    if (totalApps === 0) {
       return [{ key: 'empty', color: isDark ? '#334155' : '#E2E8F0', dashArray: `${C} 0`, strokeOffset: 0 }];
     }
 
     return slices
       .filter((s) => s.count > 0)
       .map((s) => {
-        const fraction = s.count / totalCount;
+        const fraction = s.count / totalApps;
         const dashLength = fraction * C;
         const gapLength = C - dashLength;
         const strokeOffset = -((accumulatedAngle + 90) / 360) * C;
@@ -135,7 +147,41 @@ export function ApplicationsOverviewCard({
           strokeOffset,
         };
       });
-  }, [filteredApps, colors, totalCount, isDark]);
+  }, [waitingCount, allottedTotalCount, notAllottedCount, totalApps, colors, isDark]);
+
+  // Mini Donut Chart Math (Allotted Portfolio Breakdown: Sold, Holding, Currently Allotted)
+  const allottedDonutSegments = useMemo(() => {
+    const slices = [
+      { key: 'sold', count: soldCount, color: colors.statusSold },
+      { key: 'holding', count: holdingCount, color: colors.statusHolding },
+      { key: 'currentlyAllotted', count: currentlyAllottedCount, color: colors.statusAllotted },
+    ];
+
+    const R = 30;
+    const C = 2 * Math.PI * R;
+    let accumulatedAngle = -90;
+
+    if (allottedTotalCount === 0) {
+      return [{ key: 'empty', color: isDark ? '#334155' : '#E2E8F0', dashArray: `${C} 0`, strokeOffset: 0 }];
+    }
+
+    return slices
+      .filter((s) => s.count > 0)
+      .map((s) => {
+        const fraction = s.count / allottedTotalCount;
+        const dashLength = fraction * C;
+        const gapLength = C - dashLength;
+        const strokeOffset = -((accumulatedAngle + 90) / 360) * C;
+        accumulatedAngle += fraction * 360;
+
+        return {
+          key: s.key,
+          color: s.color,
+          dashArray: `${dashLength} ${gapLength}`,
+          strokeOffset,
+        };
+      });
+  }, [soldCount, holdingCount, currentlyAllottedCount, allottedTotalCount, colors, isDark]);
 
   return (
     <View
@@ -161,21 +207,21 @@ export function ApplicationsOverviewCard({
         </TouchableOpacity>
       </View>
 
-      {/* Main Content Layout: Left Donut + Right Legend */}
-      <View style={styles.bodyRow}>
-        {/* Left Side: SVG Donut Chart */}
+      {/* Main Top Section: Left Donut + Right 3 Legends */}
+      <View style={styles.topSectionRow}>
+        {/* Left Side: Main Donut Chart */}
         <View style={styles.donutWrap}>
-          <Svg width="165" height="165" viewBox="0 0 165 165">
-            <G rotation="-90" origin="82.5, 82.5">
-              {donutSegments.map((seg) => (
+          <Svg width="155" height="155" viewBox="0 0 155 155">
+            <G rotation="-90" origin="77.5, 77.5">
+              {mainDonutSegments.map((seg) => (
                 <Circle
                   key={seg.key}
-                  cx="82.5"
-                  cy="82.5"
-                  r="64"
+                  cx="77.5"
+                  cy="77.5"
+                  r="62"
                   fill="none"
                   stroke={seg.color}
-                  strokeWidth="22"
+                  strokeWidth="20"
                   strokeDasharray={seg.dashArray}
                   strokeDashoffset={seg.strokeOffset}
                   strokeLinecap="butt"
@@ -187,14 +233,14 @@ export function ApplicationsOverviewCard({
           {/* Center Text Overlay */}
           <View style={styles.centerOverlay} pointerEvents="none">
             <Text style={[styles.centerTopLabel, { color: colors.mutedForeground }]}>TOTAL</Text>
-            <Text style={[styles.centerBigVal, { color: colors.foreground }]}>{totalCount}</Text>
+            <Text style={[styles.centerBigVal, { color: colors.foreground }]}>{totalApps}</Text>
             <Text style={[styles.centerSubLabel, { color: colors.mutedForeground }]}>applications</Text>
           </View>
         </View>
 
-        {/* Right Side: 5 Status Legend Rows */}
+        {/* Right Side: 3 Main Status Legend Rows */}
         <View style={styles.legendCol}>
-          {stats.map((item) => (
+          {mainStats.map((item) => (
             <View key={item.key} style={styles.legendRow}>
               <View style={styles.legendLeft}>
                 <View style={[styles.legendDot, { backgroundColor: item.color }]} />
@@ -210,7 +256,93 @@ export function ApplicationsOverviewCard({
         </View>
       </View>
 
-      {/* Period Dropdown Selection Modal (Matching final PerformanceChart modal design) */}
+      {/* Allotted Portfolio Breakdown Card with Horizontal Segmented Bar Chart */}
+      <View
+        style={[
+          styles.allottedCard,
+          {
+            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+            borderColor: colors.border,
+          },
+        ]}
+      >
+        {/* Header Row */}
+        <View style={styles.allottedHeaderRow}>
+          <Text style={[styles.allottedSectionTitle, { color: colors.foreground }]}>ALLOTTED PORTFOLIO</Text>
+        </View>
+
+        {/* 3 Breakdown Legends with Vertical Accent Bars (Inspired by screenshot) */}
+        <View style={styles.allottedBarLegendRow}>
+          {/* Sold */}
+          <View style={styles.barLegendItem}>
+            <View style={[styles.vertAccentBar, { backgroundColor: colors.statusSold }]} />
+            <View>
+              <Text style={[styles.barLegendTitle, { color: colors.mutedForeground }]}>Sold</Text>
+              <Text style={[styles.barLegendVal, { color: colors.foreground }]}>
+                {soldCount} <Text style={{ color: colors.statusSold, fontSize: 11 }}>({soldPct}%)</Text>
+              </Text>
+            </View>
+          </View>
+
+          {/* Holding */}
+          <View style={styles.barLegendItem}>
+            <View style={[styles.vertAccentBar, { backgroundColor: colors.statusHolding }]} />
+            <View>
+              <Text style={[styles.barLegendTitle, { color: colors.mutedForeground }]}>Holding</Text>
+              <Text style={[styles.barLegendVal, { color: colors.foreground }]}>
+                {holdingCount} <Text style={{ color: colors.statusHolding, fontSize: 11 }}>({holdingPct}%)</Text>
+              </Text>
+            </View>
+          </View>
+
+          {/* Newly Allotted */}
+          <View style={styles.barLegendItem}>
+            <View style={[styles.vertAccentBar, { backgroundColor: colors.statusAllotted }]} />
+            <View>
+              <Text style={[styles.barLegendTitle, { color: colors.mutedForeground }]}>Newly Allotted</Text>
+              <Text style={[styles.barLegendVal, { color: colors.foreground }]}>
+                {currentlyAllottedCount} <Text style={{ color: colors.statusAllotted, fontSize: 11 }}>({currentlyAllottedPct}%)</Text>
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Horizontal Segmented Bar Graph (Inspired by screenshot) */}
+        <View style={[styles.segmentedBarTrack, { backgroundColor: isDark ? '#27272A' : '#E2E8F0' }]}>
+          {allottedTotalCount === 0 ? (
+            <View style={{ flex: 1, backgroundColor: colors.border, borderRadius: 4 }} />
+          ) : (
+            <>
+              {soldCount > 0 && (
+                <View
+                  style={[
+                    styles.segmentedBarSlice,
+                    { flex: soldCount, backgroundColor: colors.statusSold },
+                  ]}
+                />
+              )}
+              {holdingCount > 0 && (
+                <View
+                  style={[
+                    styles.segmentedBarSlice,
+                    { flex: holdingCount, backgroundColor: colors.statusHolding },
+                  ]}
+                />
+              )}
+              {currentlyAllottedCount > 0 && (
+                <View
+                  style={[
+                    styles.segmentedBarSlice,
+                    { flex: currentlyAllottedCount, backgroundColor: colors.statusAllotted },
+                  ]}
+                />
+              )}
+            </>
+          )}
+        </View>
+      </View>
+
+      {/* Period Selection Modal */}
       <Modal visible={showPeriodModal} transparent animationType="fade" onRequestClose={() => setShowPeriodModal(false)}>
         <Pressable style={styles.centerModalOverlay} onPress={() => setShowPeriodModal(false)}>
           <Pressable style={[styles.pickerModalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => {}}>
@@ -284,7 +416,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   cardTitle: {
     fontSize: 13,
@@ -305,14 +437,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'GoogleSansFlex_500Medium',
   },
-  bodyRow: {
+
+  // Top Section: Donut + 3 Main Legends
+  topSectionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   donutWrap: {
-    width: 165,
-    height: 165,
+    width: 155,
+    height: 155,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -323,25 +457,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   centerTopLabel: {
-    fontSize: 10.5,
+    fontSize: 10,
     fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 1.0,
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
   centerBigVal: {
-    fontSize: 27,
+    fontSize: 26,
     fontFamily: 'GoogleSansFlex_700Bold',
-    lineHeight: 30,
+    lineHeight: 28,
     marginVertical: 1,
   },
   centerSubLabel: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontFamily: 'GoogleSansFlex_400Regular',
   },
+
   legendCol: {
     flex: 1,
-    paddingLeft: 14,
-    gap: 6,
+    paddingLeft: 12,
+    gap: 10,
     justifyContent: 'center',
   },
   legendRow: {
@@ -373,10 +508,127 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_700Bold',
   },
   legendPct: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontFamily: 'GoogleSansFlex_600SemiBold',
-    minWidth: 46,
+    minWidth: 44,
     textAlign: 'right',
+  },
+
+  sectionDivider: {
+    height: 1,
+    width: '100%',
+    marginVertical: 14,
+  },
+
+  allottedCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 12,
+    marginTop: 10,
+  },
+  allottedHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  allottedTitleCol: {
+    flex: 1,
+    gap: 1,
+  },
+  allottedSectionTitle: {
+    fontSize: 10.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  allottedBigCount: {
+    fontSize: 22,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    lineHeight: 26,
+  },
+  allottedCountSub: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_400Regular',
+  },
+  allottedTotalSub: {
+    fontSize: 10.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 1,
+  },
+
+  // Mini Donut Chart
+  miniDonutWrap: {
+    width: 74,
+    height: 74,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  miniCenterOverlay: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniCenterText: {
+    fontSize: 6.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.3,
+    marginTop: 1,
+  },
+
+  innerDivider: {
+    height: 1,
+    width: '100%',
+    marginVertical: 10,
+  },
+
+  allottedHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+
+  // Vertical Accent Bar Legends (Inspired by screenshot)
+  allottedBarLegendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+    marginBottom: 10,
+  },
+  barLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  vertAccentBar: {
+    width: 3.5,
+    height: 28,
+    borderRadius: 2,
+  },
+  barLegendTitle: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  barLegendVal: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    marginTop: 1,
+  },
+
+  // Segmented Bar Track & Slices (Inspired by screenshot)
+  segmentedBarTrack: {
+    height: 12,
+    borderRadius: 100,
+    flexDirection: 'row',
+    overflow: 'hidden',
+    gap: 3,
+    padding: 2,
+  },
+  segmentedBarSlice: {
+    height: '100%',
+    borderRadius: 100,
   },
 
   // Modal styles

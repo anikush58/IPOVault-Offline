@@ -22,7 +22,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDialog } from '@/context/DialogContext';
 import { useDB, type IPOListing } from '@/context/DBContext';
 import { IconButton } from '@/components/ui/IconButton';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, getResolvedLogoUrl } from '@/utils/formatters';
 import { Tabs } from '@/components/ui/Tabs';
 
 type TabSegment = 'active' | 'favorites' | 'archived';
@@ -63,6 +63,7 @@ export default function IPOManagementScreen() {
   const [activeSegment, setActiveSegment] = useState<TabSegment>('active');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
+  const [logoErrors, setLogoErrors] = useState<Record<string, boolean>>({});
   const searchRef = useRef<TextInput>(null);
 
   const toggleSearch = () => {
@@ -289,6 +290,17 @@ export default function IPOManagementScreen() {
               (a) => a.status === 'Allotted' || a.status === 'Partially Allotted' || a.status === 'Holding' || a.status === 'Sold'
             );
 
+            const companyNameStr = ipo.ipo_name || 'IPO';
+            const logoUrl = getResolvedLogoUrl(ipo.logo_url);
+            const avatarGradient = getAvatarGradient(companyNameStr);
+            const initials = companyNameStr
+              .replace(/[^a-zA-Z0-9\s]/g, '')
+              .split(' ')
+              .slice(0, 2)
+              .map((w) => w[0])
+              .join('')
+              .toUpperCase();
+
             return (
               <View
                 key={ipo.id}
@@ -300,8 +312,26 @@ export default function IPOManagementScreen() {
                   },
                 ]}
               >
-                {/* ── Card Header Row with Colorful Action Icons ── */}
+                {/* ── Card Header Row with Logo & Colorful Action Icons ── */}
                 <View style={styles.cardHeaderRow}>
+                  {logoUrl && !logoErrors[ipo.id] ? (
+                    <Image
+                      source={{ uri: logoUrl }}
+                      style={styles.logoImage}
+                      resizeMode="contain"
+                      onError={() => setLogoErrors((prev) => ({ ...prev, [ipo.id]: true }))}
+                    />
+                  ) : (
+                    <LinearGradient
+                      colors={avatarGradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.avatar}
+                    >
+                      <Text style={styles.avatarText}>{initials}</Text>
+                    </LinearGradient>
+                  )}
+
                   <View style={{ flex: 1, gap: 1 }}>
                     <Text style={[styles.ipoTitle, { color: colors.foreground }]} numberOfLines={1}>
                       {ipo.ipo_name}
@@ -588,10 +618,28 @@ const styles = StyleSheet.create({
   },
   cardHeaderRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: 10,
     marginBottom: 10,
+  },
+  logoImage: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    resizeMode: 'contain',
+  },
+  avatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    color: '#FFFFFF',
   },
   ipoTitle: {
     fontSize: 15,

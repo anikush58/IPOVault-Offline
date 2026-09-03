@@ -74,3 +74,12 @@ export function formatSubscriptionTimes(multiplier?: number | null): string {
 export function todayISO(): string {
   return new Date().toISOString().split("T")[0];
 }
+
+export function getResolvedLogoUrl(
+  rawLogoUrl?: string | null
+): string | null {
+  if (rawLogoUrl && typeof rawLogoUrl === 'string' && rawLogoUrl.trim().length > 0) {
+    return rawLogoUrl.trim();
+  }
+  return null;
+}

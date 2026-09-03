@@ -5,6 +5,7 @@ import {
   FlatList,
   Platform,
   RefreshControl,
+  SectionList,
   StyleSheet,
   Text,
   TextInput,
@@ -272,45 +273,54 @@ export default function ApplicationsScreen() {
         </View>
       </Animated.View>
 
-      {/* Active filter chip */}
-      {hasFilter && (
-        <View style={[styles.filterBar, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
-          <Feather name="filter" size={12} color={colors.primary} />
-          <Text style={[styles.filterBarText, { color: colors.primary }]}>
-            {filterChipLabel}
-          </Text>
-          <TouchableOpacity onPress={() => { setFilterUserIds([]); setFilterBrokers([]); setFilterIpoNames([]); setFilterBankNames([]); setFilterYear(null); }} hitSlop={8}>
-            <Feather name="x" size={14} color={colors.primary} />
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Applications Overview Card */}
-      <ApplicationsOverviewCard applications={applications} />
-
-      {/* Tab pills */}
-      <View style={[styles.tabBar, { backgroundColor: colors.background }]}>
-        <Tabs
-          variant="pills"
-          scrollable
-          tabs={TABS.map((t) => ({
-            key: t.key,
-            label: t.label,
-            count: countFor(t.key) > 0 ? countFor(t.key) : undefined,
-          }))}
-          activeTab={activeTab}
-          onChange={handleTabChange}
-          style={{ paddingVertical: 10 }}
-        />
-      </View>
-
-      {/* List */}
-      <FlatList
-        data={filtered}
+      {/* SectionList with Sticky Tab Pills Header */}
+      <SectionList
+        sections={[{ title: 'Applications', data: filtered }]}
         keyExtractor={(item) => item.id.toString()}
+        stickySectionHeadersEnabled={true}
         refreshControl={
           <RefreshControl refreshing={isLoading} onRefresh={refresh} tintColor={colors.primary} />
         }
+        ListHeaderComponent={() => (
+          <View>
+            {/* Active filter chip */}
+            {hasFilter && (
+              <View style={[styles.filterBar, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
+                <Feather name="filter" size={12} color={colors.primary} />
+                <Text style={[styles.filterBarText, { color: colors.primary }]}>
+                  {filterChipLabel}
+                </Text>
+                <TouchableOpacity onPress={() => { setFilterUserIds([]); setFilterBrokers([]); setFilterIpoNames([]); setFilterBankNames([]); setFilterYear(null); }} hitSlop={8}>
+                  <Feather name="x" size={14} color={colors.primary} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Applications Overview Card */}
+            <ApplicationsOverviewCard applications={applications} />
+          </View>
+        )}
+        renderSectionHeader={() => (
+          <View style={[styles.tabBar, { backgroundColor: colors.background }]}>
+            <Tabs
+              variant="pills"
+              scrollable
+              tabs={TABS.map((t) => ({
+                key: t.key,
+                label: t.label,
+                count: countFor(t.key) > 0 ? countFor(t.key) : undefined,
+              }))}
+              activeTab={activeTab}
+              onChange={handleTabChange}
+              style={{ paddingVertical: 8 }}
+            />
+            <View style={styles.listHeader}>
+              <Text style={[styles.listCount, { color: colors.mutedForeground }]}>
+                {filtered.length} {filtered.length === 1 ? 'application' : 'applications'}
+              </Text>
+            </View>
+          </View>
+        )}
         renderItem={({ item }) => (
           <ApplicationCard
             application={item}
@@ -326,13 +336,6 @@ export default function ApplicationsScreen() {
             isSelected={selectedAppIds.includes(item.id)}
             onSelectToggle={() => toggleSelectApp(item.id)}
           />
-        )}
-        ListHeaderComponent={() => (
-          <View style={styles.listHeader}>
-            <Text style={[styles.listCount, { color: colors.mutedForeground }]}>
-              {filtered.length} {filtered.length === 1 ? 'application' : 'applications'}
-            </Text>
-          </View>
         )}
         ListEmptyComponent={() => (
           <View style={styles.empty}>

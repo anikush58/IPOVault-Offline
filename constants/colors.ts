@@ -59,7 +59,7 @@ const colors = {
     statusApplied: '#2563EB',
     statusAppliedBg: '#EFF6FF',
     statusAllotted: '#10B981',
-    statusAllottedBg: '#ECFDF5',
+    statusAllottedBg: 'rgba(16, 185, 129, 0.15)',
     statusHolding: '#8B5CF6',
     statusHoldingBg: '#F5F3FF',
     statusNotAllotted: '#EF4444',
@@ -70,8 +70,8 @@ const colors = {
     statusListedBg: '#F5F3FF',
     statusRefund: '#6B7280',
     statusRefundBg: '#F3F4F6',
-    statusSold: '#AFB42B',
-    statusSoldBg: 'rgba(175, 180, 43, 0.15)',
+    statusSold: '#F59E0B',
+    statusSoldBg: 'rgba(245, 158, 11, 0.15)',
 
     // Shadow helper
     shadowCard: '0 1px 3px rgba(0,0,0,0.04), 0 4px 14px rgba(0,0,0,0.03)',
@@ -119,8 +119,8 @@ const colors = {
 
     statusApplied: '#60A5FA',
     statusAppliedBg: '#1E3A8A33',
-    statusAllotted: '#34D399',
-    statusAllottedBg: '#064E3B33',
+    statusAllotted: '#10B981',
+    statusAllottedBg: 'rgba(16, 185, 129, 0.20)',
     statusHolding: '#A78BFA',
     statusHoldingBg: '#4C1D9533',
     statusNotAllotted: '#F87171',
@@ -131,8 +131,8 @@ const colors = {
     statusListedBg: '#4C1D9533',
     statusRefund: '#9CA3AF',
     statusRefundBg: '#37415133',
-    statusSold: '#AFB42B',
-    statusSoldBg: 'rgba(175, 180, 43, 0.20)',
+    statusSold: '#F59E0B',
+    statusSoldBg: 'rgba(245, 158, 11, 0.20)',
 
     shadowCard: '0 2px 8px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.3)',
     shadowModal: '0 12px 48px rgba(0,0,0,0.65)',

@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IPOMasterRecord } from '@/services/ipo/types';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, getResolvedLogoUrl } from '@/utils/formatters';
 import { IPOStatusChip } from './IPOStatusChip';
 import { useCompare } from '@/context/CompareContext';
 
@@ -51,6 +51,7 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
 
   const companyNameStr = ipo.company_name || ipo.ipo_name || 'IPO';
   const avatarGradient = getAvatarGradient(companyNameStr);
+  const resolvedLogo = getResolvedLogoUrl(ipo.logo_url, ipo.website, companyNameStr);
 
   // Format Price Band
   const priceBandText = React.useMemo(() => {
@@ -218,9 +219,9 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
       <View style={styles.headerBlock}>
         {/* Row 1: Logo + Company Name & Dates + Action Icons */}
         <View style={styles.headerTopRow}>
-          {ipo.logo_url && !logoError ? (
+          {resolvedLogo && !logoError ? (
             <Image
-              source={{ uri: ipo.logo_url }}
+              source={{ uri: resolvedLogo }}
               style={styles.logoImage}
               onError={() => setLogoError(true)}
             />

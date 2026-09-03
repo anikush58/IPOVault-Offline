@@ -235,7 +235,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     let masterRows: IPOListing[] = [];
     try {
       const masterIPOs = await db.getAllAsync<any>(
-        `SELECT id, ipo_name, company_name, price_band_max AS buy_price, lot_size AS quantity, open_date, close_date, listing_date, allotment_date, registrar, exchange, issue_type, 0 AS archived, is_favorite FROM ipo_master WHERE deleted_at IS NULL AND (status = 'OPEN' OR status = 'UPCOMING' OR is_favorite = 1)`
+        `SELECT id, ipo_name, company_name, price_band_max AS buy_price, lot_size AS quantity, open_date, close_date, listing_date, allotment_date, registrar, exchange, issue_type, logo_url, 0 AS archived, is_favorite FROM ipo_master WHERE deleted_at IS NULL AND (status = 'OPEN' OR status = 'UPCOMING' OR is_favorite = 1)`
       );
       const existingIds = new Set(ipoRows.map((r) => r.id));
       masterRows = masterIPOs
@@ -254,6 +254,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           registrar: m.registrar || '',
           exchange: m.exchange || '',
           issue_type: m.issue_type || 'Mainboard',
+          logo_url: m.logo_url || '',
         }));
     } catch {
       // master table optional
@@ -269,7 +270,11 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
              u.avatar_url AS user_avatar_url,
              COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
              COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
-             i.ipo_name, i.buy_price, i.quantity, i.open_date, i.logo_url AS ipo_logo_url
+             i.ipo_name,
+             i.buy_price,
+             i.quantity,
+             i.open_date,
+             i.logo_url AS ipo_logo_url
       FROM   ipo_applications a
       JOIN   users_table u ON a.user_id = u.id
       JOIN   ipo_listings i ON a.ipo_id = i.id
