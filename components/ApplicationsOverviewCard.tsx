@@ -30,30 +30,52 @@ export function ApplicationsOverviewCard({
     setShowPeriodModal(false);
   };
 
+function parseAppDate(dateStr: string | null | undefined): Date | null {
+  if (!dateStr) return null;
+  const str = dateStr.trim();
+  const parts = str.split(/[-/ T]/);
+  if (parts.length >= 3) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    if (!isNaN(year) && !isNaN(month) && !isNaN(day) && year > 1900 && month >= 0 && month <= 11) {
+      return new Date(year, month, day);
+    }
+  }
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) return d;
+  return null;
+}
+
   // Filter applications by selected period
   const filteredApps = useMemo(() => {
     if (period === 'This Month') {
       const now = new Date();
       return applications.filter((a) => {
-        if (!a.open_date) return false;
-        const d = new Date(a.open_date);
+        const dateStr = a.open_date || a.created_at;
+        const d = parseAppDate(dateStr);
+        if (!d) return false;
         return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
       });
     }
     if (period === 'Last Month') {
       const now = new Date();
-      const last = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const lastMonthIndex = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+      const lastMonthYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
       return applications.filter((a) => {
-        if (!a.open_date) return false;
-        const d = new Date(a.open_date);
-        return d.getMonth() === last.getMonth() && d.getFullYear() === last.getFullYear();
+        const dateStr = a.open_date || a.created_at;
+        const d = parseAppDate(dateStr);
+        if (!d) return false;
+        return d.getMonth() === lastMonthIndex && d.getFullYear() === lastMonthYear;
       });
     }
     if (period === 'This Year') {
       const now = new Date();
       return applications.filter((a) => {
-        if (!a.open_date) return false;
-        return new Date(a.open_date).getFullYear() === now.getFullYear();
+        const dateStr = a.open_date || a.created_at;
+        const d = parseAppDate(dateStr);
+        if (!d) return false;
+        return d.getFullYear() === now.getFullYear();
       });
     }
     return applications;

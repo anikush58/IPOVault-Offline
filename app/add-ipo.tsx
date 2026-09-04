@@ -22,6 +22,7 @@ import { useDB } from '@/context/DBContext';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { DatePickerModal } from '@/components/DatePickerModal';
+import { ensureBase64DataUrl } from '@/utils/imageUtils';
 
 
 
@@ -204,7 +205,8 @@ export default function AddIPOScreen() {
           };
           reader.readAsDataURL(asset.file);
         } else {
-          setFormLogoUrl(asset.uri);
+          const base64Url = await ensureBase64DataUrl(asset.uri);
+          setFormLogoUrl(base64Url);
           Haptics.selectionAsync();
         }
       }

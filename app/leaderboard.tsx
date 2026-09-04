@@ -21,12 +21,13 @@ import { IconButton } from '@/components/ui/IconButton';
 import { calculateAppTaxAndNet } from '@/utils/calculations';
 import { formatCurrency } from '@/utils/formatters';
 
-type TabKey = 'user' | 'broker' | 'ipo';
+type TabKey = 'user' | 'userCut' | 'broker' | 'ipo';
 
 type LeaderEntry = {
   id: string;
   name: string;
   netProfit: number;
+  userCut: number;
   soldCount: number;
 };
 
@@ -36,31 +37,32 @@ function computeRankings(
   applications: ApplicationWithDetails[],
   by: TabKey,
 ): LeaderEntry[] {
-  const map: Record<string, { name: string; netProfit: number; soldCount: number }> = {};
+  const map: Record<string, { name: string; netProfit: number; userCut: number; soldCount: number }> = {};
 
   for (const a of applications) {
     if (a.status !== 'Sold' && a.status !== 'Holding') continue;
     const key =
-      by === 'user'
+      by === 'user' || by === 'userCut'
         ? String(a.user_id)
         : by === 'broker'
         ? a.user_broker ?? 'Unknown'
         : String(a.ipo_id);
     const name =
-      by === 'user'
+      by === 'user' || by === 'userCut'
         ? a.user_name
         : by === 'broker'
         ? a.user_broker ?? 'Unknown'
         : a.ipo_name ?? 'Unknown';
-    if (!map[key]) map[key] = { name, netProfit: 0, soldCount: 0 };
-    const { netPL } = calculateAppTaxAndNet(a);
+    if (!map[key]) map[key] = { name, netProfit: 0, userCut: 0, soldCount: 0 };
+    const { netPL, userCut } = calculateAppTaxAndNet(a);
     map[key].netProfit += netPL;
+    map[key].userCut += userCut;
     map[key].soldCount += 1;
   }
 
   return Object.entries(map)
     .map(([id, d]) => ({ id, ...d }))
-    .sort((a, b) => b.netProfit - a.netProfit);
+    .sort((a, b) => (by === 'userCut' ? b.userCut - a.userCut : b.netProfit - a.netProfit));
 }
 
 function RankBadge({ rank, colors }: { rank: number; colors: ReturnType<typeof useColors> }) {
@@ -103,7 +105,7 @@ export default function LeaderboardScreen() {
   const { applications, isLoading, refresh } = useDB();
 
   const [activeTab, setActiveTab] = useState<TabKey>(
-    params.tab === 'broker' || params.tab === 'ipo' ? params.tab : 'user',
+    params.tab === 'broker' || params.tab === 'ipo' || params.tab === 'userCut' ? params.tab : 'user',
   );
   const [showSearch, setShowSearch] = useState(!!params.q);
   const [searchQuery, setSearchQuery] = useState(params.q || '');
@@ -150,9 +152,15 @@ export default function LeaderboardScreen() {
     [rankings],
   );
 
+  const totalUserCut = useMemo(
+    () => rankings.reduce((acc, r) => acc + r.userCut, 0),
+    [rankings],
+  );
+
   const topPerformer = rankings[0];
 
   const renderItem = ({ item, index }: { item: LeaderEntry; index: number }) => {
+    const isUserCutTab = activeTab === 'userCut';
     const isPos = item.netProfit >= 0;
     const isTop3 = index < 3;
 
@@ -173,8 +181,19 @@ export default function LeaderboardScreen() {
             {item.soldCount} {item.soldCount === 1 ? 'transaction' : 'transactions'}
           </Text>
         </View>
-        <Text style={[styles.rowProfit, { color: isPos ? colors.positive : colors.negative }]}>
-          {isPos ? '+' : ''}{formatCurrency(item.netProfit)}
+        <Text
+          style={[
+            styles.rowProfit,
+            {
+              color: isUserCutTab
+                ? colors.foreground
+                : isPos
+                ? colors.positive
+                : colors.negative,
+            },
+          ]}
+        >
+          {isUserCutTab ? formatCurrency(item.userCut) : `${isPos ? '+' : ''}${formatCurrency(item.netProfit)}`}
         </Text>
       </View>
     );
@@ -222,7 +241,7 @@ export default function LeaderboardScreen() {
             ref={searchRef}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder={`Search ${activeTab === 'user' ? 'users' : activeTab === 'broker' ? 'brokers' : 'IPOs'}...`}
+            placeholder={`Search ${activeTab === 'user' || activeTab === 'userCut' ? 'users' : activeTab === 'broker' ? 'brokers' : 'IPOs'}...`}
             placeholderTextColor={colors.mutedForeground}
             style={[styles.searchInput, { color: colors.foreground }]}
             clearButtonMode="while-editing"
@@ -239,10 +258,12 @@ export default function LeaderboardScreen() {
       <View style={[styles.tabBarWrap, { backgroundColor: colors.background }]}>
         <Tabs
           variant="pills"
+          scrollable
           tabs={[
             { key: 'user', label: 'By User' },
             { key: 'broker', label: 'By Broker' },
             { key: 'ipo', label: 'By IPO' },
+            { key: 'userCut', label: 'By User Cut' },
           ]}
           activeTab={activeTab}
           onChange={setActiveTab}
@@ -265,14 +286,25 @@ export default function LeaderboardScreen() {
           </View>
           <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
           <View style={styles.summaryItem}>
-            <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>Total Net P&L</Text>
+            <Text style={[styles.summaryLabel, { color: colors.mutedForeground }]}>
+              {activeTab === 'userCut' ? 'Total User Cut' : 'Total Net P&L'}
+            </Text>
             <Text
               style={[
                 styles.summaryVal,
-                { color: totalNetPL >= 0 ? colors.positive : colors.negative },
+                {
+                  color:
+                    activeTab === 'userCut'
+                      ? colors.foreground
+                      : totalNetPL >= 0
+                      ? colors.positive
+                      : colors.negative,
+                },
               ]}
             >
-              {totalNetPL >= 0 ? '+' : ''}{formatCurrency(totalNetPL)}
+              {activeTab === 'userCut'
+                ? formatCurrency(totalUserCut)
+                : `${totalNetPL >= 0 ? '+' : ''}${formatCurrency(totalNetPL)}`}
             </Text>
           </View>
         </View>

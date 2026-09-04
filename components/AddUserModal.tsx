@@ -20,6 +20,8 @@ import { useColors } from '@/hooks/useColors';
 import { useDialog } from '@/context/DialogContext';
 import { useDB, type User } from '@/context/DBContext';
 
+import { ensureBase64DataUrl } from '@/utils/imageUtils';
+
 const BROKERS = ['Dhan', 'Upstox', 'Groww', 'Angel One', 'Fyers', 'Zerodha', 'HDFC Securities', 'ICICI Direct', 'Paytm Money'];
 
 function BrokerPicker({ value, onSelect }: { value: string; onSelect: (v: string) => void }) {
@@ -106,7 +108,8 @@ export function AddUserModal({ visible, user, onClose }: Props) {
         copyToCacheDirectory: true,
       });
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setAvatarUrl(result.assets[0].uri);
+        const base64Url = await ensureBase64DataUrl(result.assets[0].uri);
+        setAvatarUrl(base64Url);
         Haptics.selectionAsync();
       }
     } catch (err) {

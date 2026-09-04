@@ -9,6 +9,7 @@ import { syncStore } from '@/services/sync/syncStatus';
 import { uploadService } from '@/services/infrastructure';
 import { safeRunAsync, safeGetFirstAsync } from '@/utils/sqliteDebug';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
+import { ensureBase64DataUrl } from '@/utils/imageUtils';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -174,9 +175,9 @@ type DBContextType = {
   // Data management
   loadSampleData: () => Promise<void>;
   clearAllData: () => Promise<void>;
-  exportCSV: () => string;
+  exportCSV: () => Promise<Record<string, string>>;
   importCSV: (csv: string) => Promise<ImportResult>;
-  exportJSON: () => string;
+  exportJSON: () => Promise<string>;
   importJSON: (json: string) => Promise<ImportResult>;
   autoExportEnabled: boolean;
   setAutoExportEnabled: (val: boolean) => Promise<void>;
@@ -807,40 +808,50 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
   // ── JSON export / import ─────────────────────────────────────────────────
 
-  const exportJSON = (): string => {
+  // ── JSON export / import ─────────────────────────────────────────────────
+
+  const exportJSON = async (): Promise<string> => {
+    const processedUsers = await Promise.all(
+      users.map(async (u) => ({
+        id: u.id,
+        name: u.name,
+        pan_number: u.pan_number,
+        broker: u.broker,
+        tpin: u.tpin,
+        upi_app: u.upi_app,
+        bank_name: u.bank_name,
+        avatar_url: await ensureBase64DataUrl(u.avatar_url),
+        default_amount_blocked: u.default_amount_blocked,
+        archived: u.archived ?? 0,
+      }))
+    );
+
+    const processedIpos = await Promise.all(
+      ipos.map(async (i) => ({
+        id: i.id,
+        ipo_name: i.ipo_name,
+        buy_price: i.buy_price,
+        quantity: i.quantity,
+        open_date: i.open_date,
+        close_date: i.close_date,
+        listing_date: i.listing_date,
+        archived: i.archived ?? 0,
+        is_favorite: i.is_favorite ?? 0,
+        registrar: i.registrar,
+        exchange: i.exchange,
+        issue_type: i.issue_type,
+        allotment_date: i.allotment_date,
+        logo_url: await ensureBase64DataUrl(i.logo_url),
+      }))
+    );
+
     return JSON.stringify(
       {
         version: 1,
         exported_at: new Date().toISOString(),
         banks: bankAccounts,
-        users: users.map((u) => ({
-          id: u.id,
-          name: u.name,
-          pan_number: u.pan_number,
-          broker: u.broker,
-          tpin: u.tpin,
-          upi_app: u.upi_app,
-          bank_name: u.bank_name,
-          avatar_url: u.avatar_url,
-          default_amount_blocked: u.default_amount_blocked,
-          archived: u.archived ?? 0,
-        })),
-        ipos: ipos.map((i) => ({
-          id: i.id,
-          ipo_name: i.ipo_name,
-          buy_price: i.buy_price,
-          quantity: i.quantity,
-          open_date: i.open_date,
-          close_date: i.close_date,
-          listing_date: i.listing_date,
-          archived: i.archived ?? 0,
-          is_favorite: i.is_favorite ?? 0,
-          registrar: i.registrar,
-          exchange: i.exchange,
-          issue_type: i.issue_type,
-          allotment_date: i.allotment_date,
-          logo_url: i.logo_url,
-        })),
+        users: processedUsers,
+        ipos: processedIpos,
         applications: applications.map((a) => ({
           id: a.id,
           user_id: a.user_id,
@@ -858,7 +869,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     );
   };
 
-    const importJSON = async (json: string): Promise<ImportResult> => {
+  const importJSON = async (json: string): Promise<ImportResult> => {
     const data = JSON.parse(json) as {
       version?: number;
       banks?: BankAccount[];
@@ -1050,27 +1061,73 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     return { users: userCount, ipos: ipoCount, applications: appCount };
   };
 
-  const exportCSV = (): string => {
+  const exportCSV = async (): Promise<Record<string, string>> => {
     const userMap = new Map(users.map((u) => [u.id, u]));
     const ipoMap = new Map(ipos.map((i) => [i.id, i]));
-    let csv = 'ID,User,PAN,TPIN,Broker,UPI App,Bank,IPO Name,Buy Price,Qty,IPO Open,IPO Close,IPO Listing,Status,Sell Price,Sale Date,Tax,User Cut\n';
+
+    // 1. Users CSV
+    let usersCsv = 'ID,Name,PAN,Broker,TPIN,UPI App,Bank Name,Avatar URL,Default Amount Blocked,Archived\n';
+    for (const u of users) {
+      const avatarBase64 = await ensureBase64DataUrl(u.avatar_url);
+      usersCsv += [
+        u.id,
+        `"${u.name || ''}"`,
+        `"${u.pan_number || ''}"`,
+        `"${u.broker || ''}"`,
+        `"${u.tpin || ''}"`,
+        `"${u.upi_app || ''}"`,
+        `"${u.bank_name || ''}"`,
+        `"${avatarBase64 || ''}"`,
+        u.default_amount_blocked ?? 0,
+        u.archived ?? 0,
+      ].join(',') + '\n';
+    }
+
+    // 2. IPOs CSV
+    let iposCsv = 'ID,IPO Name,Buy Price,Qty,Open Date,Close Date,Listing Date,Logo URL,Registrar,Exchange,Issue Type,Allotment Date,Archived,Is Favorite\n';
+    for (const i of ipos) {
+      const logoBase64 = await ensureBase64DataUrl(i.logo_url);
+      iposCsv += [
+        i.id,
+        `"${i.ipo_name || ''}"`,
+        i.buy_price ?? 0,
+        i.quantity ?? 0,
+        `"${i.open_date || ''}"`,
+        `"${i.close_date || ''}"`,
+        `"${i.listing_date || ''}"`,
+        `"${logoBase64 || ''}"`,
+        `"${i.registrar || ''}"`,
+        `"${i.exchange || ''}"`,
+        `"${i.issue_type || ''}"`,
+        `"${i.allotment_date || ''}"`,
+        i.archived ?? 0,
+        i.is_favorite ?? 0,
+      ].join(',') + '\n';
+    }
+
+    // 3. Applications (Combined) CSV
+    let appsCsv = 'ID,User,PAN,TPIN,Broker,UPI App,Bank,Avatar URL,IPO Name,Buy Price,Qty,IPO Open,IPO Close,IPO Listing,Logo URL,Status,Sell Price,Sale Date,Tax,User Cut\n';
     for (const app of applications) {
       const u = userMap.get(app.user_id);
       const ipo = ipoMap.get(app.ipo_id);
-      csv += [
+      const avatarBase64 = await ensureBase64DataUrl(u?.avatar_url || app.user_avatar_url);
+      const logoBase64 = await ensureBase64DataUrl(ipo?.logo_url || app.ipo_logo_url);
+      appsCsv += [
         app.id,
-        `"${app.user_name}"`,
+        `"${app.user_name || ''}"`,
         `"${u?.pan_number ?? ''}"`,
         `"${u?.tpin ?? ''}"`,
-        `"${app.user_broker}"`,
+        `"${app.user_broker || ''}"`,
         `"${u?.upi_app ?? ''}"`,
-        `"${app.user_bank_name}"`,
-        `"${app.ipo_name}"`,
-        app.buy_price,
-        app.quantity,
+        `"${app.user_bank_name || ''}"`,
+        `"${avatarBase64 || ''}"`,
+        `"${app.ipo_name || ''}"`,
+        app.buy_price ?? 0,
+        app.quantity ?? 0,
         `"${ipo?.open_date ?? ''}"`,
         `"${ipo?.close_date ?? ''}"`,
         `"${ipo?.listing_date ?? ''}"`,
+        `"${logoBase64 || ''}"`,
         `"${app.status}"`,
         app.sell_price ?? '',
         `"${app.sale_date ?? ''}"`,
@@ -1078,76 +1135,184 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         app.user_cut ?? 0,
       ].join(',') + '\n';
     }
-    return csv;
+
+    // 4. Banks CSV
+    let banksCsv = 'ID,Bank Name,Balance\n';
+    for (const b of bankAccounts) {
+      banksCsv += [
+        b.id,
+        `"${b.bank_name || ''}"`,
+        b.balance ?? 0,
+      ].join(',') + '\n';
+    }
+
+    return {
+      users: usersCsv,
+      ipos: iposCsv,
+      applications: appsCsv,
+      banks: banksCsv,
+    };
   };
 
   const importCSV = async (csv: string): Promise<ImportResult> => {
     const lines = csv.trim().split(/\r?\n/);
     if (lines.length < 2) throw new Error('No data rows found');
+    const headers = parseCSVLine(lines[0]).map((h) => h.trim().toLowerCase());
     const rows = lines.slice(1).map(parseCSVLine);
 
+    // Dynamic column index lookup helper
+    const getIdx = (candidates: string[]): number => {
+      for (const cand of candidates) {
+        const i = headers.findIndex((h) => h === cand || h.includes(cand));
+        if (i !== -1) return i;
+      }
+      return -1;
+    };
+
+    const idxPan = getIdx(['pan', 'pan_number', 'pan number']);
+    const idxName = getIdx(['name', 'user', 'user_name', 'user name']);
+    const idxAvatar = getIdx(['avatar_url', 'avatar url', 'avatar', 'user image']);
+    const idxBroker = getIdx(['broker', 'user_broker']);
+    const idxTpin = getIdx(['tpin']);
+    const idxUpi = getIdx(['upi_app', 'upi app', 'upi']);
+    const idxBank = getIdx(['bank_name', 'bank name', 'bank']);
+
+    const idxIpoName = getIdx(['ipo_name', 'ipo name', 'ipo']);
+    const idxLogo = getIdx(['logo_url', 'logo url', 'logo', 'company logo']);
+    const idxBuyPrice = getIdx(['buy_price', 'buy price']);
+    const idxQty = getIdx(['qty', 'quantity']);
+    const idxIpoOpen = getIdx(['ipo open', 'open_date', 'open date']);
+    const idxIpoClose = getIdx(['ipo close', 'close_date', 'close date']);
+    const idxIpoListing = getIdx(['ipo listing', 'listing_date', 'listing date']);
+
+    const idxStatus = getIdx(['status']);
+    const idxSellPrice = getIdx(['sell_price', 'sell price']);
+    const idxSaleDate = getIdx(['sale_date', 'sale date']);
+    const idxTax = getIdx(['tax']);
+    const idxUserCut = getIdx(['user_cut', 'user cut']);
+
     // Collect unique entities
-    const userMap = new Map<string, Omit<User, 'id'>>();   // PAN → user data
-    const ipoMap  = new Map<string, Omit<IPOListing, 'id'>>();  // name → ipo data
+    const userMap = new Map<string, Omit<User, 'id'>>();   // PAN or Name -> user data
+    const ipoMap  = new Map<string, Omit<IPOListing, 'id'>>();  // name -> ipo data
     const bankSet = new Set<string>();
 
     type PendingApp = {
-      pan: string; ipoName: string; status: ApplicationStatus;
+      pan: string; name: string; ipoName: string; status: ApplicationStatus;
       sellPrice: number | null; saleDate: string | null; tax: number; userCut: number;
     };
     const pendingApps: PendingApp[] = [];
 
     for (const row of rows) {
-      if (row.length < 18) continue;
-      const [, name, pan, tpin, broker, upiApp, bank, ipoName,
-             buyPriceStr, qtyStr, ipoOpen, ipoClose, ipoListing,
-             status, sellPriceStr, saleDate, taxStr, userCutStr] = row.map((c) => c.trim());
-      if (!pan || !name) continue;
+      if (row.length === 0 || (row.length === 1 && !row[0].trim())) continue;
+      const getVal = (i: number) => (i >= 0 && i < row.length ? row[i].trim() : '');
 
-      if (!userMap.has(pan)) {
-        userMap.set(pan, {
-          name, pan_number: pan, tpin, broker,
-          upi_app: upiApp, bank_name: bank, default_amount_blocked: 0,
+      const name = getVal(idxName);
+      const pan = getVal(idxPan);
+      const avatarUrl = getVal(idxAvatar);
+      const tpin = getVal(idxTpin);
+      const broker = getVal(idxBroker);
+      const upiApp = getVal(idxUpi);
+      const bank = getVal(idxBank);
+
+      const ipoName = getVal(idxIpoName);
+      const logoUrl = getVal(idxLogo);
+      const buyPriceStr = getVal(idxBuyPrice);
+      const qtyStr = getVal(idxQty);
+      const ipoOpen = getVal(idxIpoOpen);
+      const ipoClose = getVal(idxIpoClose);
+      const ipoListing = getVal(idxIpoListing);
+
+      const status = getVal(idxStatus);
+      const sellPriceStr = getVal(idxSellPrice);
+      const saleDate = getVal(idxSaleDate);
+      const taxStr = getVal(idxTax);
+      const userCutStr = getVal(idxUserCut);
+
+      const userKey = pan || name;
+      if (userKey && !userMap.has(userKey)) {
+        userMap.set(userKey, {
+          name: name || 'Unknown User',
+          pan_number: pan,
+          tpin,
+          broker,
+          upi_app: upiApp,
+          bank_name: bank,
+          avatar_url: avatarUrl,
+          default_amount_blocked: 0,
         });
+      } else if (userKey && avatarUrl) {
+        const existingU = userMap.get(userKey);
+        if (existingU && !existingU.avatar_url) {
+          existingU.avatar_url = avatarUrl;
+        }
       }
+
       if (bank) bankSet.add(bank);
+
       if (ipoName && !ipoMap.has(ipoName)) {
         ipoMap.set(ipoName, {
           ipo_name: ipoName,
           buy_price: parseFloat(buyPriceStr) || 0,
           quantity: parseInt(qtyStr) || 0,
-          open_date: ipoOpen, close_date: ipoClose, listing_date: ipoListing,
+          open_date: ipoOpen,
+          close_date: ipoClose,
+          listing_date: ipoListing,
+          logo_url: logoUrl,
           archived: 0,
           is_favorite: 0,
         });
+      } else if (ipoName && logoUrl) {
+        const existingI = ipoMap.get(ipoName);
+        if (existingI && !existingI.logo_url) {
+          existingI.logo_url = logoUrl;
+        }
       }
-      pendingApps.push({
-        pan, ipoName,
-        status: status as ApplicationStatus,
-        sellPrice: sellPriceStr ? parseFloat(sellPriceStr) : null,
-        saleDate: saleDate || null,
-        tax: parseFloat(taxStr) || 0,
-        userCut: parseFloat(userCutStr) || 0,
-      });
+
+      if (userKey && ipoName && status) {
+        pendingApps.push({
+          pan,
+          name,
+          ipoName,
+          status: status as ApplicationStatus,
+          sellPrice: sellPriceStr ? parseFloat(sellPriceStr) : null,
+          saleDate: saleDate || null,
+          tax: parseFloat(taxStr) || 0,
+          userCut: parseFloat(userCutStr) || 0,
+        });
+      }
     }
 
     // Insert / upsert users
-    const panToId = new Map<string, string>();
-    for (const [pan, u] of userMap) {
-      if (!pan) continue;
-      const existing = await safeGetFirstAsync<{ id: string }>(db, 'SELECT id FROM users_table WHERE pan_number=?', [pan], 'DBContext.importCSV.user');
+    const userToId = new Map<string, string>();
+    for (const [key, u] of userMap) {
+      let existing: { id: string } | null = null;
+      if (u.pan_number) {
+        existing = await safeGetFirstAsync<{ id: string }>(db, 'SELECT id FROM users_table WHERE pan_number=?', [u.pan_number], 'DBContext.importCSV.user');
+      }
+      if (!existing && u.name) {
+        existing = await safeGetFirstAsync<{ id: string }>(db, 'SELECT id FROM users_table WHERE name=? AND name!=""', [u.name], 'DBContext.importCSV.userByName');
+      }
+
       if (existing) {
-        panToId.set(pan, existing.id);
+        userToId.set(key, existing.id);
+        if (u.avatar_url) {
+          await safeRunAsync(
+            db,
+            'UPDATE users_table SET avatar_url = CASE WHEN ? != "" THEN ? ELSE avatar_url END WHERE id = ?',
+            [u.avatar_url, u.avatar_url, existing.id],
+            'DBContext.importCSV.updateUserAvatar'
+          );
+        }
       } else {
         const newId = Crypto.randomUUID();
         const now = new Date().toISOString();
         await safeRunAsync(
           db,
-          'INSERT INTO users_table (id, name,pan_number,broker,tpin,upi_app,bank_name,default_amount_blocked, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-          [newId, u.name || '', pan, u.broker || '', u.tpin || '', u.upi_app || '', u.bank_name || '', 0, now, now],
+          'INSERT INTO users_table (id, name, pan_number, broker, tpin, upi_app, bank_name, avatar_url, default_amount_blocked, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+          [newId, u.name || '', u.pan_number || '', u.broker || '', u.tpin || '', u.upi_app || '', u.bank_name || '', u.avatar_url || '', 0, now, now],
           'DBContext.importCSV.insertUser'
         );
-        panToId.set(pan, newId);
+        userToId.set(key, newId);
       }
     }
 
@@ -1173,12 +1338,20 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       const existing = await safeGetFirstAsync<{ id: string }>(db, 'SELECT id FROM ipo_listings WHERE ipo_name=?', [name], 'DBContext.importCSV.ipo');
       if (existing) {
         ipoNameToId.set(name, existing.id);
+        if (ipo.logo_url) {
+          await safeRunAsync(
+            db,
+            'UPDATE ipo_listings SET logo_url = CASE WHEN ? != "" THEN ? ELSE logo_url END WHERE id = ?',
+            [ipo.logo_url, ipo.logo_url, existing.id],
+            'DBContext.importCSV.updateIPOLogo'
+          );
+        }
       } else {
         const newId = Crypto.randomUUID();
         await safeRunAsync(
           db,
-          'INSERT INTO ipo_listings (id, ipo_name,buy_price,quantity,open_date,close_date,listing_date, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
-          [newId, ipo.ipo_name || name, ipo.buy_price || 0, ipo.quantity || 0, ipo.open_date || '', ipo.close_date || '', ipo.listing_date || '', now, now],
+          'INSERT INTO ipo_listings (id, ipo_name, buy_price, quantity, open_date, close_date, listing_date, logo_url, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+          [newId, ipo.ipo_name || name, ipo.buy_price || 0, ipo.quantity || 0, ipo.open_date || '', ipo.close_date || '', ipo.listing_date || '', ipo.logo_url || '', now, now],
           'DBContext.importCSV.insertIPO'
         );
         ipoNameToId.set(name, newId);
@@ -1188,7 +1361,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     // Insert applications (skip duplicates)
     let appCount = 0;
     for (const app of pendingApps) {
-      const userId = panToId.get(app.pan);
+      const userId = userToId.get(app.pan) || userToId.get(app.name);
       const ipoId  = ipoNameToId.get(app.ipoName);
       if (!userId || !ipoId) continue;
       const dup = await safeGetFirstAsync(db, 'SELECT id FROM ipo_applications WHERE user_id=? AND ipo_id=? AND deleted_at IS NULL', [userId, ipoId], 'DBContext.importCSV.app');
@@ -1242,7 +1415,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
         if (lastExportDate !== targetDateString) {
           // Perform export
-          const backup = exportJSON();
+          const backup = await exportJSON();
           const autoBackupDir = `${FileSystem.documentDirectory}backups/`;
           const dirInfo = await FileSystem.getInfoAsync(autoBackupDir);
           if (!dirInfo.exists) {

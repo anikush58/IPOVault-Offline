@@ -11,6 +11,8 @@ type Props = {
   holdingProfit: number;
   totalCharges: number;
   netRealizedProfit: number;
+  totalTax?: number;
+  totalUserCut?: number;
   vsLastMonthPct?: number;
   isVsLastMonthUp?: boolean;
   selectedPeriod?: string;
@@ -24,6 +26,8 @@ export function ProfitSummaryDonutCard({
   holdingProfit,
   totalCharges,
   netRealizedProfit,
+  totalTax = 0,
+  totalUserCut = 0,
   vsLastMonthPct = 0,
   isVsLastMonthUp = true,
   selectedPeriod = 'This Month',
@@ -270,6 +274,34 @@ export function ProfitSummaryDonutCard({
             </Text>
           </View>
         )}
+
+        {/* ── Charges Breakdown Mini Section (Above Unrealized Profit Section) ── */}
+        <View style={[styles.chargesBox, { backgroundColor: isDark ? 'rgba(244,67,54,0.06)' : '#FEF2F2', borderColor: isDark ? 'rgba(244,67,54,0.15)' : '#FEE2E2' }]}>
+          <View style={styles.chargesHeaderRow}>
+            <Text style={[styles.chargesHeaderTitle, { color: colors.mutedForeground }]}>CHARGES BREAKDOWN</Text>
+            <Text style={[styles.chargesTotalText, { color: COLOR_CHARGES }]}>
+              Total: {formatCurrency(totalCharges)}
+            </Text>
+          </View>
+
+          <View style={styles.chargesSubRow}>
+            <View style={styles.chargesSubCell}>
+              <Text style={[styles.chargesSubLabel, { color: colors.mutedForeground }]}>STCG Tax (20%)</Text>
+              <Text style={[styles.chargesSubVal, { color: colors.foreground }]}>
+                {formatCurrency(totalTax)}
+              </Text>
+            </View>
+
+            <View style={[styles.chargesSubDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#FCA5A5' }]} />
+
+            <View style={styles.chargesSubCell}>
+              <Text style={[styles.chargesSubLabel, { color: colors.mutedForeground }]}>User Cut</Text>
+              <Text style={[styles.chargesSubVal, { color: colors.foreground }]}>
+                {formatCurrency(totalUserCut)}
+              </Text>
+            </View>
+          </View>
+        </View>
 
         {/* ── Holding Section Inside Inner Box (No line separator) ── */}
         <View style={[styles.holdingBox, { backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC', borderColor: isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9' }]}>
@@ -541,11 +573,57 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 2,
   },
+  chargesBox: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: -5,
+    marginBottom: 8,
+  },
+  chargesHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  chargesHeaderTitle: {
+    fontSize: 9.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.5,
+  },
+  chargesTotalText: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  chargesSubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  chargesSubCell: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  chargesSubLabel: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginBottom: 1,
+  },
+  chargesSubVal: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  chargesSubDivider: {
+    width: 1,
+    height: 18,
+    marginHorizontal: 8,
+  },
   holdingBox: {
     borderRadius: 16,
     borderWidth: 1,
     padding: 12,
-    marginTop: -5,
+    marginTop: 0,
   },
   holdingHeader: {
     fontSize: 10.5,

@@ -33,6 +33,23 @@ import {
   calculateAppTaxAndNet,
 } from '@/utils/calculations';
 
+function parseAppDate(dateStr: string | null | undefined): Date | null {
+  if (!dateStr) return null;
+  const str = dateStr.trim();
+  const parts = str.split(/[-/ T]/);
+  if (parts.length >= 3) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    if (!isNaN(year) && !isNaN(month) && !isNaN(day) && year > 1900 && month >= 0 && month <= 11) {
+      return new Date(year, month, day);
+    }
+  }
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) return d;
+  return null;
+}
+
 const heroBg = require('@/assets/images/dashboard-hero-bg.png');
 const graphicLeft = require('@/assets/images/dashboard-graphic-left.png');
 const graphicRight = require('@/assets/images/dashboard-graphic-right.png');
@@ -174,26 +191,40 @@ export default function DashboardScreen() {
     const curMonth = now.getMonth();
     const prevMonth = curMonth === 0 ? 11 : curMonth - 1;
     const prevYear = curMonth === 0 ? curYear - 1 : curYear;
+    const lastMonthEnd = new Date(prevYear, prevMonth + 1, 0, 23, 59, 59, 999);
 
     let curProfit = 0;
     let prevProfit = 0;
 
     for (const a of baseFilteredApps) {
       if (a.status !== 'Sold' && a.status !== 'Holding') continue;
-      const dateStr = a.sale_date || a.open_date || '';
-      if (!dateStr) continue;
-      const d = new Date(dateStr);
-      if (isNaN(d.getTime())) continue;
-
       const { netPL } = calculateAppTaxAndNet(a);
-      if (d.getFullYear() === curYear && d.getMonth() === curMonth) {
+
+      if (a.status === 'Sold') {
+        const dateStr = a.sale_date || a.updated_at || a.created_at;
+        if (!dateStr) continue;
+        const d = parseAppDate(dateStr);
+        if (!d) continue;
+        if (d.getFullYear() === curYear && d.getMonth() === curMonth) {
+          curProfit += netPL;
+        } else if (d.getFullYear() === prevYear && d.getMonth() === prevMonth) {
+          prevProfit += netPL;
+        }
+      } else if (a.status === 'Holding') {
+        const dateStr = a.open_date || a.created_at || a.updated_at;
+        const d = parseAppDate(dateStr);
         curProfit += netPL;
-      } else if (d.getFullYear() === prevYear && d.getMonth() === prevMonth) {
-        prevProfit += netPL;
+        if (!d || d.getTime() <= lastMonthEnd.getTime()) {
+          prevProfit += netPL;
+        }
       }
     }
 
-    if (prevProfit === 0) return curProfit > 0 ? 100 : 0;
+    if (prevProfit === 0) {
+      if (curProfit > 0) return 100;
+      if (curProfit < 0) return -100;
+      return 0;
+    }
     const pct = ((curProfit - prevProfit) / Math.abs(prevProfit)) * 100;
     return Math.round(pct * 10) / 10;
   }, [baseFilteredApps]);

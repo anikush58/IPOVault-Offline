@@ -57,8 +57,27 @@ const PERIOD_TABS: { value: PeriodTab; label: string; count: number }[] = [
 
 // ── Bucket helpers ────────────────────────────────────────────────────────────
 
+function parseDateParts(dateStr: string | null | undefined): { year: number; month: number; day: number } | null {
+  if (!dateStr) return null;
+  const str = dateStr.trim();
+  const parts = str.split(/[-/ T]/);
+  if (parts.length >= 3) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const day = parseInt(parts[2], 10);
+    if (!isNaN(year) && !isNaN(month) && !isNaN(day) && year > 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return { year, month, day };
+    }
+  }
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() };
+  }
+  return null;
+}
+
 function getMonday(d: Date): Date {
-  const date = new Date(d);
+  const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const day = date.getDay();
   const diff = date.getDate() - day + (day === 0 ? -6 : 1);
   return new Date(date.setDate(diff));
@@ -84,8 +103,7 @@ function buildBuckets(
     const monday = getMonday(now);
     const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     for (let i = 0; i < 7; i++) {
-      const d = new Date(monday);
-      d.setDate(monday.getDate() + i);
+      const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
       const key = formatDateKey(d);
       const monthName = MONTHS[d.getMonth()];
       const dayNum = d.getDate();
@@ -100,13 +118,21 @@ function buildBuckets(
     let startYear = now.getFullYear();
     if (!refDate && applications && applications.length > 0) {
       const saleYears = applications
-        .map((a) => (a.sale_date ? new Date(a.sale_date).getFullYear() : null))
+        .map((a) => {
+          if (a.status !== 'Sold') return null;
+          const dateStr = a.sale_date || a.updated_at || a.created_at;
+          const p = parseDateParts(dateStr);
+          return p ? p.year : null;
+        })
         .filter(Boolean) as number[];
       if (saleYears.length > 0) {
         startYear = Math.max(...saleYears);
       } else {
         const openYears = applications
-          .map((a) => (a.open_date ? new Date(a.open_date).getFullYear() : null))
+          .map((a) => {
+            const p = parseDateParts(a.open_date);
+            return p ? p.year : null;
+          })
           .filter(Boolean) as number[];
         if (openYears.length > 0) {
           startYear = Math.max(...openYears);
@@ -135,12 +161,19 @@ function buildBuckets(
 }
 
 function saleKey(mode: FilterMode, dateStr: string): string {
+  const p = parseDateParts(dateStr);
+  if (!p) return dateStr;
+  const yearStr = String(p.year);
+  const monthStr = String(p.month).padStart(2, '0');
+  const dayStr = String(p.day).padStart(2, '0');
+
   if (mode === 'weekly' || mode === 'custom_date') {
-    return dateStr;
+    return `${yearStr}-${monthStr}-${dayStr}`;
   }
-  const [y, m] = dateStr.split('-').map(Number);
-  if (mode === 'monthly') return `${y}-${String(m).padStart(2, '0')}`;
-  return `${y}`;
+  if (mode === 'monthly') {
+    return `${yearStr}-${monthStr}`;
+  }
+  return yearStr;
 }
 
 function getBezierPath(points: { x: number; y: number }[]): string {
@@ -317,8 +350,10 @@ export function PerformanceChart({ applications }: Props) {
   const bars: BarData[] = useMemo(() => {
     const agg: Record<string, { value: number; count: number }> = {};
     for (const a of applications) {
-      if (a.status !== 'Sold' || !a.sale_date) continue;
-      const key = saleKey(filterMode, a.sale_date);
+      if (a.status !== 'Sold') continue;
+      const dateStr = a.sale_date || a.updated_at || a.created_at;
+      if (!dateStr) continue;
+      const key = saleKey(filterMode, dateStr);
       const bv = calcBuyValue(a.buy_price, a.quantity);
       const sv = calcSaleValue(a.sell_price ?? 0, a.quantity);
       const net = calcNetProfit(calcProfitLoss(sv, bv), a.tax ?? 0, a.user_cut ?? 0);
