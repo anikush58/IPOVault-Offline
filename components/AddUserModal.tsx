@@ -22,7 +22,7 @@ import { useDB, type User } from '@/context/DBContext';
 
 import { ensureBase64DataUrl } from '@/utils/imageUtils';
 
-const BROKERS = ['Dhan', 'Upstox', 'Groww', 'Angel One', 'Fyers', 'Zerodha', 'HDFC Securities', 'ICICI Direct', 'Paytm Money'];
+const BROKERS = ['Dhan', 'Upstox', 'Groww', 'Angel One', 'Fyers', 'Zerodha', 'Paytm Money', 'Millions', 'Sahi'];
 
 function BrokerPicker({ value, onSelect }: { value: string; onSelect: (v: string) => void }) {
   const colors = useColors();
@@ -108,9 +108,21 @@ export function AddUserModal({ visible, user, onClose }: Props) {
         copyToCacheDirectory: true,
       });
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        const base64Url = await ensureBase64DataUrl(result.assets[0].uri);
-        setAvatarUrl(base64Url);
-        Haptics.selectionAsync();
+        const asset = result.assets[0];
+        if (Platform.OS === 'web' && asset.file) {
+          const reader = new FileReader();
+          reader.onload = () => {
+            if (typeof reader.result === 'string') {
+              setAvatarUrl(reader.result);
+              Haptics.selectionAsync();
+            }
+          };
+          reader.readAsDataURL(asset.file);
+        } else {
+          const base64Url = await ensureBase64DataUrl(asset.uri);
+          setAvatarUrl(base64Url);
+          Haptics.selectionAsync();
+        }
       }
     } catch (err) {
       if (__DEV__) console.warn('Failed to pick avatar image:', err);
@@ -121,6 +133,7 @@ export function AddUserModal({ visible, user, onClose }: Props) {
     if (!name.trim()) { showError('Required', 'Please enter a name.'); return; }
     setSaving(true);
     try {
+      const finalAvatarUrl = avatarUrl ? await ensureBase64DataUrl(avatarUrl.trim()) : '';
       const data = {
         name: name.trim(),
         pan_number: pan.trim().toUpperCase(),
@@ -130,7 +143,7 @@ export function AddUserModal({ visible, user, onClose }: Props) {
         broker,
         upi_app: user?.upi_app ?? '',
         bank_name: user?.bank_name ?? '',
-        avatar_url: avatarUrl,
+        avatar_url: finalAvatarUrl,
         default_amount_blocked: user?.default_amount_blocked ?? 0,
       };
       if (isEditing && user) await updateUser(user.id, data);

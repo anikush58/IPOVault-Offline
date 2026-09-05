@@ -27,7 +27,27 @@ import { PerformanceChart } from '@/components/PerformanceChart';
 import { Leaderboard } from '@/components/Leaderboard';
 import { FilterSheet } from '@/components/FilterSheet';
 import { BulkApplySheet } from '@/components/BulkApplySheet';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, getResolvedLogoUrl } from '@/utils/formatters';
+
+const AVATAR_PALETTES: [string, string][] = [
+  ['#8B5CF6', '#6D28D9'], // Purple
+  ['#10B981', '#047857'], // Emerald
+  ['#3B82F6', '#1D4ED8'], // Blue
+  ['#F59E0B', '#B45309'], // Amber
+  ['#EC4899', '#BE185D'], // Pink
+  ['#6366F1', '#4338CA'], // Indigo
+  ['#14B8A6', '#0F766E'], // Teal
+  ['#F43F5E', '#BE123C'], // Rose
+];
+
+function getAvatarGradient(name: string): [string, string] {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % AVATAR_PALETTES.length;
+  return AVATAR_PALETTES[index];
+}
 import {
   calcBuyValue,
   calculateAppTaxAndNet,
@@ -77,10 +97,10 @@ export default function DashboardScreen() {
     // Only return mock fallback if DB has ZERO IPOs total (first fresh launch before any IPO is created in DB)
     if (ipos.length === 0) {
       return [
-        { id: 'ola-elec', ipo_name: 'Ola Electric Mobility IPO', buy_price: 15000, quantity: 195, issue_type: 'Mainboard', close_date: '2026-08-31', gmp_percent: 16, gmp_value: 234 },
-        { id: 'premier-eng', ipo_name: 'Premier Energies IPO', buy_price: 14700, quantity: 33, issue_type: 'Mainboard', close_date: '2026-09-02', gmp_percent: 42, gmp_value: 185 },
-        { id: 'firstcry', ipo_name: 'Brainbees Solutions (FirstCry) IPO', buy_price: 14960, quantity: 32, issue_type: 'Mainboard', close_date: '2026-09-04', gmp_percent: 12, gmp_value: 56 },
-        { id: 'unicommerce', ipo_name: 'Unicommerce eSolutions IPO', buy_price: 14850, quantity: 135, issue_type: 'SME', close_date: '2026-09-05', gmp_percent: 68, gmp_value: 74 },
+        { id: 'ola-elec', company_name: 'Ola Electric Mobility', ipo_name: 'Ola Electric Mobility IPO', price_band_min: 72, price_band_max: 76, lot_size: 195, issue_type: 'Mainboard', close_date: '31 Aug', gmp_percent: 16, gmp_amount: 12, total_sub: 4.2 },
+        { id: 'premier-eng', company_name: 'Premier Energies', ipo_name: 'Premier Energies IPO', price_band_min: 425, price_band_max: 450, lot_size: 33, issue_type: 'Mainboard', close_date: '02 Sep', gmp_percent: 42, gmp_amount: 189, total_sub: 74.3 },
+        { id: 'firstcry', company_name: 'Brainbees Solutions (FirstCry)', ipo_name: 'Brainbees Solutions IPO', price_band_min: 440, price_band_max: 465, lot_size: 32, issue_type: 'Mainboard', close_date: '04 Sep', gmp_percent: 12, gmp_amount: 56, total_sub: 12.2 },
+        { id: 'unicommerce', company_name: 'Unicommerce eSolutions', ipo_name: 'Unicommerce eSolutions IPO', price_band_min: 102, price_band_max: 108, lot_size: 135, issue_type: 'SME', close_date: '05 Sep', gmp_percent: 68, gmp_amount: 74, total_sub: 168.3 },
       ];
     }
     return [];
@@ -92,7 +112,12 @@ export default function DashboardScreen() {
   const [filterBankNames, setFilterBankNames] = useState<string[]>([]);
   const [filterYear, setFilterYear] = useState<string | null>(null);
   const [filterIpoNames, setFilterIpoNames] = useState<string[]>([]);
+  const [cardLogoErrors, setCardLogoErrors] = useState<Record<string, boolean>>({});
   const [showFilter, setShowFilter] = useState(false);
+
+  React.useEffect(() => {
+    setCardLogoErrors({});
+  }, [ipos]);
   const [showBulkSheet, setShowBulkSheet] = useState(false);
 
   // ── search state ───────────────────────────────────────────────────────────
@@ -656,7 +681,8 @@ export default function DashboardScreen() {
               )}
             >
               {openIpoList.map((ipo, idx) => {
-                const CARD_SIZE = 300;
+                const item = ipo as any;
+                const CARD_SIZE = 315;
                 const inputRange = [
                   (idx - 1) * CARD_SIZE,
                   idx * CARD_SIZE,
@@ -665,20 +691,55 @@ export default function DashboardScreen() {
 
                 const cardScale = scrollX.interpolate({
                   inputRange,
-                  outputRange: [0.95, 1, 0.95],
+                  outputRange: [0.96, 1, 0.96],
                   extrapolate: 'clamp',
                 });
 
                 const cardOpacity = scrollX.interpolate({
                   inputRange,
-                  outputRange: [0.82, 1, 0.82],
+                  outputRange: [0.85, 1, 0.85],
                   extrapolate: 'clamp',
                 });
 
-                const pct = (ipo as any).gmp_percent;
-                const val = (ipo as any).gmp_value;
-                const hasGmp = pct !== undefined && pct !== null;
-                const isPos = (pct ?? 0) >= 0;
+                const companyName = item.company_name || item.ipo_name || 'IPO';
+                const resolvedLogo = getResolvedLogoUrl(item.logo_url);
+                const initials = companyName
+                  .replace(/[^a-zA-Z0-9\s]/g, '')
+                  .split(' ')
+                  .slice(0, 2)
+                  .map((w: string) => w[0])
+                  .join('')
+                  .toUpperCase();
+
+                // Format Price Band
+                const priceMin = item.price_band_min;
+                const priceMax = item.price_band_max || item.buy_price;
+                let priceBandText = 'TBA';
+                if (priceMin && priceMax) {
+                  priceBandText = priceMin === priceMax ? formatCurrency(priceMax) : `${formatCurrency(priceMin)} - ${formatCurrency(priceMax)}`;
+                } else if (priceMax) {
+                  priceBandText = formatCurrency(priceMax);
+                }
+
+                // Minimum Investment / Lot size calculation
+                const lotSize = item.lot_size || item.quantity;
+                const lotVal = priceMax && lotSize ? priceMax * lotSize : null;
+
+                // GMP
+                const gmpAmt = item.gmp_amount ?? item.gmp_value;
+                const gmpPct = item.gmp_percent;
+                const hasGmp = gmpAmt != null || gmpPct != null;
+                const isPos = ((gmpAmt ?? gmpPct ?? 0) >= 0);
+                const gmpDisplay = gmpAmt != null
+                  ? `${gmpAmt > 0 ? '+' : ''}₹${gmpAmt}${gmpPct != null ? ` (${gmpPct > 0 ? '+' : ''}${gmpPct.toFixed(1)}%)` : ''}`
+                  : gmpPct != null
+                  ? `${gmpPct > 0 ? '+' : ''}${gmpPct.toFixed(1)}%`
+                  : 'TBA';
+                const gmpColor = hasGmp ? (isPos ? '#10B981' : colors.destructive) : colors.mutedForeground;
+
+                // Demand / Subscription
+                const totalSub = item.total_sub ?? item.total_subscription;
+                const subDisplay = totalSub != null ? `${totalSub.toFixed(1)}x` : (item.qib_sub != null ? `${item.qib_sub.toFixed(1)}x QIB` : '—');
 
                 return (
                   <Animated.View
@@ -690,57 +751,103 @@ export default function DashboardScreen() {
                   >
                     <TouchableOpacity
                       activeOpacity={0.88}
-                      onPress={() => router.push({ pathname: '/bids', params: { ipoId: ipo.id } })}
+                      onPress={() => router.push({ pathname: '/apply-ipo', params: { ipoId: ipo.id } } as any)}
                       style={[
                         styles.openIpoCard,
                         { backgroundColor: colors.card, borderColor: colors.border },
                       ]}
                     >
-                      <View style={styles.openIpoCardMain}>
-                        <View style={styles.openIpoLeftCol}>
-                          <Text style={[styles.openIpoTitle, { color: colors.foreground }]} numberOfLines={1}>
-                            {ipo.ipo_name}
-                          </Text>
-                          <Text style={[styles.openIpoSub, { color: colors.mutedForeground }]} numberOfLines={1}>
-                            {formatCurrency(ipo.buy_price)} / lot · {ipo.quantity} shares
-                          </Text>
-
-                          <View style={styles.openIpoBottomRow}>
-                            <Text style={[styles.openIpoCtaText, { color: colors.foreground }]}>
-                              APPLY NOW
-                            </Text>
-                            <Feather name="arrow-right" size={13} color={colors.foreground} />
-                          </View>
-                        </View>
-
-                        <View style={styles.openIpoRightCol}>
-                          <View
-                            style={[
-                              styles.openIpoCategoryBadge,
-                              {
-                                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#E6F4EA',
-                                borderColor: isDark ? 'rgba(16, 185, 129, 0.3)' : '#CEEAD6',
-                              },
-                            ]}
+                      {/* Top Header: Logo/Avatar + Name + Issue Type & Timeline Pill */}
+                      <View style={styles.openIpoHeaderRow}>
+                        {resolvedLogo && !cardLogoErrors[item.id || idx] ? (
+                          <Image
+                            source={{ uri: resolvedLogo }}
+                            style={styles.openIpoLogoImage}
+                            resizeMode="contain"
+                            onError={() => setCardLogoErrors((prev) => ({ ...prev, [item.id || idx]: true }))}
+                          />
+                        ) : (
+                          <LinearGradient
+                            colors={getAvatarGradient(companyName)}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.openIpoAvatar}
                           >
-                            <Text
+                            <Text style={styles.openIpoAvatarText}>{initials}</Text>
+                          </LinearGradient>
+                        )}
+
+                        <View style={styles.openIpoHeaderInfo}>
+                          <Text style={[styles.openIpoTitle, { color: colors.foreground }]} numberOfLines={1}>
+                            {companyName}
+                          </Text>
+                          <View style={styles.openIpoBadgesRow}>
+                            <View
                               style={[
-                                styles.openIpoCategoryText,
-                                { color: isDark ? '#34D399' : '#137333' },
+                                styles.openIpoCategoryBadge,
+                                {
+                                  backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF',
+                                  borderColor: isDark ? 'rgba(99, 102, 241, 0.3)' : '#C7D2FE',
+                                },
                               ]}
                             >
-                              {ipo.issue_type || 'Mainboard'}
-                            </Text>
+                              <Text
+                                style={[
+                                  styles.openIpoCategoryText,
+                                  { color: isDark ? '#818CF8' : '#4F46E5' },
+                                ]}
+                              >
+                                {ipo.issue_type || 'Mainboard'}
+                              </Text>
+                            </View>
+                            {ipo.close_date ? (
+                              <View style={[styles.openIpoDateBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                                <Feather name="clock" size={10} color={colors.mutedForeground} />
+                                <Text style={[styles.openIpoDateText, { color: colors.mutedForeground }]}>
+                                  {ipo.close_date}
+                                </Text>
+                              </View>
+                            ) : null}
                           </View>
+                        </View>
+                      </View>
 
-                          <View style={styles.openIpoGmpStack}>
-                            <Text style={[styles.openIpoGmpLabel, { color: colors.mutedForeground }]}>
-                              GMP
-                            </Text>
-                            <Text style={[styles.openIpoGmpValue, { color: isPos ? '#10B981' : colors.destructive }]} numberOfLines={1}>
-                              {hasGmp ? `${pct}%${val != null ? ` (${val})` : ''}` : '—'}
-                            </Text>
-                          </View>
+                      {/* Main Decision Banner: Price Band | GMP | Demand */}
+                      <View style={[styles.openIpoMetricsBanner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        {/* Price Band & Min Investment */}
+                        <View style={styles.openIpoMetricCell}>
+                          <Text style={[styles.openIpoMetricLabel, { color: colors.mutedForeground }]}>PRICE BAND</Text>
+                          <Text style={[styles.openIpoMetricValue, { color: colors.foreground }]} numberOfLines={1}>
+                            {priceBandText}
+                          </Text>
+                          <Text style={[styles.openIpoMetricSub, { color: colors.primary }]} numberOfLines={1}>
+                            {lotVal ? formatCurrency(lotVal) : (lotSize ? `${lotSize} shares` : '—')}
+                          </Text>
+                        </View>
+
+                        <View style={[styles.openIpoMetricDivider, { backgroundColor: colors.border }]} />
+
+                        {/* Expected GMP */}
+                        <View style={styles.openIpoMetricCellRight}>
+                          <Text style={[styles.openIpoMetricLabel, { color: colors.mutedForeground }]}>EXPECTED GMP</Text>
+                          <Text style={[styles.openIpoMetricValue, { color: gmpColor }]} numberOfLines={1}>
+                            {gmpDisplay}
+                          </Text>
+                          <Text style={[styles.openIpoMetricSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+                            {subDisplay !== '—' ? `${subDisplay} Subscribed` : 'Demand TBA'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Bottom Row: Lot Size & Apply CTA */}
+                      <View style={styles.openIpoFooterRow}>
+                        <Text style={[styles.openIpoLotText, { color: colors.mutedForeground }]}>
+                          {lotSize ? `${lotSize} Shares / Lot` : 'Min 1 Lot'}
+                        </Text>
+
+                        <View style={[styles.openIpoCtaButton, { backgroundColor: colors.primary }]}>
+                          <Text style={styles.openIpoCtaText}>APPLY NOW</Text>
+                          <Feather name="arrow-right" size={12} color="#FFFFFF" />
                         </View>
                       </View>
                     </TouchableOpacity>
@@ -1076,76 +1183,140 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 4,
     paddingBottom: 14,
-    gap: 5,
+    gap: 8,
   },
   openIpoCard: {
-    width: 295,
-    borderRadius: 24,
+    width: 310,
+    borderRadius: 22,
     borderWidth: 1,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+    padding: 14,
+    gap: 12,
   },
-  openIpoCardMain: {
+  openIpoHeaderRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
+    alignItems: 'center',
     gap: 10,
   },
-  openIpoLeftCol: {
-    flex: 1,
-    paddingRight: 4,
+  openIpoLogoImage: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
   },
-  openIpoRightCol: {
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
+  openIpoAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  openIpoAvatarText: {
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    color: '#FFFFFF',
+  },
+  openIpoHeaderInfo: {
+    flex: 1,
+    gap: 3,
+  },
+  openIpoTitle: {
+    fontSize: 14.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
+    lineHeight: 18,
+  },
+  openIpoBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   openIpoCategoryBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
     borderWidth: 1,
   },
   openIpoCategoryText: {
-    fontSize: 11,
+    fontSize: 10,
     fontFamily: 'GoogleSansFlex_600SemiBold',
   },
-  openIpoGmpStack: {
-    alignItems: 'flex-end',
-    marginTop: 8,
-  },
-  openIpoGmpLabel: {
-    fontSize: 9,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  openIpoGmpValue: {
-    fontSize: 12.5,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.2,
-    marginTop: 1.5,
-  },
-  openIpoTitle: {
-    fontSize: 15,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.3,
-    lineHeight: 20,
-    marginBottom: 4,
-  },
-  openIpoSub: {
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    marginBottom: 10,
-  },
-  openIpoBottomRow: {
+  openIpoDateBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  openIpoDateText: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_500Medium',
+  },
+
+  // Decision Metrics Banner
+  openIpoMetricsBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  openIpoMetricCell: {
+    flex: 1,
+    gap: 1,
+  },
+  openIpoMetricCellRight: {
+    flex: 1,
+    alignItems: 'flex-end',
+    gap: 1,
+  },
+  openIpoMetricDivider: {
+    width: 1,
+    height: 32,
+    marginHorizontal: 10,
+  },
+  openIpoMetricLabel: {
+    fontSize: 8.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  openIpoMetricValue: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.2,
+  },
+  openIpoMetricSub: {
+    fontSize: 10.5,
+    fontFamily: 'GoogleSansFlex_500Medium',
+  },
+
+  // Footer Row
+  openIpoFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 2,
+  },
+  openIpoLotText: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_500Medium',
+  },
+  openIpoCtaButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 100,
   },
   openIpoCtaText: {
-    fontSize: 11.5,
+    fontSize: 10.5,
     fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 0.5,
+    color: '#FFFFFF',
+    letterSpacing: 0.4,
   },
   syncDot: {
     width: 6,

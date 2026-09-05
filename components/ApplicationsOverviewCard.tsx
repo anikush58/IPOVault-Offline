@@ -329,10 +329,10 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
           </View>
         </View>
 
-        {/* Horizontal Segmented Bar Graph (Inspired by screenshot) */}
-        <View style={[styles.segmentedBarTrack, { backgroundColor: isDark ? '#27272A' : '#E2E8F0' }]}>
+        {/* Horizontal Segmented Bar Graph (Colored lines only, no grey background) */}
+        <View style={[styles.segmentedBarTrack, { backgroundColor: 'transparent' }]}>
           {allottedTotalCount === 0 ? (
-            <View style={{ flex: 1, backgroundColor: colors.border, borderRadius: 4 }} />
+            <View style={{ flex: 1, backgroundColor: colors.border, borderRadius: 4, opacity: 0.3 }} />
           ) : (
             <>
               {soldCount > 0 && (
@@ -604,13 +604,6 @@ const styles = StyleSheet.create({
     marginVertical: 10,
   },
 
-  allottedHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-
   // Vertical Accent Bar Legends (Inspired by screenshot)
   allottedBarLegendRow: {
     flexDirection: 'row',
@@ -641,12 +634,12 @@ const styles = StyleSheet.create({
 
   // Segmented Bar Track & Slices (Inspired by screenshot)
   segmentedBarTrack: {
-    height: 12,
+    height: 8,
     borderRadius: 100,
     flexDirection: 'row',
     overflow: 'hidden',
     gap: 3,
-    padding: 2,
+    padding: 0,
   },
   segmentedBarSlice: {
     height: '100%',

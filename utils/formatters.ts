@@ -76,7 +76,9 @@ export function todayISO(): string {
 }
 
 export function getResolvedLogoUrl(
-  rawLogoUrl?: string | null
+  rawLogoUrl?: string | null,
+  website?: string | null,
+  companyName?: string | null
 ): string | null {
   if (rawLogoUrl && typeof rawLogoUrl === 'string' && rawLogoUrl.trim().length > 0) {
     return rawLogoUrl.trim();

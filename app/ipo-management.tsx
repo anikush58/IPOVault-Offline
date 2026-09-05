@@ -66,6 +66,10 @@ export default function IPOManagementScreen() {
   const [logoErrors, setLogoErrors] = useState<Record<string, boolean>>({});
   const searchRef = useRef<TextInput>(null);
 
+  useEffect(() => {
+    setLogoErrors({});
+  }, [ipos]);
+
   const toggleSearch = () => {
     if (showSearch) {
       setShowSearch(false);

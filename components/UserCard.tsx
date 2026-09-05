@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
@@ -55,14 +55,25 @@ export function UserCard({ user, applied, allotted, decided, onEdit, onDelete, o
       ? colors.primary
       : colors.negative;
 
+  const [avatarError, setAvatarError] = useState(false);
+
+  useEffect(() => {
+    setAvatarError(false);
+  }, [user.avatar_url]);
+
   const avatarGradient = getAvatarGradient(user.name || 'User');
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       {/* ── Top row: avatar · name/PAN · soft action buttons ── */}
       <View style={styles.topRow}>
-        {user.avatar_url ? (
-          <Image source={{ uri: user.avatar_url }} style={styles.avatar} resizeMode="cover" />
+        {user.avatar_url && !avatarError ? (
+          <Image
+            source={{ uri: user.avatar_url }}
+            style={styles.avatar}
+            resizeMode="cover"
+            onError={() => setAvatarError(true)}
+          />
         ) : (
           <LinearGradient
             colors={avatarGradient}
@@ -139,7 +150,7 @@ export function UserCard({ user, applied, allotted, decided, onEdit, onDelete, o
           {user.client_id ? (
             <View style={[styles.chip, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9' }]}>
               <Feather name="folder" size={11} color={colors.mutedForeground} />
-              <Text style={[styles.chipText, { color: colors.foreground }]}>ID: {user.client_id}</Text>
+              <Text style={[styles.chipText, { color: colors.foreground }]}>Demat: {user.client_id}</Text>
             </View>
           ) : null}
           {user.upi_id ? (

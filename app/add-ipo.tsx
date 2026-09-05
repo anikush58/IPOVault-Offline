@@ -232,6 +232,8 @@ export default function AddIPOScreen() {
 
     setSaving(true);
     try {
+      const finalLogoUrl = formLogoUrl ? await ensureBase64DataUrl(formLogoUrl.trim()) : '';
+
       if (isEditing && editingIPO) {
         const now = new Date().toISOString();
         await db.runAsync(
@@ -249,7 +251,7 @@ export default function AddIPOScreen() {
             formCloseDate,
             formAllotmentDate,
             formListingDate,
-            formLogoUrl,
+            finalLogoUrl,
             gmpPercent,
             gmpValue,
             now,
@@ -274,7 +276,7 @@ export default function AddIPOScreen() {
             formCloseDate,
             formAllotmentDate,
             formListingDate,
-            formLogoUrl,
+            finalLogoUrl,
             gmpPercent,
             gmpValue,
             now,

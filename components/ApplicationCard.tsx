@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Image, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
@@ -75,12 +75,20 @@ export function ApplicationCard({
   const holdingValue = calcSaleValue(holdingPrice, app.quantity);
   const currentProfit = holdingValue - buyValue;
 
+  const [avatarError, setAvatarError] = useState(false);
+
+  useEffect(() => {
+    setAvatarError(false);
+  }, [app.user_avatar_url]);
+
   // Avatar gradient matching Users page
   const avatarGradient = getAvatarGradient(app.user_name || 'User');
 
-  // Subtitle format: Broker · Bank · UPI App
+  // Subtitle format: Broker · Demat · Bank · UPI App
+  const dematStr = app.user_client_id ? `Demat: ${app.user_client_id}` : null;
   const brokerBankDetails = [
     app.user_broker,
+    dematStr,
     app.user_bank_name,
     app.user_upi_app,
   ].filter(Boolean).join(' · ');
@@ -276,8 +284,13 @@ export function ApplicationCard({
         >
           <View style={styles.userRow}>
             {/* User Avatar matching Users Page */}
-            {app.user_avatar_url ? (
-              <Image source={{ uri: app.user_avatar_url }} style={styles.avatarImage} />
+            {app.user_avatar_url && !avatarError ? (
+              <Image
+                source={{ uri: app.user_avatar_url }}
+                style={styles.avatarImage}
+                resizeMode="cover"
+                onError={() => setAvatarError(true)}
+              />
             ) : (
               <LinearGradient colors={avatarGradient} style={styles.avatarGradientCircle}>
                 <Text style={styles.avatarInitial}>

@@ -31,6 +31,7 @@ export type User = {
 export type IPOListing = {
   id: string;
   ipo_name: string;
+  company_name?: string;
   buy_price: number;
   quantity: number;
   open_date: string;
@@ -45,6 +46,12 @@ export type IPOListing = {
   logo_url?: string;
   gmp_percent?: number;
   gmp_value?: number;
+  gmp_amount?: number;
+  price_band_min?: number;
+  price_band_max?: number;
+  lot_size?: number;
+  total_sub?: number;
+  qib_sub?: number;
 };
 
 export type ApplicationStatus = 'Applied' | 'Mandate Approved' | 'Allotted' | 'Partially Allotted' | 'Holding' | 'Not Allotted' | 'Sold' | 'Cancelled';
@@ -60,6 +67,8 @@ export type ApplicationWithDetails = {
   user_cut: number;
   user_name: string;
   user_broker: string;
+  user_client_id?: string;
+  user_pan_number?: string;
   user_bank_name: string;
   user_upi_app: string;
   user_avatar_url?: string;
@@ -224,6 +233,21 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       await db.runAsync('UPDATE bank_accounts SET id = ? WHERE rowid = ?', [Crypto.randomUUID(), r.rowid]);
     }
 
+    const usersWithoutClientId = await db.getAllAsync<{ id: string; name: string }>(
+      'SELECT id, name FROM users_table WHERE client_id IS NULL OR client_id = ""'
+    ).catch(() => []);
+    for (const u of usersWithoutClientId) {
+      let seedDemat = '1208180111845464';
+      if (u.name.toLowerCase().includes('vishal')) seedDemat = '1208180111845465';
+      else if (u.name.toLowerCase().includes('umesh')) seedDemat = '1208180111845466';
+      else {
+        let hash = 0;
+        for (let i = 0; i < (u.id || '').length; i++) hash = (u.id || '').charCodeAt(i) + ((hash << 5) - hash);
+        seedDemat = `12081801${(10000000 + Math.abs(hash) % 89999999).toString()}`;
+      }
+      await db.runAsync('UPDATE users_table SET client_id = ? WHERE id = ?', [seedDemat, u.id]).catch(() => {});
+    }
+
     const userRows = await db.getAllAsync<User>(
       'SELECT * FROM users_table WHERE deleted_at IS NULL ORDER BY name',
     );
@@ -266,9 +290,11 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     const appRows = await db.getAllAsync<ApplicationWithDetails>(`
       SELECT a.id, a.user_id, a.ipo_id, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
              a.is_favorite,
-             u.name    AS user_name,
-             u.broker  AS user_broker,
-             u.avatar_url AS user_avatar_url,
+             u.name        AS user_name,
+             u.broker      AS user_broker,
+             u.client_id   AS user_client_id,
+             u.pan_number  AS user_pan_number,
+             u.avatar_url  AS user_avatar_url,
              COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
              COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
              i.ipo_name,
@@ -737,16 +763,16 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     // Users
     const now = new Date().toISOString();
     await db.runAsync(
-      'INSERT INTO users_table (id, name,pan_number,broker,tpin,upi_app,bank_name,default_amount_blocked,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-      [Crypto.randomUUID(), 'Dhiru', 'AAAPD1234A', 'Dhan', '123456', 'PhonePe', 'Kotak M Bank', 14998, now, now],
+      'INSERT INTO users_table (id, name, pan_number, client_id, upi_id, broker, tpin, upi_app, bank_name, default_amount_blocked, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+      [Crypto.randomUUID(), 'Dhiru', 'AAAPD1234A', '1208180111845464', 'dhiru@okhdfcbank', 'Dhan', '123456', 'PhonePe', 'Kotak M Bank', 14998, now, now],
     );
     await db.runAsync(
-      'INSERT INTO users_table (id, name,pan_number,broker,tpin,upi_app,bank_name,default_amount_blocked,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-      [Crypto.randomUUID(), 'Vishal', 'BBBPV5678B', 'Upstox', '234567', 'GPay', 'Axis Bank', 14998, now, now],
+      'INSERT INTO users_table (id, name, pan_number, client_id, upi_id, broker, tpin, upi_app, bank_name, default_amount_blocked, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+      [Crypto.randomUUID(), 'Vishal', 'BBBPV5678B', '1208180111845465', 'vishal@okaxis', 'Upstox', '234567', 'GPay', 'Axis Bank', 14998, now, now],
     );
     await db.runAsync(
-      'INSERT INTO users_table (id, name,pan_number,broker,tpin,upi_app,bank_name,default_amount_blocked,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-      [Crypto.randomUUID(), 'Umesh', 'CCCU9012C', 'Groww', '345678', 'BHIM', 'HDFC Bank', 14998, now, now],
+      'INSERT INTO users_table (id, name, pan_number, client_id, upi_id, broker, tpin, upi_app, bank_name, default_amount_blocked, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+      [Crypto.randomUUID(), 'Umesh', 'CCCU9012C', '1208180111845466', 'umesh@ybl', 'Groww', '345678', 'BHIM', 'HDFC Bank', 14998, now, now],
     );
 
     // Bank accounts with sample balances
@@ -940,8 +966,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         const defaultAmount = u.default_amount_blocked ?? 0;
         await safeRunAsync(
           db,
-          'INSERT INTO users_table (id, name, pan_number, broker, tpin, upi_app, bank_name, avatar_url, default_amount_blocked, archived, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-          [newId, name, pan, u.broker || '', u.tpin || '', u.upi_app || '', u.bank_name || '', u.avatar_url || '', defaultAmount, archivedVal, now, now],
+          'INSERT INTO users_table (id, name, pan_number, client_id, upi_id, broker, tpin, upi_app, bank_name, avatar_url, default_amount_blocked, archived, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          [newId, name, pan, u.client_id || '', u.upi_id || '', u.broker || '', u.tpin || '', u.upi_app || '', u.bank_name || '', u.avatar_url || '', defaultAmount, archivedVal, now, now],
           'DBContext.importJSON.insertUser'
         );
         userIdMap.set(uId, newId);
@@ -1308,8 +1334,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         const now = new Date().toISOString();
         await safeRunAsync(
           db,
-          'INSERT INTO users_table (id, name, pan_number, broker, tpin, upi_app, bank_name, avatar_url, default_amount_blocked, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
-          [newId, u.name || '', u.pan_number || '', u.broker || '', u.tpin || '', u.upi_app || '', u.bank_name || '', u.avatar_url || '', 0, now, now],
+          'INSERT INTO users_table (id, name, pan_number, client_id, upi_id, broker, tpin, upi_app, bank_name, avatar_url, default_amount_blocked, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          [newId, u.name || '', u.pan_number || '', (u as any).client_id || (u as any).demat || '', (u as any).upi_id || '', u.broker || '', u.tpin || '', u.upi_app || '', u.bank_name || '', u.avatar_url || '', 0, now, now],
           'DBContext.importCSV.insertUser'
         );
         userToId.set(key, newId);

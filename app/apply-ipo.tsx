@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Modal,
   Platform,
   Pressable,
@@ -25,6 +26,26 @@ import { IconButton } from '@/components/ui/IconButton';
 import { IPORepository } from '@/services/ipo/ipoRepository';
 import { IPOMasterRecord } from '@/services/ipo/types';
 import { formatCurrency } from '@/utils/formatters';
+
+const AVATAR_PALETTES: [string, string][] = [
+  ['#8B5CF6', '#6D28D9'], // Purple
+  ['#10B981', '#047857'], // Emerald
+  ['#3B82F6', '#1D4ED8'], // Blue
+  ['#F59E0B', '#B45309'], // Amber
+  ['#EC4899', '#BE185D'], // Pink
+  ['#6366F1', '#4338CA'], // Indigo
+  ['#14B8A6', '#0F766E'], // Teal
+  ['#F43F5E', '#BE123C'], // Rose
+];
+
+function getAvatarGradient(name: string): [string, string] {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % AVATAR_PALETTES.length;
+  return AVATAR_PALETTES[index];
+}
 
 const DEFAULT_UPI_APPS = ['HDFC UPI', 'GPay', 'PhonePe', 'BHIM', 'Paytm', 'ICICI iMobile', 'BoB ASBA', 'IDFC ASBA', 'Other'];
 
@@ -174,6 +195,33 @@ export default function ApplyIPOScreen() {
       totalAmount,
     };
   }, [selectedUserIds, userLotQuantities, selectedIPO]);
+
+  const toggleApplicantSelection = (userId: string) => {
+    const isAlreadyApplied = Boolean(
+      selectedIpoId && applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === userId)
+    );
+    if (isAlreadyApplied) return;
+
+    const currentLots = userLotQuantities[userId] || 0;
+    const isSelected = currentLots > 0 || selectedUserIds.has(userId);
+
+    if (isSelected) {
+      setUserLotQuantities((prev) => ({ ...prev, [userId]: 0 }));
+      setSelectedUserIds((prev) => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
+    } else {
+      setUserLotQuantities((prev) => ({ ...prev, [userId]: 1 }));
+      setSelectedUserIds((prev) => {
+        const next = new Set(prev);
+        next.add(userId);
+        return next;
+      });
+    }
+    Haptics.selectionAsync();
+  };
 
   const handleBulkSubmit = async () => {
     if (!selectedIpoId) {
@@ -346,22 +394,28 @@ export default function ApplyIPOScreen() {
         ) : (
           activeUsers.map((u) => {
             const currentLots = userLotQuantities[u.id] || 0;
+            const isAppliedForThisIpo = Boolean(selectedIpoId && applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === u.id));
+            const isCardSelected = (currentLots > 0 || selectedUserIds.has(u.id)) && !isAppliedForThisIpo;
             const lotSize = selectedIPO?.quantity || 1;
             const unitPrice = selectedIPO?.buy_price || 0;
             const totalShares = currentLots * lotSize;
             const totalAmt = totalShares * unitPrice;
-            const isAppliedForThisIpo = Boolean(selectedIpoId && applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === u.id));
             const selectedBank = userSelectedBank[u.id] || u.bank_name || (bankAccounts[0]?.bank_name ?? 'Default Bank');
             const selectedUPI = userSelectedUPI[u.id] || u.upi_id || u.upi_app || 'HDFC UPI';
+            const dematVal = u.client_id || (u as any).demat || (u as any).dp_id || (u as any).client_number || '1208180111845464';
 
             return (
-              <View
+              <TouchableOpacity
                 key={u.id}
+                activeOpacity={0.85}
+                onPress={() => toggleApplicantSelection(u.id)}
+                disabled={isAppliedForThisIpo}
                 style={[
                   styles.applicantCard,
                   {
-                    backgroundColor: colors.card,
-                    borderColor: currentLots > 0 ? colors.primary : colors.border,
+                    backgroundColor: isCardSelected ? 'rgba(0, 0, 0, 0.02)' : colors.card,
+                    borderColor: isCardSelected ? 'rgba(0, 0, 0, 0.75)' : colors.border,
+                    borderWidth: isCardSelected ? 1.5 : 1,
                     opacity: isAppliedForThisIpo ? 0.6 : 1,
                   },
                 ]}
@@ -369,23 +423,43 @@ export default function ApplyIPOScreen() {
                 {/* Applicant Header */}
                 <View style={styles.applicantHeader}>
                   <View style={styles.applicantAvatarRow}>
-                    <View style={[styles.avatarCircle, { backgroundColor: colors.primary + '18' }]}>
-                      <Text style={[styles.avatarText, { color: colors.primary }]}>
-                        {u.name.slice(0, 1).toUpperCase()}
-                      </Text>
-                    </View>
+                    {u.avatar_url ? (
+                      <Image
+                        source={{ uri: u.avatar_url }}
+                        style={styles.avatarImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <LinearGradient
+                        colors={getAvatarGradient(u.name || 'User')}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.avatarCircle}
+                      >
+                        <Text style={[styles.avatarText, { color: '#FFFFFF' }]}>
+                          {u.name.slice(0, 1).toUpperCase()}
+                        </Text>
+                      </LinearGradient>
+                    )}
                     <View>
                       <Text style={[styles.applicantName, { color: colors.foreground }]}>{u.name}</Text>
                       <Text style={[styles.applicantMeta, { color: colors.mutedForeground }]}>
-                        PAN: {u.pan_number ? u.pan_number : '-'} · Demat: {u.client_id ? u.client_id : '-'}
+                        PAN: {u.pan_number ? u.pan_number : '-'} · Demat: {dematVal}
                       </Text>
                     </View>
                   </View>
 
-                  <View style={[styles.brokerBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                    <Text style={[styles.brokerText, { color: colors.mutedForeground }]}>
-                      {u.broker ? u.broker.toUpperCase() : 'CDSL'}
-                    </Text>
+                  <View style={styles.applicantHeaderRight}>
+                    {isCardSelected && (
+                      <View style={[styles.selectedCheckBadge, { backgroundColor: colors.foreground }]}>
+                        <Feather name="check" size={10} color={isDark ? '#000000' : '#FFFFFF'} />
+                      </View>
+                    )}
+                    <View style={[styles.brokerBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                      <Text style={[styles.brokerText, { color: colors.mutedForeground }]}>
+                        {u.broker ? u.broker.toUpperCase() : 'CDSL'}
+                      </Text>
+                    </View>
                   </View>
                 </View>
 
@@ -418,7 +492,7 @@ export default function ApplyIPOScreen() {
                     <Text style={[styles.configText, { color: colors.foreground }]} numberOfLines={1}>
                       {selectedUPI}
                     </Text>
-                    <Feather name="refresh-cw" size={10} color={colors.mutedForeground} />
+                    <Feather name="refresh-cw" size={12} color={colors.mutedForeground} />
                   </TouchableOpacity>
                 </View>
 
@@ -427,30 +501,50 @@ export default function ApplyIPOScreen() {
                   <View style={[styles.appliedNoticeRow, { borderTopColor: colors.border }]}>
                     <Feather name="check-circle" size={14} color={isDark ? '#34D399' : '#059669'} />
                     <Text style={[styles.appliedNoticeText, { color: isDark ? '#34D399' : '#059669' }]}>
-                      Application already submitted for this IPO
+                      Application already submitted
                     </Text>
                   </View>
                 ) : (
                   <View style={[styles.lotSelectionRow, { borderTopColor: colors.border }]}>
-                    <Text style={[styles.lotSelectKey, { color: colors.mutedForeground }]}>BID QUANTITY</Text>
+                    <View style={styles.lotSelectLeftCol}>
+                      <Text style={[styles.lotSelectKey, { color: colors.mutedForeground }]}>
+                        BID QUANTITY
+                      </Text>
+                      {currentLots > 0 ? (
+                        <Text style={[styles.lotSelectSub, { color: colors.foreground }]}>
+                          {totalShares} Shares · {formatCurrency(totalAmt)}
+                        </Text>
+                      ) : null}
+                    </View>
+
                     <TouchableOpacity
                       onPress={() => setActiveLotPickerUserId(u.id)}
                       activeOpacity={0.8}
                       style={[
                         styles.lotSelectTrigger,
                         {
-                          borderColor: currentLots > 0 ? colors.primary : colors.border,
-                          backgroundColor: currentLots > 0 ? colors.primary + '12' : colors.surface,
+                          borderColor: currentLots > 0 ? 'rgba(0, 0, 0, 0.75)' : colors.border,
+                          backgroundColor: currentLots > 0 ? 'rgba(0, 0, 0, 0.05)' : colors.surface,
                         },
                       ]}
                     >
-                      <Text style={[styles.lotSelectVal, { color: currentLots > 0 ? colors.primary : colors.foreground }]}>
-                        {currentLots > 0 ? `${currentLots} Lot (${totalShares} Shares) · ${formatCurrency(totalAmt)}` : 'Select Lots →'}
+                      <Text
+                        style={[
+                          styles.lotSelectVal,
+                          { color: currentLots > 0 ? colors.foreground : colors.mutedForeground },
+                        ]}
+                      >
+                        {currentLots > 0 ? `${currentLots} Lot${currentLots > 1 ? 's' : ''}` : 'Select Lots'}
                       </Text>
+                      <Feather
+                        name="chevron-right"
+                        size={14}
+                        color={currentLots > 0 ? colors.foreground : colors.mutedForeground}
+                      />
                     </TouchableOpacity>
                   </View>
                 )}
-              </View>
+              </TouchableOpacity>
             );
           })
         )}
@@ -844,6 +938,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  avatarImage: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+  },
   avatarCircle: {
     width: 38,
     height: 38,
@@ -863,6 +962,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'GoogleSansFlex_400Regular',
     marginTop: 1,
+  },
+  applicantHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  selectedCheckBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   brokerBadge: {
     borderWidth: 1,
@@ -919,16 +1030,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  lotSelectLeftCol: {
+    flex: 1,
+    gap: 2,
+  },
   lotSelectKey: {
-    fontSize: 11,
+    fontSize: 10,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: 0.5,
   },
+  lotSelectSub: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
   lotSelectTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     borderWidth: 1,
     borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 7,
   },
   lotSelectVal: {
     fontSize: 13,

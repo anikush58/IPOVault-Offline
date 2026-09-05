@@ -128,6 +128,9 @@ export class IPORepository implements IIPORepository {
       exchange: ipo.exchange ?? '',
       issue_type: ipo.issue_type ?? '',
       allotment_date: ipo.allotment_date ?? '',
+      logo_url: ipo.logo_url ?? '',
+      gmp_percent: ipo.gmp_percent ?? 0,
+      gmp_value: ipo.gmp_value ?? 0,
       archived: 0,
       is_favorite: 0,
       sync_version: 0,
@@ -149,6 +152,9 @@ export class IPORepository implements IIPORepository {
       exchange: ipo.exchange ?? '',
       issue_type: ipo.issue_type ?? '',
       allotment_date: ipo.allotment_date ?? '',
+      logo_url: ipo.logo_url ?? '',
+      gmp_percent: ipo.gmp_percent ?? 0,
+      gmp_value: ipo.gmp_value ?? 0,
     };
     await repositoryAdapter.ipos.update(this.db, id, row);
   }
@@ -180,9 +186,11 @@ export class ApplicationRepository implements IApplicationRepository {
     return await this.db.getAllAsync<ApplicationWithDetails>(`
       SELECT a.id, a.user_id, a.ipo_id, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
              a.is_favorite,
-             u.name    AS user_name,
-             u.broker  AS user_broker,
-             u.avatar_url AS user_avatar_url,
+             u.name        AS user_name,
+             u.broker      AS user_broker,
+             u.client_id   AS user_client_id,
+             u.pan_number  AS user_pan_number,
+             u.avatar_url  AS user_avatar_url,
              COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
              COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
              i.ipo_name, i.buy_price, i.quantity, i.open_date, i.logo_url AS ipo_logo_url

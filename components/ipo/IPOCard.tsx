@@ -46,6 +46,10 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
   const { isInCompare, toggleCompare } = useCompare();
   const [logoError, setLogoError] = React.useState(false);
 
+  React.useEffect(() => {
+    setLogoError(false);
+  }, [ipo.logo_url]);
+
   const isFav = ipo.is_favorite === 1;
   const isCompared = isInCompare(ipo.id);
 
@@ -223,6 +227,7 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
             <Image
               source={{ uri: resolvedLogo }}
               style={styles.logoImage}
+              resizeMode="contain"
               onError={() => setLogoError(true)}
             />
           ) : (
