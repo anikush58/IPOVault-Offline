@@ -24,6 +24,7 @@ import { DialogProvider } from '@/context/DialogContext';
 import { AppStoreProvider } from '@/store/useAppStore';
 import { CompareProvider } from '@/context/CompareContext';
 import { NotificationProvider } from '@/context/NotificationContext';
+import { AnimatedSplashScreen } from '@/components/AnimatedSplashScreen';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -37,6 +38,8 @@ function RootLayoutNav() {
     safeAsyncStorage.getItem(ONBOARDING_STORAGE_KEY).then((value) => {
       if (!value) {
         router.replace('/onboarding');
+      } else {
+        router.replace('/(tabs)');
       }
     });
   }, []);
@@ -45,6 +48,7 @@ function RootLayoutNav() {
     <>
       <StatusBar style={resolvedScheme === 'dark' ? 'light' : 'dark'} />
       <Stack
+        initialRouteName="(tabs)"
         screenOptions={{
           headerShown: false,
           animation: 'fade',
@@ -52,8 +56,8 @@ function RootLayoutNav() {
           contentStyle: { backgroundColor: resolvedScheme === 'dark' ? '#121212' : '#F8F9FA' },
         }}
       >
-        <Stack.Screen name="onboarding" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false, animation: 'fade' }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="applications" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="ipos" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="ipo-details" options={{ headerShown: false, animation: 'fade' }} />
@@ -76,6 +80,8 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+  const [splashFinished, setSplashFinished] = React.useState(false);
+
   const [fontsLoaded, fontsError] = useFonts({
     GoogleSansFlex_400Regular,
     GoogleSansFlex_500Medium,
@@ -94,10 +100,8 @@ export default function RootLayout() {
     }
   }, [ready]);
 
-  // Always render — fonts snap in once loaded; fallback to system fonts if they fail.
-  // Never block on null to avoid infinite blank screen.
+  // Safety timeout: hide splash after 4s regardless of font state
   useEffect(() => {
-    // Safety timeout: hide splash after 4s regardless of font state
     const t = setTimeout(() => SplashScreen.hideAsync(), 4000);
     return () => clearTimeout(t);
   }, []);
@@ -115,6 +119,12 @@ export default function RootLayout() {
                       <CompareProvider>
                         <AppStoreProvider>
                           <RootLayoutNav />
+                          {!splashFinished && (
+                            <AnimatedSplashScreen
+                              isReady={ready}
+                              onAnimationComplete={() => setSplashFinished(true)}
+                            />
+                          )}
                         </AppStoreProvider>
                       </CompareProvider>
                     </NotificationProvider>

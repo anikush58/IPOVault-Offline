@@ -3,6 +3,7 @@ import { SQLiteDatabase } from 'expo-sqlite';
 export async function initDB(db: SQLiteDatabase) {
   await db.execAsync('PRAGMA journal_mode = WAL');
   await db.execAsync('PRAGMA foreign_keys = ON');
+  await db.execAsync('PRAGMA busy_timeout = 5000');
 
   // Fresh schema for V1 offline-first architecture.
   // Tables use TEXT PRIMARY KEY (UUIDs) and include sync metadata.

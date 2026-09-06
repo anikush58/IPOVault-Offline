@@ -813,15 +813,15 @@ export default function DashboardScreen() {
                       </View>
 
                       {/* Main Decision Banner: Price Band | GMP | Demand */}
-                      <View style={[styles.openIpoMetricsBanner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                        {/* Price Band & Min Investment */}
+                      <View style={[styles.openIpoMetricsBanner, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(241, 243, 245, 0.65)', borderColor: colors.border }]}>
+                        {/* Price Band & Lot Size */}
                         <View style={styles.openIpoMetricCell}>
                           <Text style={[styles.openIpoMetricLabel, { color: colors.mutedForeground }]}>PRICE BAND</Text>
                           <Text style={[styles.openIpoMetricValue, { color: colors.foreground }]} numberOfLines={1}>
                             {priceBandText}
                           </Text>
-                          <Text style={[styles.openIpoMetricSub, { color: colors.primary }]} numberOfLines={1}>
-                            {lotVal ? formatCurrency(lotVal) : (lotSize ? `${lotSize} shares` : '—')}
+                          <Text style={[styles.openIpoMetricSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+                            {lotSize ? `${lotSize} Shares / Lot` : 'Min 1 Lot'}
                           </Text>
                         </View>
 
@@ -839,10 +839,10 @@ export default function DashboardScreen() {
                         </View>
                       </View>
 
-                      {/* Bottom Row: Lot Size & Apply CTA */}
+                      {/* Bottom Row: Total Amount & Apply CTA */}
                       <View style={styles.openIpoFooterRow}>
-                        <Text style={[styles.openIpoLotText, { color: colors.mutedForeground }]}>
-                          {lotSize ? `${lotSize} Shares / Lot` : 'Min 1 Lot'}
+                        <Text style={[styles.openIpoTotalAmountText, { color: colors.foreground }]} numberOfLines={1}>
+                          {lotVal ? formatCurrency(lotVal) : '—'}
                         </Text>
 
                         <View style={[styles.openIpoCtaButton, { backgroundColor: colors.primary }]}>
@@ -1300,9 +1300,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingTop: 2,
   },
-  openIpoLotText: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_500Medium',
+  openIpoTotalAmountText: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.2,
   },
   openIpoCtaButton: {
     flexDirection: 'row',

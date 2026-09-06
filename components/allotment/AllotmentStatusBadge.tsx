@@ -1,8 +1,8 @@
 import React from 'react';
-import { StyleSheet, Text, View, ActivityIndicator } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { useColors } from '@/hooks/useColors';
 import { DesignSystem } from '@/constants/DesignSystem';
+import { useColors } from '@/hooks/useColors';
 
 export type AllotmentBadgeStatus =
   | 'ALLOTTED'
@@ -11,7 +11,14 @@ export type AllotmentBadgeStatus =
   | 'NO_RECORD'
   | 'NEEDS_REVIEW'
   | 'PENDING'
-  | 'CHECKING';
+  | 'CHECKING'
+  | 'allotted'
+  | 'partially_allotted'
+  | 'not_allotted'
+  | 'no_record'
+  | 'needs_review'
+  | 'pending'
+  | 'checking';
 
 interface AllotmentStatusBadgeProps {
   status: AllotmentBadgeStatus;
@@ -21,12 +28,13 @@ interface AllotmentStatusBadgeProps {
 }
 
 export const AllotmentStatusBadge: React.FC<AllotmentStatusBadgeProps> = ({
-  status,
+  status: rawStatus,
   sharesAllotted,
   customLabel,
   size = 'md',
 }) => {
   const colors = useColors();
+  const status = (rawStatus || 'PENDING').toUpperCase() as AllotmentBadgeStatus;
 
   let label = customLabel;
   let bg = colors.surface;
@@ -42,21 +50,27 @@ export const AllotmentStatusBadge: React.FC<AllotmentStatusBadgeProps> = ({
       break;
 
     case 'ALLOTTED':
-      label = label || (sharesAllotted ? `Allotted • ${sharesAllotted} shares` : 'Allotted');
+      label =
+        label ||
+        (sharesAllotted ? `Allotted • ${sharesAllotted} shares` : 'Allotted');
       color = colors.statusAllotted;
       bg = colors.statusAllottedBg;
       iconName = 'check-circle';
       break;
 
     case 'PARTIALLY_ALLOTTED':
-      label = label || (sharesAllotted ? `Partial • ${sharesAllotted} shares` : 'Partially Allotted');
+      label =
+        label ||
+        (sharesAllotted
+          ? `Partial • ${sharesAllotted} shares`
+          : 'Partially Allotted');
       color = '#10B981';
       bg = '#D1FAE5';
       iconName = 'check-circle';
       break;
 
     case 'NOT_ALLOTTED':
-      label = label || 'Not Allotted';
+      label = label || 'No shares allotted';
       color = colors.statusNotAllotted;
       bg = colors.statusNotAllottedBg;
       iconName = 'x-circle';
@@ -71,8 +85,8 @@ export const AllotmentStatusBadge: React.FC<AllotmentStatusBadgeProps> = ({
 
     case 'NEEDS_REVIEW':
       label = label || 'Needs Review';
-      color = colors.statusPending;
-      bg = colors.statusPendingBg;
+      color = '#D97706';
+      bg = '#FEF3C7';
       iconName = 'alert-triangle';
       break;
 
@@ -100,16 +114,27 @@ export const AllotmentStatusBadge: React.FC<AllotmentStatusBadgeProps> = ({
       ]}
     >
       {status === 'CHECKING' ? (
-        <ActivityIndicator size="small" color={color} style={{ marginRight: 4 }} />
+        <ActivityIndicator
+          size="small"
+          color={color}
+          style={{ marginRight: 4 }}
+        />
       ) : (
-        <Feather name={iconName} size={isSmall ? 11 : 13} color={color} style={{ marginRight: 4 }} />
+        <Feather
+          name={iconName}
+          size={isSmall ? 11 : 13}
+          color={color}
+          style={{ marginRight: 4 }}
+        />
       )}
       <Text
         style={[
           styles.text,
           {
             color,
-            fontSize: isSmall ? DesignSystem.typography.size.caption : DesignSystem.typography.size.bodySm,
+            fontSize: isSmall
+              ? DesignSystem.typography.size.caption
+              : DesignSystem.typography.size.bodySm,
           },
         ]}
       >

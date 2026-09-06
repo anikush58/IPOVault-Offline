@@ -85,6 +85,29 @@ export function validateSqlInsertCounts(sql: string, params: any[], callerInfo: 
   return pass;
 }
 
+/**
+ * Helper to retry SQLite operations if the database is locked.
+ */
+async function retryOnLock<T>(fn: () => Promise<T>, retries = 4, baseDelayMs = 150): Promise<T> {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const isLocked = err?.message?.toLowerCase().includes('locked') || String(err).toLowerCase().includes('locked');
+      if (isLocked && attempt < retries - 1) {
+        const delay = baseDelayMs * (attempt + 1);
+        if (__DEV__) {
+          console.warn(`[SQL LOCK RETRY] Database locked. Retrying attempt ${attempt + 1}/${retries} in ${delay}ms...`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  return fn();
+}
+
 export async function safeRunAsync(
   db: SQLiteDatabase,
   sql: string,
@@ -102,7 +125,7 @@ export async function safeRunAsync(
     return p;
   });
 
-  return db.runAsync(sql, sanitizedParams);
+  return retryOnLock(() => db.runAsync(sql, sanitizedParams));
 }
 
 export async function safeGetFirstAsync<T>(
@@ -121,7 +144,7 @@ export async function safeGetFirstAsync<T>(
     return p;
   });
 
-  return db.getFirstAsync<T>(sql, sanitizedParams);
+  return retryOnLock(() => db.getFirstAsync<T>(sql, sanitizedParams));
 }
 
 export async function safeGetAllAsync<T>(
@@ -140,39 +163,54 @@ export async function safeGetAllAsync<T>(
     return p;
   });
 
-  return db.getAllAsync<T>(sql, sanitizedParams);
+  return retryOnLock(() => db.getAllAsync<T>(sql, sanitizedParams));
+}
+
+export async function safeExecAsync(
+  db: SQLiteDatabase,
+  sql: string,
+  callerInfo: string = 'Unknown'
+): Promise<void> {
+  return retryOnLock(() => db.execAsync(sql));
 }
 
 /**
  * Executes an async action within a single, explicit SQLite transaction.
  * Preserves and reports the ORIGINAL action error, preventing secondary rollback rejections from masking it.
+ * Retries on lock contention.
  */
 export async function runWithTransaction<T>(
   db: SQLiteDatabase,
   action: () => Promise<T>,
   callerInfo: string = 'Unknown'
 ): Promise<T> {
-  let inTransaction = false;
-  try {
-    await db.execAsync('BEGIN TRANSACTION;');
-    inTransaction = true;
-    const result = await action();
-    await db.execAsync('COMMIT;');
-    inTransaction = false;
-    return result;
-  } catch (originalError: any) {
-    if (__DEV__) {
-      console.error(`[SQL TRANSACTION ERROR] ${callerInfo} -> Original failure:`, originalError);
-    }
-    if (inTransaction) {
-      try {
-        await db.execAsync('ROLLBACK;');
-      } catch (rollbackError: any) {
-        if (__DEV__) {
-          console.warn(`[SQL TRANSACTION ERROR] ${callerInfo} -> Rollback ignored (transaction already closed/rolled back):`, rollbackError?.message || rollbackError);
+  if (typeof (db as any).withTransactionAsync === 'function') {
+    return retryOnLock(() => (db as any).withTransactionAsync(action));
+  }
+
+  return retryOnLock(async () => {
+    let inTransaction = false;
+    try {
+      await db.execAsync('BEGIN IMMEDIATE TRANSACTION;');
+      inTransaction = true;
+      const result = await action();
+      await db.execAsync('COMMIT;');
+      inTransaction = false;
+      return result;
+    } catch (originalError: any) {
+      if (__DEV__) {
+        console.error(`[SQL TRANSACTION ERROR] ${callerInfo} -> Original failure:`, originalError);
+      }
+      if (inTransaction) {
+        try {
+          await db.execAsync('ROLLBACK;');
+        } catch (rollbackError: any) {
+          if (__DEV__) {
+            console.warn(`[SQL TRANSACTION ERROR] ${callerInfo} -> Rollback ignored:`, rollbackError?.message || rollbackError);
+          }
         }
       }
+      throw originalError;
     }
-    throw originalError;
-  }
+  });
 }

@@ -176,18 +176,16 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
           <Text style={[styles.title, { color: colors.foreground }]}>Leaderboard</Text>
         </View>
 
-        {filteredRankings.length > 5 && (
-          <TouchableOpacity
-            onPress={() => router.push({ pathname: '/leaderboard', params: { tab: activeTab } })}
-            style={[styles.headerViewMoreBtn, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: colors.border }]}
-            activeOpacity={0.75}
-          >
-            <Text style={[styles.headerViewMoreText, { color: colors.foreground }]}>
-              View More
-            </Text>
-            <Feather name="chevron-right" size={13} color={colors.foreground} />
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          onPress={() => router.push({ pathname: '/leaderboard', params: { tab: activeTab } })}
+          style={[styles.headerViewMoreBtn, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: colors.border }]}
+          activeOpacity={0.75}
+        >
+          <Text style={[styles.headerViewMoreText, { color: colors.foreground }]}>
+            View More
+          </Text>
+          <Feather name="chevron-right" size={13} color={colors.foreground} />
+        </TouchableOpacity>
       </View>
 
       {/* User / Broker / IPO chip tabs (Left aligned above user rankings) */}

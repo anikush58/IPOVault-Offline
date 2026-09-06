@@ -4,7 +4,7 @@ import { LiveIPOProvider } from './providers/LiveIPOProvider';
 import { ipoDiagnosticsStore } from './ipoUpdater';
 import { syncStore } from '@/services/sync/syncStatus';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
-import { runWithTransaction } from '@/utils/sqliteDebug';
+import { runWithTransaction, safeExecAsync } from '@/utils/sqliteDebug';
 
 import { API_BASE_URL } from '@/constants/apiConfig';
 
@@ -89,13 +89,17 @@ export async function triggerCentralizedIPOSync(
         async () => {
           // 1. Purge legacy hardcoded seed records & test records from local SQLite
           try {
-            await db.execAsync(`
+            await safeExecAsync(
+              db,
+              `
               DELETE FROM ipo_master WHERE id IN (
                 'ipo-leap-india', 'ipo-technocraft', 'ipo-lapl-auto', 'ipo-molbio-diag',
                 'ipo-dhoot-trans', 'ipo-shiprocket', 'ipo-lalithaa-jewellery', 'ipo-ola-electric',
                 'ipo-swiggy', 'ipo-hyundai-motor'
               ) OR id LIKE 'ipo-%' OR LOWER(company_name) LIKE '%test%' OR LOWER(ipo_name) LIKE '%test%' OR id LIKE '%test%';
-            `);
+            `,
+              'centralizedSync.purgeLegacy'
+            );
           } catch {}
 
           if (result.data && result.data.length > 0) {
@@ -112,7 +116,11 @@ export async function triggerCentralizedIPOSync(
               );
             }
           } else {
-            await db.execAsync(`DELETE FROM ipo_master WHERE (source_type = 'SERVER' OR source_type IS NULL OR source_type = '')`);
+            await safeExecAsync(
+              db,
+              `DELETE FROM ipo_master WHERE (source_type = 'SERVER' OR source_type IS NULL OR source_type = '')`,
+              'centralizedSync.purgeUnpublished'
+            );
           }
         },
         'centralizedSync.dbWriteTransaction'

@@ -1,5 +1,5 @@
-import { ApiClientConfig, MobileApiResponse } from "../../types/api";
-import { ApiError } from "./ApiError";
+import { ApiClientConfig, MobileApiResponse } from '../../types/api';
+import { ApiError } from './ApiError';
 
 export class ApiClient {
   private baseUrl: string;
@@ -10,12 +10,16 @@ export class ApiClient {
     this.baseUrl = config.baseUrl;
     this.timeoutMs = config.timeoutMs || 10000;
     this.headers = config.headers || {
-      "Content-Type": "application/json",
-      Accept: "application/json",
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
     };
   }
 
-  public async get<T>(path: string, params?: Record<string, string | number>): Promise<MobileApiResponse<T>> {
+  public async get<T>(
+    path: string,
+    params?: Record<string, string | number>,
+    customHeaders?: Record<string, string>,
+  ): Promise<MobileApiResponse<T>> {
     let url = `${this.baseUrl}${path}`;
     if (params) {
       const searchParams = new URLSearchParams();
@@ -35,19 +39,19 @@ export class ApiClient {
 
     try {
       const response = await fetch(url, {
-        method: "GET",
-        headers: this.headers,
+        method: 'GET',
+        headers: { ...this.headers, ...customHeaders },
         signal: controller.signal,
       });
 
       const body: MobileApiResponse<T> = await response.json();
 
-      if (!response.ok || !body.success) {
+      if (!response.ok || body.success === false) {
         throw new ApiError(
-          body.error?.message || "HTTP Request Failed",
-          body.error?.code || "HTTP_ERROR",
+          body.error?.message || 'HTTP Request Failed',
+          body.error?.code || 'HTTP_ERROR',
           response.status,
-          body
+          body,
         );
       }
 
@@ -55,10 +59,52 @@ export class ApiClient {
     } catch (err: unknown) {
       if (err instanceof ApiError) throw err;
       throw new ApiError(
-        (err as Error).message || "Network error",
-        "NETWORK_ERROR",
+        (err as Error).message || 'Network error',
+        'NETWORK_ERROR',
         0,
-        err
+        err,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  public async post<T>(
+    path: string,
+    bodyData?: unknown,
+    customHeaders?: Record<string, string>,
+  ): Promise<MobileApiResponse<T>> {
+    const url = `${this.baseUrl}${path}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { ...this.headers, ...customHeaders },
+        body: bodyData ? JSON.stringify(bodyData) : undefined,
+        signal: controller.signal,
+      });
+
+      const body: MobileApiResponse<T> = await response.json();
+
+      if (!response.ok || body.success === false) {
+        throw new ApiError(
+          body.error?.message || 'HTTP Request Failed',
+          body.error?.code || 'HTTP_ERROR',
+          response.status,
+          body,
+        );
+      }
+
+      return body;
+    } catch (err: unknown) {
+      if (err instanceof ApiError) throw err;
+      throw new ApiError(
+        (err as Error).message || 'Network error',
+        'NETWORK_ERROR',
+        0,
+        err,
       );
     } finally {
       clearTimeout(timer);
