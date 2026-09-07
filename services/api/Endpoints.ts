@@ -10,7 +10,7 @@ export const ENDPOINTS = {
   ALLOTMENT_JOBS: '/api/v1/allotment/jobs',
   ALLOTMENT_JOB_BY_ID: (id: string) => `/api/v1/allotment/jobs/${id}`,
   ALLOTMENT_JOB_RETRY: (id: string) => `/api/v1/allotment/jobs/${id}/retry`,
-  PAN_SYNC: '/api/v1/allotment/pans/sync',
+  PAN_SYNC: '/api/v1/user/pans/sync',
   GMP: '/api/v1/gmp',
   SEARCH: '/api/v1/search',
   STATISTICS: '/api/v1/statistics',

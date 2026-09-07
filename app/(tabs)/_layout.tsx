@@ -28,9 +28,6 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
   const router = useRouter();
 
   const currentRouteName = state.routes[state.index]?.name;
-  if (currentRouteName === 'users' || currentRouteName === 'banks') {
-    return null;
-  }
   const activeIndex = MAIN_BAR_TABS.findIndex((t) => t.name === currentRouteName);
 
   const [isAppSelectionActive, setIsAppSelectionActive] = useState(false);
@@ -68,7 +65,7 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
         ]),
       ]).start();
     }
-  }, [activeIndex]);
+  }, [activeIndex, indicatorAnim, liquidStretchAnim]);
 
   useEffect(() => {
     const subSel = DeviceEventEmitter.addListener('SELECTION_MODE_CHANGED', (active: boolean) => {
@@ -88,6 +85,10 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
       subTab.remove();
     };
   }, [fabScaleAnim]);
+
+  if (currentRouteName === 'users' || currentRouteName === 'banks') {
+    return null;
+  }
 
   const bottomPad = Platform.OS === 'web' ? 16 : Math.max(insets.bottom, 12);
   const blurMaskHeight = bottomPad + 84;

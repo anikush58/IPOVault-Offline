@@ -36,6 +36,15 @@ function maskPan(pan: string): string {
   return 'XXXXX' + pan.slice(5);
 }
 
+// Format PAN matching backend mask (e.g. ABCDE1234F -> ABCDE****F)
+function getBackendMaskedPan(pan: string): string {
+  const p = (pan || '').trim().toUpperCase();
+  if (p.length === 10) {
+    return `${p.slice(0, 5)}****${p.slice(9)}`;
+  }
+  return p;
+}
+
 // Format relative time (e.g. "Last checked 5m ago")
 function formatCheckedTime(isoStr?: string): string {
   if (!isoStr) return '';
@@ -170,7 +179,11 @@ export default function AllotmentCheckerScreen() {
 
           if (
             updatedJob.status === 'COMPLETED' ||
-            updatedJob.status === 'COMPLETED_WITH_ERRORS' ||
+            updatedJob.status === 'COMPLETED_WITH_ERRORS'
+          ) {
+            setJobError(null);
+            stopPolling();
+          } else if (
             updatedJob.status === 'FAILED' ||
             updatedJob.status === 'CANCELLED'
           ) {
@@ -178,6 +191,10 @@ export default function AllotmentCheckerScreen() {
           }
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
+          // Transient polling timeout or fetch cancellation must not display red "Aborted" banner
+          if (msg.includes('Aborted') || msg.includes('abort') || msg.includes('cancel')) {
+            return;
+          }
           setJobError(msg);
           stopPolling();
         }
@@ -278,14 +295,17 @@ export default function AllotmentCheckerScreen() {
       const usr = users.find((u) => u.id === app.user_id);
       const pan = usr?.pan_number || '';
       const masked = maskPan(pan).toUpperCase();
+      const expectedBackendMask = getBackendMaskedPan(pan);
 
       // Find matching backend job item by masked ID or fallback
       let matchedItem: BackendJobItem | undefined;
       for (const item of activeJob?.items || []) {
-        const backendMask = item.maskedId.toUpperCase();
+        const backendMask = (item.maskedId || '').toUpperCase();
         if (
+          backendMask === expectedBackendMask ||
           backendMask === masked ||
-          backendMask.slice(-4) === masked.slice(-4)
+          backendMask.slice(-4) === masked.slice(-4) ||
+          (backendMask.length === 10 && pan.length === 10 && backendMask[0] === pan[0] && backendMask.slice(-1) === pan.slice(-1))
         ) {
           matchedItem = item;
           break;
@@ -302,7 +322,7 @@ export default function AllotmentCheckerScreen() {
       } else if (isCreatingJob && !matchedItem) {
         status = 'checking';
       } else if (matchedItem) {
-        const backendStatus = matchedItem.status.toUpperCase();
+        const backendStatus = (matchedItem.status || '').toUpperCase();
         if (backendStatus === 'ALLOTTED') {
           status = 'allotted';
           sharesAllotted = matchedItem.sharesAllotted || selectedIpo?.lot_size || 0;
@@ -311,8 +331,12 @@ export default function AllotmentCheckerScreen() {
           sharesAllotted = matchedItem.sharesAllotted || 0;
         } else if (backendStatus === 'NOT_ALLOTTED') {
           status = 'not_allotted';
-        } else if (backendStatus === 'APPLICATION_NOT_FOUND') {
-          status = 'no_record';
+        } else if (
+          backendStatus === 'APPLICATION_NOT_FOUND' ||
+          backendStatus === 'NO_RECORD'
+        ) {
+          status = 'needs_review';
+          errorMessage = matchedItem.errorMessage || 'Application details not found on KFin portal. Please verify manually.';
         } else if (
           backendStatus === 'UNKNOWN' &&
           (activeJob?.status === 'QUEUED' || activeJob?.status === 'RUNNING')
@@ -323,8 +347,9 @@ export default function AllotmentCheckerScreen() {
           status = 'needs_review';
           errorMessage = matchedItem.errorMessage || 'Technical Failure';
         }
-      } else if (activeJob && !matchedItem) {
+      } else if ((activeJob || jobError) && !matchedItem) {
         status = 'needs_review';
+        errorMessage = jobError || 'Technical Failure';
       }
 
       return {
@@ -345,6 +370,7 @@ export default function AllotmentCheckerScreen() {
     users,
     activeJob,
     isCreatingJob,
+    jobError,
     selectedIpo,
     isAutomatedSupported,
     effectiveRegistrar,
@@ -360,9 +386,9 @@ export default function AllotmentCheckerScreen() {
     for (const app of uiApplicants) {
       if (app.status === 'allotted' || app.status === 'partially_allotted') {
         allotted++;
-      } else if (app.status === 'not_allotted' || app.status === 'no_record') {
+      } else if (app.status === 'not_allotted') {
         notAllotted++;
-      } else if (app.status === 'needs_review') {
+      } else if (app.status === 'needs_review' || app.status === 'no_record') {
         needsReview++;
       }
     }
@@ -540,7 +566,7 @@ export default function AllotmentCheckerScreen() {
               </Text>
             </View>
             <Text style={{ fontSize: 13, color: '#B45309', lineHeight: 18 }}>
-              Automated checking is unavailable for {effectiveRegistrar}. PAN automation for this registrar is not implemented. Technical/unsupported statuses are never presented as "No shares allotted". Please verify manually on the official portal.
+              Automated checking is unavailable for {effectiveRegistrar}. PAN automation for this registrar is not implemented. Technical/unsupported statuses are never presented as &quot;No shares allotted&quot;. Please verify manually on the official portal.
             </Text>
             <TouchableOpacity
               style={{
@@ -746,7 +772,9 @@ export default function AllotmentCheckerScreen() {
                   >
                     Applied:{' '}
                     <Text style={{ color: colors.foreground }}>
-                      {applicant.appliedQuantity} shares
+                      {applicant.appliedQuantity > 0
+                        ? `${applicant.appliedQuantity} shares`
+                        : 'Not available'}
                     </Text>
                   </Text>
                   {applicant.sharesAllotted ? (

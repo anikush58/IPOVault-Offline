@@ -313,6 +313,55 @@ describe('Allotment Checker Frontend Integration Tests', () => {
     expect(job.items[2].status).toBe('SOURCE_UNAVAILABLE'); // Technical error -> Needs Review
   });
 
+  it('23. should normalize APPLICATION_NOT_FOUND as COMPLETED job and applicant Needs Review', async () => {
+    const jobId = 'job-kfin-not-found';
+    const userId = 'user-123';
+
+    jest.spyOn(global, 'fetch').mockImplementationOnce(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          success: true,
+          data: {
+            id: jobId,
+            ipoId: 'ashutosh-fibre-id',
+            status: 'COMPLETED',
+            totalChecks: 2,
+            processedChecks: 2,
+            successfulChecks: 2,
+            failedChecks: 0,
+            progressMessage: 'Checking 2 of 2...',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            items: [
+              {
+                id: 'it-1',
+                maskedId: 'ABCDE****F',
+                status: 'APPLICATION_NOT_FOUND',
+                sharesApplied: 0,
+                sharesAllotted: 0,
+              },
+              {
+                id: 'it-2',
+                maskedId: 'XYZAB****C',
+                status: 'APPLICATION_NOT_FOUND',
+                sharesApplied: 0,
+                sharesAllotted: 0,
+              },
+            ],
+          },
+        }),
+      } as Response),
+    );
+
+    const job = await allotmentApiService.getJob(jobId, userId);
+    expect(job.status).toBe('COMPLETED');
+    expect(job.items[0].status).toBe('APPLICATION_NOT_FOUND');
+    expect(job.items[1].status).toBe('APPLICATION_NOT_FOUND');
+    expect(job.failedChecks).toBe(0);
+  });
+
   it('19 & 20. should handle backend unavailable or unauthorized errors safely', async () => {
     jest.spyOn(global, 'fetch').mockImplementationOnce(() =>
       Promise.resolve({
