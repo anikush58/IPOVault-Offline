@@ -1,7 +1,43 @@
 import { ApiClientConfig, MobileApiResponse } from '../../types/api';
 import { ApiError } from './ApiError';
 
+export interface ApiRequestTrace {
+  id: string;
+  method: 'GET' | 'POST';
+  path: string;
+  startTime: number;
+  endTime?: number;
+  durationMs?: number;
+  status?: number;
+  success?: boolean;
+  aborted?: boolean;
+  errorName?: string;
+  errorMessage?: string;
+  errorCode?: string;
+}
+
+export type ApiRequestListener = (trace: ApiRequestTrace) => void;
+
 export class ApiClient {
+  private static listeners: ApiRequestListener[] = [];
+
+  public static onRequest(listener: ApiRequestListener): () => void {
+    ApiClient.listeners.push(listener);
+    return () => {
+      ApiClient.listeners = ApiClient.listeners.filter((l) => l !== listener);
+    };
+  }
+
+  private static notifyListeners(trace: ApiRequestTrace) {
+    ApiClient.listeners.forEach((l) => {
+      try {
+        l(trace);
+      } catch {
+        // Ignore listener error
+      }
+    });
+  }
+
   private baseUrl: string;
   private timeoutMs: number;
   private headers: Record<string, string>;
@@ -34,8 +70,15 @@ export class ApiClient {
       }
     }
 
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const startTime = Date.now();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    let httpStatus = 0;
+    let isAborted = false;
+    let errName: string | undefined;
+    let errMsg: string | undefined;
+    let errCode: string | undefined;
 
     try {
       const response = await fetch(url, {
@@ -44,12 +87,15 @@ export class ApiClient {
         signal: controller.signal,
       });
 
+      httpStatus = response.status;
       const body: MobileApiResponse<T> = await response.json();
 
       if (!response.ok || body.success === false) {
+        errCode = body.error?.code || 'HTTP_ERROR';
+        errMsg = body.error?.message || 'HTTP Request Failed';
         throw new ApiError(
-          body.error?.message || 'HTTP Request Failed',
-          body.error?.code || 'HTTP_ERROR',
+          errMsg,
+          errCode,
           response.status,
           body,
         );
@@ -57,15 +103,37 @@ export class ApiClient {
 
       return body;
     } catch (err: unknown) {
-      if (err instanceof ApiError) throw err;
+      isAborted = controller.signal.aborted || (err as Error)?.name === 'AbortError';
+      errName = (err as Error)?.name || 'Error';
+      errMsg = (err as Error)?.message || String(err);
+
+      if (err instanceof ApiError) {
+        httpStatus = err.status;
+        errCode = err.code;
+        throw err;
+      }
       throw new ApiError(
-        (err as Error).message || 'Network error',
+        errMsg,
         'NETWORK_ERROR',
         0,
         err,
       );
     } finally {
       clearTimeout(timer);
+      ApiClient.notifyListeners({
+        id: requestId,
+        method: 'GET',
+        path,
+        startTime,
+        endTime: Date.now(),
+        durationMs: Date.now() - startTime,
+        status: httpStatus,
+        success: httpStatus >= 200 && httpStatus < 300,
+        aborted: isAborted,
+        errorName: errName,
+        errorMessage: errMsg,
+        errorCode: errCode,
+      });
     }
   }
 
@@ -75,8 +143,15 @@ export class ApiClient {
     customHeaders?: Record<string, string>,
   ): Promise<MobileApiResponse<T>> {
     const url = `${this.baseUrl}${path}`;
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const startTime = Date.now();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    let httpStatus = 0;
+    let isAborted = false;
+    let errName: string | undefined;
+    let errMsg: string | undefined;
+    let errCode: string | undefined;
 
     try {
       const response = await fetch(url, {
@@ -86,12 +161,15 @@ export class ApiClient {
         signal: controller.signal,
       });
 
+      httpStatus = response.status;
       const body: MobileApiResponse<T> = await response.json();
 
       if (!response.ok || body.success === false) {
+        errCode = body.error?.code || 'HTTP_ERROR';
+        errMsg = body.error?.message || 'HTTP Request Failed';
         throw new ApiError(
-          body.error?.message || 'HTTP Request Failed',
-          body.error?.code || 'HTTP_ERROR',
+          errMsg,
+          errCode,
           response.status,
           body,
         );
@@ -99,15 +177,37 @@ export class ApiClient {
 
       return body;
     } catch (err: unknown) {
-      if (err instanceof ApiError) throw err;
+      isAborted = controller.signal.aborted || (err as Error)?.name === 'AbortError';
+      errName = (err as Error)?.name || 'Error';
+      errMsg = (err as Error)?.message || String(err);
+
+      if (err instanceof ApiError) {
+        httpStatus = err.status;
+        errCode = err.code;
+        throw err;
+      }
       throw new ApiError(
-        (err as Error).message || 'Network error',
+        errMsg,
         'NETWORK_ERROR',
         0,
         err,
       );
     } finally {
       clearTimeout(timer);
+      ApiClient.notifyListeners({
+        id: requestId,
+        method: 'POST',
+        path,
+        startTime,
+        endTime: Date.now(),
+        durationMs: Date.now() - startTime,
+        status: httpStatus,
+        success: httpStatus >= 200 && httpStatus < 300,
+        aborted: isAborted,
+        errorName: errName,
+        errorMessage: errMsg,
+        errorCode: errCode,
+      });
     }
   }
 }

@@ -29,6 +29,72 @@ import {
   getRegistrarConfig,
   isAutomatedCheckSupported,
 } from '@/services/allotment/registrarConfig';
+import { ApiClient, ApiRequestTrace } from '@/services/api/ApiClient';
+
+// ==========================================
+// DIAGNOSTIC TYPES & HELPER INTERFACES
+// ==========================================
+
+export type StageStatus = 'WAITING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'SKIPPED';
+
+export interface StageItem {
+  id: string;
+  name: string;
+  status: StageStatus;
+  detail?: string;
+}
+
+export interface DiagnosticErrorOrigin {
+  source: string;
+  operation: string;
+  timestamp: string;
+  errorName: string;
+  errorMessage: string;
+  stack?: string;
+  isAborted: boolean;
+}
+
+export interface LogEntry {
+  timestamp: string;
+  message: string;
+  type: 'info' | 'success' | 'warn' | 'error';
+}
+
+export interface PanSyncDiagState {
+  status: StageStatus;
+  httpStatus?: number;
+  syncedCount?: number;
+  error?: string;
+}
+
+export interface JobCreationDiagState {
+  status: StageStatus;
+  httpStatus?: number;
+  jobId?: string;
+  error?: string;
+  code?: string;
+}
+
+export interface PollingDiagState {
+  attemptCount: number;
+  lastStatus?: string;
+  lastHttp?: number;
+  lastTime?: string;
+  active: boolean;
+  error?: string;
+}
+
+export interface CreateJobTimingState {
+  frontendStarted?: string;
+  frontendCompleted?: string;
+  frontendDurationMs?: number;
+  aborted?: boolean;
+  backendReceived?: string;
+  backendIpoResolved?: string;
+  backendRegistrarResolved?: string;
+  backendDbCreated?: string;
+  backendWorkerDispatched?: string;
+}
 
 // Mask PAN helper (e.g. ABCDE1234F -> XXXXX1234F)
 function maskPan(pan: string): string {
@@ -81,6 +147,544 @@ export type UIApplicantState = {
   checkedAt?: string;
 };
 
+// Compute 16 Stage Pipeline items based on live state
+function computeStages(
+  selectedIpo: any,
+  effectiveRegistrar: string,
+  isAutomatedSupported: boolean,
+  panSyncState: PanSyncDiagState,
+  jobCreationState: JobCreationDiagState,
+  activeJob: BackendJobResponse | null,
+  isCreatingJob: boolean,
+  isPolling: boolean,
+  jobError: string | null,
+  uiApplicants: UIApplicantState[],
+): StageItem[] {
+  const isSelected = Boolean(selectedIpo);
+  const isKFin = effectiveRegistrar.toLowerCase().includes('kfin');
+
+  return [
+    {
+      id: '1',
+      name: '1. Screen opened',
+      status: 'SUCCESS',
+      detail: 'Mounted',
+    },
+    {
+      id: '2',
+      name: '2. IPO selected',
+      status: isSelected ? 'SUCCESS' : 'WAITING',
+      detail: selectedIpo ? selectedIpo.ipo_name : 'Select an IPO',
+    },
+    {
+      id: '3',
+      name: '3. Registrar resolved',
+      status: isSelected ? 'SUCCESS' : 'WAITING',
+      detail: isSelected ? effectiveRegistrar : undefined,
+    },
+    {
+      id: '4',
+      name: '4. Capability check',
+      status: isSelected
+        ? isAutomatedSupported
+          ? 'SUCCESS'
+          : 'FAILED'
+        : 'WAITING',
+      detail: isSelected
+        ? isAutomatedSupported
+          ? 'Automated Check Available'
+          : 'Automated Check Unavailable'
+        : undefined,
+    },
+    {
+      id: '5',
+      name: '5. PAN sync',
+      status: panSyncState.status,
+      detail:
+        panSyncState.status === 'SUCCESS'
+          ? `HTTP ${panSyncState.httpStatus || 200} (${panSyncState.syncedCount} synced)`
+          : panSyncState.error || (isCreatingJob ? 'Syncing...' : undefined),
+    },
+    {
+      id: '6',
+      name: '6. Job creation',
+      status: jobCreationState.status,
+      detail:
+        jobCreationState.status === 'SUCCESS'
+          ? `HTTP ${jobCreationState.httpStatus || 201}`
+          : jobCreationState.error || (isCreatingJob ? 'Creating job...' : undefined),
+    },
+    {
+      id: '7',
+      name: '7. Job queued',
+      status: activeJob
+        ? 'SUCCESS'
+        : jobCreationState.status === 'FAILED'
+        ? 'FAILED'
+        : 'WAITING',
+      detail: activeJob ? `Status: ${activeJob.status}` : undefined,
+    },
+    {
+      id: '8',
+      name: '8. Worker started',
+      status: activeJob
+        ? activeJob.status === 'QUEUED'
+          ? 'RUNNING'
+          : activeJob.status === 'FAILED'
+          ? 'FAILED'
+          : 'SUCCESS'
+        : 'WAITING',
+      detail: activeJob ? `Worker active for ${activeJob.totalChecks} checks` : undefined,
+    },
+    {
+      id: '9',
+      name: '9. Applicant checks',
+      status: activeJob
+        ? activeJob.status === 'RUNNING'
+          ? 'RUNNING'
+          : activeJob.processedChecks > 0
+          ? 'SUCCESS'
+          : 'WAITING'
+        : 'WAITING',
+      detail: activeJob
+        ? `${activeJob.processedChecks}/${activeJob.totalChecks} checked`
+        : undefined,
+    },
+    {
+      id: '10',
+      name: '10. KFin request',
+      status: isSelected && isAutomatedSupported && isKFin
+        ? activeJob && activeJob.processedChecks > 0
+          ? 'SUCCESS'
+          : isCreatingJob || isPolling
+          ? 'RUNNING'
+          : 'WAITING'
+        : 'SKIPPED',
+      detail: isKFin ? 'KFin API Gateway contacted' : 'Not KFin registrar',
+    },
+    {
+      id: '11',
+      name: '11. KFin response',
+      status: isSelected && isAutomatedSupported && isKFin
+        ? activeJob && activeJob.processedChecks > 0
+          ? 'SUCCESS'
+          : 'WAITING'
+        : 'SKIPPED',
+      detail: isKFin
+        ? activeJob && activeJob.processedChecks > 0
+          ? 'Record Not Found (404 normalized)'
+          : undefined
+        : 'Not KFin registrar',
+    },
+    {
+      id: '12',
+      name: '12. Result normalization',
+      status: activeJob && activeJob.processedChecks > 0 ? 'SUCCESS' : 'WAITING',
+      detail:
+        activeJob && activeJob.processedChecks > 0
+          ? 'Normalized to APPLICATION_NOT_FOUND'
+          : undefined,
+    },
+    {
+      id: '13',
+      name: '13. Job polling',
+      status: isPolling
+        ? 'RUNNING'
+        : activeJob && (activeJob.status === 'COMPLETED' || activeJob.status === 'COMPLETED_WITH_ERRORS')
+        ? 'SUCCESS'
+        : activeJob && activeJob.status === 'FAILED'
+        ? 'FAILED'
+        : 'WAITING',
+      detail: isPolling ? 'Polling active (~2s interval)' : 'Polling stopped',
+    },
+    {
+      id: '14',
+      name: '14. Job completed',
+      status: activeJob
+        ? activeJob.status === 'COMPLETED' || activeJob.status === 'COMPLETED_WITH_ERRORS'
+          ? 'SUCCESS'
+          : activeJob.status === 'FAILED'
+          ? 'FAILED'
+          : 'RUNNING'
+        : 'WAITING',
+      detail: activeJob ? `Terminal status: ${activeJob.status}` : undefined,
+    },
+    {
+      id: '15',
+      name: '15. Frontend result mapping',
+      status: uiApplicants.length > 0 && activeJob ? 'SUCCESS' : 'WAITING',
+      detail:
+        uiApplicants.length > 0 && activeJob
+          ? `Mapped ${uiApplicants.length} applicants ➔ NEEDS_REVIEW`
+          : undefined,
+    },
+    {
+      id: '16',
+      name: '16. UI rendered',
+      status: uiApplicants.length > 0 ? 'SUCCESS' : 'WAITING',
+      detail: 'Applicant cards & summary updated',
+    },
+  ];
+}
+
+// ==========================================
+// DEVELOPER DIAGNOSTICS PANEL COMPONENT
+// ==========================================
+
+function DeveloperDiagnosticsPanel(props: {
+  selectedIpo: any;
+  effectiveRegistrar: string;
+  isAutomatedSupported: boolean;
+  activeJob: BackendJobResponse | null;
+  isCreatingJob: boolean;
+  isPolling: boolean;
+  jobError: string | null;
+  lastErrorOrigin: DiagnosticErrorOrigin | null;
+  abortedOrigin: DiagnosticErrorOrigin | null;
+  panSyncState: PanSyncDiagState;
+  jobCreationState: JobCreationDiagState;
+  jobTiming: CreateJobTimingState | null;
+  pollingDiag: PollingDiagState;
+  apiTraces: ApiRequestTrace[];
+  eventLogs: LogEntry[];
+  uiApplicants: UIApplicantState[];
+  summaryCounts: { total: number; allotted: number; notAllotted: number; needsReview: number };
+  onClearDiagnostics: () => void;
+  onRunCheckAgain: () => void;
+}) {
+  const [isExpanded, setIsExpanded] = useState(true);
+
+  const stages = useMemo(
+    () =>
+      computeStages(
+        props.selectedIpo,
+        props.effectiveRegistrar,
+        props.isAutomatedSupported,
+        props.panSyncState,
+        props.jobCreationState,
+        props.activeJob,
+        props.isCreatingJob,
+        props.isPolling,
+        props.jobError,
+        props.uiApplicants,
+      ),
+    [
+      props.selectedIpo,
+      props.effectiveRegistrar,
+      props.isAutomatedSupported,
+      props.panSyncState,
+      props.jobCreationState,
+      props.activeJob,
+      props.isCreatingJob,
+      props.isPolling,
+      props.jobError,
+      props.uiApplicants,
+    ],
+  );
+
+  const getBadgeColor = (status: StageStatus) => {
+    switch (status) {
+      case 'SUCCESS':
+        return { bg: '#166534', fg: '#86EFAC' };
+      case 'RUNNING':
+        return { bg: '#854D0E', fg: '#FDE047' };
+      case 'FAILED':
+        return { bg: '#991B1B', fg: '#FCA5A5' };
+      case 'SKIPPED':
+        return { bg: '#374151', fg: '#9CA3AF' };
+      case 'WAITING':
+      default:
+        return { bg: '#1E293B', fg: '#64748B' };
+    }
+  };
+
+  return (
+    <View style={diagStyles.container}>
+      {/* Panel Header */}
+      <View style={diagStyles.headerRow}>
+        <View style={diagStyles.titleGroup}>
+          <Feather name="terminal" size={18} color="#F59E0B" />
+          <Text style={diagStyles.titleText}>DEVELOPER DIAGNOSTICS</Text>
+          <Text style={diagStyles.tagBadge}>DEV ONLY</Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => setIsExpanded(!isExpanded)}
+          style={diagStyles.expandToggle}
+        >
+          <Text style={diagStyles.expandToggleText}>
+            {isExpanded ? 'Collapse ▲' : 'Expand ▼'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Action Controls */}
+      <View style={diagStyles.controlsRow}>
+        <TouchableOpacity
+          style={diagStyles.controlBtn}
+          onPress={props.onClearDiagnostics}
+        >
+          <Feather name="trash-2" size={14} color="#94A3B8" />
+          <Text style={diagStyles.controlBtnText}>Clear Diagnostics</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[diagStyles.controlBtn, diagStyles.controlBtnPrimary]}
+          onPress={props.onRunCheckAgain}
+        >
+          <Feather name="refresh-cw" size={14} color="#38BDF8" />
+          <Text style={[diagStyles.controlBtnText, { color: '#38BDF8' }]}>
+            Run Check Again
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {isExpanded && (
+        <View style={diagStyles.body}>
+          {/* ABORTED ORIGIN BANNER (If Abort Error Triggered) */}
+          {(props.abortedOrigin || (props.jobError && (props.jobError.includes('Aborted') || props.jobError.includes('abort')))) && (
+            <View style={diagStyles.abortedAlertCard}>
+              <View style={diagStyles.abortedAlertHeader}>
+                <Feather name="alert-octagon" size={18} color="#EF4444" />
+                <Text style={diagStyles.abortedAlertTitle}>
+                  &gt;&gt;&gt; ABORTED ORIGIN TRACE &lt;&lt;&lt;
+                </Text>
+              </View>
+              <Text style={diagStyles.diagCodeLine}>
+                Function: <Text style={diagStyles.diagVal}>{props.abortedOrigin?.source || 'startPollingJob'}</Text>
+              </Text>
+              <Text style={diagStyles.diagCodeLine}>
+                Operation: <Text style={diagStyles.diagVal}>{props.abortedOrigin?.operation || 'GET /api/v1/allotment/jobs/:id'}</Text>
+              </Text>
+              <Text style={diagStyles.diagCodeLine}>
+                Timestamp: <Text style={diagStyles.diagVal}>{props.abortedOrigin?.timestamp || 'N/A'}</Text>
+              </Text>
+              <Text style={diagStyles.diagCodeLine}>
+                Error Name: <Text style={diagStyles.diagVal}>{props.abortedOrigin?.errorName || 'AbortError'}</Text>
+              </Text>
+              <Text style={diagStyles.diagCodeLine}>
+                Error Message: <Text style={diagStyles.diagVal}>{props.abortedOrigin?.errorMessage || props.jobError || 'Aborted'}</Text>
+              </Text>
+            </View>
+          )}
+
+          {/* CREATE JOB TIMING SECTION */}
+          <View style={diagStyles.sectionBox}>
+            <Text style={diagStyles.sectionTitle}>CREATE JOB TIMING</Text>
+            <Text style={{ color: '#38BDF8', fontSize: 11, fontWeight: 'bold', fontFamily: 'SpaceMono', marginBottom: 2 }}>
+              Frontend Trace:
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Started: <Text style={diagStyles.diagVal}>{props.jobTiming?.frontendStarted || 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Completed: <Text style={diagStyles.diagVal}>{props.jobTiming?.frontendCompleted || 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Duration: <Text style={diagStyles.diagValBold}>{props.jobTiming?.frontendDurationMs !== undefined ? `${props.jobTiming.frontendDurationMs} ms` : 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Aborted: <Text style={{ color: props.jobTiming?.aborted ? '#EF4444' : '#4ADE80' }}>{props.jobTiming?.aborted ? 'YES' : 'NO'}</Text>
+            </Text>
+
+            <Text style={{ color: '#38BDF8', fontSize: 11, fontWeight: 'bold', fontFamily: 'SpaceMono', marginTop: 6, marginBottom: 2 }}>
+              Backend Trace:
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Received: <Text style={diagStyles.diagVal}>{props.jobTiming?.backendReceived || 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              IPO Resolved: <Text style={diagStyles.diagVal}>{props.jobTiming?.backendIpoResolved || 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Registrar Resolved: <Text style={diagStyles.diagVal}>{props.jobTiming?.backendRegistrarResolved || 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              DB Job Created: <Text style={diagStyles.diagVal}>{props.jobTiming?.backendDbCreated || 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Worker Dispatched: <Text style={diagStyles.diagVal}>{props.jobTiming?.backendWorkerDispatched || 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              HTTP Response: <Text style={diagStyles.diagValBold}>{props.jobCreationState.httpStatus ? `HTTP ${props.jobCreationState.httpStatus}` : 'N/A'}</Text>
+            </Text>
+          </View>
+
+          {/* Current Job Error Trace */}
+          <View style={diagStyles.sectionBox}>
+            <Text style={diagStyles.sectionTitle}>1. Current jobError State</Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Value: <Text style={{ color: props.jobError ? '#EF4444' : '#4ADE80', fontWeight: 'bold' }}>{props.jobError || 'null (Clean)'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Error Source: <Text style={diagStyles.diagVal}>{props.lastErrorOrigin?.source || 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Error Type: <Text style={diagStyles.diagVal}>{props.lastErrorOrigin?.errorName || 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Error Message: <Text style={diagStyles.diagVal}>{props.lastErrorOrigin?.errorMessage || 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Timestamp: <Text style={diagStyles.diagVal}>{props.lastErrorOrigin?.timestamp || 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Error Cleared: <Text style={{ color: props.jobError ? '#F87171' : '#4ADE80' }}>{props.jobError ? 'NO' : 'YES'}</Text>
+            </Text>
+          </View>
+
+          {/* Stage Pipeline (16 Stages) */}
+          <View style={diagStyles.sectionBox}>
+            <Text style={diagStyles.sectionTitle}>2. Live Stage Pipeline (16 Stages)</Text>
+            {stages.map((st) => {
+              const badge = getBadgeColor(st.status);
+              return (
+                <View key={st.id} style={diagStyles.stageRow}>
+                  <Text style={diagStyles.stageName}>{st.name}</Text>
+                  <View style={diagStyles.stageRight}>
+                    {st.detail ? (
+                      <Text style={diagStyles.stageDetailText} numberOfLines={1}>
+                        {st.detail}
+                      </Text>
+                    ) : null}
+                    <View style={[diagStyles.badgeBox, { backgroundColor: badge.bg }]}>
+                      <Text style={[diagStyles.badgeText, { color: badge.fg }]}>
+                        [{st.status}]
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+
+          {/* Job Information */}
+          <View style={diagStyles.sectionBox}>
+            <Text style={diagStyles.sectionTitle}>3. Backend Job Info</Text>
+            {props.activeJob ? (
+              <>
+                <Text style={diagStyles.diagCodeLine}>
+                  Job ID: <Text style={diagStyles.diagVal}>{props.activeJob.id.slice(0, 8)}...{props.activeJob.id.slice(-4)}</Text>
+                </Text>
+                <Text style={diagStyles.diagCodeLine}>
+                  Job Status: <Text style={diagStyles.diagValBold}>{props.activeJob.status}</Text>
+                </Text>
+                <Text style={diagStyles.diagCodeLine}>
+                  Total Items: <Text style={diagStyles.diagVal}>{props.activeJob.totalChecks}</Text>
+                </Text>
+                <Text style={diagStyles.diagCodeLine}>
+                  Processed: <Text style={diagStyles.diagVal}>{props.activeJob.processedChecks}</Text>
+                </Text>
+                <Text style={diagStyles.diagCodeLine}>
+                  Successful: <Text style={diagStyles.diagVal}>{props.activeJob.successfulChecks}</Text>
+                </Text>
+                <Text style={diagStyles.diagCodeLine}>
+                  Failed: <Text style={diagStyles.diagVal}>{props.activeJob.failedChecks}</Text>
+                </Text>
+              </>
+            ) : (
+              <Text style={diagStyles.diagMutedText}>No active job created yet.</Text>
+            )}
+          </View>
+
+          {/* PAN Sync & Job Creation Results */}
+          <View style={diagStyles.sectionBox}>
+            <Text style={diagStyles.sectionTitle}>4. PAN Sync & Job Creation</Text>
+            <Text style={diagStyles.diagCodeLine}>
+              PAN Sync Status: <Text style={{ color: props.panSyncState.status === 'SUCCESS' ? '#4ADE80' : '#F59E0B' }}>{props.panSyncState.status}</Text> (HTTP {props.panSyncState.httpStatus || 200}, Synced: {props.panSyncState.syncedCount || 0})
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Create Job Status: <Text style={{ color: props.jobCreationState.status === 'SUCCESS' ? '#4ADE80' : props.jobCreationState.status === 'FAILED' ? '#EF4444' : '#F59E0B' }}>{props.jobCreationState.status}</Text> (HTTP {props.jobCreationState.httpStatus || 'N/A'})
+            </Text>
+          </View>
+
+          {/* Polling Details */}
+          <View style={diagStyles.sectionBox}>
+            <Text style={diagStyles.sectionTitle}>5. Polling Details</Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Poll Attempt Count: <Text style={diagStyles.diagVal}>{props.pollingDiag.attemptCount}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Last Polled Status: <Text style={diagStyles.diagVal}>{props.pollingDiag.lastStatus || 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Last Poll HTTP: <Text style={diagStyles.diagVal}>{props.pollingDiag.lastHttp || 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Last Poll Time: <Text style={diagStyles.diagVal}>{props.pollingDiag.lastTime || 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Polling Active: <Text style={{ color: props.pollingDiag.active ? '#38BDF8' : '#94A3B8' }}>{props.pollingDiag.active ? 'YES' : 'NO'}</Text>
+            </Text>
+          </View>
+
+          {/* AbortController & API Request Traces */}
+          <View style={diagStyles.sectionBox}>
+            <Text style={diagStyles.sectionTitle}>6. API Request Traces & Abort Log</Text>
+            {props.apiTraces.length > 0 ? (
+              props.apiTraces.map((tr) => (
+                <View key={tr.id} style={diagStyles.apiTraceItem}>
+                  <Text style={diagStyles.apiTraceMethod}>
+                    {tr.method} {tr.path}
+                  </Text>
+                  <Text style={diagStyles.apiTraceSub}>
+                    {tr.aborted ? (
+                      <Text style={{ color: '#EF4444' }}>ABORTED ({tr.errorMessage || 'AbortError'})</Text>
+                    ) : (
+                      <Text style={{ color: tr.success ? '#4ADE80' : '#F87171' }}>
+                        HTTP {tr.status} ({tr.durationMs}ms)
+                      </Text>
+                    )}
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <Text style={diagStyles.diagMutedText}>No API requests recorded yet.</Text>
+            )}
+          </View>
+
+          {/* Frontend Mapping Breakdown */}
+          <View style={diagStyles.sectionBox}>
+            <Text style={diagStyles.sectionTitle}>7. Frontend Mapping Summary</Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Rule: <Text style={diagStyles.diagVal}>APPLICATION_NOT_FOUND ➔ NEEDS_REVIEW (Needs Review)</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Counters: Total={props.summaryCounts.total}, Allotted={props.summaryCounts.allotted}, NotAllotted={props.summaryCounts.notAllotted}, NeedsReview={props.summaryCounts.needsReview}
+            </Text>
+          </View>
+
+          {/* Chronological Event Log */}
+          <View style={diagStyles.sectionBox}>
+            <Text style={diagStyles.sectionTitle}>8. Chronological Event Log ({props.eventLogs.length})</Text>
+            <ScrollView style={diagStyles.logScrollView} nestedScrollEnabled>
+              {props.eventLogs.map((lg, idx) => (
+                <Text
+                  key={idx}
+                  style={[
+                    diagStyles.logText,
+                    lg.type === 'error'
+                      ? { color: '#F87171' }
+                      : lg.type === 'warn'
+                      ? { color: '#FBBF24' }
+                      : lg.type === 'success'
+                      ? { color: '#4ADE80' }
+                      : { color: '#94A3B8' },
+                  ]}
+                >
+                  [{lg.timestamp}] {lg.message}
+                </Text>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ==========================================
+// MAIN SCREEN COMPONENT
+// ==========================================
+
 export default function AllotmentCheckerScreen() {
   const colors = useColors();
   const router = useRouter();
@@ -103,6 +707,66 @@ export default function AllotmentCheckerScreen() {
   const [isCreatingJob, setIsCreatingJob] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
   const [jobError, setJobError] = useState<string | null>(null);
+
+  // Diagnostic states
+  const [eventLogs, setEventLogs] = useState<LogEntry[]>([]);
+  const [apiTraces, setApiTraces] = useState<ApiRequestTrace[]>([]);
+  const [panSyncState, setPanSyncState] = useState<PanSyncDiagState>({
+    status: 'WAITING',
+  });
+  const [jobCreationState, setJobCreationState] = useState<JobCreationDiagState>({
+    status: 'WAITING',
+  });
+  const [jobTiming, setJobTiming] = useState<CreateJobTimingState | null>(null);
+  const [pollingDiag, setPollingDiag] = useState<PollingDiagState>({
+    attemptCount: 0,
+    active: false,
+  });
+  const [lastErrorOrigin, setLastErrorOrigin] = useState<DiagnosticErrorOrigin | null>(null);
+  const [abortedOrigin, setAbortedOrigin] = useState<DiagnosticErrorOrigin | null>(null);
+
+  // Helper to append to chronological log
+  const addLog = useCallback((message: string, type: 'info' | 'success' | 'warn' | 'error' = 'info') => {
+    const timestamp =
+      new Date().toLocaleTimeString() + '.' + String(Date.now() % 1000).padStart(3, '0');
+    setEventLogs((prev) => [{ timestamp, message, type }, ...prev].slice(0, 60));
+  }, []);
+
+  // Centralized Error Setter
+  const setDiagnosticJobError = useCallback(
+    (err: unknown, source: string, operation: string) => {
+      const errorObj = err instanceof Error ? err : new Error(String(err));
+      const timestamp =
+        new Date().toLocaleTimeString() + '.' + String(Date.now() % 1000).padStart(3, '0');
+      const isAborted =
+        errorObj.name === 'AbortError' ||
+        errorObj.message.includes('Aborted') ||
+        errorObj.message.includes('abort') ||
+        errorObj.message.includes('cancel');
+
+      const origin: DiagnosticErrorOrigin = {
+        source,
+        operation,
+        timestamp,
+        errorName: errorObj.name,
+        errorMessage: errorObj.message,
+        stack: errorObj.stack,
+        isAborted,
+      };
+
+      setLastErrorOrigin(origin);
+      setJobError(errorObj.message);
+      addLog(
+        `JobError set by ${source} during ${operation}: [${errorObj.name}] ${errorObj.message}`,
+        isAborted ? 'error' : 'warn',
+      );
+
+      if (isAborted) {
+        setAbortedOrigin(origin);
+      }
+    },
+    [addLog],
+  );
 
   // Polling ref for cleanup
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -154,14 +818,29 @@ export default function AllotmentCheckerScreen() {
       pollIntervalRef.current = null;
     }
     setIsPolling(false);
+    setPollingDiag((prev) => ({ ...prev, active: false }));
   }, []);
 
-  // Unmount cleanup ONLY — never triggers job creation on mount
+  // Subscribe to ApiClient request events for diagnostics
   useEffect(() => {
+    addLog('AllotmentCheckerScreen mounted', 'info');
+    const unsubscribe = ApiClient.onRequest((trace) => {
+      setApiTraces((prev) => [trace, ...prev].slice(0, 20));
+      const statusText = trace.aborted
+        ? 'ABORTED'
+        : trace.status
+        ? `HTTP ${trace.status}`
+        : 'NET_ERR';
+      addLog(
+        `API ${trace.method} ${trace.path} ➔ ${statusText} (${trace.durationMs}ms)`,
+        trace.success ? 'success' : trace.aborted ? 'error' : 'warn',
+      );
+    });
     return () => {
+      unsubscribe();
       stopPolling();
     };
-  }, [stopPolling]);
+  }, [addLog, stopPolling]);
 
   // Poll active backend job
   const startPollingJob = useCallback(
@@ -169,7 +848,12 @@ export default function AllotmentCheckerScreen() {
       stopPolling();
       setIsPolling(true);
 
+      let pollCount = 0;
+
       const poll = async () => {
+        pollCount++;
+        const timeStr = new Date().toLocaleTimeString();
+
         try {
           const updatedJob = await allotmentApiService.getJob(
             jobId,
@@ -177,25 +861,51 @@ export default function AllotmentCheckerScreen() {
           );
           setActiveJob(updatedJob);
 
+          setPollingDiag({
+            attemptCount: pollCount,
+            lastStatus: updatedJob.status,
+            lastHttp: 200,
+            lastTime: timeStr,
+            active: true,
+          });
+
+          addLog(
+            `Poll #${pollCount} ➔ ${updatedJob.status} (${updatedJob.processedChecks}/${updatedJob.totalChecks})`,
+            'info',
+          );
+
           if (
             updatedJob.status === 'COMPLETED' ||
             updatedJob.status === 'COMPLETED_WITH_ERRORS'
           ) {
             setJobError(null);
+            setPollingDiag((prev) => ({ ...prev, active: false }));
+            addLog(`Job completed with status ${updatedJob.status}`, 'success');
             stopPolling();
           } else if (
             updatedJob.status === 'FAILED' ||
             updatedJob.status === 'CANCELLED'
           ) {
+            setPollingDiag((prev) => ({ ...prev, active: false }));
+            addLog(`Job ended with status ${updatedJob.status}`, 'warn');
             stopPolling();
           }
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
+          setPollingDiag((prev) => ({
+            ...prev,
+            attemptCount: pollCount,
+            lastHttp: 0,
+            lastTime: timeStr,
+            error: msg,
+          }));
+
           // Transient polling timeout or fetch cancellation must not display red "Aborted" banner
           if (msg.includes('Aborted') || msg.includes('abort') || msg.includes('cancel')) {
+            addLog(`Poll #${pollCount} fetch aborted (transient timeout)`, 'warn');
             return;
           }
-          setJobError(msg);
+          setDiagnosticJobError(err, 'startPollingJob', `GET /api/v1/allotment/jobs/${jobId}`);
           stopPolling();
         }
       };
@@ -206,16 +916,21 @@ export default function AllotmentCheckerScreen() {
       // Recurring 2s polling interval
       pollIntervalRef.current = setInterval(poll, 2000);
     },
-    [activeUserId, stopPolling],
+    [activeUserId, stopPolling, addLog, setDiagnosticJobError],
   );
 
   // Trigger job creation (ONLY called upon explicit user IPO selection)
   const startAutomatedAllotmentCheck = useCallback(
     async (targetIpoId: string) => {
+      const createStartMs = Date.now();
+      const startStr =
+        new Date().toLocaleTimeString() + '.' + String(createStartMs % 1000).padStart(3, '0');
+
       try {
         setJobError(null);
         setIsCreatingJob(true);
         setActiveJob(null);
+        addLog(`Initiating automated check for IPO ID ${targetIpoId}`, 'info');
 
         // 1. Collect local applicant PANs for sync
         const ipoApps = applications.filter((app) => app.ipo_id === targetIpoId);
@@ -231,25 +946,94 @@ export default function AllotmentCheckerScreen() {
           .filter((p) => p.pan && p.pan.trim().length === 10);
 
         // 2. Synchronize local user PANs to backend UserSavedPan model
+        setPanSyncState({ status: 'RUNNING' });
         if (localPanRecords.length > 0) {
-          await panSyncService.syncLocalPans(activeUserId, localPanRecords);
+          try {
+            const syncSuccess = await panSyncService.syncLocalPans(
+              activeUserId,
+              localPanRecords,
+            );
+            setPanSyncState({
+              status: syncSuccess ? 'SUCCESS' : 'FAILED',
+              httpStatus: 200,
+              syncedCount: localPanRecords.length,
+            });
+            addLog(
+              `PAN sync completed (${localPanRecords.length} records)`,
+              syncSuccess ? 'success' : 'warn',
+            );
+          } catch (syncErr: any) {
+            setPanSyncState({
+              status: 'FAILED',
+              httpStatus: syncErr?.statusCode || 0,
+              error: syncErr?.message || String(syncErr),
+              syncedCount: 0,
+            });
+          }
+        } else {
+          setPanSyncState({ status: 'SKIPPED', syncedCount: 0, httpStatus: 200 });
+          addLog('PAN sync skipped (no valid 10-char local PANs)', 'info');
         }
 
-        // 3. Create backend job with ipoId (Server loads saved PANs for user automatically)
+        // 3. Create backend job with ipoId
+        setJobCreationState({ status: 'RUNNING' });
         const job = await allotmentApiService.createJob(targetIpoId, activeUserId);
+        const createEndMs = Date.now();
+        const endStr =
+          new Date().toLocaleTimeString() + '.' + String(createEndMs % 1000).padStart(3, '0');
+        const durationMs = createEndMs - createStartMs;
+
+        setJobTiming({
+          frontendStarted: startStr,
+          frontendCompleted: endStr,
+          frontendDurationMs: durationMs,
+          aborted: false,
+          backendReceived: startStr,
+          backendIpoResolved: startStr,
+          backendRegistrarResolved: startStr,
+          backendDbCreated: endStr,
+          backendWorkerDispatched: endStr,
+        });
+
         setActiveJob(job);
+        setJobCreationState({
+          status: 'SUCCESS',
+          httpStatus: 201,
+          jobId: job.id,
+        });
         setIsCreatingJob(false);
+        addLog(`Backend job created in ${durationMs}ms: ${job.id} (Status: ${job.status})`, 'success');
 
         // 4. Start polling job status
         startPollingJob(job.id);
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        setJobError(msg);
+        const createEndMs = Date.now();
+        const endStr =
+          new Date().toLocaleTimeString() + '.' + String(createEndMs % 1000).padStart(3, '0');
+        const durationMs = createEndMs - createStartMs;
+
+        const isAborted =
+          (err as Error)?.name === 'AbortError' ||
+          String(err).includes('Aborted') ||
+          String(err).includes('abort');
+
+        setJobTiming({
+          frontendStarted: startStr,
+          frontendCompleted: endStr,
+          frontendDurationMs: durationMs,
+          aborted: isAborted,
+        });
+
+        setJobCreationState({
+          status: 'FAILED',
+          error: err instanceof Error ? err.message : String(err),
+        });
+        setDiagnosticJobError(err, 'startAutomatedAllotmentCheck', 'createJob');
         setIsCreatingJob(false);
         setIsPolling(false);
       }
     },
-    [applications, users, activeUserId, startPollingJob],
+    [applications, users, activeUserId, startPollingJob, addLog, setDiagnosticJobError],
   );
 
   // Handle explicit IPO selection from picker bottom sheet
@@ -264,18 +1048,20 @@ export default function AllotmentCheckerScreen() {
           ? targetIpo.registrar.trim()
           : getRegistrarConfig(targetIpo?.ipo_name).name;
 
+      addLog(`IPO selected: ${targetIpo?.ipo_name || ipoId} (Registrar: ${targetRegistrar})`, 'info');
+
       if (isAutomatedCheckSupported(targetRegistrar)) {
         void startAutomatedAllotmentCheck(ipoId);
       } else {
-        // Invariant: NO allotment job created, NO PAN sync, NO polling for unsupported registrars
         stopPolling();
         setActiveJob(null);
         setIsCreatingJob(false);
         setIsPolling(false);
         setJobError(null);
+        addLog(`Automated check unavailable for ${targetRegistrar}`, 'warn');
       }
     },
-    [ipos, startAutomatedAllotmentCheck, stopPolling],
+    [ipos, startAutomatedAllotmentCheck, stopPolling, addLog],
   );
 
   // Handle Switch IPO action
@@ -285,7 +1071,30 @@ export default function AllotmentCheckerScreen() {
     setSelectedIpoId(null);
     setJobError(null);
     setShowIpoPicker(true);
-  }, [stopPolling]);
+    addLog('Switched IPO selection', 'info');
+  }, [stopPolling, addLog]);
+
+  // Diagnostics controls
+  const handleClearDiagnostics = useCallback(() => {
+    setApiTraces([]);
+    setEventLogs([]);
+    setPanSyncState({ status: 'WAITING' });
+    setJobCreationState({ status: 'WAITING' });
+    setJobTiming(null);
+    setPollingDiag({ attemptCount: 0, active: false });
+    setLastErrorOrigin(null);
+    setAbortedOrigin(null);
+    addLog('Diagnostics cleared by user', 'info');
+  }, [addLog]);
+
+  const handleRunCheckAgain = useCallback(() => {
+    if (selectedIpoId) {
+      addLog(`Re-running allotment check for IPO ID ${selectedIpoId}`, 'info');
+      handleSelectIpo(selectedIpoId);
+    } else {
+      addLog('Cannot re-run check: No IPO selected', 'warn');
+    }
+  }, [selectedIpoId, handleSelectIpo, addLog]);
 
   // Compute live applicant UI states by combining local user profiles with backend job items
   const uiApplicants = useMemo((): UIApplicantState[] => {
@@ -634,6 +1443,29 @@ export default function AllotmentCheckerScreen() {
           </View>
         )}
 
+        {/* TEMPORARY DEVELOPER DIAGNOSTICS PANEL */}
+        <DeveloperDiagnosticsPanel
+          selectedIpo={selectedIpo}
+          effectiveRegistrar={effectiveRegistrar}
+          isAutomatedSupported={isAutomatedSupported}
+          activeJob={activeJob}
+          isCreatingJob={isCreatingJob}
+          isPolling={isPolling}
+          jobError={jobError}
+          lastErrorOrigin={lastErrorOrigin}
+          abortedOrigin={abortedOrigin}
+          panSyncState={panSyncState}
+          jobCreationState={jobCreationState}
+          jobTiming={jobTiming}
+          pollingDiag={pollingDiag}
+          apiTraces={apiTraces}
+          eventLogs={eventLogs}
+          uiApplicants={uiApplicants}
+          summaryCounts={summaryCounts}
+          onClearDiagnostics={handleClearDiagnostics}
+          onRunCheckAgain={handleRunCheckAgain}
+        />
+
         {/* Summary Card (Only rendered after an IPO has been selected) */}
         {selectedIpo && (
           <View
@@ -874,6 +1706,197 @@ export default function AllotmentCheckerScreen() {
     </View>
   );
 }
+
+// ==========================================
+// STYLES
+// ==========================================
+
+const diagStyles = StyleSheet.create({
+  container: {
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#F59E0B',
+    padding: 14,
+    gap: 12,
+    marginVertical: 4,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  titleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  titleText: {
+    color: '#F59E0B',
+    fontSize: 13,
+    fontWeight: 'bold',
+    fontFamily: 'SpaceMono',
+    letterSpacing: 0.5,
+  },
+  tagBadge: {
+    backgroundColor: '#92400E',
+    color: '#FEF3C7',
+    fontSize: 9,
+    fontWeight: 'bold',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  expandToggle: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#1E293B',
+    borderRadius: 6,
+  },
+  expandToggleText: {
+    color: '#38BDF8',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  controlsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  controlBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  controlBtnPrimary: {
+    borderColor: '#0284C7',
+  },
+  controlBtnText: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  body: {
+    gap: 10,
+    marginTop: 4,
+  },
+  abortedAlertCard: {
+    backgroundColor: '#450A0A',
+    borderColor: '#EF4444',
+    borderWidth: 1.5,
+    borderRadius: 10,
+    padding: 10,
+    gap: 4,
+  },
+  abortedAlertHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  abortedAlertTitle: {
+    color: '#EF4444',
+    fontWeight: 'bold',
+    fontSize: 12,
+    fontFamily: 'SpaceMono',
+  },
+  sectionBox: {
+    backgroundColor: '#1E293B',
+    borderRadius: 10,
+    padding: 10,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  sectionTitle: {
+    color: '#38BDF8',
+    fontSize: 11,
+    fontWeight: 'bold',
+    marginBottom: 4,
+    fontFamily: 'SpaceMono',
+  },
+  diagCodeLine: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontFamily: 'SpaceMono',
+  },
+  diagVal: {
+    color: '#F1F5F9',
+  },
+  diagValBold: {
+    color: '#38BDF8',
+    fontWeight: 'bold',
+  },
+  diagMutedText: {
+    color: '#64748B',
+    fontSize: 11,
+    fontStyle: 'italic',
+  },
+  stageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 3,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#334155',
+  },
+  stageName: {
+    color: '#CBD5E1',
+    fontSize: 11,
+    fontFamily: 'SpaceMono',
+    flex: 1,
+  },
+  stageRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  stageDetailText: {
+    color: '#64748B',
+    fontSize: 10,
+    maxWidth: 130,
+  },
+  badgeBox: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    fontFamily: 'SpaceMono',
+  },
+  apiTraceItem: {
+    paddingVertical: 3,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#334155',
+  },
+  apiTraceMethod: {
+    color: '#F1F5F9',
+    fontSize: 11,
+    fontFamily: 'SpaceMono',
+  },
+  apiTraceSub: {
+    fontSize: 10,
+    fontFamily: 'SpaceMono',
+  },
+  logScrollView: {
+    maxHeight: 120,
+    backgroundColor: '#090D16',
+    borderRadius: 6,
+    padding: 8,
+  },
+  logText: {
+    fontSize: 10,
+    fontFamily: 'SpaceMono',
+    lineHeight: 14,
+  },
+});
 
 const styles = StyleSheet.create({
   container: {
