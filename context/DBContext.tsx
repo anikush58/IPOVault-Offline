@@ -10,6 +10,7 @@ import { uploadService } from '@/services/infrastructure';
 import { safeRunAsync, safeGetFirstAsync } from '@/utils/sqliteDebug';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { ensureBase64DataUrl } from '@/utils/imageUtils';
+import { getRegistrarConfig } from '@/services/allotment/registrarConfig';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -451,12 +452,13 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         );
       } else {
         // Fallback shadow entry if neither ipo_master nor ipo_listings record exists yet
+        const shadowRegistrar = getRegistrarConfig(ipoId).name;
         await db.runAsync(
           `INSERT OR IGNORE INTO ipo_listings (
             id, ipo_name, buy_price, quantity, open_date, close_date, listing_date, allotment_date,
             registrar, exchange, issue_type, archived, is_favorite, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, '', '', '', '', '', 'NSE, BSE', 'Mainboard', 0, 0, ?, ?)`,
-          [ipoId, ipoId, 100, 1, now, now]
+          ) VALUES (?, ?, ?, ?, '', '', '', '', ?, 'NSE, BSE', 'Mainboard', 0, 0, ?, ?)`,
+          [ipoId, ipoId, 100, 1, shadowRegistrar, now, now]
         );
       }
     }

@@ -97,6 +97,7 @@ const jest = {
 
 import { AllotmentApiService } from './AllotmentApiService';
 import { PanSyncService } from './PanSyncService';
+import { isAutomatedCheckSupported } from './registrarConfig';
 
 
 
@@ -331,4 +332,34 @@ describe('Allotment Checker Frontend Integration Tests', () => {
       allotmentApiService.createJob('ipo-1', 'user-1'),
     ).rejects.toThrow('Backend service unavailable');
   });
+
+  it('21. should correctly identify supported (KFintech) vs unsupported (Link Intime/MUFG) registrars', () => {
+    expect(isAutomatedCheckSupported('KFin Technologies Limited')).toBe(true);
+    expect(isAutomatedCheckSupported('Ashutosh Fibre')).toBe(true);
+    expect(isAutomatedCheckSupported('Link Intime India Private Ltd')).toBe(false);
+    expect(isAutomatedCheckSupported('ESDS Software Solution')).toBe(false);
+    expect(isAutomatedCheckSupported('Bigshare Services')).toBe(false);
+    expect(isAutomatedCheckSupported(null)).toBe(false);
+  });
+
+  it('22. should reject backend job creation for unsupported registrar (NO job invariant)', async () => {
+    jest.spyOn(global, 'fetch').mockImplementationOnce(() =>
+      Promise.resolve({
+        ok: false,
+        status: 400,
+        json: async () => ({
+          success: false,
+          error: {
+            code: 'REGISTRAR_UNSUPPORTED',
+            message: 'Automated checking is not supported for IPO',
+          },
+        }),
+      } as Response),
+    );
+
+    await expect(
+      allotmentApiService.createJob('esds-unsupported-id', 'user-1'),
+    ).rejects.toThrow('Automated checking is not supported for IPO');
+  });
 });
+

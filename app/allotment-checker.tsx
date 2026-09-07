@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   FlatList,
+  Linking,
   Modal,
   ScrollView,
   StyleSheet,
@@ -24,6 +25,10 @@ import {
   BackendJobResponse,
 } from '@/services/allotment/AllotmentApiService';
 import { panSyncService } from '@/services/allotment/PanSyncService';
+import {
+  getRegistrarConfig,
+  isAutomatedCheckSupported,
+} from '@/services/allotment/registrarConfig';
 
 // Mask PAN helper (e.g. ABCDE1234F -> XXXXX1234F)
 function maskPan(pan: string): string {
@@ -105,6 +110,27 @@ export default function AllotmentCheckerScreen() {
     if (!selectedIpoId) return null;
     return ipos.find((i) => i.id === selectedIpoId) || null;
   }, [ipos, selectedIpoId]);
+
+  // Effective registrar resolution (falls back to keyword matching / registrarConfig when empty)
+  const effectiveRegistrar = useMemo(() => {
+    if (!selectedIpo) return '';
+    if (selectedIpo.registrar && selectedIpo.registrar.trim().length > 0) {
+      return selectedIpo.registrar.trim();
+    }
+    const cfg = getRegistrarConfig(selectedIpo.ipo_name);
+    return cfg.name !== 'Official Portal'
+      ? cfg.name
+      : 'Link Intime India Private Ltd';
+  }, [selectedIpo]);
+
+  // Support level helper for automated checking
+  const isAutomatedSupported = useMemo(() => {
+    return isAutomatedCheckSupported(effectiveRegistrar);
+  }, [effectiveRegistrar]);
+
+  const registrarConfig = useMemo(() => {
+    return getRegistrarConfig(effectiveRegistrar);
+  }, [effectiveRegistrar]);
 
   // Current IPO applications & local user mapping
   const currentApplications = useMemo(() => {
@@ -214,9 +240,25 @@ export default function AllotmentCheckerScreen() {
     (ipoId: string) => {
       setShowIpoPicker(false);
       setSelectedIpoId(ipoId);
-      void startAutomatedAllotmentCheck(ipoId);
+
+      const targetIpo = ipos.find((i) => i.id === ipoId);
+      const targetRegistrar =
+        targetIpo?.registrar && targetIpo.registrar.trim().length > 0
+          ? targetIpo.registrar.trim()
+          : getRegistrarConfig(targetIpo?.ipo_name).name;
+
+      if (isAutomatedCheckSupported(targetRegistrar)) {
+        void startAutomatedAllotmentCheck(ipoId);
+      } else {
+        // Invariant: NO allotment job created, NO PAN sync, NO polling for unsupported registrars
+        stopPolling();
+        setActiveJob(null);
+        setIsCreatingJob(false);
+        setIsPolling(false);
+        setJobError(null);
+      }
     },
-    [startAutomatedAllotmentCheck],
+    [ipos, startAutomatedAllotmentCheck, stopPolling],
   );
 
   // Handle Switch IPO action
@@ -254,7 +296,10 @@ export default function AllotmentCheckerScreen() {
       let sharesAllotted = 0;
       let errorMessage: string | undefined;
 
-      if (isCreatingJob && !matchedItem) {
+      if (!isAutomatedSupported) {
+        status = 'needs_review';
+        errorMessage = `Automated checking unavailable for ${effectiveRegistrar}`;
+      } else if (isCreatingJob && !matchedItem) {
         status = 'checking';
       } else if (matchedItem) {
         const backendStatus = matchedItem.status.toUpperCase();
@@ -295,7 +340,15 @@ export default function AllotmentCheckerScreen() {
         checkedAt: matchedItem?.checkedAt || activeJob?.updatedAt,
       };
     });
-  }, [currentApplications, users, activeJob, isCreatingJob, selectedIpo]);
+  }, [
+    currentApplications,
+    users,
+    activeJob,
+    isCreatingJob,
+    selectedIpo,
+    isAutomatedSupported,
+    effectiveRegistrar,
+  ]);
 
   // Compute live summary statistics
   const summaryCounts = useMemo(() => {
@@ -372,15 +425,35 @@ export default function AllotmentCheckerScreen() {
             <Text style={[styles.ipoSelectorName, { color: colors.foreground }]}>
               {selectedIpo?.ipo_name || 'Choose from registered IPOs...'}
             </Text>
-            {selectedIpo?.registrar ? (
-              <Text style={[styles.ipoRegistrarText, { color: colors.primary }]}>
-                Registrar: {selectedIpo.registrar}
-              </Text>
-            ) : !selectedIpo ? (
+            {selectedIpo ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                <Text style={[styles.ipoRegistrarText, { color: colors.primary }]}>
+                  Registrar: {effectiveRegistrar}
+                </Text>
+                <View
+                  style={{
+                    backgroundColor: isAutomatedSupported ? '#DCFCE7' : '#FEF3C7',
+                    paddingHorizontal: 8,
+                    paddingVertical: 2,
+                    borderRadius: 12,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 'bold',
+                      color: isAutomatedSupported ? '#166534' : '#92400E',
+                    }}
+                  >
+                    {isAutomatedSupported ? 'Automated Check Available' : 'Automated Check Unavailable'}
+                  </Text>
+                </View>
+              </View>
+            ) : (
               <Text style={[styles.ipoRegistrarText, { color: colors.mutedForeground }]}>
                 Select an IPO to begin checking.
               </Text>
-            ) : null}
+            )}
           </View>
 
           {selectedIpo ? (
@@ -417,7 +490,7 @@ export default function AllotmentCheckerScreen() {
                   Registrar
                 </Text>
                 <Text style={[styles.infoGridValue, { color: colors.foreground }]}>
-                  {selectedIpo.registrar || 'Unknown'}
+                  {effectiveRegistrar}
                 </Text>
               </View>
               <View style={styles.infoGridItem}>
@@ -445,6 +518,45 @@ export default function AllotmentCheckerScreen() {
                 </Text>
               </View>
             </View>
+          </View>
+        )}
+
+        {/* Unsupported Registrar Notice Banner */}
+        {selectedIpo && !isAutomatedSupported && (
+          <View
+            style={{
+              padding: 16,
+              borderRadius: 16,
+              borderWidth: 1,
+              backgroundColor: '#FEF3C7',
+              borderColor: '#F59E0B',
+              gap: 8,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Feather name="alert-triangle" size={20} color="#B45309" />
+              <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#92400E' }}>
+                Automated checking unavailable for this registrar
+              </Text>
+            </View>
+            <Text style={{ fontSize: 13, color: '#B45309', lineHeight: 18 }}>
+              Automated checking is unavailable for {effectiveRegistrar}. PAN automation for this registrar is not implemented. Technical/unsupported statuses are never presented as "No shares allotted". Please verify manually on the official portal.
+            </Text>
+            <TouchableOpacity
+              style={{
+                marginTop: 4,
+                backgroundColor: '#B45309',
+                paddingHorizontal: 14,
+                paddingVertical: 8,
+                borderRadius: 8,
+                alignSelf: 'flex-start',
+              }}
+              onPress={() => void Linking.openURL(registrarConfig.url)}
+            >
+              <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: 'bold' }}>
+                Open Official {effectiveRegistrar} Portal
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
 

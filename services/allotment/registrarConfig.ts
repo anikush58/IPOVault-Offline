@@ -8,13 +8,13 @@ export interface RegistrarConfig {
 export const REGISTRAR_CONFIGS: RegistrarConfig[] = [
   {
     name: 'Link Intime India Private Ltd',
-    keywords: ['LINK INTIME', 'LINKINTIME', 'LINK'],
+    keywords: ['LINK INTIME', 'LINKINTIME', 'LINK', 'ESDS'],
     url: 'https://linkintime.co.in/initial_offer/public-issues.html',
     supportLevel: 'HYBRID',
   },
   {
     name: 'KFin Technologies Limited',
-    keywords: ['KFIN', 'KFINTECH', 'KARVY'],
+    keywords: ['KFIN', 'KFINTECH', 'KARVY', 'ASHUTOSH'],
     url: 'https://ris.kfintech.com/ipostatus/',
     supportLevel: 'HYBRID',
   },
@@ -74,3 +74,10 @@ export function getRegistrarConfig(registrarName?: string | null): RegistrarConf
     supportLevel: 'MANUAL_ONLY',
   };
 }
+
+export function isAutomatedCheckSupported(registrarName?: string | null): boolean {
+  if (!registrarName) return false;
+  const cfg = getRegistrarConfig(registrarName);
+  return cfg.keywords.some((kw) => kw === 'KFIN' || kw === 'KFINTECH' || kw === 'KARVY');
+}
+
