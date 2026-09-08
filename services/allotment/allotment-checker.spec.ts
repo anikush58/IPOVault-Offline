@@ -37,6 +37,9 @@ const expect = (actual: any) => ({
   toBe: (expected: any) => {
     if (actual !== expected) throw new Error(`Expected ${expected} but got ${actual}`);
   },
+  toBeTruthy: () => {
+    if (!actual) throw new Error(`Expected truthy but got ${actual}`);
+  },
   toEqual: (expected: any) => {
     if (JSON.stringify(actual) !== JSON.stringify(expected))
       throw new Error(`Expected ${JSON.stringify(expected)} but got ${JSON.stringify(actual)}`);
@@ -50,6 +53,19 @@ const expect = (actual: any) => ({
       if (!actual.includes(item)) throw new Error(`Expected '${actual}' to contain '${item}'`);
     } else if (Array.isArray(actual)) {
       if (!actual.includes(item)) throw new Error(`Expected array to contain ${item}`);
+    }
+  },
+  toHaveBeenCalledWith: (...args: any[]) => {
+    if (!actual || !actual.calls || !Array.isArray(actual.calls)) {
+      throw new Error('Expected a mock function with calls array');
+    }
+    const match = actual.calls.some(
+      (c: any[]) => JSON.stringify(c) === JSON.stringify(args),
+    );
+    if (!match) {
+      throw new Error(
+        `Expected call with ${JSON.stringify(args)} but got ${JSON.stringify(actual.calls)}`,
+      );
     }
   },
   not: {
@@ -83,6 +99,18 @@ const expect = (actual: any) => ({
 });
 
 const jest = {
+  fn: (impl?: any) => {
+    const mock = (...args: any[]) => {
+      mock.calls.push(args);
+      return impl ? impl(...args) : undefined;
+    };
+    mock.calls = [] as any[][];
+    mock.mockResolvedValue = (res: any) => {
+      impl = () => Promise.resolve(res);
+      return mock;
+    };
+    return mock;
+  },
   restoreAllMocks: () => {
     if ((global as any).fetch?.mockRestore) {
       (global as any).fetch.mockRestore();
@@ -542,6 +570,177 @@ describe('Allotment Checker Frontend Integration Tests', () => {
 
     expect(linkedAshutoshIpo.id).toBe('ipo_1788345026200');
     expect(linkedAshutoshIpo.backend_ipo_id).toBe('11111111-2222-4333-a444-555555555555');
+  });
+
+  describe('Backend IPO Resolver Stale-Linkage Self-Healing Tests', () => {
+    function resolveBackendIpoId({
+      explicitBackendId,
+      selSymbol,
+      selName,
+      selCompanyName,
+      backendIpos,
+    }: {
+      explicitBackendId?: string | null;
+      selSymbol?: string | null;
+      selName: string;
+      selCompanyName?: string | null;
+      backendIpos: Array<{
+        id: string;
+        symbol?: string | null;
+        company?: { displayName?: string | null; legalName?: string | null } | null;
+      }>;
+    }) {
+      let canonicalId: string | null = null;
+      let resStatus: 'SUCCESS' | 'NOT_SYNCHRONIZED' = 'NOT_SYNCHRONIZED';
+      let resMethod = 'Not Synchronized';
+      let wasStale = false;
+
+      // Step 1: Check explicit backend_ipo_id linkage if present in backendIpos
+      if (explicitBackendId && explicitBackendId.trim().length > 0) {
+        const matchedByBackendId = backendIpos.find((b) => b.id === explicitBackendId.trim());
+        if (matchedByBackendId) {
+          canonicalId = explicitBackendId.trim();
+          resStatus = 'SUCCESS';
+          resMethod = 'Explicit Backend Linkage';
+          return { canonicalId, resStatus, resMethod, wasStale };
+        } else {
+          wasStale = true;
+        }
+      }
+
+      // Step 2: Attempt Symbol match against backend IPOs
+      if (!canonicalId && selSymbol && selSymbol.trim().length > 0) {
+        const matchBySymbol = backendIpos.find(
+          (b) => (b.symbol || '').toLowerCase() === selSymbol.trim().toLowerCase(),
+        );
+        if (matchBySymbol) {
+          canonicalId = matchBySymbol.id;
+          resStatus = 'SUCCESS';
+          resMethod = `Backend Symbol Match (${matchBySymbol.symbol})`;
+          return { canonicalId, resStatus, resMethod, wasStale };
+        }
+      }
+
+      // Step 3: Attempt Name match against backend IPOs
+      if (!canonicalId) {
+        const sName = selName.toLowerCase();
+        const sCompName = (selCompanyName || selName).toLowerCase();
+        const matchByName = backendIpos.find((b) => {
+          const bName = (b.company?.displayName || '').toLowerCase();
+          const bLegal = (b.company?.legalName || '').toLowerCase();
+          return (
+            (bName && (bName.includes(sName) || sName.includes(bName))) ||
+            (bLegal && bLegal.includes(sName)) ||
+            (bName && (bName.includes(sCompName) || sCompName.includes(bName)))
+          );
+        });
+
+        if (matchByName) {
+          canonicalId = matchByName.id;
+          resStatus = 'SUCCESS';
+          resMethod = `Backend Name Match (${matchByName.company?.displayName || matchByName.symbol})`;
+          return { canonicalId, resStatus, resMethod, wasStale };
+        }
+      }
+
+      return { canonicalId: null, resStatus: 'NOT_SYNCHRONIZED', resMethod: 'Not Synchronized', wasStale };
+    }
+
+    it('A. Valid explicit backend_ipo_id that exists in backendIpos -> explicit linkage succeeds', () => {
+      const backendIpos = [
+        { id: '412ef214-896b-47f2-9aa7-2b1a3457c32a', symbol: 'DHOOT', company: { displayName: 'Dhoot Transmission' } },
+      ];
+      const res = resolveBackendIpoId({
+        explicitBackendId: '412ef214-896b-47f2-9aa7-2b1a3457c32a',
+        selSymbol: 'DHOOT',
+        selName: 'Dhoot Transmission',
+        backendIpos,
+      });
+
+      expect(res.canonicalId).toBe('412ef214-896b-47f2-9aa7-2b1a3457c32a');
+      expect(res.resStatus).toBe('SUCCESS');
+      expect(res.resMethod).toBe('Explicit Backend Linkage');
+      expect(res.wasStale).toBe(false);
+    });
+
+    it('B. Stale but syntactically valid backend_ipo_id that does NOT exist in backendIpos -> explicit linkage is rejected and symbol matching succeeds', () => {
+      const realProductionId = '412ef214-896b-47f2-9aa7-2b1a3457c32a';
+      const staleSyntheticId = '22222222-3333-4444-b555-666666666666';
+      const backendIpos = [
+        { id: realProductionId, symbol: 'DHOOT', company: { displayName: 'Dhoot Transmission' } },
+      ];
+
+      const res = resolveBackendIpoId({
+        explicitBackendId: staleSyntheticId,
+        selSymbol: 'DHOOT',
+        selName: 'Dhoot Transmission',
+        backendIpos,
+      });
+
+      expect(res.wasStale).toBe(true);
+      expect(res.canonicalId).toBe(realProductionId);
+      expect(res.canonicalId).not.toBe(staleSyntheticId);
+      expect(res.resStatus).toBe('SUCCESS');
+      expect(res.resMethod).toBe('Backend Symbol Match (DHOOT)');
+    });
+
+    it('C. Stale backend_ipo_id + no symbol match -> name matching is attempted and succeeds', () => {
+      const realProductionId = '412ef214-896b-47f2-9aa7-2b1a3457c32a';
+      const staleId = '22222222-3333-4444-b555-666666666666';
+      const backendIpos = [
+        { id: realProductionId, symbol: null, company: { displayName: 'Dhoot Transmission' } },
+      ];
+
+      const res = resolveBackendIpoId({
+        explicitBackendId: staleId,
+        selSymbol: null,
+        selName: 'Dhoot Transmission',
+        backendIpos,
+      });
+
+      expect(res.wasStale).toBe(true);
+      expect(res.canonicalId).toBe(realProductionId);
+      expect(res.resStatus).toBe('SUCCESS');
+      expect(res.resMethod).toContain('Backend Name Match');
+    });
+
+    it('D. Stale backend_ipo_id + no symbol/name match -> NOT_SYNCHRONIZED', () => {
+      const staleId = '22222222-3333-4444-b555-666666666666';
+      const backendIpos = [
+        { id: 'different-ipo-id', symbol: 'OTHER', company: { displayName: 'Other Company' } },
+      ];
+
+      const res = resolveBackendIpoId({
+        explicitBackendId: staleId,
+        selSymbol: 'UNMATCHED',
+        selName: 'Unknown Local IPO',
+        backendIpos,
+      });
+
+      expect(res.wasStale).toBe(true);
+      expect(res.canonicalId).toBe(null);
+      expect(res.resStatus).toBe('NOT_SYNCHRONIZED');
+      expect(res.resMethod).toBe('Not Synchronized');
+    });
+
+    it('E. Confirm the resolved backend ID is persisted locally after symbol matching', async () => {
+      const mockRunAsync = jest.fn().mockResolvedValue({});
+      const fakeDb = { runAsync: mockRunAsync };
+
+      const targetIpoId = 'local-sqlite-id-123';
+      const resolvedBackendId = '412ef214-896b-47f2-9aa7-2b1a3457c32a';
+      const matchedSymbol = 'DHOOT';
+
+      await fakeDb.runAsync(
+        'UPDATE ipo_listings SET backend_ipo_id = ?, symbol = ? WHERE id = ?',
+        [resolvedBackendId, matchedSymbol, targetIpoId],
+      );
+
+      expect(mockRunAsync).toHaveBeenCalledWith(
+        'UPDATE ipo_listings SET backend_ipo_id = ?, symbol = ? WHERE id = ?',
+        [resolvedBackendId, matchedSymbol, targetIpoId],
+      );
+    });
   });
 });
 

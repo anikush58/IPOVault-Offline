@@ -1128,14 +1128,19 @@ export default function AllotmentCheckerScreen() {
           addLog(`Error fetching backend IPO list: ${resErr?.message}`, 'warn');
         }
 
-        // Step 1: Check explicit backend_ipo_id linkage if present
+        // Step 1: Check explicit backend_ipo_id linkage if present in backendIpos response
         if (explicitBackendId && explicitBackendId.trim().length > 0) {
           const matchedByBackendId = backendIpos.find((b: any) => b.id === explicitBackendId.trim());
-          if (matchedByBackendId || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(explicitBackendId.trim())) {
+          if (matchedByBackendId) {
             canonicalId = explicitBackendId.trim();
             resStatus = 'SUCCESS';
             resMethod = 'Explicit Backend Linkage';
             addLog(`Using explicit backend_ipo_id '${canonicalId}' for local IPO '${targetIpoId}'`, 'success');
+          } else {
+            addLog(
+              `Stored backend_ipo_id '${explicitBackendId.trim()}' is stale/not present in backend IPO list; falling back to symbol/name resolution.`,
+              'warn',
+            );
           }
         }
 
