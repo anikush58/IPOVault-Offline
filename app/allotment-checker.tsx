@@ -13,7 +13,9 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSQLiteContext } from 'expo-sqlite';
 
+import { API_BASE_URL } from '@/constants/apiConfig';
 import { AllotmentStatusBadge } from '@/components/allotment/AllotmentStatusBadge';
 import { IconButton } from '@/components/ui/IconButton';
 import { useAuth } from '@/context/AuthContext';
@@ -30,6 +32,8 @@ import {
   isAutomatedCheckSupported,
 } from '@/services/allotment/registrarConfig';
 import { ApiClient, ApiRequestTrace } from '@/services/api/ApiClient';
+
+export const APP_DEBUG_BUILD = 'AC-DIAG-20260907-1640';
 
 // ==========================================
 // DIAGNOSTIC TYPES & HELPER INTERFACES
@@ -82,6 +86,15 @@ export interface PollingDiagState {
   lastTime?: string;
   active: boolean;
   error?: string;
+}
+
+export interface IpoResolutionDiagState {
+  selectedName?: string;
+  localId?: string;
+  backendId?: string;
+  resolutionStatus?: 'SUCCESS' | 'NOT_SYNCHRONIZED' | 'FAILED' | 'WAITING';
+  resolutionMethod?: string;
+  sentToCreateJob?: string;
 }
 
 export interface CreateJobTimingState {
@@ -332,6 +345,11 @@ function computeStages(
 // ==========================================
 
 function DeveloperDiagnosticsPanel(props: {
+  appBuildMarker: string;
+  apiBaseUrl: string;
+  healthState: { status: string; httpStatus?: number; durationMs?: number; url: string };
+  userId?: string;
+  ipoResolution?: IpoResolutionDiagState;
   selectedIpo: any;
   effectiveRegistrar: string;
   isAutomatedSupported: boolean;
@@ -439,6 +457,57 @@ function DeveloperDiagnosticsPanel(props: {
 
       {isExpanded && (
         <View style={diagStyles.body}>
+          {/* RUNTIME IDENTITY & API ENVIRONMENT */}
+          <View style={diagStyles.sectionBox}>
+            <Text style={diagStyles.sectionTitle}>RUNTIME IDENTITY & API ENVIRONMENT</Text>
+            <Text style={diagStyles.diagCodeLine}>
+              APP DEBUG BUILD: <Text style={{ color: '#F59E0B', fontWeight: 'bold' }}>{props.appBuildMarker}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              API Base URL: <Text style={{ color: '#38BDF8', fontWeight: 'bold' }}>{props.apiBaseUrl}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Device Platform: <Text style={diagStyles.diagVal}>Expo Go / Mobile</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              User ID: <Text style={diagStyles.diagVal}>{props.userId || 'default-user'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Backend Health: <Text style={{ color: props.healthState.httpStatus === 200 ? '#4ADE80' : '#EF4444', fontWeight: 'bold' }}>{props.healthState.status}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Health Latency: <Text style={diagStyles.diagVal}>{props.healthState.durationMs !== undefined ? `${props.healthState.durationMs} ms` : 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Health Target URL: <Text style={diagStyles.diagVal}>{props.healthState.url}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              API Timeout Configured: <Text style={diagStyles.diagVal}>15000 ms</Text>
+            </Text>
+          </View>
+
+          {/* IPO ID RESOLUTION SECTION */}
+          <View style={diagStyles.sectionBox}>
+            <Text style={diagStyles.sectionTitle}>IPO ID RESOLUTION</Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Selected Name: <Text style={diagStyles.diagVal}>{props.ipoResolution?.selectedName || props.selectedIpo?.ipo_name || 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Local ID: <Text style={diagStyles.diagVal}>{props.ipoResolution?.localId || props.selectedIpo?.id || 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Backend ID: <Text style={{ color: props.ipoResolution?.backendId && props.ipoResolution?.backendId !== 'NONE' && props.ipoResolution?.backendId !== 'NOT LINKED' ? '#4ADE80' : '#F59E0B', fontWeight: 'bold' }}>{props.ipoResolution?.backendId || 'NOT LINKED'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Resolution: <Text style={{ color: props.ipoResolution?.resolutionStatus === 'SUCCESS' ? '#4ADE80' : props.ipoResolution?.resolutionStatus === 'NOT_SYNCHRONIZED' ? '#F59E0B' : props.ipoResolution?.resolutionStatus === 'FAILED' ? '#EF4444' : '#64748B', fontWeight: 'bold' }}>{props.ipoResolution?.resolutionStatus || 'WAITING'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Resolution Method: <Text style={diagStyles.diagVal}>{props.ipoResolution?.resolutionMethod || 'N/A'}</Text>
+            </Text>
+            <Text style={diagStyles.diagCodeLine}>
+              Sent to createJob: <Text style={{ color: '#38BDF8', fontWeight: 'bold' }}>{props.ipoResolution?.sentToCreateJob || 'N/A'}</Text>
+            </Text>
+          </View>
           {/* ABORTED ORIGIN BANNER (If Abort Error Triggered) */}
           {(props.abortedOrigin || (props.jobError && (props.jobError.includes('Aborted') || props.jobError.includes('abort')))) && (
             <View style={diagStyles.abortedAlertCard}>
@@ -623,7 +692,7 @@ function DeveloperDiagnosticsPanel(props: {
               props.apiTraces.map((tr) => (
                 <View key={tr.id} style={diagStyles.apiTraceItem}>
                   <Text style={diagStyles.apiTraceMethod}>
-                    {tr.method} {tr.path}
+                    {tr.method} {tr.fullUrl || tr.path}
                   </Text>
                   <Text style={diagStyles.apiTraceSub}>
                     {tr.aborted ? (
@@ -688,6 +757,7 @@ function DeveloperDiagnosticsPanel(props: {
 export default function AllotmentCheckerScreen() {
   const colors = useColors();
   const router = useRouter();
+  const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
   const { applications, ipos, users } = useDB();
   const { user } = useAuth();
@@ -724,6 +794,18 @@ export default function AllotmentCheckerScreen() {
   });
   const [lastErrorOrigin, setLastErrorOrigin] = useState<DiagnosticErrorOrigin | null>(null);
   const [abortedOrigin, setAbortedOrigin] = useState<DiagnosticErrorOrigin | null>(null);
+  const [ipoResolution, setIpoResolution] = useState<IpoResolutionDiagState>({
+    resolutionStatus: 'WAITING',
+  });
+  const [healthState, setHealthState] = useState<{
+    status: string;
+    httpStatus?: number;
+    durationMs?: number;
+    url: string;
+  }>({
+    status: 'CHECKING...',
+    url: `${API_BASE_URL}/api/v1/health`,
+  });
 
   // Helper to append to chronological log
   const addLog = useCallback((message: string, type: 'info' | 'success' | 'warn' | 'error' = 'info') => {
@@ -731,6 +813,44 @@ export default function AllotmentCheckerScreen() {
       new Date().toLocaleTimeString() + '.' + String(Date.now() % 1000).padStart(3, '0');
     setEventLogs((prev) => [{ timestamp, message, type }, ...prev].slice(0, 60));
   }, []);
+
+  const checkBackendHealth = useCallback(async () => {
+    const startMs = Date.now();
+    const targetUrl = `${API_BASE_URL}/api/v1/health`;
+    try {
+      const res = await fetch(targetUrl);
+      const duration = Date.now() - startMs;
+      if (res.ok) {
+        setHealthState({
+          status: `SUCCESS (HTTP ${res.status})`,
+          httpStatus: res.status,
+          durationMs: duration,
+          url: targetUrl,
+        });
+        addLog(`Backend health check PASSED (${duration}ms): HTTP ${res.status} at ${targetUrl}`, 'success');
+      } else {
+        setHealthState({
+          status: `FAILED (HTTP ${res.status})`,
+          httpStatus: res.status,
+          durationMs: duration,
+          url: targetUrl,
+        });
+        addLog(`Backend health check FAILED (${duration}ms): HTTP ${res.status} at ${targetUrl}`, 'warn');
+      }
+    } catch (err: any) {
+      const duration = Date.now() - startMs;
+      setHealthState({
+        status: `UNREACHABLE (${err?.message || 'fetch failed'})`,
+        durationMs: duration,
+        url: targetUrl,
+      });
+      addLog(`Backend health check UNREACHABLE (${duration}ms): ${err?.message || 'fetch failed'} at ${targetUrl}`, 'error');
+    }
+  }, [addLog]);
+
+  useEffect(() => {
+    checkBackendHealth();
+  }, [checkBackendHealth]);
 
   // Centralized Error Setter
   const setDiagnosticJobError = useCallback(
@@ -787,13 +907,11 @@ export default function AllotmentCheckerScreen() {
   // Effective registrar resolution (falls back to keyword matching / registrarConfig when empty)
   const effectiveRegistrar = useMemo(() => {
     if (!selectedIpo) return '';
-    if (selectedIpo.registrar && selectedIpo.registrar.trim().length > 0) {
-      return selectedIpo.registrar.trim();
+    const cfg = getRegistrarConfig(selectedIpo.registrar || selectedIpo.ipo_name);
+    if (cfg.name !== 'Official Portal') {
+      return cfg.name;
     }
-    const cfg = getRegistrarConfig(selectedIpo.ipo_name);
-    return cfg.name !== 'Official Portal'
-      ? cfg.name
-      : 'Link Intime India Private Ltd';
+    return 'Link Intime India Private Ltd';
   }, [selectedIpo]);
 
   // Support level helper for automated checking
@@ -820,6 +938,23 @@ export default function AllotmentCheckerScreen() {
     setIsPolling(false);
     setPollingDiag((prev) => ({ ...prev, active: false }));
   }, []);
+
+  // Complete reset of previous check context when switching or selecting a new IPO
+  const resetCheckState = useCallback(() => {
+    stopPolling();
+    setActiveJob(null);
+    setIsCreatingJob(false);
+    setIsPolling(false);
+    setJobError(null);
+    setJobTiming(null);
+    setPanSyncState({ status: 'WAITING' });
+    setJobCreationState({ status: 'WAITING' });
+    setIpoResolution({ resolutionStatus: 'WAITING' });
+    setPollingDiag({ attemptCount: 0, active: false });
+    setLastErrorOrigin(null);
+    setAbortedOrigin(null);
+    setApiTraces([]);
+  }, [stopPolling]);
 
   // Subscribe to ApiClient request events for diagnostics
   useEffect(() => {
@@ -975,9 +1110,118 @@ export default function AllotmentCheckerScreen() {
           addLog('PAN sync skipped (no valid 10-char local PANs)', 'info');
         }
 
-        // 3. Create backend job with ipoId
+        // 2.5 Resolve canonical backend IPO ID strictly in order
+        const selectedObj = ipos.find((i) => i.id === targetIpoId);
+        const selName = selectedObj?.ipo_name || 'IPO';
+        const selCompanyName = selectedObj?.company_name || selName;
+        const selSymbol = (selectedObj as any)?.symbol;
+        const explicitBackendId = selectedObj?.backend_ipo_id;
+
+        let canonicalId: string | null = null;
+        let resStatus: 'SUCCESS' | 'NOT_SYNCHRONIZED' = 'NOT_SYNCHRONIZED';
+        let resMethod = 'Not Synchronized';
+
+        let backendIpos: any[] = [];
+        try {
+          backendIpos = await allotmentApiService.fetchBackendIpos();
+        } catch (resErr: any) {
+          addLog(`Error fetching backend IPO list: ${resErr?.message}`, 'warn');
+        }
+
+        // Step 1: Check explicit backend_ipo_id linkage if present
+        if (explicitBackendId && explicitBackendId.trim().length > 0) {
+          const matchedByBackendId = backendIpos.find((b: any) => b.id === explicitBackendId.trim());
+          if (matchedByBackendId || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(explicitBackendId.trim())) {
+            canonicalId = explicitBackendId.trim();
+            resStatus = 'SUCCESS';
+            resMethod = 'Explicit Backend Linkage';
+            addLog(`Using explicit backend_ipo_id '${canonicalId}' for local IPO '${targetIpoId}'`, 'success');
+          }
+        }
+
+        // Step 2: If unlinked, attempt Symbol match against backend IPOs
+        if (!canonicalId && selSymbol && selSymbol.trim().length > 0) {
+          const matchBySymbol = backendIpos.find(
+            (b: any) => (b.symbol || '').toLowerCase() === selSymbol.trim().toLowerCase()
+          );
+          if (matchBySymbol) {
+            canonicalId = matchBySymbol.id;
+            resStatus = 'SUCCESS';
+            resMethod = `Backend Symbol Match (${matchBySymbol.symbol})`;
+            addLog(`Symbol match: Local IPO '${selName}' (${selSymbol}) ➔ Backend ID '${canonicalId}'`, 'success');
+            // Persist resolved backend_ipo_id locally in SQLite
+            try {
+              await db.runAsync(
+                'UPDATE ipo_listings SET backend_ipo_id = ?, symbol = ? WHERE id = ?',
+                [canonicalId, matchBySymbol.symbol, targetIpoId]
+              );
+            } catch {}
+          }
+        }
+
+        // Step 3: If still unlinked, attempt Name match against backend IPOs
+        if (!canonicalId) {
+          const sName = selName.toLowerCase();
+          const sCompName = selCompanyName.toLowerCase();
+          const matchByName = backendIpos.find((b: any) => {
+            const bName = (b.company?.displayName || '').toLowerCase();
+            const bLegal = (b.company?.legalName || '').toLowerCase();
+            return (
+              bName.includes(sName) ||
+              sName.includes(bName) ||
+              bLegal.includes(sName) ||
+              bName.includes(sCompName) ||
+              sCompName.includes(bName)
+            );
+          });
+
+          if (matchByName) {
+            canonicalId = matchByName.id;
+            resStatus = 'SUCCESS';
+            resMethod = `Backend Name Match (${matchByName.company?.displayName || matchByName.symbol})`;
+            addLog(`Name match: Local IPO '${selName}' ➔ Backend ID '${canonicalId}' (${matchByName.company?.displayName})`, 'success');
+            // Persist resolved backend_ipo_id locally in SQLite
+            try {
+              await db.runAsync(
+                'UPDATE ipo_listings SET backend_ipo_id = ? WHERE id = ?',
+                [canonicalId, targetIpoId]
+              );
+            } catch {}
+          }
+        }
+
+        // Step 4: If no backend match could be resolved
+        if (!canonicalId || resStatus !== 'SUCCESS') {
+          setIpoResolution({
+            selectedName: selName,
+            localId: targetIpoId,
+            backendId: 'NOT LINKED',
+            resolutionStatus: 'NOT_SYNCHRONIZED',
+            resolutionMethod: 'Not Synchronized',
+            sentToCreateJob: 'NONE',
+          });
+          setJobCreationState({
+            status: 'SKIPPED',
+            error: 'IPO is not synchronized with backend',
+          });
+          setIsCreatingJob(false);
+          setIsPolling(false);
+          addLog(`IPO '${selName}' is not synchronized with backend. Skipping automated check.`, 'warn');
+          return;
+        }
+
+        setIpoResolution({
+          selectedName: selName,
+          localId: targetIpoId,
+          backendId: canonicalId,
+          resolutionStatus: resStatus,
+          resolutionMethod: resMethod,
+          sentToCreateJob: canonicalId,
+        });
+
+        // 3. Create backend job with canonicalId
         setJobCreationState({ status: 'RUNNING' });
-        const job = await allotmentApiService.createJob(targetIpoId, activeUserId);
+        const job = await allotmentApiService.createJob(canonicalId, activeUserId);
         const createEndMs = Date.now();
         const endStr =
           new Date().toLocaleTimeString() + '.' + String(createEndMs % 1000).padStart(3, '0');
@@ -1040,39 +1284,39 @@ export default function AllotmentCheckerScreen() {
   const handleSelectIpo = useCallback(
     (ipoId: string) => {
       setShowIpoPicker(false);
+      resetCheckState();
       setSelectedIpoId(ipoId);
 
       const targetIpo = ipos.find((i) => i.id === ipoId);
-      const targetRegistrar =
-        targetIpo?.registrar && targetIpo.registrar.trim().length > 0
-          ? targetIpo.registrar.trim()
-          : getRegistrarConfig(targetIpo?.ipo_name).name;
+      const targetRegistrar = targetIpo
+        ? getRegistrarConfig(targetIpo.registrar || targetIpo.ipo_name).name
+        : '';
 
       addLog(`IPO selected: ${targetIpo?.ipo_name || ipoId} (Registrar: ${targetRegistrar})`, 'info');
 
-      if (isAutomatedCheckSupported(targetRegistrar)) {
+      if (targetRegistrar && isAutomatedCheckSupported(targetRegistrar)) {
         void startAutomatedAllotmentCheck(ipoId);
       } else {
-        stopPolling();
-        setActiveJob(null);
-        setIsCreatingJob(false);
-        setIsPolling(false);
-        setJobError(null);
+        setIpoResolution({
+          selectedName: targetIpo?.ipo_name,
+          localId: ipoId,
+          backendId: 'NONE',
+          resolutionStatus: 'WAITING',
+          resolutionMethod: 'Manual Registrar',
+        });
         addLog(`Automated check unavailable for ${targetRegistrar}`, 'warn');
       }
     },
-    [ipos, startAutomatedAllotmentCheck, stopPolling, addLog],
+    [ipos, resetCheckState, startAutomatedAllotmentCheck, addLog],
   );
 
   // Handle Switch IPO action
   const handleSwitchIpo = useCallback(() => {
-    stopPolling();
-    setActiveJob(null);
+    resetCheckState();
     setSelectedIpoId(null);
-    setJobError(null);
     setShowIpoPicker(true);
     addLog('Switched IPO selection', 'info');
-  }, [stopPolling, addLog]);
+  }, [resetCheckState, addLog]);
 
   // Diagnostics controls
   const handleClearDiagnostics = useCallback(() => {
@@ -1084,6 +1328,7 @@ export default function AllotmentCheckerScreen() {
     setPollingDiag({ attemptCount: 0, active: false });
     setLastErrorOrigin(null);
     setAbortedOrigin(null);
+    setIpoResolution({ resolutionStatus: 'WAITING' });
     addLog('Diagnostics cleared by user', 'info');
   }, [addLog]);
 
@@ -1445,6 +1690,11 @@ export default function AllotmentCheckerScreen() {
 
         {/* TEMPORARY DEVELOPER DIAGNOSTICS PANEL */}
         <DeveloperDiagnosticsPanel
+          appBuildMarker={APP_DEBUG_BUILD}
+          apiBaseUrl={API_BASE_URL}
+          healthState={healthState}
+          userId={activeUserId}
+          ipoResolution={ipoResolution}
           selectedIpo={selectedIpo}
           effectiveRegistrar={effectiveRegistrar}
           isAutomatedSupported={isAutomatedSupported}

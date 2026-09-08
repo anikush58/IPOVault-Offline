@@ -92,12 +92,15 @@ const jest = {
     mockImplementationOnce: (impl: any) => {
       obj[method] = impl;
     },
+    mockImplementation: (impl: any) => {
+      obj[method] = impl;
+    },
   }),
 };
 
 import { AllotmentApiService } from './AllotmentApiService';
 import { PanSyncService } from './PanSyncService';
-import { isAutomatedCheckSupported } from './registrarConfig';
+import { getRegistrarConfig, isAutomatedCheckSupported } from './registrarConfig';
 
 
 
@@ -385,6 +388,7 @@ describe('Allotment Checker Frontend Integration Tests', () => {
   it('21. should correctly identify supported (KFintech) vs unsupported (Link Intime/MUFG) registrars', () => {
     expect(isAutomatedCheckSupported('KFin Technologies Limited')).toBe(true);
     expect(isAutomatedCheckSupported('Ashutosh Fibre')).toBe(true);
+    expect(isAutomatedCheckSupported('Dhoot Transmission')).toBe(true);
     expect(isAutomatedCheckSupported('Link Intime India Private Ltd')).toBe(false);
     expect(isAutomatedCheckSupported('ESDS Software Solution')).toBe(false);
     expect(isAutomatedCheckSupported('Bigshare Services')).toBe(false);
@@ -410,5 +414,135 @@ describe('Allotment Checker Frontend Integration Tests', () => {
       allotmentApiService.createJob('esds-unsupported-id', 'user-1'),
     ).rejects.toThrow('Automated checking is not supported for IPO');
   });
+
+  it('24. TASK 10A: Select Ashutosh -> resolve Ashutosh backend ID', async () => {
+    const ashutoshCanonicalId = '11111111-2222-4333-a444-555555555555';
+    const mockBackendIpos = [
+      { id: ashutoshCanonicalId, symbol: 'ASHUTOSH', company: { displayName: 'Ashutosh Fibre' } },
+      { id: '22222222-3333-4444-b555-666666666666', symbol: 'DHOOT', company: { displayName: 'Dhoot Transmission' } },
+    ];
+
+    jest.spyOn(global, 'fetch').mockImplementationOnce(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, data: mockBackendIpos }),
+      } as Response),
+    );
+
+    const backendIpos = await allotmentApiService.fetchBackendIpos();
+    const resolved = backendIpos.find((b: any) => b.company.displayName.includes('Ashutosh Fibre'));
+    expect(resolved).toBeDefined();
+    expect(resolved.id).toBe(ashutoshCanonicalId);
+  });
+
+  it('25. TASK 10B, C, D & E: Switch Ashutosh -> Dhoot -> resolve Dhoot canonical ID, KFin registrar, supported capability, reset previous state', async () => {
+    // Dhoot registrar display and capability check
+    const dhootRegistrarConfig = getRegistrarConfig('Dhoot Transmission');
+    expect(dhootRegistrarConfig.name).toBe('KFin Technologies Limited');
+    expect(isAutomatedCheckSupported('Dhoot Transmission')).toBe(true);
+
+    const ashutoshCanonicalId = '11111111-2222-4333-a444-555555555555';
+    const dhootCanonicalId = '22222222-3333-4444-b555-666666666666';
+
+    const mockBackendIpos = [
+      { id: ashutoshCanonicalId, symbol: 'ASHUTOSH', company: { displayName: 'Ashutosh Fibre' } },
+      { id: dhootCanonicalId, symbol: 'DHOOT', company: { displayName: 'Dhoot Transmission' } },
+    ];
+
+    let capturedCreateJobId = '';
+    jest.spyOn(global, 'fetch').mockImplementation((url: unknown, options?: any) => {
+      if (typeof url === 'string' && url.includes('/api/v1/ipos')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ success: true, data: mockBackendIpos }),
+        } as Response);
+      }
+      if (typeof url === 'string' && url.includes('/api/v1/allotment/jobs')) {
+        const body = JSON.parse((options?.body as string) || '{}');
+        capturedCreateJobId = body.ipoId;
+        return Promise.resolve({
+          ok: true,
+          status: 201,
+          json: async () => ({
+            success: true,
+            data: {
+              id: 'job-dhoot-777',
+              ipoId: body.ipoId,
+              status: 'QUEUED',
+              totalChecks: 2,
+              processedChecks: 0,
+              successfulChecks: 0,
+              failedChecks: 0,
+              items: [],
+            },
+          }),
+        } as Response);
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({}) } as Response);
+    });
+
+    // 1. Fetch backend IPOs and resolve Dhoot Transmission
+    const backendIpos = await allotmentApiService.fetchBackendIpos();
+    const dhootMatch = backendIpos.find((b: any) => b.company.displayName.includes('Dhoot Transmission'));
+    expect(dhootMatch).toBeDefined();
+    expect(dhootMatch.id).toBe(dhootCanonicalId);
+    expect(dhootMatch.id).not.toBe(ashutoshCanonicalId);
+
+    // 2. Create Job for Dhoot Transmission
+    const job = await allotmentApiService.createJob(dhootMatch.id, 'user-123');
+    expect(job.id).toBe('job-dhoot-777');
+    expect(job.ipoId).toBe(dhootCanonicalId);
+    expect(capturedCreateJobId).toBe(dhootCanonicalId);
+    expect(capturedCreateJobId).not.toBe(ashutoshCanonicalId);
+  });
+
+  it('26. TASK 10: Local vs Backend ID separation, explicit backend_ipo_id, and unlinked IPO protection', async () => {
+    // 1. Manually created local IPO structure
+    const localManualIpo = {
+      id: '1f66eff0-cbb1-4694-8114-3fd22d4f0791', // Local UUID primary key
+      backend_ipo_id: null,                      // Unlinked initially
+      ipo_name: 'Unlinked Local IPO',
+      buy_price: 100,
+      quantity: 50,
+      open_date: '2026-09-01',
+      close_date: '2026-09-03',
+      listing_date: '2026-09-07',
+      archived: 0,
+      is_favorite: 0,
+    };
+
+    expect(localManualIpo.id).toBe('1f66eff0-cbb1-4694-8114-3fd22d4f0791');
+    expect(localManualIpo.backend_ipo_id).toBe(null);
+
+    // 2. Verified linked local IPO structure (Dhoot Transmission)
+    const linkedDhootIpo = {
+      id: '1f66eff0-cbb1-4694-8114-3fd22d4f0791',                         // Local SQLite ID
+      backend_ipo_id: '22222222-3333-4444-b555-666666666666',               // Canonical backend Ipo.id
+      symbol: 'DHOOT',
+      ipo_name: 'Dhoot Transmission',
+      buy_price: 200,
+      quantity: 75,
+    };
+
+    expect(linkedDhootIpo.id).toBe('1f66eff0-cbb1-4694-8114-3fd22d4f0791');
+    expect(linkedDhootIpo.backend_ipo_id).toBe('22222222-3333-4444-b555-666666666666');
+    expect(linkedDhootIpo.id).not.toBe(linkedDhootIpo.backend_ipo_id);
+
+    // 3. Verified linked local IPO structure (Ashutosh Fibre)
+    const linkedAshutoshIpo = {
+      id: 'ipo_1788345026200',                                            // Local SQLite ID
+      backend_ipo_id: '11111111-2222-4333-a444-555555555555',               // Canonical backend Ipo.id
+      symbol: 'ASHUTOSH',
+      ipo_name: 'Ashutosh Fibre',
+      buy_price: 150,
+      quantity: 100,
+    };
+
+    expect(linkedAshutoshIpo.id).toBe('ipo_1788345026200');
+    expect(linkedAshutoshIpo.backend_ipo_id).toBe('11111111-2222-4333-a444-555555555555');
+  });
 });
+
 

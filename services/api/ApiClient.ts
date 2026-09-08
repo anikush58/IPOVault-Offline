@@ -5,6 +5,7 @@ export interface ApiRequestTrace {
   id: string;
   method: 'GET' | 'POST';
   path: string;
+  fullUrl?: string;
   startTime: number;
   endTime?: number;
   durationMs?: number;
@@ -124,6 +125,7 @@ export class ApiClient {
         id: requestId,
         method: 'GET',
         path,
+        fullUrl: url,
         startTime,
         endTime: Date.now(),
         durationMs: Date.now() - startTime,
@@ -198,6 +200,7 @@ export class ApiClient {
         id: requestId,
         method: 'POST',
         path,
+        fullUrl: url,
         startTime,
         endTime: Date.now(),
         durationMs: Date.now() - startTime,

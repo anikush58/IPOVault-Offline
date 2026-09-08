@@ -35,6 +35,9 @@ export async function initDB(db: SQLiteDatabase) {
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS ipo_listings (
       id TEXT PRIMARY KEY,
+      backend_ipo_id TEXT DEFAULT NULL,
+      symbol TEXT DEFAULT '',
+      company_name TEXT DEFAULT '',
       owner_id TEXT, -- Supabase auth user_id
       ipo_name TEXT NOT NULL DEFAULT '',
       buy_price REAL NOT NULL DEFAULT 0,
@@ -279,6 +282,9 @@ export async function initDB(db: SQLiteDatabase) {
 
     // ipo_listings migrations
     'ALTER TABLE ipo_listings ADD COLUMN owner_id TEXT',
+    'ALTER TABLE ipo_listings ADD COLUMN backend_ipo_id TEXT DEFAULT NULL',
+    'ALTER TABLE ipo_listings ADD COLUMN symbol TEXT DEFAULT ""',
+    'ALTER TABLE ipo_listings ADD COLUMN company_name TEXT DEFAULT ""',
     'ALTER TABLE ipo_listings ADD COLUMN archived INTEGER DEFAULT 0',
     'ALTER TABLE ipo_listings ADD COLUMN registrar TEXT DEFAULT ""',
     'ALTER TABLE ipo_listings ADD COLUMN exchange TEXT DEFAULT ""',
@@ -347,9 +353,10 @@ export async function initDB(db: SQLiteDatabase) {
     }
   }
 
-  // Create performance indexes for ipo_master table
+  // Create performance indexes for ipo_master and ipo_listings tables
   try {
     await db.execAsync(`
+      CREATE INDEX IF NOT EXISTS idx_ipo_listings_backend_id ON ipo_listings(backend_ipo_id);
       CREATE INDEX IF NOT EXISTS idx_ipo_master_status ON ipo_master(status);
       CREATE INDEX IF NOT EXISTS idx_ipo_master_symbol ON ipo_master(symbol);
       CREATE INDEX IF NOT EXISTS idx_ipo_master_dates ON ipo_master(open_date, close_date, listing_date);
@@ -360,18 +367,26 @@ export async function initDB(db: SQLiteDatabase) {
     // Indexes exist
   }
 
-  // Backfill allotment_date for seed IPO listings if empty
+  // Backfill allotment_date & canonical backend_ipo_id for existing seed/manual IPO listings
   try {
     await db.execAsync(`
-      UPDATE ipo_listings SET allotment_date = '2025-11-13', registrar = 'Bigshare Services', exchange = 'BSE SME', issue_type = 'SME' WHERE ipo_name = 'Advit Jewels' AND (allotment_date IS NULL OR allotment_date = '');
-      UPDATE ipo_listings SET allotment_date = '2025-11-01', registrar = 'KFin Technologies', exchange = 'NSE', issue_type = 'Mainboard' WHERE ipo_name = 'HDB Financial' AND (allotment_date IS NULL OR allotment_date = '');
-      UPDATE ipo_listings SET allotment_date = '2025-10-18', registrar = 'Link Intime India', exchange = 'NSE', issue_type = 'Mainboard' WHERE ipo_name = 'Ola Electric' AND (allotment_date IS NULL OR allotment_date = '');
+      UPDATE ipo_listings SET backend_ipo_id = '11111111-2222-4333-a444-555555555555', company_name = 'Ashutosh Fibre Limited', symbol = 'ASHUTOSH', registrar = 'KFINTECH', exchange = 'NSE', issue_type = 'MAINBOARD' WHERE (ipo_name LIKE '%Ashutosh%' OR company_name LIKE '%Ashutosh%');
+      UPDATE ipo_listings SET backend_ipo_id = '22222222-3333-4444-b555-666666666666', company_name = 'Dhoot Transmission Limited', symbol = 'DHOOT', registrar = 'KFINTECH', exchange = 'NSE', issue_type = 'MAINBOARD' WHERE (ipo_name LIKE '%Dhoot%' OR company_name LIKE '%Dhoot%');
+      UPDATE ipo_listings SET company_name = ipo_name WHERE company_name IS NULL OR company_name = '';
+      UPDATE ipo_listings SET registrar = 'KFINTECH' WHERE LOWER(registrar) LIKE '%kfin%' OR LOWER(registrar) LIKE '%karvy%';
+      UPDATE ipo_listings SET registrar = 'LINK_INTIME' WHERE LOWER(registrar) LIKE '%link%' AND LOWER(registrar) NOT LIKE '%mufg%';
+      UPDATE ipo_listings SET registrar = 'MUFG_INTIME' WHERE LOWER(registrar) LIKE '%mufg%';
+      UPDATE ipo_listings SET registrar = 'BIGSHARE' WHERE LOWER(registrar) LIKE '%bigshare%';
+      UPDATE ipo_listings SET registrar = 'KFINTECH' WHERE LOWER(registrar) LIKE '%juniper%' OR registrar = 'Juniper';
+      UPDATE ipo_listings SET registrar = 'OTHER' WHERE registrar IS NULL OR registrar = '';
+      UPDATE ipo_listings SET exchange = 'NSE' WHERE exchange IS NULL OR exchange = '';
+      UPDATE ipo_listings SET issue_type = 'MAINBOARD' WHERE issue_type IS NULL OR issue_type = '';
     `);
   } catch {
     // Ignore if backfill fails
   }
 
-  // Purge any legacy hardcoded seed IPO records & test records so ONLY Admin Portal published IPOs remain
+  // Purge any legacy hardcoded seed IPO records & temporary physical test records
   try {
     await db.execAsync(`
       DELETE FROM ipo_master WHERE id IN (
@@ -379,6 +394,8 @@ export async function initDB(db: SQLiteDatabase) {
         'ipo-dhoot-trans', 'ipo-shiprocket', 'ipo-lalithaa-jewellery', 'ipo-ola-electric',
         'ipo-swiggy', 'ipo-hyundai-motor'
       ) OR id LIKE 'ipo-%' OR LOWER(company_name) LIKE '%test%' OR LOWER(ipo_name) LIKE '%test%' OR id LIKE '%test%';
+
+      DELETE FROM ipo_listings WHERE symbol = 'TESTENT' OR LOWER(company_name) LIKE '%test enterprise%' OR LOWER(ipo_name) LIKE '%test enterprise%';
     `);
   } catch {
     // Purge ignored

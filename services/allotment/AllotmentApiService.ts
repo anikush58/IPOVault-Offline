@@ -1,5 +1,6 @@
 import { ApiClient } from '../api/ApiClient';
 import { ENDPOINTS } from '../api/Endpoints';
+import { API_BASE_URL } from '@/constants/apiConfig';
 
 export interface BackendJobItem {
   id: string;
@@ -36,10 +37,9 @@ export class AllotmentApiService {
   private apiClient: ApiClient;
 
   constructor(baseUrl?: string) {
-    const defaultUrl =
-      process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const defaultUrl = baseUrl || API_BASE_URL;
     this.apiClient = new ApiClient({
-      baseUrl: baseUrl || defaultUrl,
+      baseUrl: defaultUrl,
       timeoutMs: 15000,
     });
   }
@@ -118,6 +118,14 @@ export class AllotmentApiService {
     }
 
     return response.data;
+  }
+
+  /**
+   * Fetches backend IPO list to resolve canonical backend IPO IDs.
+   */
+  public async fetchBackendIpos(): Promise<any[]> {
+    const response = await this.apiClient.get<any[]>('/api/v1/ipos');
+    return response.data || [];
   }
 }
 

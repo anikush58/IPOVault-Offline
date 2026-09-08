@@ -1,5 +1,6 @@
 import { ApiClient } from '../api/ApiClient';
 import { ENDPOINTS } from '../api/Endpoints';
+import { API_BASE_URL } from '@/constants/apiConfig';
 
 export interface LocalUserPanRecord {
   userId: string;
@@ -11,10 +12,9 @@ export class PanSyncService {
   private apiClient: ApiClient;
 
   constructor(baseUrl?: string) {
-    const defaultUrl =
-      process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
+    const defaultUrl = baseUrl || API_BASE_URL;
     this.apiClient = new ApiClient({
-      baseUrl: baseUrl || defaultUrl,
+      baseUrl: defaultUrl,
       timeoutMs: 15000,
     });
   }

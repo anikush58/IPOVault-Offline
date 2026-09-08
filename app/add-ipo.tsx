@@ -23,35 +23,23 @@ import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { DatePickerModal } from '@/components/DatePickerModal';
 import { ensureBase64DataUrl } from '@/utils/imageUtils';
-
-
-
-const REGISTRARS = [
-  'KFin Technologies Limited',
-  'Link Intime India Pvt. Ltd.',
-  'Bigshare Services Pvt. Ltd.',
-  'MUFG Intime India Pvt. Ltd.',
-  'Cameo Corporate Services Ltd.',
-  'Skyline Financial Services Pvt. Ltd.',
-  'Purva Sharegistry India Pvt. Ltd.',
-  'Mas Services Ltd.',
-  'Alankit Assignments Ltd.',
-  'Beetal Financial & Computer Services Pvt. Ltd.',
-  'Karvy Fintech Pvt. Ltd.',
-  'Integrated Registry Management Services Pvt. Ltd.',
-  'Universal Capital Securities Pvt. Ltd.',
-  'Niche Technologies Pvt. Ltd.',
-  'S.K.D.C. Consultants Ltd.',
-  'SEBI Registered Registrar',
-];
+import {
+  CONTROLLED_EXCHANGES,
+  CONTROLLED_ISSUE_TYPES,
+  CONTROLLED_REGISTRARS,
+  resolveExchangeCode,
+  resolveIssueTypeCode,
+  resolveRegistrarCode,
+} from '@/constants/ipoControls';
 
 type CatalogItem = {
   name: string;
+  symbol: string;
   price: number;
   lot: number;
   registrar: string;
   exchange: string;
-  issueType: 'Mainboard' | 'SME';
+  issueType: 'MAINBOARD' | 'SME';
   openDate?: string;
   closeDate?: string;
   allotmentDate?: string;
@@ -59,23 +47,20 @@ type CatalogItem = {
 };
 
 const INDIAN_IPO_CATALOG: CatalogItem[] = [
-  { name: 'Advit Jewels', price: 75, lot: 1600, registrar: 'Bigshare Services Pvt. Ltd.', exchange: 'BSE SME', issueType: 'SME', openDate: '2025-11-06', closeDate: '2025-11-10', allotmentDate: '2025-11-13', listingDate: '2025-11-18' },
-  { name: 'HDB Financial', price: 740, lot: 20, registrar: 'KFin Technologies Limited', exchange: 'NSE', issueType: 'Mainboard', openDate: '2025-10-24', closeDate: '2025-10-28', allotmentDate: '2025-11-01', listingDate: '2025-11-05' },
-  { name: 'Ola Electric', price: 76, lot: 195, registrar: 'Link Intime India Pvt. Ltd.', exchange: 'NSE', issueType: 'Mainboard', openDate: '2025-10-10', closeDate: '2025-10-14', allotmentDate: '2025-10-18', listingDate: '2025-10-22' },
-  { name: 'Swiggy', price: 390, lot: 38, registrar: 'Link Intime India Pvt. Ltd.', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-11-06', closeDate: '2024-11-08', allotmentDate: '2024-11-11', listingDate: '2024-11-13' },
-  { name: 'Hyundai Motor India', price: 1960, lot: 7, registrar: 'KFin Technologies Limited', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-10-15', closeDate: '2024-10-17', allotmentDate: '2024-10-18', listingDate: '2024-10-22' },
-  { name: 'NTPC Green Energy', price: 108, lot: 138, registrar: 'KFin Technologies Limited', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-11-19', closeDate: '2024-11-22', allotmentDate: '2024-11-25', listingDate: '2024-11-27' },
-  { name: 'Acme Solar', price: 289, lot: 51, registrar: 'KFin Technologies Limited', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-11-06', closeDate: '2024-11-08', allotmentDate: '2024-11-11', listingDate: '2024-11-13' },
-  { name: 'Waaree Energies', price: 1503, lot: 9, registrar: 'Link Intime India Pvt. Ltd.', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-10-21', closeDate: '2024-10-23', allotmentDate: '2024-10-24', listingDate: '2024-10-28' },
-  { name: 'Bajaj Housing Finance', price: 70, lot: 214, registrar: 'KFin Technologies Limited', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-09-09', closeDate: '2024-09-11', allotmentDate: '2024-09-12', listingDate: '2024-09-16' },
-  { name: 'Premier Energies', price: 450, lot: 33, registrar: 'KFin Technologies Limited', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-08-27', closeDate: '2024-08-29', allotmentDate: '2024-08-30', listingDate: '2024-09-03' },
-  { name: 'Sagility India', price: 30, lot: 500, registrar: 'Link Intime India Pvt. Ltd.', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-11-05', closeDate: '2024-11-07', allotmentDate: '2024-11-08', listingDate: '2024-11-12' },
-  { name: 'KRN Heat Exchanger', price: 220, lot: 65, registrar: 'Bigshare Services Pvt. Ltd.', exchange: 'NSE', issueType: 'Mainboard', openDate: '2024-09-25', closeDate: '2024-09-27', allotmentDate: '2024-09-30', listingDate: '2024-10-03' },
+  { name: 'Advit Jewels', symbol: 'ADVIT', price: 75, lot: 1600, registrar: 'BIGSHARE', exchange: 'BSE', issueType: 'SME', openDate: '2025-11-06', closeDate: '2025-11-10', allotmentDate: '2025-11-13', listingDate: '2025-11-18' },
+  { name: 'HDB Financial Services', symbol: 'HDBFS', price: 740, lot: 20, registrar: 'KFINTECH', exchange: 'NSE', issueType: 'MAINBOARD', openDate: '2025-10-24', closeDate: '2025-10-28', allotmentDate: '2025-11-01', listingDate: '2025-11-05' },
+  { name: 'Ola Electric Mobility', symbol: 'OLAELEC', price: 76, lot: 195, registrar: 'LINK_INTIME', exchange: 'NSE', issueType: 'MAINBOARD', openDate: '2025-10-10', closeDate: '2025-10-14', allotmentDate: '2025-10-18', listingDate: '2025-10-22' },
+  { name: 'Swiggy Limited', symbol: 'SWIGGY', price: 390, lot: 38, registrar: 'LINK_INTIME', exchange: 'NSE', issueType: 'MAINBOARD', openDate: '2024-11-06', closeDate: '2024-11-08', allotmentDate: '2024-11-11', listingDate: '2024-11-13' },
+  { name: 'Hyundai Motor India', symbol: 'HYUNDAI', price: 1960, lot: 7, registrar: 'KFINTECH', exchange: 'NSE', issueType: 'MAINBOARD', openDate: '2024-10-15', closeDate: '2024-10-17', allotmentDate: '2024-10-18', listingDate: '2024-10-22' },
+  { name: 'NTPC Green Energy', symbol: 'NTPCGREEN', price: 108, lot: 138, registrar: 'KFINTECH', exchange: 'NSE', issueType: 'MAINBOARD', openDate: '2024-11-19', closeDate: '2024-11-22', allotmentDate: '2024-11-25', listingDate: '2024-11-27' },
+  { name: 'Acme Solar Holdings', symbol: 'ACMESOLAR', price: 289, lot: 51, registrar: 'KFINTECH', exchange: 'NSE', issueType: 'MAINBOARD', openDate: '2024-11-06', closeDate: '2024-11-08', allotmentDate: '2024-11-11', listingDate: '2024-11-13' },
+  { name: 'Waaree Energies', symbol: 'WAAREE', price: 1503, lot: 9, registrar: 'LINK_INTIME', exchange: 'NSE', issueType: 'MAINBOARD', openDate: '2024-10-21', closeDate: '2024-10-23', allotmentDate: '2024-10-24', listingDate: '2024-10-28' },
+  { name: 'Bajaj Housing Finance', symbol: 'BAJAJHFL', price: 70, lot: 214, registrar: 'KFINTECH', exchange: 'NSE', issueType: 'MAINBOARD', openDate: '2024-09-09', closeDate: '2024-09-11', allotmentDate: '2024-09-12', listingDate: '2024-09-16' },
+  { name: 'Premier Energies', symbol: 'PREMIERENE', price: 450, lot: 33, registrar: 'KFINTECH', exchange: 'NSE', issueType: 'MAINBOARD', openDate: '2024-08-27', closeDate: '2024-08-29', allotmentDate: '2024-08-30', listingDate: '2024-09-03' },
+  { name: 'Sagility India', symbol: 'SAGILITY', price: 30, lot: 500, registrar: 'LINK_INTIME', exchange: 'NSE', issueType: 'MAINBOARD', openDate: '2024-11-05', closeDate: '2024-11-07', allotmentDate: '2024-11-08', listingDate: '2024-11-12' },
+  { name: 'KRN Heat Exchanger', symbol: 'KRN', price: 220, lot: 65, registrar: 'BIGSHARE', exchange: 'NSE', issueType: 'MAINBOARD', openDate: '2024-09-25', closeDate: '2024-09-27', allotmentDate: '2024-09-30', listingDate: '2024-10-03' },
+  { name: 'Juniper Hotels Limited', symbol: 'JUNIPER', price: 360, lot: 40, registrar: 'KFINTECH', exchange: 'NSE', issueType: 'MAINBOARD', openDate: '2024-02-21', closeDate: '2024-02-23', allotmentDate: '2024-02-26', listingDate: '2024-02-28' },
 ];
-
-
-
-
 
 export default function AddIPOScreen() {
   const colors = useColors();
@@ -91,12 +76,14 @@ export default function AddIPOScreen() {
   const isEditing = !!editingIPO;
 
   // Form state
+  const [formCompanyName, setFormCompanyName] = useState('');
   const [formIpoName, setFormIpoName] = useState('');
+  const [formSymbol, setFormSymbol] = useState('');
   const [formPrice, setFormPrice] = useState('');
   const [formLotSize, setFormLotSize] = useState('');
-  const [formRegistrar, setFormRegistrar] = useState('');
-  const [formExchange, setFormExchange] = useState('');
-  const [formIssueType, setFormIssueType] = useState<'Mainboard' | 'SME'>('Mainboard');
+  const [formRegistrar, setFormRegistrar] = useState('KFINTECH');
+  const [formExchange, setFormExchange] = useState('NSE');
+  const [formIssueType, setFormIssueType] = useState('MAINBOARD');
   const [formOpenDate, setFormOpenDate] = useState('');
   const [formCloseDate, setFormCloseDate] = useState('');
   const [formAllotmentDate, setFormAllotmentDate] = useState('');
@@ -111,12 +98,14 @@ export default function AddIPOScreen() {
 
   useEffect(() => {
     if (editingIPO) {
-      setFormIpoName(editingIPO.ipo_name);
-      setFormPrice(editingIPO.buy_price.toString());
-      setFormLotSize(editingIPO.quantity.toString());
-      setFormRegistrar(editingIPO.registrar || '');
-      setFormExchange(editingIPO.exchange || '');
-      setFormIssueType((editingIPO.issue_type as any) === 'SME' ? 'SME' : 'Mainboard');
+      setFormCompanyName(editingIPO.company_name || editingIPO.ipo_name || '');
+      setFormIpoName(editingIPO.ipo_name || '');
+      setFormSymbol(editingIPO.symbol || '');
+      setFormPrice(editingIPO.buy_price ? editingIPO.buy_price.toString() : '');
+      setFormLotSize(editingIPO.quantity ? editingIPO.quantity.toString() : '');
+      setFormRegistrar(resolveRegistrarCode(editingIPO.registrar));
+      setFormExchange(resolveExchangeCode(editingIPO.exchange));
+      setFormIssueType(resolveIssueTypeCode(editingIPO.issue_type));
       setFormOpenDate(editingIPO.open_date || '');
       setFormCloseDate(editingIPO.close_date || '');
       setFormAllotmentDate(editingIPO.allotment_date || '');
@@ -125,16 +114,26 @@ export default function AddIPOScreen() {
       setFormGmpPercent(editingIPO.gmp_percent != null ? editingIPO.gmp_percent.toString() : '');
       setFormGmpValue(editingIPO.gmp_value != null ? editingIPO.gmp_value.toString() : '');
     } else {
-      setFormOpenDate(new Date().toISOString().slice(0, 10));
+      const today = new Date().toISOString().slice(0, 10);
+      setFormOpenDate(today);
+      setFormCloseDate(today);
     }
   }, [editingIPO]);
 
+  const handleCompanyNameChange = (text: string) => {
+    setFormCompanyName(text);
+    if (!isEditing || !formIpoName || formIpoName === `${formCompanyName} IPO`) {
+      setFormIpoName(text.trim() ? `${text.trim()} IPO` : '');
+    }
+  };
+
   const handleAutoFetchData = async () => {
-    if (!formIpoName.trim()) {
-      showError('Enter Company Name', 'Please type the IPO or company name first.');
+    const searchTarget = formCompanyName.trim() || formIpoName.trim() || formSymbol.trim();
+    if (!searchTarget) {
+      showError('Enter Company Name', 'Please type the company name or symbol first.');
       return;
     }
-    const q = formIpoName.trim().toLowerCase();
+    const q = searchTarget.toLowerCase();
 
     try {
       // 1. Search local SQLite ipo_master table
@@ -144,14 +143,16 @@ export default function AddIPOScreen() {
       );
       // 2. Search local SQLite ipo_listings table
       const listingRow = await db.getFirstAsync<any>(
-        `SELECT * FROM ipo_listings WHERE deleted_at IS NULL AND LOWER(ipo_name) LIKE ? LIMIT 1`,
-        [`%${q}%`]
+        `SELECT * FROM ipo_listings WHERE deleted_at IS NULL AND (LOWER(ipo_name) LIKE ? OR LOWER(company_name) LIKE ? OR LOWER(symbol) LIKE ?) LIMIT 1`,
+        [`%${q}%`, `%${q}%`, `%${q}%`]
       );
       // 3. Fallback catalog lookup
       const seedMatch = INDIAN_IPO_CATALOG.find((item) =>
-        item.name.toLowerCase().includes(q) || q.includes(item.name.toLowerCase())
+        item.name.toLowerCase().includes(q) || item.symbol.toLowerCase().includes(q) || q.includes(item.name.toLowerCase())
       );
 
+      const companyName = masterRow?.company_name || listingRow?.company_name || seedMatch?.name;
+      const symbol = masterRow?.symbol || listingRow?.symbol || seedMatch?.symbol;
       const price = masterRow?.price_band_max || masterRow?.price_band_min || masterRow?.buy_price || listingRow?.buy_price || seedMatch?.price;
       const lot = masterRow?.lot_size || masterRow?.quantity || listingRow?.quantity || seedMatch?.lot;
       const registrar = masterRow?.registrar || listingRow?.registrar || seedMatch?.registrar;
@@ -161,27 +162,24 @@ export default function AddIPOScreen() {
       const closeDate = masterRow?.close_date || listingRow?.close_date || seedMatch?.closeDate;
       const allotmentDate = masterRow?.allotment_date || listingRow?.allotment_date || seedMatch?.allotmentDate;
       const listingDate = masterRow?.listing_date || listingRow?.listing_date || seedMatch?.listingDate;
-      const gmpPercent = masterRow?.gmp_percent || listingRow?.gmp_percent;
-      const gmpValue = masterRow?.gmp_value || listingRow?.gmp_value;
 
       let count = 0;
+      if (companyName) { setFormCompanyName(companyName); setFormIpoName(`${companyName} IPO`); count++; }
+      if (symbol) { setFormSymbol(symbol.toUpperCase()); count++; }
       if (price) { setFormPrice(price.toString()); count++; }
       if (lot) { setFormLotSize(lot.toString()); count++; }
-      if (registrar) { setFormRegistrar(registrar); count++; }
-      if (exchange) { setFormExchange(exchange); count++; }
-      if (issueType) { setFormIssueType(issueType.toString().toUpperCase().includes('SME') ? 'SME' : 'Mainboard'); count++; }
+      if (registrar) { setFormRegistrar(resolveRegistrarCode(registrar)); count++; }
+      if (exchange) { setFormExchange(resolveExchangeCode(exchange)); count++; }
+      if (issueType) { setFormIssueType(resolveIssueTypeCode(issueType)); count++; }
       if (openDate) { setFormOpenDate(openDate); count++; }
       if (closeDate) { setFormCloseDate(closeDate); count++; }
       if (allotmentDate) { setFormAllotmentDate(allotmentDate); count++; }
       if (listingDate) { setFormListingDate(listingDate); count++; }
-      if (gmpPercent != null) { setFormGmpPercent(gmpPercent.toString()); count++; }
-      if (gmpValue != null) { setFormGmpValue(gmpValue.toString()); count++; }
 
       Haptics.selectionAsync();
       if (count > 0) {
-        showSuccess('Data Auto-Fetched', `Auto-filled ${count} field(s) for ${formIpoName}.`);
+        showSuccess('Data Auto-Fetched', `Auto-filled ${count} field(s) for ${searchTarget}.`);
       }
-      // NOTE: Quiet fallback if 0 fields found — NO error modal / alert popup shown!
     } catch (err) {
       console.error('Auto fetch data error:', err);
     }
@@ -215,37 +213,87 @@ export default function AddIPOScreen() {
     }
   };
 
-
   const handleSave = async () => {
-    if (!formIpoName.trim()) {
-      showError('Required Field', 'Please enter IPO / Company Name.');
-      return;
-    }
+    const trimmedCompany = formCompanyName.trim();
+    const trimmedIpoName = formIpoName.trim() || `${trimmedCompany} IPO`;
+    const trimmedSymbol = formSymbol.trim().toUpperCase();
     const price = parseFloat(formPrice) || 0;
     const qty = parseInt(formLotSize, 10) || 0;
     const gmpPercent = parseFloat(formGmpPercent) || 0;
     const gmpValue = parseFloat(formGmpValue) || 0;
-    if (price <= 0 || qty <= 0) {
-      showError('Invalid Values', 'Price and lot size must be greater than zero.');
+
+    // Strict Validation Requirements
+    if (!trimmedCompany) {
+      showError('Validation Error', 'Company Name is required.');
+      return;
+    }
+    if (!trimmedSymbol) {
+      showError('Validation Error', 'Exchange Symbol is required (e.g. JUNIPER).');
+      return;
+    }
+    if (!formExchange) {
+      showError('Validation Error', 'Please select an Exchange.');
+      return;
+    }
+    if (!formRegistrar) {
+      showError('Validation Error', 'Please select a Registrar.');
+      return;
+    }
+    if (!formIssueType) {
+      showError('Validation Error', 'Please select an Issue Type.');
+      return;
+    }
+    if (price <= 0) {
+      showError('Validation Error', 'Cut-off price must be greater than 0.');
+      return;
+    }
+    if (qty <= 0) {
+      showError('Validation Error', 'Lot size quantity must be greater than 0.');
+      return;
+    }
+    if (!formOpenDate.trim()) {
+      showError('Validation Error', 'Open Date is required.');
+      return;
+    }
+    if (!formCloseDate.trim()) {
+      showError('Validation Error', 'Close Date is required.');
+      return;
+    }
+    if (formCloseDate < formOpenDate) {
+      showError('Validation Error', 'Close Date cannot be earlier than Open Date.');
       return;
     }
 
     setSaving(true);
     try {
       const finalLogoUrl = formLogoUrl ? await ensureBase64DataUrl(formLogoUrl.trim()) : '';
+      const now = new Date().toISOString();
 
       if (isEditing && editingIPO) {
-        const now = new Date().toISOString();
+        // Section 15: Editing safety — clear backend_ipo_id if core identity fields changed
+        let targetBackendIpoId: string | null = editingIPO.backend_ipo_id ?? null;
+        if (
+          editingIPO.company_name &&
+          editingIPO.symbol &&
+          (editingIPO.company_name.trim().toLowerCase() !== trimmedCompany.toLowerCase() ||
+            editingIPO.symbol.trim().toUpperCase() !== trimmedSymbol)
+        ) {
+          targetBackendIpoId = null; // Unlink stale backend ID on identity change
+        }
+
         await db.runAsync(
           `UPDATE ipo_listings
-           SET ipo_name = ?, buy_price = ?, quantity = ?, registrar = ?, exchange = ?, issue_type = ?, open_date = ?, close_date = ?, allotment_date = ?, listing_date = ?, logo_url = ?, gmp_percent = ?, gmp_value = ?, updated_at = ?
+           SET backend_ipo_id = ?, company_name = ?, ipo_name = ?, symbol = ?, buy_price = ?, quantity = ?, registrar = ?, exchange = ?, issue_type = ?, open_date = ?, close_date = ?, allotment_date = ?, listing_date = ?, logo_url = ?, gmp_percent = ?, gmp_value = ?, updated_at = ?
            WHERE id = ?`,
           [
-            formIpoName.trim(),
+            targetBackendIpoId,
+            trimmedCompany,
+            trimmedIpoName,
+            trimmedSymbol,
             price,
             qty,
-            formRegistrar.trim(),
-            formExchange.trim(),
+            formRegistrar,
+            formExchange,
             formIssueType,
             formOpenDate,
             formCloseDate,
@@ -260,17 +308,21 @@ export default function AddIPOScreen() {
         );
       } else {
         const newId = `ipo_${Date.now()}`;
-        const now = new Date().toISOString();
         await db.runAsync(
-          `INSERT INTO ipo_listings (id, ipo_name, buy_price, quantity, registrar, exchange, issue_type, open_date, close_date, allotment_date, listing_date, logo_url, archived, is_favorite, gmp_percent, gmp_value, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)`,
+          `INSERT INTO ipo_listings (
+            id, backend_ipo_id, company_name, ipo_name, symbol, buy_price, quantity,
+            registrar, exchange, issue_type, open_date, close_date, allotment_date, listing_date,
+            logo_url, archived, is_favorite, gmp_percent, gmp_value, created_at, updated_at
+          ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)`,
           [
             newId,
-            formIpoName.trim(),
+            trimmedCompany,
+            trimmedIpoName,
+            trimmedSymbol,
             price,
             qty,
-            formRegistrar.trim(),
-            formExchange.trim(),
+            formRegistrar,
+            formExchange,
             formIssueType,
             formOpenDate,
             formCloseDate,
@@ -284,11 +336,13 @@ export default function AddIPOScreen() {
           ]
         );
       }
+
       await refresh();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
-    } catch {
-      showError('Error', 'Failed to save IPO record.');
+    } catch (err) {
+      console.error('Failed to save IPO record:', err);
+      showError('Save Error', 'Failed to save IPO record into local database.');
     } finally {
       setSaving(false);
     }
@@ -299,7 +353,7 @@ export default function AddIPOScreen() {
       style={[styles.flex, { backgroundColor: colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* ── Page Header ── */}
+      {/* Page Header */}
       <View
         style={[
           styles.header,
@@ -336,13 +390,13 @@ export default function AddIPOScreen() {
         />
       </View>
 
-      {/* ── Form ScrollView ── */}
+      {/* Form ScrollView */}
       <ScrollView
         contentContainerStyle={[styles.form, { paddingBottom: insets.bottom + 40 }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* COMPANY LOGO UPLOAD (MANUAL ONLY) */}
+        {/* COMPANY LOGO UPLOAD */}
         <View style={styles.field}>
           <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
             COMPANY LOGO
@@ -388,11 +442,11 @@ export default function AddIPOScreen() {
           )}
         </View>
 
-        {/* IPO / COMPANY NAME */}
+        {/* COMPANY NAME */}
         <View style={styles.field}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
             <Text style={[styles.fieldLabel, { color: colors.mutedForeground, marginBottom: 0 }]}>
-              IPO / COMPANY NAME *
+              COMPANY NAME *
             </Text>
             <TouchableOpacity onPress={handleAutoFetchData} activeOpacity={0.7} style={styles.autoFetchLink}>
               <Feather name="zap" size={12} color={colors.primary} style={{ marginRight: 4 }} />
@@ -400,12 +454,42 @@ export default function AddIPOScreen() {
             </TouchableOpacity>
           </View>
           <TextInput
-            value={formIpoName}
-            onChangeText={setFormIpoName}
-            placeholder="e.g. Advit Jewels"
+            value={formCompanyName}
+            onChangeText={handleCompanyNameChange}
+            placeholder="e.g. Juniper Hotels Limited"
             placeholderTextColor={colors.mutedForeground}
             style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground }]}
           />
+        </View>
+
+        {/* IPO DISPLAY NAME & SYMBOL side by side */}
+        <View style={styles.row}>
+          <View style={[styles.field, { flex: 1 }]}>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
+              IPO DISPLAY NAME *
+            </Text>
+            <TextInput
+              value={formIpoName}
+              onChangeText={setFormIpoName}
+              placeholder="e.g. Juniper Hotels IPO"
+              placeholderTextColor={colors.mutedForeground}
+              style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground }]}
+            />
+          </View>
+
+          <View style={[styles.field, { flex: 1 }]}>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
+              SYMBOL *
+            </Text>
+            <TextInput
+              value={formSymbol}
+              onChangeText={(txt) => setFormSymbol(txt.toUpperCase())}
+              placeholder="e.g. JUNIPER"
+              placeholderTextColor={colors.mutedForeground}
+              autoCapitalize="characters"
+              style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground }]}
+            />
+          </View>
         </View>
 
         {/* CUT-OFF PRICE & LOT SIZE side by side */}
@@ -417,7 +501,7 @@ export default function AddIPOScreen() {
             <TextInput
               value={formPrice}
               onChangeText={setFormPrice}
-              placeholder="e.g. 56"
+              placeholder="e.g. 360"
               placeholderTextColor={colors.mutedForeground}
               keyboardType="numeric"
               style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground }]}
@@ -431,7 +515,7 @@ export default function AddIPOScreen() {
             <TextInput
               value={formLotSize}
               onChangeText={setFormLotSize}
-              placeholder="e.g. 2000"
+              placeholder="e.g. 40"
               placeholderTextColor={colors.mutedForeground}
               keyboardType="numeric"
               style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground }]}
@@ -439,85 +523,21 @@ export default function AddIPOScreen() {
           </View>
         </View>
 
-        {/* GMP (%) & GMP AMOUNT (₹) side by side */}
-        <View style={styles.row}>
-          <View style={[styles.field, { flex: 1 }]}>
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
-              GMP (%)
-            </Text>
-            <TextInput
-              value={formGmpPercent}
-              onChangeText={(txt) => {
-                setFormGmpPercent(txt);
-                const pct = parseFloat(txt);
-                const price = parseFloat(formPrice);
-                if (!isNaN(pct) && !isNaN(price) && price > 0 && !formGmpValue) {
-                  setFormGmpValue(Math.round((price * pct) / 100).toString());
-                }
-              }}
-              placeholder="e.g. 16"
-              placeholderTextColor={colors.mutedForeground}
-              keyboardType="numeric"
-              style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground }]}
-            />
-          </View>
-
-          <View style={[styles.field, { flex: 1 }]}>
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
-              GMP AMOUNT (₹)
-            </Text>
-            <TextInput
-              value={formGmpValue}
-              onChangeText={(txt) => {
-                setFormGmpValue(txt);
-                const amt = parseFloat(txt);
-                const price = parseFloat(formPrice);
-                if (!isNaN(amt) && !isNaN(price) && price > 0 && !formGmpPercent) {
-                  setFormGmpPercent(((amt / price) * 100).toFixed(1).replace(/\.0$/, ''));
-                }
-              }}
-              placeholder="e.g. 234"
-              placeholderTextColor={colors.mutedForeground}
-              keyboardType="numeric"
-              style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground }]}
-            />
-          </View>
-        </View>
-
-        {/* ISSUE TYPE */}
+        {/* CONTROLLED REGISTRAR SELECTION */}
         <View style={styles.field}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>ISSUE TYPE</Text>
-          <View style={[styles.issueTypeGroup, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            {(['Mainboard', 'SME'] as const).map((type) => (
-              <TouchableOpacity
-                key={type}
-                onPress={() => setFormIssueType(type)}
-                style={[styles.issueTypePill, formIssueType === type && { backgroundColor: colors.primary }]}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.issueTypeText, { color: formIssueType === type ? '#fff' : colors.mutedForeground }]}>
-                  {type}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* REGISTRAR — Chip Selection */}
-        <View style={styles.field}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>REGISTRAR</Text>
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>REGISTRAR *</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.chipRow}
             keyboardShouldPersistTaps="handled"
           >
-            {REGISTRARS.map((r) => {
-              const selected = formRegistrar === r;
+            {CONTROLLED_REGISTRARS.map((r) => {
+              const selected = formRegistrar === r.code;
               return (
                 <TouchableOpacity
-                  key={r}
-                  onPress={() => setFormRegistrar(selected ? '' : r)}
+                  key={r.code}
+                  onPress={() => setFormRegistrar(r.code)}
                   activeOpacity={0.8}
                   style={[
                     styles.chip,
@@ -537,48 +557,59 @@ export default function AddIPOScreen() {
                     ]}
                     numberOfLines={1}
                   >
-                    {r}
+                    {r.label}
                   </Text>
                 </TouchableOpacity>
               );
             })}
           </ScrollView>
-          {formRegistrar ? (
-            <TouchableOpacity
-              onPress={() => setFormRegistrar('')}
-              style={styles.chipClearRow}
-              activeOpacity={0.7}
-            >
-              <Feather name="x-circle" size={13} color={colors.mutedForeground} style={{ marginRight: 4 }} />
-              <Text style={[styles.chipClearText, { color: colors.mutedForeground }]}
-                numberOfLines={1}
-              >
-                {formRegistrar}
-              </Text>
-            </TouchableOpacity>
-          ) : null}
         </View>
 
-        {/* EXCHANGE (edit only) */}
-        {isEditing && (
-          <View style={styles.field}>
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>EXCHANGE</Text>
-            <TextInput
-              value={formExchange}
-              onChangeText={setFormExchange}
-              placeholder="e.g. BSE SME"
-              placeholderTextColor={colors.mutedForeground}
-              style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground }]}
-            />
+        {/* CONTROLLED EXCHANGE & ISSUE TYPE side by side */}
+        <View style={styles.row}>
+          <View style={[styles.field, { flex: 1 }]}>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>EXCHANGE *</Text>
+            <View style={[styles.issueTypeGroup, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              {CONTROLLED_EXCHANGES.map((ex) => (
+                <TouchableOpacity
+                  key={ex.code}
+                  onPress={() => setFormExchange(ex.code)}
+                  style={[styles.issueTypePill, formExchange === ex.code && { backgroundColor: colors.primary }]}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.issueTypeText, { color: formExchange === ex.code ? '#fff' : colors.mutedForeground }]}>
+                    {ex.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
-        )}
 
-        {/* DATES — 2 column grid */}
+          <View style={[styles.field, { flex: 1 }]}>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>ISSUE TYPE *</Text>
+            <View style={[styles.issueTypeGroup, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              {CONTROLLED_ISSUE_TYPES.map((t) => (
+                <TouchableOpacity
+                  key={t.code}
+                  onPress={() => setFormIssueType(t.code)}
+                  style={[styles.issueTypePill, formIssueType === t.code && { backgroundColor: colors.primary }]}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.issueTypeText, { color: formIssueType === t.code ? '#fff' : colors.mutedForeground }]}>
+                    {t.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+
+        {/* DATES GRID */}
         <Text style={[styles.sectionEyebrow, { color: colors.mutedForeground }]}>KEY DATES</Text>
 
         <View style={styles.row}>
           <View style={[styles.field, { flex: 1 }]}>
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>OPEN DATE</Text>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>OPEN DATE *</Text>
             <TouchableOpacity
               onPress={() => setActiveDateField('openDate')}
               activeOpacity={0.8}
@@ -592,7 +623,7 @@ export default function AddIPOScreen() {
           </View>
 
           <View style={[styles.field, { flex: 1 }]}>
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>CLOSE DATE</Text>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>CLOSE DATE *</Text>
             <TouchableOpacity
               onPress={() => setActiveDateField('closeDate')}
               activeOpacity={0.8}
@@ -608,7 +639,7 @@ export default function AddIPOScreen() {
 
         <View style={styles.row}>
           <View style={[styles.field, { flex: 1 }]}>
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>ALLOTMENT</Text>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>ALLOTMENT DATE</Text>
             <TouchableOpacity
               onPress={() => setActiveDateField('allotmentDate')}
               activeOpacity={0.8}
@@ -637,7 +668,7 @@ export default function AddIPOScreen() {
         </View>
       </ScrollView>
 
-      {/* ── Custom Date Picker Modals ── */}
+      {/* Custom Date Picker Modals */}
       <DatePickerModal
         visible={activeDateField === 'openDate'}
         value={formOpenDate}
@@ -741,7 +772,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   issueTypeText: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
   dateInput: {
@@ -770,17 +801,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'GoogleSansFlex_500Medium',
   },
-  chipClearRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    paddingHorizontal: 4,
-  },
-  chipClearText: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    flex: 1,
-  },
   autoFetchLink: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -800,8 +820,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   logoUploadIconWrap: {
-    width: 38,
-    height: 38,
+    width: 36,
+    height: 36,
     borderRadius: 10,
     borderWidth: 1,
     alignItems: 'center',
@@ -814,20 +834,18 @@ const styles = StyleSheet.create({
   logoUploadSub: {
     fontSize: 11,
     fontFamily: 'GoogleSansFlex_400Regular',
-    marginTop: 1,
   },
   logoPreviewRow: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
     borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    padding: 10,
   },
   logoPreviewImage: {
     width: 40,
     height: 40,
-    borderRadius: 10,
+    borderRadius: 8,
   },
   logoPreviewText: {
     fontSize: 13,
@@ -836,12 +854,11 @@ const styles = StyleSheet.create({
   logoPreviewSub: {
     fontSize: 11,
     fontFamily: 'GoogleSansFlex_400Regular',
-    marginTop: 1,
   },
   logoBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 8,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',

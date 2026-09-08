@@ -31,8 +31,10 @@ export type User = {
 
 export type IPOListing = {
   id: string;
-  ipo_name: string;
+  backend_ipo_id?: string | null;
+  symbol?: string;
   company_name?: string;
+  ipo_name: string;
   buy_price: number;
   quantity: number;
   open_date: string;

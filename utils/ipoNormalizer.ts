@@ -4,6 +4,7 @@
 
 export interface NormalizedIPODetails {
   companyName: string;
+  symbol: string;
   cutoffPrice: number | null;
   lotSize: number | null;
   openDate: string;
@@ -15,6 +16,7 @@ export interface NormalizedIPODetails {
   issueType: 'Mainboard' | 'SME';
   fieldStatus: {
     companyName: boolean;
+    symbol: boolean;
     cutoffPrice: boolean;
     lotSize: boolean;
     openDate: boolean;
@@ -183,8 +185,15 @@ export function mergeAndNormalizeIPOData(sources: any[]): NormalizedIPODetails {
     ...validSources.map((s) => s.is_sme)
   );
 
+  const symbol = pickString(
+    ...validSources.map((s) => s.symbol),
+    ...validSources.map((s) => s.ticker),
+    ...validSources.map((s) => s.stock_symbol),
+  );
+
   const fieldStatus = {
     companyName: companyName.length > 0,
+    symbol: symbol.length > 0,
     cutoffPrice: cutoffPrice != null && cutoffPrice > 0,
     lotSize: lotSize != null && lotSize > 0,
     openDate: openDate.length > 0,
@@ -198,6 +207,7 @@ export function mergeAndNormalizeIPOData(sources: any[]): NormalizedIPODetails {
 
   return {
     companyName,
+    symbol,
     cutoffPrice,
     lotSize,
     openDate,

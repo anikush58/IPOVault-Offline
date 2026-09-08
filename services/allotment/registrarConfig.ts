@@ -14,7 +14,7 @@ export const REGISTRAR_CONFIGS: RegistrarConfig[] = [
   },
   {
     name: 'KFin Technologies Limited',
-    keywords: ['KFIN', 'KFINTECH', 'KARVY', 'ASHUTOSH'],
+    keywords: ['KFIN', 'KFINTECH', 'KARVY', 'ASHUTOSH', 'DHOOT'],
     url: 'https://ris.kfintech.com/ipostatus/',
     supportLevel: 'HYBRID',
   },
@@ -77,7 +77,7 @@ export function getRegistrarConfig(registrarName?: string | null): RegistrarConf
 
 export function isAutomatedCheckSupported(registrarName?: string | null): boolean {
   if (!registrarName) return false;
-  const cfg = getRegistrarConfig(registrarName);
-  return cfg.keywords.some((kw) => kw === 'KFIN' || kw === 'KFINTECH' || kw === 'KARVY');
+  const upper = registrarName.trim().toUpperCase();
+  return upper === 'KFINTECH' || upper.includes('KFIN');
 }
 

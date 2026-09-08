@@ -118,6 +118,9 @@ export class IPORepository implements IIPORepository {
     const now = getCurrentTime();
     const row = {
       id,
+      backend_ipo_id: ipo.backend_ipo_id ?? null,
+      symbol: ipo.symbol ?? '',
+      company_name: ipo.company_name ?? '',
       ipo_name: ipo.ipo_name,
       buy_price: ipo.buy_price,
       quantity: ipo.quantity,
@@ -141,7 +144,7 @@ export class IPORepository implements IIPORepository {
   }
 
   async update(id: string, ipo: Omit<IPOListing, 'id' | 'is_favorite'>): Promise<void> {
-    const row = {
+    const row: any = {
       ipo_name: ipo.ipo_name,
       buy_price: ipo.buy_price,
       quantity: ipo.quantity,
@@ -156,6 +159,9 @@ export class IPORepository implements IIPORepository {
       gmp_percent: ipo.gmp_percent ?? 0,
       gmp_value: ipo.gmp_value ?? 0,
     };
+    if (ipo.backend_ipo_id !== undefined) row.backend_ipo_id = ipo.backend_ipo_id;
+    if (ipo.symbol !== undefined) row.symbol = ipo.symbol;
+    if (ipo.company_name !== undefined) row.company_name = ipo.company_name;
     await repositoryAdapter.ipos.update(this.db, id, row);
   }
 
