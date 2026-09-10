@@ -91,11 +91,11 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
   }
 
   const bottomPad = Platform.OS === 'web' ? 16 : Math.max(insets.bottom, 12);
-  const blurMaskHeight = bottomPad + 84;
+  const blurMaskHeight = bottomPad + 110;
 
-  const gradientColors: [string, string, string] = isDark
-    ? ['rgba(14,17,23,0)', 'rgba(14,17,23,0.85)', colors.background]
-    : ['rgba(248,249,250,0)', 'rgba(248,249,250,0.85)', colors.background];
+  const gradientColors: [string, string, string, string] = isDark
+    ? ['rgba(14,17,23,0)', 'rgba(14,17,23,0.5)', 'rgba(14,17,23,0.88)', colors.background]
+    : ['rgba(248,249,250,0)', 'rgba(248,249,250,0.45)', 'rgba(248,249,250,0.88)', colors.background];
 
   const handlePlusPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -147,13 +147,13 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
         pointerEvents="none"
       >
         <BlurView
-          intensity={Platform.OS === 'ios' ? 70 : 45}
+          intensity={Platform.OS === 'ios' ? 45 : 30}
           tint={isDark ? 'dark' : 'light'}
           style={StyleSheet.absoluteFill}
         />
         <LinearGradient
           colors={gradientColors}
-          locations={[0, 0.4, 1]}
+          locations={[0, 0.35, 0.72, 1]}
           style={StyleSheet.absoluteFill}
         />
       </View>

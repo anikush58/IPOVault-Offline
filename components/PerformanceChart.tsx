@@ -369,6 +369,8 @@ export function PerformanceChart({ applications }: Props) {
     }));
   }, [applications, filterMode, cfgCount, customDate, selectedRefDate]);
 
+
+
   useEffect(() => {
     if (filterMode === 'custom_date' && customDate && bars.length > 0) {
       const targetKey = formatDateKey(customDate);

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -38,6 +38,17 @@ export function BulkApplySheet({ visible, onClose }: Props) {
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
 
+  // Reset all selections whenever the sheet is opened fresh
+  useEffect(() => {
+    if (visible) {
+      setBulkIPOId(null);
+      setBulkBankName(null);
+      setBulkUPIApp(null);
+      setSelectedUserIds(new Set());
+      setBulkLoading(false);
+    }
+  }, [visible]);
+
   const [showIPOPicker, setShowIPOPicker] = useState(false);
   const [showBankPicker, setShowBankPicker] = useState(false);
   const [showUPIPicker, setShowUPIPicker] = useState(false);
@@ -56,11 +67,13 @@ export function BulkApplySheet({ visible, onClose }: Props) {
     return list;
   }, [bankAccounts]);
 
-  // Filtered users for selected IPO (excluding users who already applied)
+  // Filtered users for selected IPO (excluding users who already have a non-cancelled application)
   const filteredUsers = useMemo(() => {
     if (!bulkIPOId) return activeUsers;
     const existingUserIds = new Set(
-      applications.filter((a) => a.ipo_id === bulkIPOId).map((a) => a.user_id)
+      applications
+        .filter((a) => a.ipo_id === bulkIPOId && a.status !== 'Cancelled')
+        .map((a) => a.user_id)
     );
     return activeUsers.filter((u) => !existingUserIds.has(u.id));
   }, [activeUsers, applications, bulkIPOId]);
