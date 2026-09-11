@@ -11,6 +11,7 @@ import { useDialog } from '@/context/DialogContext';
 import { useDB } from '@/context/DBContext';
 import { ThemeToggle } from '@/components/onboarding/ThemeToggle';
 import { useRouter } from 'expo-router';
+import { useCloudBackup } from '@/hooks/useCloudBackup';
 
 const TABLES = ['users_table', 'bank_accounts', 'ipo_listings', 'ipo_applications', 'ipo_master'];
 
@@ -84,9 +85,82 @@ export default function SettingsScreen() {
   const { users, ipos, applications, exportJSON, exportCSV, importJSON, importCSV, clearAllData } = useDB();
   const router = useRouter();
 
+  const {
+    isAuthenticated,
+    userEmail,
+    isBackingUp,
+    isRestoring,
+    lastBackupTime,
+    latestMetadata,
+    backupNow,
+    restoreNow,
+  } = useCloudBackup();
+
   const [busy, setBusy] = useState(false);
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const hasData = users.length > 0 || ipos.length > 0 || applications.length > 0;
+
+  const handleCloudBackupNow = async () => {
+    if (!isAuthenticated) {
+      router.push('/auth');
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await backupNow();
+      if (res.success) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        showSuccess(
+          'Cloud Backup Successful',
+          `Successfully saved snapshot to Supabase Cloud.\n\nUploaded Assets: ${res.imagesUploaded} image(s).`
+        );
+      } else {
+        showError('Cloud Backup Failed', res.error || 'Failed to complete cloud backup.');
+      }
+    } catch (e: any) {
+      showError('Cloud Backup Failed', e?.message || 'Unexpected cloud backup error.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCloudRestoreNow = async () => {
+    if (!isAuthenticated) {
+      router.push('/auth');
+      return;
+    }
+
+    const metaStr = latestMetadata
+      ? `Snapshot Date: ${new Date(latestMetadata.created_at).toLocaleString()}\nRecords: ${latestMetadata.userCount || 0} users, ${latestMetadata.ipoCount || 0} IPOs, ${latestMetadata.applicationCount || 0} apps`
+      : 'Restoring will merge remote snapshot data into your local database.';
+
+    showConfirm({
+      title: 'Restore Cloud Backup',
+      message: `${metaStr}\n\nDo you want to proceed with restoring from Supabase Cloud?`,
+      confirmText: 'Restore Now',
+      cancelText: 'Cancel',
+      onConfirm: async () => {
+        setBusy(true);
+        try {
+          const res = await restoreNow();
+          if (res.success) {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            showSuccess(
+              'Cloud Restore Complete',
+              `Successfully restored from cloud snapshot:\n• ${res.userCount} user(s)\n• ${res.ipoCount} IPO(s)\n• ${res.applicationCount} application(s)\n• ${res.imagesRestored} image file(s)`
+            );
+          } else {
+            showError('Cloud Restore Failed', res.error || 'Failed to restore snapshot from cloud.');
+          }
+        } catch (e: any) {
+          showError('Cloud Restore Failed', e?.message || 'Unexpected cloud restore error.');
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+  };
 
   const handleExport = () => {
     showConfirm({
@@ -99,6 +173,8 @@ export default function SettingsScreen() {
         try {
           const jsonStr = await exportJSON();
           const dateStr = new Date().toISOString().slice(0, 10);
+          const sizeKb = (new Blob([jsonStr]).size / 1024).toFixed(1);
+          console.log(`[IPOVault] Generated JSON backup: ipovault_backup_${dateStr}.json (${sizeKb} KB)`);
           await shareFile(jsonStr, `ipovault_backup_${dateStr}.json`, 'application/json');
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } catch (e: any) {
@@ -184,6 +260,10 @@ export default function SettingsScreen() {
     { label: 'Applications', value: applications.length, icon: 'file-text' },
   ];
 
+  const formattedLastBackup = lastBackupTime
+    ? new Date(lastBackupTime).toLocaleString()
+    : 'Never';
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* ── Custom Header with Top-Right Pill Theme Switcher (from Onboarding) ── */}
@@ -220,19 +300,44 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* 2. Data Management Section */}
-        <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>DATA MANAGEMENT</Text>
+        {/* 2. Cloud Backup & Sync Section */}
+        <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>SUPABASE CLOUD BACKUP</Text>
+        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 16 }]}>
+          <SettingRow
+            icon={isAuthenticated ? 'user-check' : 'log-in'}
+            title={isAuthenticated ? 'Account Session' : 'Sign In to Supabase'}
+            subtitle={isAuthenticated ? `Signed in as ${userEmail}` : 'Connect your account to backup to cloud'}
+            onPress={() => router.push('/auth')}
+          />
+          <SettingRow
+            icon="cloud-upload"
+            title="Backup to Cloud Now"
+            subtitle={isBackingUp ? 'Uploading snapshot...' : `Last backup: ${formattedLastBackup}`}
+            onPress={handleCloudBackupNow}
+            disabled={busy || isBackingUp || isRestoring}
+          />
+          <SettingRow
+            icon="cloud-download"
+            title="Restore from Cloud"
+            subtitle={isRestoring ? 'Downloading snapshot...' : 'Restore latest snapshot from Supabase Cloud'}
+            onPress={handleCloudRestoreNow}
+            disabled={busy || isBackingUp || isRestoring}
+          />
+        </View>
+
+        {/* 3. Local Data Management Section */}
+        <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>LOCAL BACKUP & EXPORT</Text>
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 16 }]}>
           <SettingRow
             icon="download"
-            title="Export Backup"
-            subtitle="Save all app data as a JSON backup file"
+            title="Export JSON Backup"
+            subtitle="Save all app data as a local JSON file"
             onPress={handleExport}
             disabled={busy || !hasData}
           />
           <SettingRow
             icon="upload"
-            title="Import Backup"
+            title="Import Local File"
             subtitle="Restore from a JSON or CSV backup file"
             onPress={handleImport}
             disabled={busy}
@@ -252,7 +357,7 @@ export default function SettingsScreen() {
           <Text style={[styles.footerBrand, { color: colors.primary }]}>IPOVault</Text>
           <Text style={[styles.footerTitle, { color: colors.foreground }]}>IPO Investment Tracker</Text>
           <Text style={[styles.footerSub, { color: colors.mutedForeground }]}>
-            All data stored locally on your device.{'\n'}No internet connection required.
+            Local-first architecture with automatic Cloud Backup.{'\n'}Full offline support maintained.
           </Text>
         </View>
       </ScrollView>

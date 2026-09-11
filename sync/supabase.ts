@@ -1,9 +1,11 @@
-import 'react-native-url-polyfill/auto';
+try {
+  require('react-native-url-polyfill/auto');
+} catch {}
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://vktjgihxfdvqkvpwnagp.supabase.co';
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_SfPSCRFkEiHvKV-FJYmxvw_s7DLQeLa';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {

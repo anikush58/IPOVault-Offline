@@ -84,13 +84,10 @@ export function ApplicationCard({
   // Avatar gradient matching Users page
   const avatarGradient = getAvatarGradient(app.user_name || 'User');
 
-  // Subtitle format: Broker · Demat · Bank · UPI App
-  const dematStr = app.user_client_id ? `Demat: ${app.user_client_id}` : null;
+  // Subtitle format: Broker · Bank
   const brokerBankDetails = [
     app.user_broker,
-    dematStr,
     app.user_bank_name,
-    app.user_upi_app,
   ].filter(Boolean).join(' · ');
 
   // Status Badge Styling

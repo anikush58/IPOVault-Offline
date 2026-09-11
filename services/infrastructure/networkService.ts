@@ -1,4 +1,7 @@
-import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
+let NetInfoModule: any = null;
+try {
+  NetInfoModule = require('@react-native-community/netinfo');
+} catch {}
 
 class NetworkService {
   private online: boolean = true;
@@ -6,17 +9,31 @@ class NetworkService {
   private reconnectListeners: Set<() => void> = new Set();
 
   constructor() {
-    NetInfo.addEventListener((state: NetInfoState) => {
-      const isConnected = !!(state.isConnected && state.isInternetReachable !== false);
-      const wasOffline = !this.online;
-      this.online = isConnected;
+    try {
+      const netInfo = NetInfoModule?.default || NetInfoModule;
+      if (netInfo && typeof netInfo.addEventListener === 'function') {
+        netInfo.addEventListener((state: any) => {
+          const isConnected = !!(state.isConnected && state.isInternetReachable !== false);
+          const wasOffline = !this.online;
+          this.online = isConnected;
 
-      this.listeners.forEach((listener) => listener(isConnected));
+          this.listeners.forEach((listener: (online: boolean) => void) => listener(isConnected));
 
-      if (wasOffline && isConnected) {
-        this.reconnectListeners.forEach((listener) => listener());
+          if (wasOffline && isConnected) {
+            this.reconnectListeners.forEach((listener: () => void) => listener());
+          }
+        });
       }
-    });
+    } catch {}
+  }
+
+  setOnline(online: boolean) {
+    const wasOffline = !this.online;
+    this.online = online;
+    this.listeners.forEach((listener) => listener(online));
+    if (wasOffline && online) {
+      this.reconnectListeners.forEach((listener) => listener());
+    }
   }
 
   isOnline(): boolean {
@@ -42,3 +59,4 @@ class NetworkService {
 }
 
 export const networkService = new NetworkService();
+

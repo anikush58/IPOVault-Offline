@@ -402,7 +402,7 @@ export default function ApplyIPOScreen() {
             const totalAmt = totalShares * unitPrice;
             const selectedBank = userSelectedBank[u.id] || u.bank_name || (bankAccounts[0]?.bank_name ?? 'Default Bank');
             const selectedUPI = userSelectedUPI[u.id] || u.upi_id || u.upi_app || 'HDFC UPI';
-            const dematVal = u.client_id || (u as any).demat || (u as any).dp_id || (u as any).client_number || '1208180111845464';
+            const dematVal = u.client_id || (u as any).demat || (u as any).dp_id || (u as any).client_number || '';
 
             return (
               <TouchableOpacity
@@ -444,7 +444,7 @@ export default function ApplyIPOScreen() {
                     <View>
                       <Text style={[styles.applicantName, { color: colors.foreground }]}>{u.name}</Text>
                       <Text style={[styles.applicantMeta, { color: colors.mutedForeground }]}>
-                        PAN: {u.pan_number ? u.pan_number : '-'} · Demat: {dematVal}
+                        PAN: {u.pan_number ? u.pan_number : '-'}{dematVal ? ` · Demat: ${dematVal}` : ''}
                       </Text>
                     </View>
                   </View>
