@@ -293,8 +293,14 @@ export default function DashboardScreen() {
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Dashboard</Text>
         </View>
 
-        {/* Actions (Filter) */}
+        {/* Actions (IPO Hub & Filter) */}
         <View style={styles.headerActions}>
+          <IconButton
+            name="grid"
+            variant="surface"
+            size="md"
+            onPress={() => router.push('/ipo-hub')}
+          />
           <IconButton
             name="sliders"
             variant={hasFilter ? 'primary' : 'surface'}
@@ -561,6 +567,7 @@ export default function DashboardScreen() {
                 Allotment
               </Text>
             </TouchableOpacity>
+
 
             {/* 2. Users */}
             <TouchableOpacity

@@ -1,3 +1,5 @@
+declare const describe: any, it: any, expect: any;
+
 import {
   CONTROLLED_EXCHANGES,
   CONTROLLED_ISSUE_TYPES,

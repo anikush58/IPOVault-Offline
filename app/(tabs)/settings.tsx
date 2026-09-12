@@ -102,7 +102,7 @@ export default function SettingsScreen() {
 
   const handleCloudBackupNow = async () => {
     if (!isAuthenticated) {
-      router.push('/auth');
+      router.push({ pathname: '/auth', params: { returnTo: '/(tabs)/settings' } });
       return;
     }
 
@@ -127,7 +127,7 @@ export default function SettingsScreen() {
 
   const handleCloudRestoreNow = async () => {
     if (!isAuthenticated) {
-      router.push('/auth');
+      router.push({ pathname: '/auth', params: { returnTo: '/(tabs)/settings' } });
       return;
     }
 
@@ -307,7 +307,7 @@ export default function SettingsScreen() {
             icon={isAuthenticated ? 'user-check' : 'log-in'}
             title={isAuthenticated ? 'Account Session' : 'Sign In to Supabase'}
             subtitle={isAuthenticated ? `Signed in as ${userEmail}` : 'Connect your account to backup to cloud'}
-            onPress={() => router.push('/auth')}
+            onPress={() => router.push({ pathname: '/auth', params: { returnTo: '/(tabs)/settings' } })}
           />
           <SettingRow
             icon="cloud-upload"

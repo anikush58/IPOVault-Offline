@@ -25,8 +25,10 @@ export interface IBankRepository {
 
 export interface IIPORepository {
   getAll(): Promise<IPOListing[]>;
+  getById(id: string): Promise<IPOListing | null>;
   add(ipo: Omit<IPOListing, 'id' | 'is_favorite' | 'archived'>): Promise<void>;
   update(id: string, ipo: Omit<IPOListing, 'id' | 'is_favorite'>): Promise<void>;
+  updateGmp(id: string, gmpAmount: number | null, gmpPercent: number | null, profitLot: number | null): Promise<void>;
   archive(id: string, isArchived: boolean): Promise<void>;
   toggleFavorite(id: string, isFavorite: boolean): Promise<void>;
   delete(id: string): Promise<void>;
@@ -113,6 +115,11 @@ export class IPORepository implements IIPORepository {
     return await repositoryAdapter.ipos.getAll(this.db);
   }
 
+  async getById(id: string): Promise<IPOListing | null> {
+    const all = await this.getAll();
+    return all.find((item) => item.id === id) || null;
+  }
+
   async add(ipo: Omit<IPOListing, 'id' | 'is_favorite' | 'archived'>): Promise<void> {
     const id = Crypto.randomUUID();
     const now = getCurrentTime();
@@ -165,6 +172,15 @@ export class IPORepository implements IIPORepository {
     await repositoryAdapter.ipos.update(this.db, id, row);
   }
 
+  async updateGmp(id: string, gmpAmount: number | null, gmpPercent: number | null, profitLot: number | null): Promise<void> {
+    const row = {
+      gmp_value: gmpAmount ?? 0,
+      gmp_percent: gmpPercent ?? 0,
+      gmp_amount: profitLot ?? 0,
+    };
+    await repositoryAdapter.ipos.update(this.db, id, row);
+  }
+
   async archive(id: string, isArchived: boolean): Promise<void> {
     const row = {
       archived: isArchived ? 1 : 0,
@@ -191,7 +207,7 @@ export class ApplicationRepository implements IApplicationRepository {
     repositoryAdapter.applications.getAll(this.db).catch(() => {});
     return await this.db.getAllAsync<ApplicationWithDetails>(`
       SELECT a.id, a.user_id, a.ipo_id, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
-             a.is_favorite,
+             a.is_favorite, a.created_at,
              u.name        AS user_name,
              u.broker      AS user_broker,
              u.client_id   AS user_client_id,
@@ -219,7 +235,7 @@ export class ApplicationRepository implements IApplicationRepository {
     }
     const now = getCurrentTime();
     const existing = await this.db.getAllAsync<{ user_id: string }>(
-      'SELECT user_id FROM ipo_applications WHERE ipo_id=? AND deleted_at IS NULL',
+      "SELECT user_id FROM ipo_applications WHERE ipo_id=? AND status != 'Cancelled' AND deleted_at IS NULL",
       [ipoId]
     );
     const existingSet = new Set(existing.map((e) => e.user_id));
@@ -230,6 +246,11 @@ export class ApplicationRepository implements IApplicationRepository {
         continue;
       }
       if (!existingSet.has(uid)) {
+        // Soft delete any previous cancelled application for this user and IPO
+        await this.db.runAsync(
+          "UPDATE ipo_applications SET deleted_at=? WHERE ipo_id=? AND user_id=? AND status='Cancelled'",
+          [now, ipoId, uid]
+        );
         const id = Crypto.randomUUID();
         const appRow: any = {
           id,

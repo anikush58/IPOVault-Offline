@@ -105,6 +105,13 @@ export class IPORepository {
     await safeRunAsync(this.db, sql, [isFavorite ? 1 : 0, now, id], 'IPORepository.toggleFavorite');
   }
 
+  async updateGmp(id: string, gmpAmount: number | null, gmpPercent: number | null, profitLot: number | null): Promise<void> {
+    if (!id) return;
+    const now = new Date().toISOString();
+    const sql = "UPDATE ipo_master SET gmp_amount = ?, gmp_percent = ?, profit_per_lot = ?, gmp_updated_at = ?, updated_at = ? WHERE id = ?";
+    await safeRunAsync(this.db, sql, [gmpAmount, gmpPercent, profitLot, now, now, id], 'IPORepository.updateGmp');
+  }
+
   async getUpcoming(): Promise<IPOMasterRecord[]> {
     const sql = "SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (UPPER(status) = 'UPCOMING' OR UPPER(lifecycle_status) = 'UPCOMING' OR open_date > date('now')) ORDER BY open_date ASC";
     return safeGetAllAsync<IPOMasterRecord>(this.db, sql, [], 'IPORepository.getUpcoming');

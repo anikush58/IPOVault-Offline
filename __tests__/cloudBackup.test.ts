@@ -12,6 +12,7 @@ import {
   isCloudBackupPending,
   scheduleDebouncedCloudBackup,
   uriToUint8Array,
+  validateAndUploadImageAsset,
   SUPPORTED_BACKUP_VERSION,
   CURRENT_SCHEMA_VERSION,
 } from '../services/cloud/cloudBackupService';
@@ -457,8 +458,8 @@ async function runPhase1B1TestSuite() {
   const p2 = createCloudBackup(async () => JSON.stringify(mockPayloadWithAllotments));
 
   const [res1, res2] = await Promise.all([p1, p2]);
-  assert(res1.success || res2.success, 'TEST 13', 'First backup request succeeded');
-  assert(res1.isPending || res2.isPending, 'TEST 13', 'Concurrent second backup request was queued as pending');
+  assert(Boolean(res1.success || res2.success), 'TEST 13', 'First backup request succeeded');
+  assert(Boolean(res1.isPending || res2.isPending), 'TEST 13', 'Concurrent second backup request was queued as pending');
 
   // ---------------------------------------------------------------------------
   // TEST 14: Changes occurring during active backup cause another backup to be scheduled
@@ -593,6 +594,118 @@ async function runPhase1B1TestSuite() {
   assert(roundTripImportedPayload.allotments.length === 1, 'TEST 17', 'Allotments preserved');
   assert(roundTripImportedPayload.users[0].avatar_url.startsWith('file://'), 'TEST 17', 'User avatar restored as local file:// URI');
   assert(roundTripImportedPayload.ipos[0].logo_url.startsWith('file://'), 'TEST 17', 'IPO logo restored as local file:// URI');
+
+  // ---------------------------------------------------------------------------
+  // TEST 18: Avatar Validation & Upload - (a) Valid Avatar Upload
+  // ---------------------------------------------------------------------------
+  console.log('\n--- TEST 18: Avatar Validation - Valid Avatar Upload ---');
+  supabase.storage.from = () => ({
+    upload: async (storagePath: string) => ({ data: { path: storagePath }, error: null }),
+  }) as any;
+
+  const validAvatarResult = await validateAndUploadImageAsset(MOCK_AUTH_UID, TEST_DATA_URI, 'avatar', 'user-abhishek', 'Abhishek');
+  assert(validAvatarResult.success === true, 'TEST 18', 'Valid avatar asset upload returned success');
+  assert(validAvatarResult.storagePath === `${MOCK_AUTH_UID}/images/avatar_user-abhishek.png`, 'TEST 18', 'Correct storage path generated for Abhishek avatar');
+
+  // ---------------------------------------------------------------------------
+  // TEST 19: Avatar Validation & Upload - (b) Missing Avatar File
+  // ---------------------------------------------------------------------------
+  console.log('\n--- TEST 19: Avatar Validation - Missing Avatar File ---');
+  const missingAvatarResult = await validateAndUploadImageAsset(MOCK_AUTH_UID, 'file:///missing/path/avatar_abhishek.png', 'avatar', 'user-abhishek', 'Abhishek');
+  assert(missingAvatarResult.success === false, 'TEST 19', 'Missing avatar file returns failure');
+  assert(missingAvatarResult.errorPhase === 'LOCAL_FILE_VALIDATION', 'TEST 19', 'Failure phase is LOCAL_FILE_VALIDATION');
+  assert(missingAvatarResult.errorMessage?.includes('Abhishek') || false, 'TEST 19', 'Error message includes user name Abhishek');
+  assert(missingAvatarResult.errorMessage?.includes('does not exist') || false, 'TEST 19', 'Error message details missing file reason');
+
+  // ---------------------------------------------------------------------------
+  // TEST 20: Avatar Validation & Upload - (c) Unreadable Avatar File
+  // ---------------------------------------------------------------------------
+  console.log('\n--- TEST 20: Avatar Validation - Unreadable Avatar File ---');
+  const unreadableAvatarResult = await validateAndUploadImageAsset(MOCK_AUTH_UID, 'invalid_corrupt_data_uri', 'avatar', 'user-abhishek', 'Abhishek');
+  assert(unreadableAvatarResult.success === false, 'TEST 20', 'Unreadable avatar file returns failure');
+  assert(unreadableAvatarResult.errorPhase === 'LOCAL_FILE_VALIDATION', 'TEST 20', 'Failure phase is LOCAL_FILE_VALIDATION');
+  assert(unreadableAvatarResult.errorMessage?.includes('Abhishek') || false, 'TEST 20', 'Error message includes user name Abhishek');
+
+  // ---------------------------------------------------------------------------
+  // TEST 21: Avatar Validation & Upload - (d) Storage Upload Failure
+  // ---------------------------------------------------------------------------
+  console.log('\n--- TEST 21: Avatar Validation - Supabase Storage Upload Failure ---');
+  supabase.storage.from = () => ({
+    upload: async () => ({ data: null, error: { message: 'Storage connection timeout' } }),
+  }) as any;
+
+  const storageFailResult = await validateAndUploadImageAsset(MOCK_AUTH_UID, TEST_DATA_URI, 'avatar', 'user-abhishek', 'Abhishek');
+  assert(storageFailResult.success === false, 'TEST 21', 'Storage failure returns upload failure');
+  assert(storageFailResult.errorPhase === 'SUPABASE_STORAGE_UPLOAD', 'TEST 21', 'Failure phase is SUPABASE_STORAGE_UPLOAD');
+  assert(storageFailResult.errorMessage?.includes('Abhishek') || false, 'TEST 21', 'Error message includes user name Abhishek');
+
+  // ---------------------------------------------------------------------------
+  // TEST 22: Avatar Validation & Upload - (e) Successful Complete Backup
+  // ---------------------------------------------------------------------------
+  console.log('\n--- TEST 22: Complete Backup with Valid Avatar ---');
+  supabase.storage.from = () => ({
+    upload: async (p: string) => ({ data: { path: p }, error: null }),
+  }) as any;
+
+  let insertedBackupPayload22: any = null;
+  (supabase as any).from = (table: string) => ({
+    insert: (data: any) => {
+      insertedBackupPayload22 = data.payload;
+      return { select: () => ({ single: async () => ({ data: { id: 'snap-22' }, error: null }) }) };
+    },
+  });
+
+  const validCompleteBackupPayload = {
+    version: 1,
+    users: [{ id: 'user-abhishek', name: 'Abhishek', avatar_url: TEST_DATA_URI }],
+    ipos: [],
+  };
+
+  const completeBackupRes = await createCloudBackup(async () => JSON.stringify(validCompleteBackupPayload));
+  assert(completeBackupRes.success === true, 'TEST 22', 'Complete cloud backup succeeded');
+  assert(insertedBackupPayload22 !== null, 'TEST 22', 'Database snapshot inserted');
+  assert(insertedBackupPayload22.users[0].avatar_url === `${MOCK_AUTH_UID}/images/avatar_user-abhishek.png`, 'TEST 22', 'Avatar reference updated to Storage path');
+
+  // ---------------------------------------------------------------------------
+  // TEST 23: Local File/Cache URI persistence via saveBase64ToLocalImage
+  // ---------------------------------------------------------------------------
+  console.log('\n--- TEST 23: Cache File URI Persistence ---');
+  const { saveBase64ToLocalImage } = await import('../utils/imageUtils');
+  // Create a temporary physical test file simulating DocumentPicker cache URI
+  const scratchTestDir = path.join(process.cwd(), 'scratch', 'test_cache');
+  if (!fs.existsSync(scratchTestDir)) fs.mkdirSync(scratchTestDir, { recursive: true });
+  const tempCacheFilePath = path.join(scratchTestDir, 'temp_picker_avatar.png');
+  fs.writeFileSync(tempCacheFilePath, Buffer.from(ONE_BY_ONE_PNG_B64, 'base64'));
+  const tempCacheUri = `file://${tempCacheFilePath.replace(/\\/g, '/')}`;
+
+  const savedPermanentUri = await saveBase64ToLocalImage(tempCacheUri, 'avatar', 'user-abhishek');
+  assert(savedPermanentUri !== null, 'TEST 23', 'saveBase64ToLocalImage converted local cache URI to permanent storage');
+  assert(savedPermanentUri?.includes('avatar_user-abhishek') || false, 'TEST 23', 'Permanent storage path formatted with user id prefix');
+  assert(savedPermanentUri !== tempCacheUri, 'TEST 23', 'Permanent storage path is distinct from temporary cache URI');
+
+  // ---------------------------------------------------------------------------
+  // TEST 24: Abhishek Stale Avatar Failure Mode & Snapshot Insertion Prevention
+  // ---------------------------------------------------------------------------
+  console.log('\n--- TEST 24: Stale Avatar Failure Mode & Atomicity ---');
+  let dbInsertAttemptedInTest24 = false;
+  (supabase as any).from = (table: string) => ({
+    insert: () => {
+      dbInsertAttemptedInTest24 = true;
+      return { select: () => ({ single: async () => ({ data: { id: 'snap-24' }, error: null }) }) };
+    },
+  });
+
+  const staleAvatarPayload = {
+    version: 1,
+    users: [{ id: 'user-abhishek', name: 'Abhishek', avatar_url: 'file:///data/user/0/host.exp.exponent/cache/DocumentPicker/stale_avatar.jpg' }],
+    ipos: [],
+  };
+
+  const staleAvatarBackupRes = await createCloudBackup(async () => JSON.stringify(staleAvatarPayload));
+  assert(staleAvatarBackupRes.success === false, 'TEST 24', 'Backup failed when Abhishek avatar points to a missing local file');
+  assert(!dbInsertAttemptedInTest24, 'TEST 24', 'Database snapshot row insertion was NOT attempted on stale avatar failure');
+  assert(staleAvatarBackupRes.error?.includes('Abhishek') || false, 'TEST 24', 'Backup error explicitly identifies user Abhishek');
+  assert(staleAvatarBackupRes.error?.includes('Local file does not exist') || false, 'TEST 24', 'Backup error explicitly details missing file reason');
 
   console.log('\n===============================================================');
   console.log(`PHASE 1B.1 SUITE COMPLETED: Passed ${passCount} / ${passCount + failCount} tests.`);

@@ -201,7 +201,20 @@ export async function saveBase64ToLocalImage(
   id: string
 ): Promise<string | null> {
   try {
-    const payload = extractBase64Payload(input);
+    let payload = extractBase64Payload(input);
+    
+    // If input is a local file:// or content:// URI (e.g. from DocumentPicker cache directory),
+    // convert it via ensureBase64DataUrl to persist it into permanent app document storage.
+    if ((!payload || !payload.base64Data) && typeof input === 'string') {
+      const trimmed = input.trim();
+      if (trimmed.startsWith('file://') || trimmed.startsWith('content://')) {
+        const dataUrl = await ensureBase64DataUrl(trimmed);
+        if (dataUrl && dataUrl.startsWith('data:')) {
+          payload = extractBase64Payload(dataUrl);
+        }
+      }
+    }
+
     if (!payload || !payload.base64Data) {
       return null;
     }

@@ -59,8 +59,8 @@ export default function ApplicationsScreen() {
   const [filterIpoNames, setFilterIpoNames] = useState<string[]>([]);
   const [showFilter, setShowFilter] = useState(false);
 
-  // Sort order for Active tab (newest first by default)
-  const [activeSortOrder, setActiveSortOrder] = useState<'newest' | 'oldest'>('newest');
+  // Sort order for applications (newest first by default)
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
 
   // Bulk Selection Mode State for Applied Tab
   const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -119,13 +119,8 @@ export default function ApplicationsScreen() {
 
   const hasFilter = filterUserIds.length > 0 || filterBrokers.length > 0 || filterIpoNames.length > 0 || filterBankNames.length > 0;
 
-  // Sort by open_date for non-Active tabs (newest first)
-  const sortedApplications = [...applications].sort((a, b) => {
-    const dateA = a.open_date ? new Date(a.open_date).getTime() : 0;
-    const dateB = b.open_date ? new Date(b.open_date).getTime() : 0;
-    if (dateA !== dateB) return dateB - dateA;
-    return (b.id || "").localeCompare(a.id || "");
-  });
+  // Base list of applications
+  const sortedApplications = [...applications];
 
   const filterBase = sortedApplications.filter((a) => {
     if (filterUserIds.length > 0 && !filterUserIds.includes(a.user_id)) return false;
@@ -159,20 +154,43 @@ export default function ApplicationsScreen() {
   const isAllottedStatus = (st: string) =>
     st === 'Allotted' || st === 'Partially Allotted' || st === 'Holding' || st === 'Sold';
 
-  // Active tab: sort by created_at (application time), respecting sort order toggle
-  const activeTabSorted = (items: typeof searchFiltered) => {
+  const getAppTimestamp = (a: ApplicationWithDetails) => {
+    if (a.created_at) {
+      const t = new Date(a.created_at).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    if ((a as any).sale_date) {
+      const t = new Date((a as any).sale_date).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    if (a.open_date) {
+      const t = new Date(a.open_date).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    return 0;
+  };
+
+  // Sort applications respecting current sortOrder across ALL tabs
+  const sortApplicationsList = (items: ApplicationWithDetails[]) => {
     return [...items].sort((a, b) => {
-      const tsA = a.created_at ? new Date(a.created_at).getTime() : (a.open_date ? new Date(a.open_date).getTime() : 0);
-      const tsB = b.created_at ? new Date(b.created_at).getTime() : (b.open_date ? new Date(b.open_date).getTime() : 0);
-      return activeSortOrder === 'newest' ? tsB - tsA : tsA - tsB;
+      const tsA = getAppTimestamp(a);
+      const tsB = getAppTimestamp(b);
+      if (tsA !== tsB) {
+        return sortOrder === 'newest' ? tsB - tsA : tsA - tsB;
+      }
+      return sortOrder === 'newest'
+        ? (b.id || '').localeCompare(a.id || '')
+        : (a.id || '').localeCompare(b.id || '');
     });
   };
 
-  const filtered = activeTab === 'Applied'
-    ? activeTabSorted(searchFiltered.filter((a) => isAppliedStatus(a.status)))
+  const tabFiltered = activeTab === 'Applied'
+    ? searchFiltered.filter((a) => isAppliedStatus(a.status))
     : activeTab === 'Allotted'
     ? searchFiltered.filter((a) => isAllottedStatus(a.status))
     : searchFiltered.filter((a) => a.status === activeTab);
+
+  const filtered = sortApplicationsList(tabFiltered);
 
   const countFor = (key: TabKey) => {
     if (key === 'Applied') return searchFiltered.filter((a) => isAppliedStatus(a.status)).length;
@@ -343,9 +361,7 @@ export default function ApplicationsScreen() {
               <TouchableOpacity
                 onPress={() => {
                   try { Haptics.selectionAsync(); } catch {}
-                  if (activeTab === 'Applied') {
-                    setActiveSortOrder((prev) => prev === 'newest' ? 'oldest' : 'newest');
-                  }
+                  setSortOrder((prev) => (prev === 'newest' ? 'oldest' : 'newest'));
                 }}
                 style={[
                   styles.sortByBtn,
@@ -391,11 +407,9 @@ export default function ApplicationsScreen() {
               <Text style={[styles.listCount, { color: colors.mutedForeground }]}>
                 {filtered.length} {filtered.length === 1 ? 'application' : 'applications'}
               </Text>
-              {activeTab === 'Applied' && (
-                <Text style={[styles.sortOrderLabel, { color: colors.mutedForeground }]}>
-                  {activeSortOrder === 'newest' ? '↓ Newest first' : '↑ Oldest first'}
-                </Text>
-              )}
+              <Text style={[styles.sortOrderLabel, { color: colors.mutedForeground }]}>
+                {sortOrder === 'newest' ? '↓ Newest first' : '↑ Oldest first'}
+              </Text>
             </View>
           </View>
         )}

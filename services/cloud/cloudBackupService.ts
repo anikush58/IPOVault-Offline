@@ -68,11 +68,236 @@ export function isCloudBackupPending(): boolean {
   return isBackupPending;
 }
 
+let FileSystemMod: any = null;
+try {
+  FileSystemMod = require('expo-file-system/legacy');
+} catch {
+  FileSystemMod = null;
+}
+
 function getNodeFs(): any {
   try {
     return eval("require")('fs');
   } catch {
     return null;
+  }
+}
+
+export interface ImageUploadValidationResult {
+  success: boolean;
+  storagePath?: string;
+  errorPhase?: 'LOCAL_FILE_VALIDATION' | 'SUPABASE_STORAGE_UPLOAD';
+  errorMessage?: string;
+  fileSize?: number;
+  mimeType?: string;
+  ext?: string;
+}
+
+/**
+ * Validates local image existence & readability, determines MIME type/extension,
+ * converts to Uint8Array binary buffer, and uploads to Supabase Storage.
+ * Provides detailed diagnostic logging and precise error messages on failure.
+ */
+export async function validateAndUploadImageAsset(
+  authUid: string,
+  localUri: string,
+  prefix: string,
+  id: string,
+  entityName: string = 'Asset'
+): Promise<ImageUploadValidationResult> {
+  if (!localUri || !localUri.trim()) {
+    console.error(`[cloudBackupService] Avatar validation failed for ${entityName} (id=${id}): Missing required image URI.`);
+    return {
+      success: false,
+      errorPhase: 'LOCAL_FILE_VALIDATION',
+      errorMessage: `Backup failed: Missing required image URI for ${entityName}. [Phase: LOCAL_FILE_VALIDATION]`,
+    };
+  }
+
+  const trimmedUri = localUri.trim();
+  const uriScheme = trimmedUri.includes(':') ? trimmedUri.split(':')[0] + ':' : 'unknown';
+
+  // Stage 1 Diagnostic Log: User & URI Scheme
+  console.log(`[cloudBackupService] [Stage 1 - URI Check] user_id=${id}, user_name=${entityName}, avatar_uri_scheme=${uriScheme}`);
+
+  let base64Data = '';
+  let hintMime = '';
+  let fileSize = 0;
+
+  // Case A: Data URI or raw Base64 payload
+  if (trimmedUri.startsWith('data:') || extractBase64Payload(trimmedUri)) {
+    const payload = extractBase64Payload(trimmedUri);
+    if (!payload || !payload.base64Data) {
+      console.error(`[cloudBackupService] [Stage 1 Error] Invalid Base64 payload for user_id=${id}, user_name=${entityName}, scheme=${uriScheme}`);
+      return {
+        success: false,
+        errorPhase: 'LOCAL_FILE_VALIDATION',
+        errorMessage: `Backup failed: Required image for ${entityName} contains invalid or corrupt Base64 data. [Phase: LOCAL_FILE_VALIDATION, URI scheme: ${uriScheme}]`,
+      };
+    }
+    base64Data = payload.base64Data;
+    hintMime = payload.mimeType;
+    fileSize = Math.floor((base64Data.length * 3) / 4);
+
+    // Stage 2 Diagnostic Log: File existence & size check
+    console.log(`[cloudBackupService] [Stage 2 - File Check] user_id=${id}, user_name=${entityName}, file_exists=true, file_size=${fileSize} bytes`);
+  } else {
+    // Case B: Local File URI (file://, content://, or disk path)
+    try {
+      if (FileSystemMod) {
+        const fileInfo = await FileSystemMod.getInfoAsync(trimmedUri);
+        const fileExists = Boolean(fileInfo.exists);
+        fileSize = fileInfo.size ?? 0;
+
+        // Stage 2 Diagnostic Log: File existence & size check
+        console.log(`[cloudBackupService] [Stage 2 - File Check] user_id=${id}, user_name=${entityName}, file_exists=${fileExists}, file_size=${fileSize} bytes`);
+
+        if (!fileExists) {
+          console.error(`[cloudBackupService] [Stage 2 Error] Local file does not exist for user_id=${id}, user_name=${entityName}, scheme=${uriScheme}`);
+          return {
+            success: false,
+            errorPhase: 'LOCAL_FILE_VALIDATION',
+            errorMessage: `Backup failed: Failed to upload required avatar image for user ${entityName}. Reason: Local file does not exist at URI: ${trimmedUri}. [Phase: LOCAL_FILE_VALIDATION]`,
+          };
+        }
+        base64Data = await FileSystemMod.readAsStringAsync(trimmedUri, {
+          encoding: FileSystemMod.EncodingType.Base64,
+        });
+      } else {
+        const nodeFs = getNodeFs();
+        const fsPath = trimmedUri.replace(/^file:\/\//, '');
+        if (nodeFs && nodeFs.existsSync) {
+          const fileExists = nodeFs.existsSync(fsPath);
+          if (fileExists) {
+            const stats = nodeFs.statSync(fsPath);
+            fileSize = stats.size;
+          }
+
+          // Stage 2 Diagnostic Log: File existence & size check
+          console.log(`[cloudBackupService] [Stage 2 - File Check] user_id=${id}, user_name=${entityName}, file_exists=${fileExists}, file_size=${fileSize} bytes`);
+
+          if (!fileExists) {
+            console.error(`[cloudBackupService] [Stage 2 Error] Local file does not exist for user_id=${id}, user_name=${entityName}, scheme=${uriScheme}`);
+            return {
+              success: false,
+              errorPhase: 'LOCAL_FILE_VALIDATION',
+              errorMessage: `Backup failed: Failed to upload required avatar image for user ${entityName}. Reason: Local file does not exist at URI: ${trimmedUri}. [Phase: LOCAL_FILE_VALIDATION]`,
+            };
+          }
+          base64Data = nodeFs.readFileSync(fsPath).toString('base64');
+        } else {
+          console.error(`[cloudBackupService] [Stage 2 Error] File system environment unavailable for user_id=${id}, user_name=${entityName}`);
+          return {
+            success: false,
+            errorPhase: 'LOCAL_FILE_VALIDATION',
+            errorMessage: `Backup failed: Failed to upload required avatar image for user ${entityName}. Reason: File system environment unavailable. [Phase: LOCAL_FILE_VALIDATION]`,
+          };
+        }
+      }
+    } catch (readErr: any) {
+      console.error(`[cloudBackupService] [Stage 2 Exception] Reading local file failed for user_id=${id}, user_name=${entityName}:`, readErr?.message || 'Unreadable file');
+      return {
+        success: false,
+        errorPhase: 'LOCAL_FILE_VALIDATION',
+        errorMessage: `Backup failed: Failed to upload required avatar image for user ${entityName}. Reason: Could not read local file: ${readErr?.message || 'Unreadable file'}. [Phase: LOCAL_FILE_VALIDATION]`,
+      };
+    }
+  }
+
+  const payload = extractBase64Payload(base64Data) || extractBase64Payload(`data:${hintMime || 'image/jpeg'};base64,${base64Data}`);
+  if (!payload || !payload.base64Data) {
+    console.error(`[cloudBackupService] [Stage 3 Error] Payload extraction failed for user_id=${id}, user_name=${entityName}`);
+    return {
+      success: false,
+      errorPhase: 'LOCAL_FILE_VALIDATION',
+      errorMessage: `Backup failed: Failed to upload required avatar image for user ${entityName}. Reason: Image file payload is corrupt or unreadable. [Phase: LOCAL_FILE_VALIDATION]`,
+    };
+  }
+
+  const { mimeType, ext } = payload;
+
+  // Stage 3 Diagnostic Log: MIME & Extension detection
+  console.log(`[cloudBackupService] [Stage 3 - MIME/Ext Detection] user_id=${id}, user_name=${entityName}, mime_type=${mimeType}, extension=${ext}`);
+
+  // Convert Base64 payload to React-Native compatible Uint8Array binary buffer
+  let binaryBuffer: Uint8Array;
+  try {
+    if (typeof Buffer !== 'undefined') {
+      const buf = Buffer.from(payload.base64Data, 'base64');
+      binaryBuffer = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+    } else if (typeof atob === 'function') {
+      const binaryString = atob(payload.base64Data);
+      const len = binaryString.length;
+      binaryBuffer = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        binaryBuffer[i] = binaryString.charCodeAt(i);
+      }
+    } else {
+      return {
+        success: false,
+        errorPhase: 'LOCAL_FILE_VALIDATION',
+        errorMessage: `Backup failed: Binary buffer conversion unsupported for ${entityName}. [Phase: LOCAL_FILE_VALIDATION]`,
+      };
+    }
+  } catch (convErr: any) {
+    console.error(`[cloudBackupService] [Binary Conversion Error] user_id=${id}, user_name=${entityName}:`, convErr?.message || 'Buffer error');
+    return {
+      success: false,
+      errorPhase: 'LOCAL_FILE_VALIDATION',
+      errorMessage: `Backup failed: Failed to convert binary data for ${entityName}: ${convErr?.message || 'Buffer conversion error'}. [Phase: LOCAL_FILE_VALIDATION]`,
+    };
+  }
+
+  // Stable private Storage Object Path: <auth_user_id>/images/<prefix>_<local_id>.<ext>
+  const filename = `${prefix}_${id}.${ext}`;
+  const storagePath = `${authUid}/images/${filename}`;
+
+  // Stage 4 Diagnostic Log: Storage Path Generation
+  console.log(`[cloudBackupService] [Stage 4 - Storage Path Generation] user_id=${id}, user_name=${entityName}, storage_path=${storagePath}`);
+
+  // Stage 5 Diagnostic Log: Upload Start
+  console.log(`[cloudBackupService] [Stage 5 - Storage Upload Start] user_id=${id}, user_name=${entityName}, storage_path=${storagePath}, binary_bytes=${binaryBuffer.byteLength}`);
+
+  try {
+    const { data, error } = await supabase.storage
+      .from('user-backups')
+      .upload(storagePath, binaryBuffer, {
+        contentType: mimeType,
+        upsert: true,
+      });
+
+    if (error || !data || !data.path) {
+      const errorMsg = error?.message || 'Empty or invalid response payload from Supabase Storage';
+      const statusCode = (error as any)?.status || (error as any)?.statusCode || 'N/A';
+
+      // Stage 5 Diagnostic Log: Storage Upload Error
+      console.error(`[cloudBackupService] [Stage 5 - Storage Upload Error] user_id=${id}, user_name=${entityName}, status=${statusCode}, error_message=${errorMsg}`);
+      return {
+        success: false,
+        errorPhase: 'SUPABASE_STORAGE_UPLOAD',
+        errorMessage: `Backup failed: Failed to upload required avatar image for user ${entityName}. Reason: Supabase Storage upload error: ${errorMsg} (status: ${statusCode}). [Phase: SUPABASE_STORAGE_UPLOAD, Storage Path: ${storagePath}]`,
+      };
+    }
+
+    // Stage 5 Diagnostic Log: Upload Success
+    console.log(`[cloudBackupService] [Stage 5 - Storage Upload Success] user_id=${id}, user_name=${entityName}, storage_path=${data.path}`);
+    return {
+      success: true,
+      storagePath: data.path,
+      fileSize,
+      mimeType,
+      ext,
+    };
+  } catch (uploadErr: any) {
+    const errorMsg = uploadErr?.message || 'Network exception during storage upload';
+    const statusCode = uploadErr?.status || uploadErr?.statusCode || 'N/A';
+
+    console.error(`[cloudBackupService] [Stage 5 - Storage Exception] user_id=${id}, user_name=${entityName}, status=${statusCode}, error_message=${errorMsg}`);
+    return {
+      success: false,
+      errorPhase: 'SUPABASE_STORAGE_UPLOAD',
+      errorMessage: `Backup failed: Failed to upload required avatar image for user ${entityName}. Reason: Storage upload exception: ${errorMsg} (status: ${statusCode}). [Phase: SUPABASE_STORAGE_UPLOAD, Storage Path: ${storagePath}]`,
+    };
   }
 }
 
@@ -89,7 +314,7 @@ export async function uriToUint8Array(uri: string): Promise<{ buffer: Uint8Array
     if (typeof Buffer !== 'undefined') {
       const buf = Buffer.from(payload.base64Data, 'base64');
       return {
-        buffer: new Uint8Array(buf),
+        buffer: new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength),
         mimeType: payload.mimeType,
         ext: payload.ext,
       };
@@ -108,9 +333,9 @@ export async function uriToUint8Array(uri: string): Promise<{ buffer: Uint8Array
     } else {
       const nodeFs = getNodeFs();
       if (nodeFs) {
-        const buf = Buffer.from(payload.base64Data, 'base64');
+        const buf = (globalThis as any).Buffer.from(payload.base64Data, 'base64');
         return {
-          buffer: new Uint8Array(buf),
+          buffer: new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength),
           mimeType: payload.mimeType,
           ext: payload.ext,
         };
@@ -132,34 +357,14 @@ export async function uploadImageToStorage(
   authUid: string,
   localUri: string,
   prefix: string,
-  id: string
+  id: string,
+  entityName: string = 'Asset'
 ): Promise<{ storagePath: string } | null> {
-  if (!localUri || !authUid) return null;
-  try {
-    const converted = await uriToUint8Array(localUri);
-    if (!converted) return null;
-
-    // Stable, deterministic object filename
-    const filename = `${prefix}_${id}.${converted.ext}`;
-    const storagePath = `${authUid}/images/${filename}`;
-
-    const { error } = await supabase.storage
-      .from('user-backups')
-      .upload(storagePath, converted.buffer, {
-        contentType: converted.mimeType,
-        upsert: true,
-      });
-
-    if (error) {
-      console.warn(`[cloudBackupService] Storage upload error for ${storagePath}:`, error.message);
-      return null;
-    }
-
-    return { storagePath };
-  } catch (err) {
-    console.warn('[cloudBackupService] Upload image exception:', err);
-    return null;
+  const result = await validateAndUploadImageAsset(authUid, localUri, prefix, id, entityName);
+  if (result.success && result.storagePath) {
+    return { storagePath: result.storagePath };
   }
+  return null;
 }
 
 /**
@@ -263,15 +468,16 @@ export async function createCloudBackup(
       for (const u of backupObj.users) {
         const avatarUri = u.avatar_url || u.avatar?.data || (u.avatar_data ? `data:image/png;base64,${u.avatar_data}` : '');
         if (avatarUri && typeof avatarUri === 'string' && !avatarUri.includes('/user-backups/')) {
-          const uploadRes = await uploadImageToStorage(authUid, avatarUri, 'avatar', u.id || 'user');
-          if (!uploadRes || !uploadRes.storagePath) {
+          const userName = u.name || u.id || 'User';
+          const uploadRes = await validateAndUploadImageAsset(authUid, avatarUri, 'avatar', u.id || 'user', userName);
+          if (!uploadRes.success || !uploadRes.storagePath) {
             // ATOMIC FAILURE: Image upload failed, abort backup completely!
-            console.error(`[cloudBackupService] Backup failed: Avatar upload failed for user ${u.id}`);
+            console.error(`[cloudBackupService] Backup failed: Avatar upload failed for user ${userName} (${u.id})`);
             isBackupPending = true;
             return {
               success: false,
               imagesUploaded,
-              error: `Backup failed: Failed to upload required avatar image for user ${u.name || u.id}. Database snapshot not inserted.`,
+              error: uploadRes.errorMessage || `Backup failed: Failed to upload required avatar image for user ${userName}. Database snapshot not inserted.`,
             };
           }
           // Store canonical Storage Object Path ONLY (never public URL or file:// URI)
@@ -287,15 +493,16 @@ export async function createCloudBackup(
       for (const ipo of backupObj.ipos) {
         const logoUri = ipo.logo_url || ipo.companyLogo?.data || '';
         if (logoUri && typeof logoUri === 'string' && !logoUri.includes('/user-backups/')) {
-          const uploadRes = await uploadImageToStorage(authUid, logoUri, 'logo', ipo.id || 'ipo');
-          if (!uploadRes || !uploadRes.storagePath) {
+          const ipoName = ipo.ipo_name || ipo.company_name || ipo.id || 'IPO';
+          const uploadRes = await validateAndUploadImageAsset(authUid, logoUri, 'logo', ipo.id || 'ipo', ipoName);
+          if (!uploadRes.success || !uploadRes.storagePath) {
             // ATOMIC FAILURE: Image upload failed, abort backup completely!
-            console.error(`[cloudBackupService] Backup failed: Logo upload failed for IPO ${ipo.id}`);
+            console.error(`[cloudBackupService] Backup failed: Logo upload failed for IPO ${ipoName} (${ipo.id})`);
             isBackupPending = true;
             return {
               success: false,
               imagesUploaded,
-              error: `Backup failed: Failed to upload required logo image for IPO ${ipo.ipo_name || ipo.id}. Database snapshot not inserted.`,
+              error: uploadRes.errorMessage || `Backup failed: Failed to upload required logo image for IPO ${ipoName}. Database snapshot not inserted.`,
             };
           }
           // Store canonical Storage Object Path ONLY

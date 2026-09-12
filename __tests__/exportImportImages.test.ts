@@ -84,7 +84,7 @@ async function runTests() {
 
   assert(exportedUserJSON.avatar !== null, 'Test A - User Avatar', 'Exported JSON contains embedded avatar object with MIME type');
   assert(exportedUserJSON.avatar?.mimeType === 'image/png', 'Test A - User Avatar', `MIME type is ${exportedUserJSON.avatar?.mimeType}`);
-  assert(exportedUserJSON.avatar?.data.length > 0, 'Test A - User Avatar', 'Base64 data payload is non-empty');
+  assert((exportedUserJSON.avatar?.data?.length || 0) > 0, 'Test A - User Avatar', 'Base64 data payload is non-empty');
 
   // Recreate local file on import
   const recreatedUserAvatarPath = path.join(testTmpDir, 'recreated_avatar_user1.png');

@@ -87,7 +87,7 @@ export const safeAsyncStorage = {
       return;
     }
     const validKeys = keys.filter(isValidKey);
-    if (validKeys.length === 0) return [];
+    if (validKeys.length === 0) return;
     try {
       await AsyncStorage.multiRemove(validKeys);
     } catch (err) {

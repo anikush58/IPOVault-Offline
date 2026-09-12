@@ -15,4 +15,11 @@ export const ENDPOINTS = {
   SEARCH: '/api/v1/search',
   STATISTICS: '/api/v1/statistics',
   VERSION: '/api/v1/version',
+  ANALYTICS_MARKET: '/api/v1/analytics/market',
+  ANALYTICS_PERFORMANCE: '/api/v1/analytics/performance',
+  ANALYTICS_SUBSCRIPTION: '/api/v1/analytics/subscription',
+  ANALYTICS_ALLOTMENT: '/api/v1/analytics/allotment',
+  ANALYTICS_QUALITY: '/api/v1/analytics/quality',
+  ANALYTICS_CONTRACTS: '/api/v1/analytics/contracts',
 } as const;
+

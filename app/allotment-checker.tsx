@@ -1477,15 +1477,21 @@ export default function AllotmentCheckerScreen() {
     >
       {/* Header */}
       <View style={styles.header}>
-        <IconButton name="arrow-left" onPress={() => router.back()} />
-        <View style={styles.headerTitleContainer}>
+        <IconButton
+          name="arrow-left"
+          variant="surface"
+          size="md"
+          onPress={() => router.back()}
+        />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>
+            VERIFICATION ENGINE
+          </Text>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>
             Allotment Checker
           </Text>
-          <Text style={[styles.headerSubtitle, { color: colors.mutedForeground }]}>
-            Automated Backend-Driven Verification
-          </Text>
         </View>
+        <View style={{ width: 44 }} />
       </View>
 
       <ScrollView
@@ -2162,18 +2168,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    gap: 12,
   },
-  headerTitleContainer: {
-    flex: 1,
+  headerEyebrow: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    textAlign: 'center',
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
+    fontSize: 24,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.5,
+    textAlign: 'center',
   },
   scrollContent: {
     padding: 16,

@@ -74,7 +74,12 @@ function RootLayoutNav() {
         <Stack.Screen name="allotment-checker" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="notifications" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="leaderboard" options={{ headerShown: false, animation: 'fade' }} />
+        <Stack.Screen name="ipo-hub" options={{ headerShown: false, animation: 'fade' }} />
+        <Stack.Screen name="new-ipos" options={{ headerShown: false, animation: 'fade' }} />
+        <Stack.Screen name="backend-ipo-details" options={{ headerShown: false, animation: 'fade' }} />
+        <Stack.Screen name="analytics-dashboard" options={{ headerShown: false, animation: 'fade' }} />
       </Stack>
+
     </>
   );
 }

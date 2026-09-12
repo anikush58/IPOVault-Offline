@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/sync/supabase';
 import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/context/AuthContext';
@@ -18,26 +18,31 @@ WebBrowser.maybeCompleteAuthSession();
 export default function AuthScreen() {
   const colors = useColors();
   const router = useRouter();
+  const params = useLocalSearchParams<{ returnTo?: string }>();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
   const { showError } = useDialog();
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
+  const hasNavigatedRef = React.useRef(false);
 
-  function handleNavigateHome() {
+  const handleNavigateReturn = React.useCallback(() => {
+    if (hasNavigatedRef.current) return;
+    hasNavigatedRef.current = true;
+    const target = (params.returnTo as string) || '/(tabs)/settings';
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace('/(tabs)');
+      router.replace(target as any);
     }
-  }
+  }, [params.returnTo, router]);
 
   useEffect(() => {
     if (user) {
-      handleNavigateHome();
+      handleNavigateReturn();
     }
-  }, [user]);
+  }, [user, handleNavigateReturn]);
 
   async function signInWithGoogle() {
     setLoading(true);
@@ -67,21 +72,21 @@ export default function AuthScreen() {
 
         if (res.type === 'success') {
           const { url } = res;
-          const { params, errorCode } = QueryParams.getQueryParams(url);
+          const { params: urlParams, errorCode } = QueryParams.getQueryParams(url);
 
           if (errorCode) throw new Error(errorCode);
 
-          if (params?.code) {
-            const { error: sessionError } = await supabase.auth.exchangeCodeForSession(params.code);
+          if (urlParams?.code) {
+            const { error: sessionError } = await supabase.auth.exchangeCodeForSession(urlParams.code);
             if (sessionError) throw sessionError;
-            handleNavigateHome();
-          } else if (params?.access_token && params?.refresh_token) {
+            handleNavigateReturn();
+          } else if (urlParams?.access_token && urlParams?.refresh_token) {
             const { error: sessionError } = await supabase.auth.setSession({
-              access_token: params.access_token,
-              refresh_token: params.refresh_token,
+              access_token: urlParams.access_token,
+              refresh_token: urlParams.refresh_token,
             });
             if (sessionError) throw sessionError;
-            handleNavigateHome();
+            handleNavigateReturn();
           } else {
             showError('Auth Error', 'No session tokens returned in response.');
           }
@@ -102,7 +107,7 @@ export default function AuthScreen() {
           name="chevron-left"
           variant="surface"
           size="md"
-          onPress={handleNavigateHome}
+          onPress={handleNavigateReturn}
         />
         <View style={styles.headerCenter}>
           <Text style={[styles.headerEyebrow, { color: colors.primary }]}>IPOVault</Text>

@@ -51,6 +51,7 @@ function BankModal({
   onSave: (name: string, balance: number, upiApp?: string) => void;
 }) {
   const colors = useColors();
+  const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
   const isAdd = bank === null;
 

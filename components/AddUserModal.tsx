@@ -20,7 +20,7 @@ import { useColors } from '@/hooks/useColors';
 import { useDialog } from '@/context/DialogContext';
 import { useDB, type User } from '@/context/DBContext';
 
-import { ensureBase64DataUrl } from '@/utils/imageUtils';
+import { ensureBase64DataUrl, saveBase64ToLocalImage } from '@/utils/imageUtils';
 
 const BROKERS = ['Dhan', 'Upstox', 'Groww', 'Angel One', 'Fyers', 'Zerodha', 'Paytm Money', 'Millions', 'Sahi'];
 
@@ -114,14 +114,18 @@ export function AddUserModal({ visible, user, onClose }: Props) {
           reader.onload = () => {
             if (typeof reader.result === 'string') {
               setAvatarUrl(reader.result);
-              Haptics.selectionAsync();
+              try { Haptics.selectionAsync(); } catch {}
             }
           };
           reader.readAsDataURL(asset.file);
         } else {
-          const base64Url = await ensureBase64DataUrl(asset.uri);
-          setAvatarUrl(base64Url);
-          Haptics.selectionAsync();
+          let imageUri = asset.uri;
+          try {
+            const savedPath = await saveBase64ToLocalImage(asset.uri, 'avatar', user?.id || 'temp');
+            if (savedPath) imageUri = savedPath;
+          } catch {}
+          setAvatarUrl(imageUri);
+          try { Haptics.selectionAsync(); } catch {}
         }
       }
     } catch (err) {
@@ -133,7 +137,18 @@ export function AddUserModal({ visible, user, onClose }: Props) {
     if (!name.trim()) { showError('Required', 'Please enter a name.'); return; }
     setSaving(true);
     try {
-      const finalAvatarUrl = avatarUrl ? await ensureBase64DataUrl(avatarUrl.trim()) : '';
+      let finalAvatarUrl = avatarUrl ? avatarUrl.trim() : '';
+      if (finalAvatarUrl && (finalAvatarUrl.startsWith('data:') || finalAvatarUrl.startsWith('file://') || finalAvatarUrl.startsWith('content://'))) {
+        try {
+          const savedPath = await saveBase64ToLocalImage(finalAvatarUrl, 'avatar', user?.id || 'user');
+          if (savedPath) {
+            finalAvatarUrl = savedPath;
+          }
+        } catch (imgErr) {
+          if (__DEV__) console.warn('[AddUserModal] Avatar save error:', imgErr);
+        }
+      }
+
       const data = {
         name: name.trim(),
         pan_number: pan.trim().toUpperCase(),
@@ -148,9 +163,10 @@ export function AddUserModal({ visible, user, onClose }: Props) {
       };
       if (isEditing && user) await updateUser(user.id, data);
       else await addUser(data);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
       onClose();
-    } catch {
+    } catch (err: any) {
+      if (__DEV__) console.error('[AddUserModal] Save user error:', err);
       showError('Error', 'Failed to save. Please try again.');
     } finally {
       setSaving(false);

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Clipboard, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { User } from '@/context/DBContext';
@@ -56,10 +57,21 @@ export function UserCard({ user, applied, allotted, decided, onEdit, onDelete, o
       : colors.negative;
 
   const [avatarError, setAvatarError] = useState(false);
+  const [copiedPan, setCopiedPan] = useState(false);
 
   useEffect(() => {
     setAvatarError(false);
   }, [user.avatar_url]);
+
+  const handleCopyPan = async () => {
+    if (!user.pan_number) return;
+    try {
+      Clipboard.setString(user.pan_number);
+      try { Haptics.selectionAsync(); } catch {}
+      setCopiedPan(true);
+      setTimeout(() => setCopiedPan(false), 2000);
+    } catch {}
+  };
 
   const avatarGradient = getAvatarGradient(user.name || 'User');
 
@@ -89,9 +101,24 @@ export function UserCard({ user, applied, allotted, decided, onEdit, onDelete, o
           <Text style={[styles.name, { color: colors.foreground }]} numberOfLines={1}>
             {user.name}
           </Text>
-          <Text style={[styles.pan, { color: colors.mutedForeground }]} numberOfLines={1}>
-            {user.pan_number ? `PAN: ${user.pan_number}` : 'No PAN'}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+            <Text style={[styles.pan, { color: colors.mutedForeground, marginTop: 0 }]} numberOfLines={1}>
+              {user.pan_number ? `PAN: ${user.pan_number}` : 'No PAN'}
+            </Text>
+            {user.pan_number ? (
+              <TouchableOpacity
+                onPress={handleCopyPan}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.7}
+              >
+                <Feather
+                  name={copiedPan ? 'check' : 'copy'}
+                  size={12}
+                  color={copiedPan ? (isDark ? '#34D399' : '#059669') : colors.mutedForeground}
+                />
+              </TouchableOpacity>
+            ) : null}
+          </View>
         </View>
 
         {/* Soft, non-harsh Action Buttons */}

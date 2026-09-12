@@ -162,7 +162,7 @@ export default function ApplyIPOScreen() {
     const defaultSelected = new Set<string>();
 
     users.forEach((u) => {
-      const isAlreadyApplied = applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === u.id);
+      const isAlreadyApplied = applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === u.id && a.status !== 'Cancelled');
       if (!isAlreadyApplied) {
         defaultLots[u.id] = 1; // Default lot = 1
         defaultSelected.add(u.id); // Auto select user
@@ -394,7 +394,7 @@ export default function ApplyIPOScreen() {
         ) : (
           activeUsers.map((u) => {
             const currentLots = userLotQuantities[u.id] || 0;
-            const isAppliedForThisIpo = Boolean(selectedIpoId && applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === u.id));
+            const isAppliedForThisIpo = Boolean(selectedIpoId && applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === u.id && a.status !== 'Cancelled'));
             const isCardSelected = (currentLots > 0 || selectedUserIds.has(u.id)) && !isAppliedForThisIpo;
             const lotSize = selectedIPO?.quantity || 1;
             const unitPrice = selectedIPO?.buy_price || 0;

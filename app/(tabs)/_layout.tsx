@@ -143,7 +143,7 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
     <>
       {/* ── Background Blur & Mask Layer ── */}
       <View
-        style={[styles.blurMask, { height: blurMaskHeight }]}
+        style={[styles.blurMask, { height: isAppSelectionActive ? bottomPad + 60 : blurMaskHeight, opacity: isAppSelectionActive ? 0 : 1 }]}
         pointerEvents="none"
       >
         <BlurView

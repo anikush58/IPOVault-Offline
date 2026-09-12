@@ -4,7 +4,9 @@ import {
   DeviceEventEmitter,
   FlatList,
   Platform,
+  Pressable,
   RefreshControl,
+  ScrollView,
   SectionList,
   StyleSheet,
   Text,
@@ -53,6 +55,9 @@ export default function ApplicationsScreen() {
   const [filterYear, setFilterYear] = useState<string | null>(null);
   const [filterIpoNames, setFilterIpoNames] = useState<string[]>([]);
   const [showFilter, setShowFilter] = useState(false);
+
+  // Sort order for applications (newest first by default)
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
 
   // Bulk Selection Mode State for Applied Tab
   const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -111,13 +116,8 @@ export default function ApplicationsScreen() {
 
   const hasFilter = filterUserIds.length > 0 || filterBrokers.length > 0 || filterIpoNames.length > 0 || filterBankNames.length > 0;
 
-  // Newest first sorting by open_date or ID
-  const sortedApplications = [...applications].sort((a, b) => {
-    const dateA = a.open_date ? new Date(a.open_date).getTime() : 0;
-    const dateB = b.open_date ? new Date(b.open_date).getTime() : 0;
-    if (dateA !== dateB) return dateB - dateA;
-    return (b.id || "").localeCompare(a.id || "");
-  });
+  // Base list of applications
+  const sortedApplications = [...applications];
 
   const filterBase = sortedApplications.filter((a) => {
     if (filterUserIds.length > 0 && !filterUserIds.includes(a.user_id)) return false;
@@ -151,11 +151,43 @@ export default function ApplicationsScreen() {
   const isAllottedStatus = (st: string) =>
     st === 'Allotted' || st === 'Partially Allotted' || st === 'Holding' || st === 'Sold';
 
-  const filtered = activeTab === 'Applied'
+  const getAppTimestamp = (a: ApplicationWithDetails) => {
+    if (a.created_at) {
+      const t = new Date(a.created_at).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    if ((a as any).sale_date) {
+      const t = new Date((a as any).sale_date).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    if (a.open_date) {
+      const t = new Date(a.open_date).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    return 0;
+  };
+
+  // Sort applications respecting current sortOrder across ALL tabs
+  const sortApplicationsList = (items: ApplicationWithDetails[]) => {
+    return [...items].sort((a, b) => {
+      const tsA = getAppTimestamp(a);
+      const tsB = getAppTimestamp(b);
+      if (tsA !== tsB) {
+        return sortOrder === 'newest' ? tsB - tsA : tsA - tsB;
+      }
+      return sortOrder === 'newest'
+        ? (b.id || '').localeCompare(a.id || '')
+        : (a.id || '').localeCompare(b.id || '');
+    });
+  };
+
+  const tabFiltered = activeTab === 'Applied'
     ? searchFiltered.filter((a) => isAppliedStatus(a.status))
     : activeTab === 'Allotted'
     ? searchFiltered.filter((a) => isAllottedStatus(a.status))
     : searchFiltered.filter((a) => a.status === activeTab);
+
+  const filtered = sortApplicationsList(tabFiltered);
 
   const countFor = (key: TabKey) => {
     if (key === 'Applied') return searchFiltered.filter((a) => isAppliedStatus(a.status)).length;
@@ -302,21 +334,64 @@ export default function ApplicationsScreen() {
         )}
         renderSectionHeader={() => (
           <View style={[styles.tabBar, { backgroundColor: colors.background }]}>
-            <Tabs
-              variant="pills"
-              scrollable
-              tabs={TABS.map((t) => ({
-                key: t.key,
-                label: t.label,
-                count: countFor(t.key) > 0 ? countFor(t.key) : undefined,
-              }))}
-              activeTab={activeTab}
-              onChange={handleTabChange}
-              style={{ paddingVertical: 8 }}
-            />
+            {/* All items scroll together: icon-only sort btn → divider → tab pills */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.tabScrollContent}
+            >
+              {/* Icon-only Sort button — always visible */}
+              <TouchableOpacity
+                onPress={() => {
+                  try { Haptics.selectionAsync(); } catch {}
+                  setSortOrder((prev) => (prev === 'newest' ? 'oldest' : 'newest'));
+                }}
+                style={[
+                  styles.sortByBtn,
+                  { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' },
+                ]}
+                hitSlop={8}
+                activeOpacity={0.75}
+              >
+                <Feather name="align-left" size={13} color={isDark ? '#F8FAFC' : '#0B132B'} />
+              </TouchableOpacity>
+
+              {/* Vertical divider */}
+              <View style={[styles.tabDivider, { backgroundColor: isDark ? '#334155' : '#E2E8F0' }]} />
+
+              {/* Tab pills */}
+              {TABS.map((t) => {
+                const isActive = activeTab === t.key;
+                return (
+                  <Pressable
+                    key={t.key}
+                    onPress={() => handleTabChange(t.key)}
+                    style={[
+                      styles.tabPill,
+                      {
+                        backgroundColor: isActive ? (isDark ? '#F8FAFC' : '#0B132B') : (isDark ? '#1E293B' : '#FFFFFF'),
+                        borderColor: isActive ? (isDark ? '#F8FAFC' : '#0B132B') : (isDark ? '#334155' : '#E2E8F0'),
+                      },
+                    ]}
+                  >
+                    <Text style={[
+                      styles.tabPillText,
+                      { color: isActive ? (isDark ? '#0B132B' : '#FFFFFF') : (isDark ? '#F8FAFC' : '#0B132B') },
+                    ]}>
+                      {t.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            {/* Count + sort-order row */}
             <View style={styles.listHeader}>
               <Text style={[styles.listCount, { color: colors.mutedForeground }]}>
                 {filtered.length} {filtered.length === 1 ? 'application' : 'applications'}
+              </Text>
+              <Text style={[styles.sortOrderLabel, { color: colors.mutedForeground }]}>
+                {sortOrder === 'newest' ? '↓ Newest first' : '↑ Oldest first'}
               </Text>
             </View>
           </View>
@@ -509,14 +584,54 @@ const styles = StyleSheet.create({
   },
   filterBarText: { flex: 1, fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold' },
   tabBar: { borderBottomWidth: 0 },
+  tabScrollContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 0,
+  },
+  sortByBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 9,
+    borderRadius: 9999,
+    borderWidth: 1,
+  },
+  tabDivider: {
+    width: 1,
+    height: 22,
+    marginRight: 9,
+    borderRadius: 1,
+  },
+  tabPill: {
+    height: 36,
+    paddingHorizontal: 15,
+    borderRadius: 9999,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  tabPillText: {
+    fontSize: 12.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.1,
+  },
   listHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    height: 28,
+    height: 33,
   },
-  listCount: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular' },
+  listCount: { fontSize: 12, fontFamily: 'GoogleSansFlex_500Medium' },
+  sortOrderLabel: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_500Medium',
+  },
   empty: { alignItems: 'center', paddingVertical: 56, paddingHorizontal: 36 },
   emptyIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   emptyTitle: { fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3, marginBottom: 8 },
