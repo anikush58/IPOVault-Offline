@@ -199,6 +199,75 @@ export async function runIpoHubAnalyticsTestSuite() {
     'Ensures zero leak of sensitive identifiers or credentials'
   );
 
+  // Test 8: Analytics Summary & Summary-First Loading
+  (global as any).fetch = async (url: string) => {
+    lastUrl = url;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        data: {
+          evaluatedAt: new Date().toISOString(),
+          market: {
+            snapshot: { totalIpos: 12, openIposCount: 3 },
+            summary: {
+              totalIpos: 12,
+              issueSize: { totalIssueSizeInr: 2500000000 },
+            },
+          },
+          performance: {
+            priceBandSummary: { priceBandCoveragePercentage: 100 },
+            listingPerformance: { listingPerformanceSupported: false },
+          },
+          subscription: {
+            subscriptionSupported: false,
+            unsupportedMetricReason: 'Subscription demand metrics are FUTURE_DATA_DEPENDENT.',
+          },
+          allotment: {
+            dataQuality: { definitiveObservationsCount: 15 },
+            outcomes: { observedPositiveAllotmentRatePercentage: 40.0 },
+          },
+          qualityStatus: {
+            overallStatus: AnalyticsQualityStatus.COMPLETE,
+          },
+        },
+      }),
+    };
+  };
+
+  const summaryRes = await analyticsService.getAnalyticsSummary();
+  assert(
+    lastUrl.includes('/api/v1/analytics/summary') &&
+      summaryRes.market.snapshot.totalIpos === 12 &&
+      summaryRes.qualityStatus.overallStatus === AnalyticsQualityStatus.COMPLETE,
+    'Analytics Summary Telemetry',
+    'Fetched aggregated summary snapshot cleanly in a single request'
+  );
+
+  // Test 9: Analytics Mobile Semantic Value Hardening (Phase 30.8.1)
+  const {
+    formatCurrency,
+    formatRupees,
+    formatLakhsCrores,
+    formatPercentage,
+    formatSubscriptionTimes,
+    formatShareCount,
+    formatRatio,
+  } = await import('../utils/formatters');
+
+  assert(formatCurrency(null) === 'N/A', 'Null Currency', 'null total issue size returns N/A');
+  assert(formatCurrency(0) === '₹0', 'Zero Currency', 'zero total issue size returns ₹0');
+  assert(formatShareCount(null) === 'N/A', 'Null Share Count', 'null total shares returns N/A');
+  assert(formatShareCount(0) === '0 shares', 'Zero Share Count', 'zero OFS shares returns 0 shares');
+  assert(formatShareCount(4500000).includes('45,00,000'), 'Known Share Count', 'known share count renders with en-IN locale commas');
+  assert(formatRatio(null) === 'N/A', 'Null Ratio', 'null fresh/OFS ratio returns N/A');
+  assert(formatRatio(1.5) === '1.5x', 'Known Ratio', 'valid fresh/OFS ratio renders with x suffix');
+  assert(formatCurrency(925000000).includes('92,50,00,000'), 'Known OFS Size Currency', 'known OFS size of ₹92.50 Cr renders correctly formatted currency');
+  assert(formatLakhsCrores(925000000) === '₹93 Cr', 'Known OFS Size Lakhs/Crores', 'known OFS size renders in Crores');
+  assert(formatPercentage(null) === 'N/A', 'Null Percentage', 'null percentage returns N/A');
+  assert(formatSubscriptionTimes(null) === 'N/A', 'Null Subscription', 'null subscription multiplier returns N/A');
+
   console.log(`\nTEST SUITE COMPLETED: ${passCount} PASSED, ${failCount} FAILED.\n`);
 }
 

@@ -21,6 +21,7 @@ import {
   AnalyticsFilter,
   AnalyticsQualityStatus,
   AnalyticsQualityWarningCode,
+  AnalyticsSummaryResponseDto,
   AnalyticsTimePeriod,
   DetailedAllotmentAnalyticsResponseDto,
   DetailedAnalyticsQualitySummaryResponseDto,
@@ -28,9 +29,9 @@ import {
   DetailedIpoPerformanceAnalyticsResponseDto,
   DetailedSubscriptionDemandAnalyticsResponseDto,
 } from '@/types/analytics';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, formatRatio, formatShareCount } from '@/utils/formatters';
 
-type AnalyticsTab = 'market' | 'performance' | 'subscription' | 'allotment' | 'quality';
+type AnalyticsTab = 'summary' | 'market' | 'performance' | 'subscription' | 'allotment' | 'quality';
 
 export default function AnalyticsDashboardScreen() {
   const colors = useColors();
@@ -40,8 +41,9 @@ export default function AnalyticsDashboardScreen() {
   const router = useRouter();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
-  const [activeTab, setActiveTab] = useState<AnalyticsTab>('market');
+  const [activeTab, setActiveTab] = useState<AnalyticsTab>('summary');
   const [loading, setLoading] = useState(true);
+  const [tabLoading, setTabLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,49 +52,77 @@ export default function AnalyticsDashboardScreen() {
   const [selectedPeriod, setSelectedPeriod] = useState<AnalyticsTimePeriod>(AnalyticsTimePeriod.MONTH);
 
   // Data states
+  const [summaryData, setSummaryData] = useState<AnalyticsSummaryResponseDto | null>(null);
   const [marketData, setMarketData] = useState<DetailedIpoMarketAnalyticsResponseDto | null>(null);
   const [performanceData, setPerformanceData] = useState<DetailedIpoPerformanceAnalyticsResponseDto | null>(null);
   const [subscriptionData, setSubscriptionData] = useState<DetailedSubscriptionDemandAnalyticsResponseDto | null>(null);
   const [allotmentData, setAllotmentData] = useState<DetailedAllotmentAnalyticsResponseDto | null>(null);
   const [qualityData, setQualityData] = useState<DetailedAnalyticsQualitySummaryResponseDto | null>(null);
 
-  const fetchAnalytics = useCallback(async () => {
+  // Task 8: Initial load fetches SUMMARY first
+  const fetchSummary = useCallback(async () => {
     try {
       setError(null);
-      const filter: AnalyticsFilter = {
-        segment: selectedSegment !== 'ALL' ? selectedSegment : undefined,
-        period: selectedPeriod,
-      };
-
-      const [marketRes, perfRes, subRes, allotRes, qualRes] = await Promise.all([
-        analyticsApiService.getMarketAnalytics(filter),
-        analyticsApiService.getPerformanceAnalytics(filter),
-        analyticsApiService.getSubscriptionAnalytics(filter),
-        analyticsApiService.getAllotmentAnalytics(filter),
-        analyticsApiService.getQualitySummary(),
-      ]);
-
-      setMarketData(marketRes);
-      setPerformanceData(perfRes);
-      setSubscriptionData(subRes);
-      setAllotmentData(allotRes);
-      setQualityData(qualRes);
+      const res = await analyticsApiService.getAnalyticsSummary();
+      setSummaryData(res);
     } catch (e: any) {
-      setError(e?.message || 'Failed to fetch analytics telemetry from backend');
+      setError(e?.message || 'Failed to fetch analytics summary telemetry from backend');
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  }, []);
+
+  // Lazy fetch active tab data
+  const fetchActiveTabData = useCallback(async (tab: AnalyticsTab) => {
+    const filter: AnalyticsFilter = {
+      segment: selectedSegment !== 'ALL' ? selectedSegment : undefined,
+      period: selectedPeriod,
+    };
+
+    try {
+      setTabLoading(true);
+      setError(null);
+      if (tab === 'market') {
+        const res = await analyticsApiService.getMarketAnalytics(filter);
+        setMarketData(res);
+      } else if (tab === 'performance') {
+        const res = await analyticsApiService.getPerformanceAnalytics(filter);
+        setPerformanceData(res);
+      } else if (tab === 'subscription') {
+        const res = await analyticsApiService.getSubscriptionAnalytics(filter);
+        setSubscriptionData(res);
+      } else if (tab === 'allotment') {
+        const res = await analyticsApiService.getAllotmentAnalytics(filter);
+        setAllotmentData(res);
+      } else if (tab === 'quality') {
+        const res = await analyticsApiService.getQualitySummary();
+        setQualityData(res);
+      }
+    } catch (e: any) {
+      setError(e?.message || `Failed to fetch ${tab} analytics data`);
+    } finally {
+      setTabLoading(false);
     }
   }, [selectedSegment, selectedPeriod]);
 
   useEffect(() => {
     setLoading(true);
-    fetchAnalytics();
-  }, [fetchAnalytics]);
+    fetchSummary();
+  }, [fetchSummary]);
+
+  useEffect(() => {
+    if (activeTab !== 'summary') {
+      fetchActiveTabData(activeTab);
+    }
+  }, [activeTab, fetchActiveTabData]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchAnalytics();
+    fetchSummary();
+    if (activeTab !== 'summary') {
+      fetchActiveTabData(activeTab);
+    }
   };
 
   return (
@@ -135,6 +165,7 @@ export default function AnalyticsDashboardScreen() {
         >
           {(
             [
+              { key: 'summary', label: 'Summary' },
               { key: 'market', label: 'Market' },
               { key: 'performance', label: 'Performance' },
               { key: 'subscription', label: 'Subscription' },
@@ -171,81 +202,83 @@ export default function AnalyticsDashboardScreen() {
         </ScrollView>
       </View>
 
-      {/* Filter Toolbar */}
-      <View style={styles.filterToolbar}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-          <Text style={[styles.filterLabel, { color: colors.mutedForeground }]}>SEGMENT:</Text>
-          {(['ALL', 'MAINBOARD', 'SME'] as const).map((seg) => (
-            <TouchableOpacity
-              key={seg}
-              onPress={() => setSelectedSegment(seg)}
-              style={[
-                styles.filterChip,
-                {
-                  backgroundColor:
-                    selectedSegment === seg ? colors.card : colors.surface,
-                  borderColor:
-                    selectedSegment === seg ? colors.primary : colors.border,
-                },
-              ]}
-            >
-              <Text
+      {/* Filter Toolbar (Only when not in summary tab) */}
+      {activeTab !== 'summary' && activeTab !== 'quality' && (
+        <View style={styles.filterToolbar}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+            <Text style={[styles.filterLabel, { color: colors.mutedForeground }]}>SEGMENT:</Text>
+            {(['ALL', 'MAINBOARD', 'SME'] as const).map((seg) => (
+              <TouchableOpacity
+                key={seg}
+                onPress={() => setSelectedSegment(seg)}
                 style={[
-                  styles.filterChipText,
+                  styles.filterChip,
                   {
-                    color:
-                      selectedSegment === seg ? colors.primary : colors.mutedForeground,
+                    backgroundColor:
+                      selectedSegment === seg ? colors.card : colors.surface,
+                    borderColor:
+                      selectedSegment === seg ? colors.primary : colors.border,
                   },
                 ]}
               >
-                {seg}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    {
+                      color:
+                        selectedSegment === seg ? colors.primary : colors.mutedForeground,
+                    },
+                  ]}
+                >
+                  {seg}
+                </Text>
+              </TouchableOpacity>
+            ))}
 
-          <Text style={[styles.filterLabel, { color: colors.mutedForeground, marginLeft: 12 }]}>PERIOD:</Text>
-          {(
-            [
-              AnalyticsTimePeriod.MONTH,
-              AnalyticsTimePeriod.QUARTER,
-              AnalyticsTimePeriod.YEAR,
-            ] as const
-          ).map((per) => (
-            <TouchableOpacity
-              key={per}
-              onPress={() => setSelectedPeriod(per)}
-              style={[
-                styles.filterChip,
-                {
-                  backgroundColor:
-                    selectedPeriod === per ? colors.card : colors.surface,
-                  borderColor:
-                    selectedPeriod === per ? colors.primary : colors.border,
-                },
-              ]}
-            >
-              <Text
+            <Text style={[styles.filterLabel, { color: colors.mutedForeground, marginLeft: 12 }]}>PERIOD:</Text>
+            {(
+              [
+                AnalyticsTimePeriod.MONTH,
+                AnalyticsTimePeriod.QUARTER,
+                AnalyticsTimePeriod.YEAR,
+              ] as const
+            ).map((per) => (
+              <TouchableOpacity
+                key={per}
+                onPress={() => setSelectedPeriod(per)}
                 style={[
-                  styles.filterChipText,
+                  styles.filterChip,
                   {
-                    color:
-                      selectedPeriod === per ? colors.primary : colors.mutedForeground,
+                    backgroundColor:
+                      selectedPeriod === per ? colors.card : colors.surface,
+                    borderColor:
+                      selectedPeriod === per ? colors.primary : colors.border,
                   },
                 ]}
               >
-                {per}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    {
+                      color:
+                        selectedPeriod === per ? colors.primary : colors.mutedForeground,
+                    },
+                  ]}
+                >
+                  {per}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       {/* Main Content Area */}
       {loading ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.mutedForeground }]}>
-            Loading analytics telemetry…
+            Loading analytics summary telemetry…
           </Text>
         </View>
       ) : error ? (
@@ -282,6 +315,198 @@ export default function AnalyticsDashboardScreen() {
             />
           }
         >
+          {/* TAB 0: SUMMARY (Summary-First Dashboard) */}
+          {activeTab === 'summary' && summaryData && (
+            <View style={{ gap: 14 }}>
+              {/* Market Overview Card */}
+              <View
+                style={[
+                  styles.card,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={[styles.cardSectionTitle, { color: colors.primary, marginBottom: 0 }]}>
+                    MARKET OVERVIEW
+                  </Text>
+                  <TouchableOpacity onPress={() => setActiveTab('market')}>
+                    <Text style={{ fontSize: 12, color: colors.primary, fontFamily: 'GoogleSansFlex_600SemiBold' }}>
+                      View Details →
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={[styles.grid2Row, { marginTop: 12 }]}>
+                  <View style={styles.gridCell}>
+                    <Text style={[styles.metricValLarge, { color: colors.foreground }]}>
+                      {summaryData.market.snapshot.totalIpos}
+                    </Text>
+                    <Text style={[styles.metricSub, { color: colors.mutedForeground }]}>
+                      Total Canonical IPOs
+                    </Text>
+                  </View>
+                  <View style={styles.gridCell}>
+                    <Text style={[styles.metricValLarge, { color: '#10B981' }]}>
+                      {summaryData.market.snapshot.openIposCount}
+                    </Text>
+                    <Text style={[styles.metricSub, { color: colors.mutedForeground }]}>
+                      Open IPOs
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.detailRow}>
+                  <Text style={[styles.rowLabel, { color: colors.mutedForeground }]}>
+                    TOTAL ISSUE SIZE
+                  </Text>
+                  <Text style={[styles.rowVal, { color: colors.foreground }]}>
+                    {formatCurrency(summaryData.market.summary.issueSize.totalIssueSizeInr)}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Allotment Outcome Card */}
+              <View
+                style={[
+                  styles.card,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={[styles.cardSectionTitle, { color: colors.primary, marginBottom: 0 }]}>
+                    ALLOTMENT OBSERVATIONS
+                  </Text>
+                  <TouchableOpacity onPress={() => setActiveTab('allotment')}>
+                    <Text style={{ fontSize: 12, color: colors.primary, fontFamily: 'GoogleSansFlex_600SemiBold' }}>
+                      View Details →
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={[styles.grid2Row, { marginTop: 12 }]}>
+                  <View style={styles.gridCell}>
+                    <Text style={[styles.metricValLarge, { color: '#10B981' }]}>
+                      {summaryData.allotment.outcomes.observedPositiveAllotmentRatePercentage !== null
+                        ? `${summaryData.allotment.outcomes.observedPositiveAllotmentRatePercentage}%`
+                        : 'N/A'}
+                    </Text>
+                    <Text style={[styles.metricSub, { color: colors.mutedForeground }]}>
+                      Observed Positive Rate
+                    </Text>
+                  </View>
+                  <View style={styles.gridCell}>
+                    <Text style={[styles.metricValLarge, { color: colors.foreground }]}>
+                      {summaryData.allotment.dataQuality.definitiveObservationsCount}
+                    </Text>
+                    <Text style={[styles.metricSub, { color: colors.mutedForeground }]}>
+                      Definitive Sample Items
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Performance Snapshot Card */}
+              <View
+                style={[
+                  styles.card,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={[styles.cardSectionTitle, { color: colors.primary, marginBottom: 0 }]}>
+                    PERFORMANCE SNAPSHOT
+                  </Text>
+                  <TouchableOpacity onPress={() => setActiveTab('performance')}>
+                    <Text style={{ fontSize: 12, color: colors.primary, fontFamily: 'GoogleSansFlex_600SemiBold' }}>
+                      View Details →
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.detailRow}>
+                  <Text style={[styles.rowLabel, { color: colors.mutedForeground }]}>
+                    PRICE-BAND COVERAGE
+                  </Text>
+                  <Text style={[styles.rowVal, { color: colors.foreground }]}>
+                    {summaryData.performance.priceBandSummary.priceBandCoveragePercentage}%
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={[styles.rowLabel, { color: colors.mutedForeground }]}>
+                    AVG PRICE-BAND SPREAD
+                  </Text>
+                  <Text style={[styles.rowVal, { color: colors.foreground }]}>
+                    {summaryData.performance.priceBandSummary.averagePriceBandSpreadInr !== null
+                      ? `₹${summaryData.performance.priceBandSummary.averagePriceBandSpreadInr}`
+                      : 'N/A'}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={[styles.rowLabel, { color: colors.mutedForeground }]}>
+                    LISTING GAIN
+                  </Text>
+                  <Text style={[styles.rowVal, { color: colors.mutedForeground }]}>
+                    FUTURE_DATA_DEPENDENT
+                  </Text>
+                </View>
+              </View>
+
+              {/* Data Quality & Subscription Status Card */}
+              <View
+                style={[
+                  styles.card,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.cardSectionTitle, { color: colors.primary }]}>
+                  DATA QUALITY & STATUS
+                </Text>
+                <View style={styles.detailRow}>
+                  <Text style={[styles.rowLabel, { color: colors.mutedForeground }]}>
+                    CANONICAL QUALITY STATUS
+                  </Text>
+                  <View
+                    style={[
+                      styles.statusTag,
+                      {
+                        backgroundColor:
+                          summaryData.qualityStatus.overallStatus === AnalyticsQualityStatus.COMPLETE
+                            ? '#10B98120'
+                            : '#F59E0B20',
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.statusTagText,
+                        {
+                          color:
+                            summaryData.qualityStatus.overallStatus === AnalyticsQualityStatus.COMPLETE
+                              ? '#10B981'
+                              : '#F59E0B',
+                        },
+                      ]}
+                    >
+                      {summaryData.qualityStatus.overallStatus}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Subscription Availability Banner */}
+                <View style={[styles.unavailableBox, { marginTop: 12 }]}>
+                  <Feather name="clock" size={18} color="#F59E0B" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.unavailableTitle, { color: colors.foreground, fontSize: 13 }]}>
+                      Subscription Analytics Coming Soon
+                    </Text>
+                    <Text style={[styles.unavailableSub, { color: colors.mutedForeground, fontSize: 11 }]}>
+                      {summaryData.subscription.unsupportedMetricReason}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+          )}
           {/* TAB 1: MARKET */}
           {activeTab === 'market' && marketData && (
             <View style={{ gap: 14 }}>
@@ -382,9 +607,7 @@ export default function AnalyticsDashboardScreen() {
                     FRESH / OFS RATIO
                   </Text>
                   <Text style={[styles.rowVal, { color: colors.foreground }]}>
-                    {marketData.marketSummary.issueSize.freshIssueVsOfsRatio !== null
-                      ? `${marketData.marketSummary.issueSize.freshIssueVsOfsRatio}x`
-                      : 'N/A'}
+                    {formatRatio(marketData.marketSummary.issueSize.freshIssueVsOfsRatio)}
                   </Text>
                 </View>
               </View>
@@ -404,7 +627,7 @@ export default function AnalyticsDashboardScreen() {
                     TOTAL SHARES OFFERED
                   </Text>
                   <Text style={[styles.rowVal, { color: colors.foreground }]}>
-                    {marketData.marketSummary.issueSize.totalIssueShareCount.toLocaleString()} shares
+                    {formatShareCount(marketData.marketSummary.issueSize.totalIssueShareCount)}
                   </Text>
                 </View>
                 <View style={styles.detailRow}>
@@ -412,7 +635,7 @@ export default function AnalyticsDashboardScreen() {
                     FRESH SHARES OFFERED
                   </Text>
                   <Text style={[styles.rowVal, { color: colors.foreground }]}>
-                    {marketData.marketSummary.issueSize.totalFreshIssueShareCount.toLocaleString()} shares
+                    {formatShareCount(marketData.marketSummary.issueSize.totalFreshIssueShareCount)}
                   </Text>
                 </View>
                 <View style={styles.detailRow}>
@@ -420,7 +643,7 @@ export default function AnalyticsDashboardScreen() {
                     OFS SHARES OFFERED
                   </Text>
                   <Text style={[styles.rowVal, { color: colors.foreground }]}>
-                    {marketData.marketSummary.issueSize.totalOfsShareCount.toLocaleString()} shares
+                    {formatShareCount(marketData.marketSummary.issueSize.totalOfsShareCount)}
                   </Text>
                 </View>
               </View>

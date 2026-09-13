@@ -75,15 +75,15 @@ export interface IpoMarketSnapshotDto {
 }
 
 export interface IssueSizeAggregatesDto {
-  totalIssueSizeInr: number;
-  totalFreshIssueSizeInr: number;
-  totalOfsSizeInr: number;
+  totalIssueSizeInr: number | null;
+  totalFreshIssueSizeInr: number | null;
+  totalOfsSizeInr: number | null;
   averageIssueSizeInr: number | null;
   medianIssueSizeInr: number | null;
   freshIssueVsOfsRatio: number | null;
-  totalIssueShareCount: number;
-  totalFreshIssueShareCount: number;
-  totalOfsShareCount: number;
+  totalIssueShareCount: number | null;
+  totalFreshIssueShareCount: number | null;
+  totalOfsShareCount: number | null;
 }
 
 export interface IssueSizeDistributionDto {
@@ -104,10 +104,10 @@ export interface SegmentMarketAnalyticsDto {
   segment: 'MAINBOARD' | 'SME';
   totalIpos: number;
   knownIssueSizeCount: number;
-  totalIssueSizeInr: number;
+  totalIssueSizeInr: number | null;
   averageIssueSizeInr: number | null;
   medianIssueSizeInr: number | null;
-  totalIssueShareCount: number;
+  totalIssueShareCount: number | null;
 }
 
 export interface ExchangeListingCountSummaryDto {
@@ -119,7 +119,7 @@ export interface ExchangeListingCountSummaryDto {
 export interface IpoMarketTrendPointDto {
   periodKey: string;
   ipoCount: number;
-  totalIssueSizeInr: number;
+  totalIssueSizeInr: number | null;
   averageIssueSizeInr: number | null;
 }
 
@@ -371,4 +371,55 @@ export interface DetailedAnalyticsQualitySummaryResponseDto {
     warnings: AnalyticsQualityWarningCode[];
   }>;
   activeWarnings: AnalyticsQualityWarningCode[];
+}
+
+// ── Summary & Discovery Response DTOs ────────────────────────────────────────
+export interface AnalyticsSummaryResponseDto {
+  evaluatedAt: string;
+  market: {
+    snapshot: IpoMarketSnapshotDto;
+    summary: {
+      totalIpos: number;
+      byStatus: Record<string, number>;
+      bySegment: Record<string, number>;
+      byExchange: Record<string, number>;
+      issueSize: IssueSizeAggregatesDto;
+    };
+  };
+  performance: {
+    priceBandSummary: PriceBandAnalyticsSummaryDto;
+    listingPerformance: ListingPerformanceAnalyticsSummaryDto;
+  };
+  subscription: {
+    totalIpos: number;
+    knownSubscriptionCount: number;
+    subscriptionCoveragePercentage: number;
+    subscriptionSupported: boolean;
+    averageSubscriptionMultiplier: number | null;
+    medianSubscriptionMultiplier: number | null;
+    unsupportedMetricReason: string;
+  };
+  allotment: {
+    dataQuality: AllotmentDataQualityCountsDto;
+    outcomes: AllotmentOutcomeDistributionDto;
+    disclaimer: string;
+  };
+  qualityStatus: {
+    overallStatus: AnalyticsQualityStatus;
+    activeWarnings: AnalyticsQualityWarningCode[];
+  };
+}
+
+export interface AnalyticsMetricDefinitionDto {
+  id: string;
+  name: string;
+  category: MetricCategory;
+  description: string;
+  unit: string;
+  aggregationType: string;
+  availabilityStatus: string;
+  sourceModels: string[];
+  sourceFields: string[];
+  formulaDescription: string;
+  nullPolicyDescription: string;
 }

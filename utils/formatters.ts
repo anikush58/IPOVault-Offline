@@ -3,6 +3,9 @@ export function formatCurrency(
   currency: string | boolean = "INR"
 ): string {
   if (amount === undefined || amount === null || isNaN(amount)) {
+    return "N/A";
+  }
+  if (amount === 0) {
     return "₹0";
   }
 
@@ -18,12 +21,16 @@ export function formatCurrency(
 }
 
 export function formatRupees(amount?: number | null): string {
-  if (amount === undefined || amount === null || isNaN(amount)) return "₹0";
+  if (amount === undefined || amount === null || isNaN(amount)) return "N/A";
+  if (amount === 0) return "₹0";
   return `₹${Math.ceil(amount).toLocaleString("en-IN")}`;
 }
 
 export function formatLakhsCrores(amountInRupees?: number | null): string {
-  if (!amountInRupees || isNaN(amountInRupees)) return "₹0";
+  if (amountInRupees === undefined || amountInRupees === null || isNaN(amountInRupees)) {
+    return "N/A";
+  }
+  if (amountInRupees === 0) return "₹0";
 
   if (amountInRupees >= 10000000) {
     const crores = Math.ceil(amountInRupees / 10000000);
@@ -60,15 +67,25 @@ export function formatShortDate(dateVal?: string | number | Date | boolean | nul
 }
 
 export function formatPercentage(val?: number | null): string {
-  if (val === undefined || val === null || isNaN(val)) return "0%";
+  if (val === undefined || val === null || isNaN(val)) return "N/A";
   const rounded = Math.ceil(val);
   const sign = rounded > 0 ? "+" : "";
   return `${sign}${rounded}%`;
 }
 
 export function formatSubscriptionTimes(multiplier?: number | null): string {
-  if (multiplier === undefined || multiplier === null || isNaN(multiplier)) return "0x";
+  if (multiplier === undefined || multiplier === null || isNaN(multiplier)) return "N/A";
   return `${Math.ceil(multiplier)}x`;
+}
+
+export function formatShareCount(shares?: number | null): string {
+  if (shares === undefined || shares === null || isNaN(shares)) return "N/A";
+  return `${shares.toLocaleString("en-IN")} shares`;
+}
+
+export function formatRatio(ratio?: number | null): string {
+  if (ratio === undefined || ratio === null || isNaN(ratio)) return "N/A";
+  return `${ratio}x`;
 }
 
 export function todayISO(): string {
