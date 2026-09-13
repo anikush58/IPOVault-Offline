@@ -20,6 +20,8 @@ export const ENDPOINTS = {
   ANALYTICS_SUBSCRIPTION: '/api/v1/analytics/subscription',
   ANALYTICS_ALLOTMENT: '/api/v1/analytics/allotment',
   ANALYTICS_QUALITY: '/api/v1/analytics/quality',
+  ANALYTICS_SUMMARY: '/api/v1/analytics/summary',
+  ANALYTICS_METRICS: '/api/v1/analytics/metrics',
   ANALYTICS_CONTRACTS: '/api/v1/analytics/contracts',
 } as const;
 

@@ -3,11 +3,13 @@ import { ApiClient } from '../api/ApiClient';
 import { ENDPOINTS } from '../api/Endpoints';
 import {
   AnalyticsFilter,
+  AnalyticsSummaryResponseDto,
   DetailedAllotmentAnalyticsResponseDto,
   DetailedAnalyticsQualitySummaryResponseDto,
   DetailedIpoMarketAnalyticsResponseDto,
   DetailedIpoPerformanceAnalyticsResponseDto,
   DetailedSubscriptionDemandAnalyticsResponseDto,
+  MetricContract,
 } from '@/types/analytics';
 
 export class AnalyticsApiService {
@@ -18,6 +20,16 @@ export class AnalyticsApiService {
       baseUrl: baseUrl || API_BASE_URL,
       timeoutMs: 15000,
     });
+  }
+
+  public async getAnalyticsSummary(): Promise<AnalyticsSummaryResponseDto> {
+    const res = await this.apiClient.get<AnalyticsSummaryResponseDto>(
+      ENDPOINTS.ANALYTICS_SUMMARY,
+    );
+    if (!res.data) {
+      throw new Error(res.error?.message || 'Failed to fetch analytics summary');
+    }
+    return res.data;
   }
 
   public async getMarketAnalytics(
@@ -84,6 +96,16 @@ export class AnalyticsApiService {
     );
     if (!res.data) {
       throw new Error(res.error?.message || 'Failed to fetch quality analytics');
+    }
+    return res.data;
+  }
+
+  public async getMetricContracts(): Promise<Record<string, MetricContract>> {
+    const res = await this.apiClient.get<Record<string, MetricContract>>(
+      ENDPOINTS.ANALYTICS_CONTRACTS,
+    );
+    if (!res.data) {
+      throw new Error(res.error?.message || 'Failed to fetch metric contracts');
     }
     return res.data;
   }
