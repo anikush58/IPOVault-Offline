@@ -45,7 +45,18 @@ export function formatLakhsCrores(amountInRupees?: number | null): string {
 
 export function formatDate(dateVal?: string | number | Date | boolean | null): string {
   if (!dateVal || typeof dateVal === "boolean") return "N/A";
-  const date = new Date(dateVal);
+  let strVal = String(dateVal).trim();
+  if (/^\d{2}-\d{2}-\d{4}$/.test(strVal)) {
+    const [d, m, y] = strVal.split("-");
+    strVal = `${y}-${m}-${d}`;
+  }
+  let date: Date;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(strVal)) {
+    const [y, m, d] = strVal.split("-").map(Number);
+    date = new Date(y, m - 1, d);
+  } else {
+    date = new Date(strVal);
+  }
   if (isNaN(date.getTime())) return "N/A";
 
   return date.toLocaleDateString("en-IN", {
@@ -57,7 +68,18 @@ export function formatDate(dateVal?: string | number | Date | boolean | null): s
 
 export function formatShortDate(dateVal?: string | number | Date | boolean | null): string {
   if (!dateVal || typeof dateVal === "boolean") return "N/A";
-  const date = new Date(dateVal);
+  let strVal = String(dateVal).trim();
+  if (/^\d{2}-\d{2}-\d{4}$/.test(strVal)) {
+    const [d, m, y] = strVal.split("-");
+    strVal = `${y}-${m}-${d}`;
+  }
+  let date: Date;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(strVal)) {
+    const [y, m, d] = strVal.split("-").map(Number);
+    date = new Date(y, m - 1, d);
+  } else {
+    date = new Date(strVal);
+  }
   if (isNaN(date.getTime())) return "N/A";
 
   return date.toLocaleDateString("en-IN", {

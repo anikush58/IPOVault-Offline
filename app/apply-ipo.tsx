@@ -26,6 +26,8 @@ import { IconButton } from '@/components/ui/IconButton';
 import { IPORepository } from '@/services/ipo/ipoRepository';
 import { IPOMasterRecord } from '@/services/ipo/types';
 import { formatCurrency } from '@/utils/formatters';
+import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
+import { BackendIpo } from '@/types/backend-ipo';
 
 const AVATAR_PALETTES: [string, string][] = [
   ['#8B5CF6', '#6D28D9'], // Purple
@@ -65,6 +67,7 @@ export default function ApplyIPOScreen() {
   const targetParamId = params.ipoId || params.id || params.name || params.ipo_name || params.company_name || null;
   const [selectedIpoId, setSelectedIpoId] = useState<string | null>(targetParamId);
   const [masterRecord, setMasterRecord] = useState<IPOMasterRecord | null>(null);
+  const [backendIpoRecord, setBackendIpoRecord] = useState<BackendIpo | null>(null);
   const [userLotQuantities, setUserLotQuantities] = useState<Record<string, number>>({});
   const [userSelectedBank, setUserSelectedBank] = useState<Record<string, string>>({});
   const [userSelectedUPI, setUserSelectedUPI] = useState<Record<string, string>>({});
@@ -80,7 +83,7 @@ export default function ApplyIPOScreen() {
   const activeUsers = useMemo(() => users.filter((u) => u.archived !== 1), [users]);
   const activeIPOs = useMemo(() => ipos.filter((ipo) => ipo.archived === 0), [ipos]);
 
-  // Fetch record from ipo_master if selectedIpoId is passed
+  // Fetch record from ipo_master or backend API if selectedIpoId is passed
   useEffect(() => {
     async function resolveMaster() {
       if (!selectedIpoId) return;
@@ -88,14 +91,22 @@ export default function ApplyIPOScreen() {
         const found = await repo.getById(selectedIpoId);
         if (found) {
           setMasterRecord(found);
+          setBackendIpoRecord(null);
         } else {
           const searchResults = await repo.search(selectedIpoId);
           if (searchResults && searchResults.length > 0) {
             setMasterRecord(searchResults[0]);
+            setBackendIpoRecord(null);
+          } else {
+            const bIpo = await backendIpoApiService.getBackendIpoDetail(selectedIpoId);
+            if (bIpo) {
+              setBackendIpoRecord(bIpo);
+              setMasterRecord(null);
+            }
           }
         }
       } catch (err) {
-        if (__DEV__) console.warn('[ApplyIPO] Could not fetch master IPO record', err);
+        if (__DEV__) console.warn('[ApplyIPO] Could not fetch master/backend IPO record', err);
       }
     }
     resolveMaster();
@@ -122,6 +133,23 @@ export default function ApplyIPOScreen() {
       };
     }
 
+    // Check backend IPO record fetched from backend API
+    if (backendIpoRecord) {
+      const price = backendIpoRecord.priceBandHigh || backendIpoRecord.priceBandLow || 0;
+      const compName = backendIpoRecord.company?.displayName || backendIpoRecord.companyName || backendIpoRecord.symbol;
+      return {
+        id: backendIpoRecord.id,
+        company_name: compName,
+        ipo_name: compName,
+        buy_price: typeof price === 'string' ? parseFloat(price) : price,
+        quantity: backendIpoRecord.lotSize || 1,
+        issue_type: backendIpoRecord.marketSegment === 'SME' ? 'SME' : 'Mainboard',
+        exchange: backendIpoRecord.exchange || 'NSE, BSE',
+        close_date: backendIpoRecord.closeDate || '',
+        open_date: backendIpoRecord.openDate || '',
+      };
+    }
+
     // Check local ipo_listings from useDB()
     const fromListings = ipos.find(
       (i) =>
@@ -144,7 +172,7 @@ export default function ApplyIPOScreen() {
     }
 
     return undefined;
-  }, [ipos, selectedIpoId, masterRecord]);
+  }, [ipos, selectedIpoId, masterRecord, backendIpoRecord]);
 
   React.useEffect(() => {
     if (params.ipoId) {
