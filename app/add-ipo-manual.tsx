@@ -252,15 +252,23 @@ export default function AddIPOManualScreen() {
 
       const companyObj = json.company || json;
       const ipoObj = json.ipo || json;
+      const lifecycleObj = json.lifecycle || json;
       const docsObj = json.documents || json.docs || json;
+      const configObj = json.allotmentConfig || json;
+      const gmpObj = json.gmp || json;
 
       const keysFilled: string[] = [];
 
-      if (companyObj.legalName || companyObj.displayName || companyObj.name || companyObj.companyName) {
-        const cName = companyObj.displayName || companyObj.legalName || companyObj.companyName || companyObj.name;
+      if (companyObj.legalName || companyObj.displayName || companyObj.name || companyObj.companyName || json.companyName) {
+        const cName = companyObj.displayName || companyObj.legalName || companyObj.companyName || companyObj.name || json.companyName;
         setCompanyName(cName);
-        if (!ipoName) setIpoName(`${cName} IPO`);
+        if (!ipoName) setIpoName(json.ipoName || ipoObj.ipoName || `${cName} IPO`);
         keysFilled.push('Company Name');
+      }
+
+      if (json.ipoName || ipoObj.ipoName) {
+        setIpoName(json.ipoName || ipoObj.ipoName);
+        if (!keysFilled.includes('IPO Name')) keysFilled.push('IPO Name');
       }
 
       if (companyObj.logoUrl || json.logoUrl) {
@@ -268,104 +276,155 @@ export default function AddIPOManualScreen() {
         keysFilled.push('Logo URL');
       }
 
-      if (companyObj.symbol || ipoObj.symbol) {
-        setSymbol(companyObj.symbol || ipoObj.symbol);
+      if (companyObj.symbol || ipoObj.symbol || json.symbol) {
+        setSymbol(companyObj.symbol || ipoObj.symbol || json.symbol);
         keysFilled.push('Symbol');
       }
 
-      if (ipoObj.exchange || companyObj.exchange) {
-        const ex = String(ipoObj.exchange || companyObj.exchange).toUpperCase();
+      if (json.exchange || ipoObj.exchange || companyObj.exchange) {
+        const ex = String(json.exchange || ipoObj.exchange || companyObj.exchange).toUpperCase();
         if (ex.includes('NSE') && ex.includes('BSE')) setExchange('BSE / NSE');
         else if (ex.includes('NSE')) setExchange('NSE');
         else if (ex.includes('BSE')) setExchange('BSE');
         keysFilled.push('Exchange');
       }
 
-      if (ipoObj.marketSegment || ipoObj.issueType || companyObj.marketSegment) {
-        const seg = String(ipoObj.marketSegment || ipoObj.issueType || companyObj.marketSegment).toUpperCase();
+      if (json.issueType || ipoObj.issueType || ipoObj.marketSegment || companyObj.marketSegment) {
+        const seg = String(json.issueType || ipoObj.issueType || ipoObj.marketSegment || companyObj.marketSegment).toUpperCase();
         if (seg.includes('SME')) setIssueType('SME');
         else setIssueType('Mainboard');
         keysFilled.push('Issue Type');
       }
 
-      if (companyObj.sector) {
-        setSector(companyObj.sector);
+      if (companyObj.sector || json.sector) {
+        setSector(companyObj.sector || json.sector);
         keysFilled.push('Sector');
       }
 
-      if (ipoObj.priceBandLow !== undefined || ipoObj.priceBandMin !== undefined) {
-        setPriceBandMin(String(ipoObj.priceBandLow ?? ipoObj.priceBandMin ?? ''));
+      if (json.priceBandMin !== undefined || ipoObj.priceBandMin !== undefined || ipoObj.priceBandLow !== undefined) {
+        setPriceBandMin(String(json.priceBandMin ?? ipoObj.priceBandMin ?? ipoObj.priceBandLow ?? ''));
         keysFilled.push('Min Price');
       }
 
-      if (ipoObj.priceBandHigh !== undefined || ipoObj.priceBandMax !== undefined) {
-        setPriceBandMax(String(ipoObj.priceBandHigh ?? ipoObj.priceBandMax ?? ''));
+      if (json.priceBandMax !== undefined || ipoObj.priceBandMax !== undefined || ipoObj.priceBandHigh !== undefined) {
+        setPriceBandMax(String(json.priceBandMax ?? ipoObj.priceBandMax ?? ipoObj.priceBandHigh ?? ''));
         keysFilled.push('Max Price');
       }
 
-      if (ipoObj.lotSize !== undefined) {
-        setLotSize(String(ipoObj.lotSize));
+      if (json.lotSize !== undefined || ipoObj.lotSize !== undefined) {
+        setLotSize(String(json.lotSize ?? ipoObj.lotSize ?? ''));
         keysFilled.push('Lot Size');
       }
 
-      if (ipoObj.issueSize !== undefined) {
-        setIssueSize(String(ipoObj.issueSize));
+      if (json.issueSize !== undefined || ipoObj.issueSize !== undefined) {
+        setIssueSize(String(json.issueSize ?? ipoObj.issueSize ?? ''));
         keysFilled.push('Issue Size');
       }
 
-      if (ipoObj.openDate || ipoObj.open_date) {
-        setOpenDate(ipoObj.openDate || ipoObj.open_date);
+      if (json.gmpAmount !== undefined || gmpObj.gmpAmount !== undefined) {
+        setGmpAmount(String(json.gmpAmount ?? gmpObj.gmpAmount ?? ''));
+        keysFilled.push('GMP Amount');
+      }
+
+      if (json.gmpPercent !== undefined || gmpObj.gmpPercent !== undefined || gmpObj.gmpPercentage !== undefined) {
+        setGmpPercent(String(json.gmpPercent ?? gmpObj.gmpPercent ?? gmpObj.gmpPercentage ?? ''));
+        keysFilled.push('GMP Percent');
+      }
+
+      if (json.openDate || lifecycleObj.openDate || ipoObj.openDate) {
+        setOpenDate(json.openDate || lifecycleObj.openDate || ipoObj.openDate);
         keysFilled.push('Open Date');
       }
 
-      if (ipoObj.closeDate || ipoObj.close_date) {
-        setCloseDate(ipoObj.closeDate || ipoObj.close_date);
+      if (json.closeDate || lifecycleObj.closeDate || ipoObj.closeDate) {
+        setCloseDate(json.closeDate || lifecycleObj.closeDate || ipoObj.closeDate);
         keysFilled.push('Close Date');
       }
 
-      if (ipoObj.allotmentDate || ipoObj.allotment_date) {
-        setAllotmentDate(ipoObj.allotmentDate || ipoObj.allotment_date);
+      if (json.allotmentDate || lifecycleObj.allotmentDate || ipoObj.allotmentDate) {
+        setAllotmentDate(json.allotmentDate || lifecycleObj.allotmentDate || ipoObj.allotmentDate);
         keysFilled.push('Allotment Date');
       }
 
-      if (ipoObj.listingDate || ipoObj.listing_date) {
-        setListingDate(ipoObj.listingDate || ipoObj.listing_date);
+      if (json.listingDate || lifecycleObj.listingDate || ipoObj.listingDate) {
+        setListingDate(json.listingDate || lifecycleObj.listingDate || ipoObj.listingDate);
         keysFilled.push('Listing Date');
       }
 
-      if (companyObj.registrar || ipoObj.registrar) {
-        setRegistrar(companyObj.registrar || ipoObj.registrar);
+      if (json.registrar || configObj.registrar || companyObj.registrar || ipoObj.registrar) {
+        setRegistrar(json.registrar || configObj.registrar || companyObj.registrar || ipoObj.registrar);
         keysFilled.push('Registrar');
       }
 
-      if (companyObj.leadManager || ipoObj.leadManager) {
-        setLeadManager(companyObj.leadManager || ipoObj.leadManager);
+      if (json.registrarPhone || configObj.registrarPhone) {
+        setRegistrarPhone(json.registrarPhone || configObj.registrarPhone);
+        keysFilled.push('Registrar Phone');
+      }
+
+      if (json.registrarEmail || configObj.registrarEmail) {
+        setRegistrarEmail(json.registrarEmail || configObj.registrarEmail);
+        keysFilled.push('Registrar Email');
+      }
+
+      if (json.leadManager || companyObj.leadManager || ipoObj.leadManager) {
+        setLeadManager(json.leadManager || companyObj.leadManager || ipoObj.leadManager);
         keysFilled.push('Lead Manager');
       }
 
-      if (companyObj.website) {
-        setWebsite(companyObj.website);
+      if (companyObj.website || json.website) {
+        setWebsite(companyObj.website || json.website);
         keysFilled.push('Website');
       }
 
-      if (companyObj.contactPhone || companyObj.companyPhone) {
-        setCompanyPhone(companyObj.contactPhone || companyObj.companyPhone);
+      if (json.companyPhone || companyObj.companyPhone || companyObj.phone || companyObj.contactPhone) {
+        setCompanyPhone(json.companyPhone || companyObj.companyPhone || companyObj.phone || companyObj.contactPhone);
         keysFilled.push('Phone');
       }
 
-      if (companyObj.contactEmail || companyObj.companyEmail) {
-        setCompanyEmail(companyObj.contactEmail || companyObj.companyEmail);
+      if (json.companyEmail || companyObj.companyEmail || companyObj.email || companyObj.contactEmail) {
+        setCompanyEmail(json.companyEmail || companyObj.companyEmail || companyObj.email || companyObj.contactEmail);
         keysFilled.push('Email');
       }
 
-      if (docsObj.drhpUrl) {
-        setDrhpUrl(docsObj.drhpUrl);
+      if (json.drhpUrl || docsObj.drhpUrl || ipoObj.drhpUrl) {
+        setDrhpUrl(json.drhpUrl || docsObj.drhpUrl || ipoObj.drhpUrl);
         keysFilled.push('DRHP URL');
       }
 
-      if (docsObj.rhpUrl) {
-        setRhpUrl(docsObj.rhpUrl);
+      if (json.rhpUrl || docsObj.rhpUrl || ipoObj.rhpUrl) {
+        setRhpUrl(json.rhpUrl || docsObj.rhpUrl || ipoObj.rhpUrl);
         keysFilled.push('RHP URL');
+      }
+
+      if (json.notes || companyObj.notes || companyObj.aboutDescription || ipoObj.notes) {
+        setNotes(json.notes || companyObj.notes || companyObj.aboutDescription || ipoObj.notes);
+        keysFilled.push('Notes');
+      }
+
+      // Financials array or flat financial ratios
+      const fins = companyObj.financials || json.financials;
+      if (Array.isArray(fins) && fins.length > 0) {
+        const latestFin = fins[0];
+        if (latestFin.ebitdaPercent !== undefined || latestFin.ebitda !== undefined) {
+          setEbitdaPercent(String(latestFin.ebitdaPercent ?? latestFin.ebitda ?? ''));
+        }
+        if (latestFin.roePercent !== undefined || latestFin.roePercentage !== undefined) {
+          setRoePercent(String(latestFin.roePercent ?? latestFin.roePercentage ?? ''));
+        }
+        if (latestFin.patPercent !== undefined || latestFin.patMarginPercent !== undefined) {
+          setPatPercent(String(latestFin.patPercent ?? latestFin.patMarginPercent ?? ''));
+        }
+        keysFilled.push('Financial Ratios');
+      } else {
+        if (json.ebitdaPercent !== undefined || companyObj.ebitdaPercent !== undefined) {
+          setEbitdaPercent(String(json.ebitdaPercent ?? companyObj.ebitdaPercent ?? ''));
+        }
+        if (json.roePercent !== undefined || companyObj.roePercent !== undefined) {
+          setRoePercent(String(json.roePercent ?? companyObj.roePercent ?? ''));
+        }
+        if (json.patPercent !== undefined || companyObj.patPercent !== undefined) {
+          setPatPercent(String(json.patPercent ?? companyObj.patPercent ?? ''));
+        }
       }
 
       setParsingDoc(false);
