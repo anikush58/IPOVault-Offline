@@ -709,7 +709,7 @@ export default function DashboardScreen() {
                 });
 
                 const companyName = item.company_name || item.ipo_name || 'IPO';
-                const resolvedLogo = getResolvedLogoUrl(item.logo_url);
+                const resolvedLogo = getResolvedLogoUrl(item.logo_url || item.logoUrl || item.company?.logoUrl);
                 const initials = companyName
                   .replace(/[^a-zA-Z0-9\s]/g, '')
                   .split(' ')

@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
+import Svg, { Circle, G } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -266,8 +267,8 @@ export default function BackendIpoDetailsScreen() {
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 }}>
               <View style={{ width: 54, height: 54, borderRadius: 14, overflow: 'hidden', backgroundColor: isDark ? '#1E293B' : '#F8FAFC', borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
-                {ipo.company?.logoUrl ? (
-                  <Image source={{ uri: ipo.company.logoUrl }} style={{ width: 44, height: 44 }} resizeMode="contain" />
+                {(ipo.company?.logoUrl || ipo.logoUrl || ipo.logo_url) ? (
+                  <Image source={{ uri: ipo.company?.logoUrl || ipo.logoUrl || ipo.logo_url }} style={{ width: 44, height: 44 }} resizeMode="contain" />
                 ) : (
                   <Text style={{ fontSize: 18, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary }}>
                     {companyName.slice(0, 2).toUpperCase()}
@@ -494,32 +495,140 @@ export default function BackendIpoDetailsScreen() {
           </View>
 
           {/* Offer Breakup & Investment Category Breakdown */}
-          <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Offer Breakup</Text>
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-              <View style={styles.donutRingPlaceholder}>
-                <View style={[styles.donutInner, { backgroundColor: colors.card }]} />
-              </View>
-              <View style={{ flex: 1, gap: 6 }}>
-                <View style={styles.cardRow}>
-                  <Text style={[styles.label, { color: colors.foreground }]}>QIB</Text>
-                  <Text style={[styles.value, { color: colors.foreground }]}>50%</Text>
+          {(() => {
+            const qibCat = ipo.offerCategories?.find(c => c.category === 'QIB');
+            const niiCat = ipo.offerCategories?.find(c => c.category === 'NII');
+            const retailCat = ipo.offerCategories?.find(c => c.category === 'RETAIL');
+
+            const qibPct = qibCat?.allocationPct != null ? Number(qibCat.allocationPct) : 50;
+            const niiPct = niiCat?.allocationPct != null ? Number(niiCat.allocationPct) : 15;
+            const retailPct = retailCat?.allocationPct != null ? Number(retailCat.allocationPct) : 35;
+            const mmPct = 0;
+
+            const total = (qibPct + niiPct + retailPct + mmPct) || 100;
+            const r = 40;
+            const cx = 55;
+            const cy = 55;
+            const C = 2 * Math.PI * r;
+
+            const fracRii = retailPct / total;
+            const fracQib = qibPct / total;
+            const fracNii = niiPct / total;
+            const fracMm = mmPct / total;
+
+            const lenRii = fracRii * C;
+            const lenQib = fracQib * C;
+            const lenNii = fracNii * C;
+            const lenMm = fracMm * C;
+
+            const gap = 2;
+            const dashRii = `${Math.max(0, lenRii - gap)} ${C - Math.max(0, lenRii - gap)}`;
+            const dashQib = `${Math.max(0, lenQib - gap)} ${C - Math.max(0, lenQib - gap)}`;
+            const dashNii = `${Math.max(0, lenNii - gap)} ${C - Math.max(0, lenNii - gap)}`;
+            const dashMm = `${Math.max(0, lenMm - gap)} ${C - Math.max(0, lenMm - gap)}`;
+
+            const offRii = 0;
+            const offQib = -lenRii;
+            const offNii = -(lenRii + lenQib);
+            const offMm = -(lenRii + lenQib + lenNii);
+
+            const COLOR_QIB = '#2196F3';
+            const COLOR_NII = '#4CAF50';
+            const COLOR_RII = '#FF9800';
+            const COLOR_MM = '#9C27B0';
+
+            return (
+              <>
+                <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Offer Breakup</Text>
+                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 16 }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Svg width={110} height={110} viewBox="0 0 110 110">
+                      <G rotation="-90" origin="55, 55">
+                        {lenRii > 0 && (
+                          <Circle
+                            cx={cx}
+                            cy={cy}
+                            r={r}
+                            stroke={COLOR_RII}
+                            strokeWidth={16}
+                            strokeDasharray={dashRii}
+                            strokeDashoffset={offRii}
+                            fill="none"
+                          />
+                        )}
+                        {lenQib > 0 && (
+                          <Circle
+                            cx={cx}
+                            cy={cy}
+                            r={r}
+                            stroke={COLOR_QIB}
+                            strokeWidth={16}
+                            strokeDasharray={dashQib}
+                            strokeDashoffset={offQib}
+                            fill="none"
+                          />
+                        )}
+                        {lenNii > 0 && (
+                          <Circle
+                            cx={cx}
+                            cy={cy}
+                            r={r}
+                            stroke={COLOR_NII}
+                            strokeWidth={16}
+                            strokeDasharray={dashNii}
+                            strokeDashoffset={offNii}
+                            fill="none"
+                          />
+                        )}
+                        {lenMm > 0 && (
+                          <Circle
+                            cx={cx}
+                            cy={cy}
+                            r={r}
+                            stroke={COLOR_MM}
+                            strokeWidth={16}
+                            strokeDasharray={dashMm}
+                            strokeDashoffset={offMm}
+                            fill="none"
+                          />
+                        )}
+                      </G>
+                    </Svg>
+                    <View style={{ width: 170, gap: 10 }}>
+                      <View style={styles.cardRow}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: COLOR_QIB }} />
+                          <Text style={[styles.label, { color: colors.foreground }]}>QIB</Text>
+                        </View>
+                        <Text style={[styles.value, { color: colors.foreground }]}>{qibPct}%</Text>
+                      </View>
+                      <View style={styles.cardRow}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: COLOR_NII }} />
+                          <Text style={[styles.label, { color: colors.foreground }]}>NII</Text>
+                        </View>
+                        <Text style={[styles.value, { color: colors.foreground }]}>{niiPct}%</Text>
+                      </View>
+                      <View style={styles.cardRow}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: COLOR_RII }} />
+                          <Text style={[styles.label, { color: colors.foreground }]}>RII</Text>
+                        </View>
+                        <Text style={[styles.value, { color: colors.foreground }]}>{retailPct}%</Text>
+                      </View>
+                      <View style={styles.cardRow}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: COLOR_MM }} />
+                          <Text style={[styles.label, { color: colors.foreground }]}>MM</Text>
+                        </View>
+                        <Text style={[styles.value, { color: colors.foreground }]}>{mmPct}%</Text>
+                      </View>
+                    </View>
+                  </View>
                 </View>
-                <View style={styles.cardRow}>
-                  <Text style={[styles.label, { color: colors.foreground }]}>NII</Text>
-                  <Text style={[styles.value, { color: colors.foreground }]}>15%</Text>
-                </View>
-                <View style={styles.cardRow}>
-                  <Text style={[styles.label, { color: colors.foreground }]}>RII</Text>
-                  <Text style={[styles.value, { color: colors.foreground }]}>35%</Text>
-                </View>
-                <View style={styles.cardRow}>
-                  <Text style={[styles.label, { color: colors.foreground }]}>MM</Text>
-                  <Text style={[styles.value, { color: colors.foreground }]}>0%</Text>
-                </View>
-              </View>
-            </View>
-          </View>
+              </>
+            );
+          })()}
 
           {/* Investment Category Breakdown Table */}
           <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Investment Category Breakdown</Text>

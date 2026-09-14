@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import Svg, { Circle, G } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -371,8 +372,8 @@ export default function IPODetailsScreen() {
           <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 }}>
               <View style={{ width: 54, height: 54, borderRadius: 14, overflow: 'hidden', backgroundColor: isDark ? '#1E293B' : '#F8FAFC', borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
-                {ipo.logo_url && !logoError ? (
-                  <Image source={{ uri: ipo.logo_url }} style={{ width: 44, height: 44 }} resizeMode="contain" onError={() => setLogoError(true)} />
+                {(ipo.logo_url || ipo.logoUrl || ipo.company?.logoUrl) && !logoError ? (
+                  <Image source={{ uri: ipo.logo_url || ipo.logoUrl || ipo.company?.logoUrl }} style={{ width: 44, height: 44 }} resizeMode="contain" onError={() => setLogoError(true)} />
                 ) : (
                   <Text style={{ fontSize: 18, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary }}>{initials}</Text>
                 )}
@@ -593,46 +594,136 @@ export default function IPODetailsScreen() {
           </View>
 
           {/* OFFER BREAKUP */}
-          <View style={styles.sectionWrap}>
-            <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Offer Breakup</Text>
-            <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-                <View style={styles.donutRingPlaceholder}>
-                  <View style={[styles.donutInner, { backgroundColor: colors.card }]} />
-                </View>
-                <View style={{ flex: 1, gap: 6 }}>
-                  <View style={styles.breakupRow}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <View style={[styles.dotMarker, { backgroundColor: '#3B82F6' }]} />
-                      <Text style={[styles.breakupLabel, { color: colors.foreground }]}>QIB</Text>
+          {(() => {
+            const qibPct = ipo.qib_quota_percent ?? 50;
+            const niiPct = ipo.nii_quota_percent ?? 15;
+            const retailPct = ipo.retail_quota_percent ?? 35;
+            const mmPct = 0;
+
+            const total = (qibPct + niiPct + retailPct + mmPct) || 100;
+            const r = 40;
+            const cx = 55;
+            const cy = 55;
+            const C = 2 * Math.PI * r;
+
+            const fracRii = retailPct / total;
+            const fracQib = qibPct / total;
+            const fracNii = niiPct / total;
+            const fracMm = mmPct / total;
+
+            const lenRii = fracRii * C;
+            const lenQib = fracQib * C;
+            const lenNii = fracNii * C;
+            const lenMm = fracMm * C;
+
+            const gap = 2;
+            const dashRii = `${Math.max(0, lenRii - gap)} ${C - Math.max(0, lenRii - gap)}`;
+            const dashQib = `${Math.max(0, lenQib - gap)} ${C - Math.max(0, lenQib - gap)}`;
+            const dashNii = `${Math.max(0, lenNii - gap)} ${C - Math.max(0, lenNii - gap)}`;
+            const dashMm = `${Math.max(0, lenMm - gap)} ${C - Math.max(0, lenMm - gap)}`;
+
+            const offRii = 0;
+            const offQib = -lenRii;
+            const offNii = -(lenRii + lenQib);
+            const offMm = -(lenRii + lenQib + lenNii);
+
+            const COLOR_QIB = '#2196F3';
+            const COLOR_NII = '#4CAF50';
+            const COLOR_RII = '#FF9800';
+            const COLOR_MM = '#9C27B0';
+
+            return (
+              <View style={styles.sectionWrap}>
+                <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Offer Breakup</Text>
+                <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border, padding: 16 }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Svg width={110} height={110} viewBox="0 0 110 110">
+                      <G rotation="-90" origin="55, 55">
+                        {lenRii > 0 && (
+                          <Circle
+                            cx={cx}
+                            cy={cy}
+                            r={r}
+                            stroke={COLOR_RII}
+                            strokeWidth={16}
+                            strokeDasharray={dashRii}
+                            strokeDashoffset={offRii}
+                            fill="none"
+                          />
+                        )}
+                        {lenQib > 0 && (
+                          <Circle
+                            cx={cx}
+                            cy={cy}
+                            r={r}
+                            stroke={COLOR_QIB}
+                            strokeWidth={16}
+                            strokeDasharray={dashQib}
+                            strokeDashoffset={offQib}
+                            fill="none"
+                          />
+                        )}
+                        {lenNii > 0 && (
+                          <Circle
+                            cx={cx}
+                            cy={cy}
+                            r={r}
+                            stroke={COLOR_NII}
+                            strokeWidth={16}
+                            strokeDasharray={dashNii}
+                            strokeDashoffset={offNii}
+                            fill="none"
+                          />
+                        )}
+                        {lenMm > 0 && (
+                          <Circle
+                            cx={cx}
+                            cy={cy}
+                            r={r}
+                            stroke={COLOR_MM}
+                            strokeWidth={16}
+                            strokeDasharray={dashMm}
+                            strokeDashoffset={offMm}
+                            fill="none"
+                          />
+                        )}
+                      </G>
+                    </Svg>
+                    <View style={{ width: 170, gap: 10 }}>
+                      <View style={styles.breakupRow}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <View style={[styles.dotMarker, { backgroundColor: COLOR_QIB }]} />
+                          <Text style={[styles.breakupLabel, { color: colors.foreground }]}>QIB</Text>
+                        </View>
+                        <Text style={[styles.breakupVal, { color: colors.foreground }]}>{qibPct}%</Text>
+                      </View>
+                      <View style={styles.breakupRow}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <View style={[styles.dotMarker, { backgroundColor: COLOR_NII }]} />
+                          <Text style={[styles.breakupLabel, { color: colors.foreground }]}>NII</Text>
+                        </View>
+                        <Text style={[styles.breakupVal, { color: colors.foreground }]}>{niiPct}%</Text>
+                      </View>
+                      <View style={styles.breakupRow}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <View style={[styles.dotMarker, { backgroundColor: COLOR_RII }]} />
+                          <Text style={[styles.breakupLabel, { color: colors.foreground }]}>RII</Text>
+                        </View>
+                        <Text style={[styles.breakupVal, { color: colors.foreground }]}>{retailPct}%</Text>
+                      </View>
+                      <View style={styles.breakupRow}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                          <View style={[styles.dotMarker, { backgroundColor: COLOR_MM }]} />
+                          <Text style={[styles.breakupLabel, { color: colors.foreground }]}>MM</Text>
+                        </View>
+                        <Text style={[styles.breakupVal, { color: colors.foreground }]}>{mmPct}%</Text>
+                      </View>
                     </View>
-                    <Text style={[styles.breakupVal, { color: colors.foreground }]}>{ipo.qib_quota_percent ?? 50}%</Text>
-                  </View>
-                  <View style={styles.breakupRow}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <View style={[styles.dotMarker, { backgroundColor: '#10B981' }]} />
-                      <Text style={[styles.breakupLabel, { color: colors.foreground }]}>NII</Text>
-                    </View>
-                    <Text style={[styles.breakupVal, { color: colors.foreground }]}>{ipo.nii_quota_percent ?? 15}%</Text>
-                  </View>
-                  <View style={styles.breakupRow}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <View style={[styles.dotMarker, { backgroundColor: '#F59E0B' }]} />
-                      <Text style={[styles.breakupLabel, { color: colors.foreground }]}>RII</Text>
-                    </View>
-                    <Text style={[styles.breakupVal, { color: colors.foreground }]}>{ipo.retail_quota_percent ?? 35}%</Text>
-                  </View>
-                  <View style={styles.breakupRow}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <View style={[styles.dotMarker, { backgroundColor: '#8B5CF6' }]} />
-                      <Text style={[styles.breakupLabel, { color: colors.foreground }]}>MM / Employee</Text>
-                    </View>
-                    <Text style={[styles.breakupVal, { color: colors.foreground }]}>0%</Text>
                   </View>
                 </View>
               </View>
-            </View>
-          </View>
+            );
+          })()}
 
           {/* INVESTMENT CATEGORY BREAKDOWN TABLE */}
           <View style={styles.sectionWrap}>
@@ -1059,9 +1150,9 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_700Bold',
   },
   dotMarker: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
   },
   intelCardOrange: {
     borderRadius: 16,
