@@ -38,6 +38,20 @@ export interface PromoterInfo {
   holding_post_percent?: number;
 }
 
+export interface GMPHistoryPoint {
+  date: string;
+  time: string;
+  gmp: number;
+}
+
+export interface InvestmentCategoryBreakdownRow {
+  category: string;
+  lots: number;
+  shares: number;
+  rate: number;
+  amount: number;
+}
+
 export interface IPOIntelligenceRecord {
   objects_of_issue?: string[];
   financials?: FinancialYearData[];
@@ -48,6 +62,18 @@ export interface IPOIntelligenceRecord {
   drhp_url?: string;
   rhp_url?: string;
   anchor_investors_url?: string;
+  gmp_history?: GMPHistoryPoint[];
+  category_breakdowns?: InvestmentCategoryBreakdownRow[];
+  ebitda_percent?: number | null;
+  roe_percent?: number | null;
+  pat_percent?: number | null;
+  company_phone?: string;
+  company_email?: string;
+  registrar_phone?: string;
+  registrar_email?: string;
+  qib_quota_percent?: number | null;
+  nii_quota_percent?: number | null;
+  retail_quota_percent?: number | null;
 }
 
 export interface IPOMasterRecord {
@@ -98,6 +124,20 @@ export interface IPOMasterRecord {
   gmp_percent?: number | null;
   profit_per_lot?: number | null;
   gmp_updated_at?: string | null;
+
+  // Additional Contact & Ratio Details
+  company_phone?: string;
+  company_email?: string;
+  registrar_phone?: string;
+  registrar_email?: string;
+  ebitda_percent?: number | null;
+  roe_percent?: number | null;
+  pat_percent?: number | null;
+  qib_quota_percent?: number | null;
+  nii_quota_percent?: number | null;
+  retail_quota_percent?: number | null;
+  drhp_url?: string;
+  rhp_url?: string;
   
   // Intelligence & Score attributes
   intelligence?: IPOIntelligenceRecord;

@@ -51,7 +51,7 @@ function getAvatarGradient(name: string): [string, string] {
 
 export function UpdateApplicationModal({ application: app, onClose }: Props) {
   const colors = useColors();
-  const { ipos, updateApplication, deleteApplication } = useDB();
+  const { ipos, bankAccounts, updateApplication, deleteApplication } = useDB();
   const { showError, showConfirm, showSuccess } = useDialog();
   const insets = useSafeAreaInsets();
 
@@ -61,6 +61,8 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
   const [saleDate, setSaleDate] = useState('');
   const [tax, setTax] = useState('0');
   const [userCut, setUserCut] = useState('0');
+  const [selectedBankName, setSelectedBankName] = useState('');
+  const [showBankPicker, setShowBankPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [logoError, setLogoError] = useState(false);
@@ -88,6 +90,8 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
       setSaleDate(app.sale_date ?? todayISO());
       setTax((app.tax ?? 0).toString());
       setUserCut((app.user_cut ?? 0).toString());
+      setSelectedBankName(app.user_bank_name ?? '');
+      setShowBankPicker(false);
       setConfirmDelete(false);
       setLogoError(false);
     }
@@ -125,7 +129,8 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
         effectivePrice,
         isSold ? (saleDate || null) : null,
         tax.trim() !== '' ? parseFloat(tax) : 0,
-        userCut.trim() !== '' ? parseFloat(userCut) : 0
+        userCut.trim() !== '' ? parseFloat(userCut) : 0,
+        selectedBankName.trim() || undefined
       );
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onClose();
@@ -233,6 +238,46 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
                       </TouchableOpacity>
                     );
                   })}
+                </View>
+
+                {/* Bank Account Selection Field */}
+                <View style={{ marginBottom: 16 }}>
+                  <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BANK ACCOUNT</Text>
+                  <TouchableOpacity
+                    onPress={() => setShowBankPicker(!showBankPicker)}
+                    style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={{ fontSize: 14, color: selectedBankName ? colors.foreground : colors.mutedForeground, fontFamily: 'GoogleSansFlex_400Regular' }}>
+                      {selectedBankName || 'Select Bank Account'}
+                    </Text>
+                    <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
+                  </TouchableOpacity>
+
+                  {showBankPicker && (
+                    <View style={{ backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, borderRadius: 12, marginTop: 6, maxHeight: 160, overflow: 'hidden' }}>
+                      <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                        {bankAccounts.length === 0 ? (
+                          <Text style={{ padding: 12, fontSize: 13, color: colors.mutedForeground }}>No bank accounts added.</Text>
+                        ) : (
+                          bankAccounts.map((b) => (
+                            <TouchableOpacity
+                              key={b.id}
+                              onPress={() => {
+                                setSelectedBankName(b.bank_name);
+                                setShowBankPicker(false);
+                              }}
+                              style={{ paddingVertical: 10, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                            >
+                              <Text style={{ fontSize: 14, color: selectedBankName === b.bank_name ? colors.primary : colors.foreground, fontFamily: selectedBankName === b.bank_name ? 'GoogleSansFlex_600SemiBold' : 'GoogleSansFlex_400Regular' }}>
+                                {b.bank_name}
+                              </Text>
+                            </TouchableOpacity>
+                          ))
+                        )}
+                      </ScrollView>
+                    </View>
+                  )}
                 </View>
 
                 {/* Holding fields */}

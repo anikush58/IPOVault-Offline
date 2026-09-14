@@ -262,7 +262,17 @@ export default function ApplyIPOScreen() {
     }
     setLoading(true);
     try {
-      await addBulkApplications(selectedIpoId, Array.from(selectedUserIds));
+      const bankNameMap: Record<string, string> = {};
+      const upiAppMap: Record<string, string> = {};
+      Array.from(selectedUserIds).forEach((uid) => {
+        const u = users.find((usr) => usr.id === uid);
+        const selectedBank = userSelectedBank[uid] || u?.bank_name || (bankAccounts[0]?.bank_name ?? '');
+        const selectedUPI = userSelectedUPI[uid] || u?.upi_id || u?.upi_app || 'HDFC UPI';
+        if (selectedBank) bankNameMap[uid] = selectedBank;
+        if (selectedUPI) upiAppMap[uid] = selectedUPI;
+      });
+
+      await addBulkApplications(selectedIpoId, Array.from(selectedUserIds), bankNameMap, upiAppMap);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace('/(tabs)/bids');
     } catch (err: any) {

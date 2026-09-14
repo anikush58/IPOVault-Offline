@@ -6,6 +6,9 @@ import {
   TouchableOpacity,
   ScrollView,
   RefreshControl,
+  Switch,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -19,6 +22,7 @@ import { IPOEmptyState } from './IPOEmptyState';
 import { SegmentedTabControl } from '@/components/ui/SegmentedTabControl';
 
 export type IPOSubTab = 'open' | 'upcoming' | 'listed';
+export type SortOption = 'DEFAULT' | 'GMP' | 'DATE' | 'MIN_INVEST' | 'NAME';
 
 interface IPOsTabProps {
   repo?: any;
@@ -44,9 +48,18 @@ export function IPOsTab({
   const { ipos: dbIpos, toggleFavorite: dbToggleFavorite } = useDB();
 
   const [activeSubTab, setActiveSubTab] = useState<IPOSubTab>(initialSubTab);
+  const [includeSme, setIncludeSme] = useState(false);
+  const [sortBy, setSortBy] = useState<SortOption>('DEFAULT');
+  const [showSortModal, setShowSortModal] = useState(false);
 
   const allIpos: any[] = propIpos || dbIpos || [];
-  const activeIPOs = useMemo(() => allIpos.filter((ipo: any) => ipo.archived !== 1), [allIpos]);
+  const activeIPOs = useMemo(() => {
+    let list = allIpos.filter((ipo: any) => ipo.archived !== 1);
+    if (!includeSme) {
+      list = list.filter((item) => !(item.issue_type || '').toLowerCase().includes('sme'));
+    }
+    return list;
+  }, [allIpos, includeSme]);
 
   const openIpos = useMemo(
     () => activeIPOs.filter((r) => calculateNormalizedIPOStatus(r) === 'OPEN'),
@@ -63,7 +76,7 @@ export function IPOsTab({
     [activeIPOs]
   );
 
-  const currentList = useMemo(() => {
+  const rawTabList = useMemo(() => {
     switch (activeSubTab) {
       case 'open':
         return openIpos;
@@ -75,6 +88,32 @@ export function IPOsTab({
         return openIpos;
     }
   }, [activeSubTab, openIpos, upcomingIpos, listedIpos]);
+
+  const currentList = useMemo(() => {
+    let list = [...rawTabList];
+
+    // Apply Sorting
+    switch (sortBy) {
+      case 'GMP':
+        list.sort((a, b) => (b.gmp_percent || b.gmp_amount || 0) - (a.gmp_percent || a.gmp_amount || 0));
+        break;
+      case 'DATE':
+        list.sort((a, b) => (a.open_date || '').localeCompare(b.open_date || ''));
+        break;
+      case 'MIN_INVEST':
+        list.sort((a, b) => {
+          const valA = (a.price_band_max || a.price_band_min || 0) * (a.lot_size || 1);
+          const valB = (b.price_band_max || b.price_band_min || 0) * (b.lot_size || 1);
+          return valA - valB;
+        });
+        break;
+      case 'NAME':
+        list.sort((a, b) => (a.company_name || a.ipo_name || '').localeCompare(b.company_name || b.ipo_name || ''));
+        break;
+    }
+
+    return list;
+  }, [rawTabList, sortBy]);
 
   const handleCardPress = useCallback(
     (ipo: IPOMasterRecord) => {
@@ -101,36 +140,62 @@ export function IPOsTab({
     [repo, dbToggleFavorite]
   );
 
-  const highestGmp = useMemo(() => {
-    let max = 0;
-    openIpos.forEach((r) => {
-      if (r.gmp_percent && r.gmp_percent > max) max = r.gmp_percent;
-    });
-    return max > 0 ? max : null;
-  }, [openIpos]);
-
-  const maxDemand = useMemo(() => {
-    let max = 0;
-    openIpos.forEach((r) => {
-      if (r.total_sub && r.total_sub > max) max = r.total_sub;
-    });
-    return max > 0 ? max : null;
-  }, [openIpos]);
+  const sortLabel = useMemo(() => {
+    switch (sortBy) {
+      case 'GMP': return 'GMP';
+      case 'DATE': return 'Apply Date';
+      case 'MIN_INVEST': return 'Min Investment';
+      case 'NAME': return 'Name';
+      default: return 'Default';
+    }
+  }, [sortBy]);
 
   const content = (
     <View style={styles.rootContainer}>
-      {/* Sub-Tab Bar: Open | Upcoming | Listed */}
+      {/* Sub-Tab Bar: Live | Upcoming | Listed */}
       <View style={styles.subTabBarWrap}>
         <SegmentedTabControl
           variant="secondary"
           tabs={[
-            { key: 'open', label: `Open (${openIpos.length})`, dotColor: '#10B981' },
+            { key: 'open', label: `Live (${openIpos.length})`, dotColor: '#10B981' },
             { key: 'upcoming', label: `Upcoming (${upcomingIpos.length})`, icon: 'clock' },
             { key: 'listed', label: `Listed (${listedIpos.length})`, icon: 'check-circle' },
           ]}
           activeTab={activeSubTab}
           onChange={(newTab) => setActiveSubTab(newTab as IPOSubTab)}
         />
+      </View>
+
+      {/* SME IPOs Toggle & Sort Bar */}
+      <View style={styles.toolbarRow}>
+        <View style={styles.smeToggleWrap}>
+          <Switch
+            value={includeSme}
+            onValueChange={(val) => {
+              setIncludeSme(val);
+              Haptics.selectionAsync();
+            }}
+            trackColor={{ false: colors.border, true: colors.primary + '80' }}
+            thumbColor={includeSme ? colors.primary : '#FFFFFF'}
+          />
+          <Text style={[styles.smeToggleText, { color: colors.foreground }]}>
+            SME IPOs
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          onPress={() => {
+            Haptics.selectionAsync();
+            setShowSortModal(true);
+          }}
+          style={[styles.sortDropdownBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.sortBtnText, { color: colors.foreground }]}>
+            Sort {sortLabel !== 'Default' ? `: ${sortLabel}` : ''}
+          </Text>
+          <Feather name="chevron-down" size={14} color={colors.mutedForeground} />
+        </TouchableOpacity>
       </View>
 
       {/* Primary Feed View */}
@@ -151,6 +216,46 @@ export function IPOsTab({
           onAction={onOpenManualAdd}
         />
       )}
+
+      {/* Sort Menu Modal */}
+      <Modal visible={showSortModal} transparent animationType="fade" onRequestClose={() => setShowSortModal(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowSortModal(false)}>
+          <View style={[styles.sortModalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Sort IPOs</Text>
+              <TouchableOpacity onPress={() => setShowSortModal(false)} hitSlop={8}>
+                <Feather name="x" size={18} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+            {[
+              { key: 'DEFAULT', label: 'Default' },
+              { key: 'GMP', label: 'GMP: Highest First' },
+              { key: 'DATE', label: 'Apply Date: Opening Soon' },
+              { key: 'MIN_INVEST', label: 'Min Investment: Low to High' },
+              { key: 'NAME', label: 'Alphabetical: A-Z' },
+            ].map((opt) => (
+              <TouchableOpacity
+                key={opt.key}
+                onPress={() => {
+                  setSortBy(opt.key as SortOption);
+                  setShowSortModal(false);
+                  Haptics.selectionAsync();
+                }}
+                style={[
+                  styles.sortOptionRow,
+                  { borderBottomColor: colors.border },
+                  sortBy === opt.key && { backgroundColor: colors.surface },
+                ]}
+              >
+                <Text style={[styles.sortOptionText, { color: sortBy === opt.key ? colors.primary : colors.foreground }]}>
+                  {opt.label}
+                </Text>
+                {sortBy === opt.key ? <Feather name="check" size={16} color={colors.primary} /> : null}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 
@@ -190,34 +295,75 @@ const styles = StyleSheet.create({
   subTabBarWrap: {
     paddingHorizontal: 16,
     paddingTop: 12,
+    paddingBottom: 8,
+  },
+  toolbarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
     paddingBottom: 12,
   },
-  subTabBarContainer: {
+  smeToggleWrap: {
     flexDirection: 'row',
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 3,
-  },
-  subTabBtn: {
-    flex: 1,
-    paddingVertical: 9,
     alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 11,
+    gap: 8,
   },
-  subTabBtnText: {
+  smeToggleText: {
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  sortDropdownBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  sortBtnText: {
     fontSize: 13,
     fontFamily: 'GoogleSansFlex_500Medium',
   },
-  subTabBtnTextActive: {
-    fontFamily: 'GoogleSansFlex_700Bold',
-  },
-  dotPill: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
   feedContainer: {
     paddingTop: 0,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  sortModalCard: {
+    width: '100%',
+    maxWidth: 340,
+    borderRadius: 20,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  sortOptionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  sortOptionText: {
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_500Medium',
   },
 });

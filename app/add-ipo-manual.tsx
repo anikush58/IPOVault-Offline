@@ -95,6 +95,15 @@ export default function AddIPOManualScreen() {
   const [registrar, setRegistrar] = useState('');
   const [leadManager, setLeadManager] = useState('');
   const [website, setWebsite] = useState('');
+  const [companyPhone, setCompanyPhone] = useState('');
+  const [companyEmail, setCompanyEmail] = useState('');
+  const [registrarPhone, setRegistrarPhone] = useState('');
+  const [registrarEmail, setRegistrarEmail] = useState('');
+  const [ebitdaPercent, setEbitdaPercent] = useState('');
+  const [roePercent, setRoePercent] = useState('');
+  const [patPercent, setPatPercent] = useState('');
+  const [drhpUrl, setDrhpUrl] = useState('');
+  const [rhpUrl, setRhpUrl] = useState('');
   const [notes, setNotes] = useState('');
 
   // RHP / DRHP Document Extractor
@@ -293,10 +302,31 @@ export default function AddIPOManualScreen() {
         registrar: registrar.trim(),
         lead_manager: leadManager.trim(),
         website: website.trim(),
+        company_phone: companyPhone.trim() || undefined,
+        company_email: companyEmail.trim() || undefined,
+        registrar_phone: registrarPhone.trim() || undefined,
+        registrar_email: registrarEmail.trim() || undefined,
+        ebitda_percent: ebitdaPercent ? parseFloat(ebitdaPercent) : null,
+        roe_percent: roePercent ? parseFloat(roePercent) : null,
+        pat_percent: patPercent ? parseFloat(patPercent) : null,
+        drhp_url: drhpUrl.trim() || undefined,
+        rhp_url: rhpUrl.trim() || undefined,
+        prospectus_url: rhpUrl.trim() || drhpUrl.trim() || undefined,
         description: notes.trim() || 'Manually created IPO entry',
         gmp_amount: gmpAmount ? parseFloat(gmpAmount) : null,
         gmp_percent: gmpPercent ? parseFloat(gmpPercent) : null,
         profit_per_lot: (gmpAmount && lotSize) ? parseFloat(gmpAmount) * parseInt(lotSize, 10) : null,
+        intelligence: {
+          company_phone: companyPhone.trim() || undefined,
+          company_email: companyEmail.trim() || undefined,
+          registrar_phone: registrarPhone.trim() || undefined,
+          registrar_email: registrarEmail.trim() || undefined,
+          ebitda_percent: ebitdaPercent ? parseFloat(ebitdaPercent) : null,
+          roe_percent: roePercent ? parseFloat(roePercent) : null,
+          pat_percent: patPercent ? parseFloat(patPercent) : null,
+          drhp_url: drhpUrl.trim() || undefined,
+          rhp_url: rhpUrl.trim() || undefined,
+        },
       };
 
       const savedRecord = await repo.createManual(recordData);
@@ -717,19 +747,84 @@ export default function AddIPOManualScreen() {
           </View>
         </View>
 
-        {/* Corporate Details */}
+        {/* Key Financial Ratios */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.primary }]}>ORGANIZATION & LINKS</Text>
+          <Text style={[styles.sectionTitle, { color: colors.primary }]}>KEY FINANCIAL RATIOS (%)</Text>
+
+          <View style={styles.row}>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>EBITDA (%)</Text>
+              <TextInput
+                value={ebitdaPercent}
+                onChangeText={setEbitdaPercent}
+                placeholder="e.g. 66.85"
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              />
+            </View>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>ROE (%)</Text>
+              <TextInput
+                value={roePercent}
+                onChangeText={setRoePercent}
+                placeholder="e.g. 33.21"
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              />
+            </View>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>PAT (%)</Text>
+              <TextInput
+                value={patPercent}
+                onChangeText={setPatPercent}
+                placeholder="e.g. 50.98"
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              />
+            </View>
+          </View>
+        </View>
+
+        {/* Corporate Details & Contacts */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.primary }]}>ORGANIZATION, CONTACTS & DOCUMENTS</Text>
 
           <View style={styles.field}>
-            <Text style={[styles.label, { color: colors.foreground }]}>Registrar</Text>
+            <Text style={[styles.label, { color: colors.foreground }]}>Registrar Name</Text>
             <TextInput
               value={registrar}
               onChangeText={setRegistrar}
-              placeholder="e.g. KFin Technologies"
+              placeholder="e.g. KFin Technologies / Link Intime"
               placeholderTextColor={colors.mutedForeground + '70'}
               style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
             />
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>Registrar Phone</Text>
+              <TextInput
+                value={registrarPhone}
+                onChangeText={setRegistrarPhone}
+                placeholder="+91..."
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              />
+            </View>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>Registrar Email</Text>
+              <TextInput
+                value={registrarEmail}
+                onChangeText={setRegistrarEmail}
+                placeholder="ipo.helpdesk@..."
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+                autoCapitalize="none"
+              />
+            </View>
           </View>
 
           <View style={styles.field}>
@@ -743,6 +838,30 @@ export default function AddIPOManualScreen() {
             />
           </View>
 
+          <View style={styles.row}>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>Company Phone</Text>
+              <TextInput
+                value={companyPhone}
+                onChangeText={setCompanyPhone}
+                placeholder="+91 22 2659 8100"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              />
+            </View>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>Company Email</Text>
+              <TextInput
+                value={companyEmail}
+                onChangeText={setCompanyEmail}
+                placeholder="investor@company.com"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+                autoCapitalize="none"
+              />
+            </View>
+          </View>
+
           <View style={styles.field}>
             <Text style={[styles.label, { color: colors.foreground }]}>Website</Text>
             <TextInput
@@ -753,6 +872,31 @@ export default function AddIPOManualScreen() {
               style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
               autoCapitalize="none"
             />
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>DRHP Document URL</Text>
+              <TextInput
+                value={drhpUrl}
+                onChangeText={setDrhpUrl}
+                placeholder="https://.../drhp.pdf"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+                autoCapitalize="none"
+              />
+            </View>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>RHP Document URL</Text>
+              <TextInput
+                value={rhpUrl}
+                onChangeText={setRhpUrl}
+                placeholder="https://.../rhp.pdf"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+                autoCapitalize="none"
+              />
+            </View>
           </View>
 
           <View style={styles.field}>

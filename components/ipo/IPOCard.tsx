@@ -38,6 +38,43 @@ type Props = {
   onLongPress?: (ipo: IPOMasterRecord) => void;
 };
 
+function formatApplyDates(openDate?: string | null, closeDate?: string | null): string {
+  if (!openDate && !closeDate) return 'TBA';
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  
+  const parseD = (str?: string | null) => {
+    if (!str) return null;
+    const clean = str.trim();
+    if (!clean) return null;
+    const parts = clean.split('-');
+    if (parts.length === 3) {
+      const day = parseInt(parts[2], 10);
+      const monthIdx = parseInt(parts[1], 10) - 1;
+      if (!isNaN(day) && monthIdx >= 0 && monthIdx < 12) {
+        return { day, month: MONTHS[monthIdx] };
+      }
+    }
+    const d = new Date(clean);
+    if (!isNaN(d.getTime())) {
+      return { day: d.getDate(), month: MONTHS[d.getMonth()] };
+    }
+    return null;
+  };
+
+  const o = parseD(openDate);
+  const c = parseD(closeDate);
+
+  if (o && c) {
+    if (o.month === c.month) {
+      return `${o.day}-${c.day} ${o.month}`;
+    }
+    return `${o.day} ${o.month} - ${c.day} ${c.month}`;
+  }
+  if (o) return `${o.day} ${o.month}`;
+  if (c) return `${c.day} ${c.month}`;
+  return 'TBA';
+}
+
 export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavorite, onLongPress }: Props) {
   const colors = useColors();
   const colorScheme = useColorScheme();
@@ -61,12 +98,12 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
   const priceBandText = React.useMemo(() => {
     if (ipo.price_band_min && ipo.price_band_max) {
       if (ipo.price_band_min === ipo.price_band_max) {
-        return formatCurrency(ipo.price_band_max);
+        return `₹${ipo.price_band_max}`;
       }
-      return `${formatCurrency(ipo.price_band_min)} - ${formatCurrency(ipo.price_band_max)}`;
+      return `₹${ipo.price_band_min} to ₹${ipo.price_band_max}`;
     }
-    if (ipo.price_band_max) return formatCurrency(ipo.price_band_max);
-    if (ipo.price_band_min) return formatCurrency(ipo.price_band_min);
+    if (ipo.price_band_max) return `₹${ipo.price_band_max}`;
+    if (ipo.price_band_min) return `₹${ipo.price_band_min}`;
     return 'TBA';
   }, [ipo.price_band_min, ipo.price_band_max]);
 
@@ -107,105 +144,30 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
     }
   };
 
-  // Status override for closing soon
-  const displayStatus = React.useMemo(() => {
-    const s = (ipo.status || '').toLowerCase();
-    if (s === 'open' || s === 'active') {
-      const todayStr = new Date().toISOString().split('T')[0];
-      if (ipo.close_date && ipo.close_date <= todayStr) {
-        return 'Closing Soon';
-      }
-    }
-    return ipo.status || 'Upcoming';
-  }, [ipo.status, ipo.close_date]);
-
   // GMP Text & Colors
   const gmpAmt = ipo.gmp_amount;
   const gmpPct = ipo.gmp_percent;
   const hasGmp = gmpAmt != null || gmpPct != null;
   const gmpDisplay = gmpAmt != null
-    ? `${gmpAmt > 0 ? '+' : ''}₹${gmpAmt}${gmpPct != null ? ` (${gmpPct > 0 ? '+' : ''}${gmpPct.toFixed(1)}%)` : ''}`
+    ? `₹${gmpAmt}${gmpPct != null ? ` (${gmpPct > 0 ? '+' : ''}${gmpPct.toFixed(0)}%)` : ''}`
     : gmpPct != null
-    ? `${gmpPct > 0 ? '+' : ''}${gmpPct.toFixed(1)}%`
+    ? `${gmpPct > 0 ? '+' : ''}${gmpPct.toFixed(0)}%`
     : 'TBA';
   const gmpColor = hasGmp ? ((gmpAmt || gmpPct || 0) >= 0 ? '#10B981' : '#EF4444') : colors.mutedForeground;
-
-  // Subscription Text
-  const subDisplay = ipo.total_sub != null
-    ? `${ipo.total_sub.toFixed(1)}x`
-    : ipo.qib_sub != null
-    ? `${ipo.qib_sub.toFixed(1)}x QIB`
-    : '—';
 
   // Freshness Evaluation
   const gmpFreshnessText = React.useMemo(() => {
     if (!hasGmp || !ipo.gmp_updated_at) return '';
     const diffMs = Date.now() - new Date(ipo.gmp_updated_at).getTime();
     const diffHours = Math.floor(diffMs / (3600 * 1000));
-    if (diffHours >= 48) return ' • Stale';
-    if (diffHours >= 24) return ' • 1d ago';
+    if (diffHours >= 48) return 'Updated 2d ago';
+    if (diffHours >= 24) return 'Updated 1d ago';
     const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 60) return ` • ${diffMins}m ago`;
-    return ` • ${diffHours}h ago`;
+    if (diffMins < 60) return `Updated ${diffMins}m ago`;
+    return `Updated ${diffHours}h ago`;
   }, [hasGmp, ipo.gmp_updated_at]);
 
-  // Timeline Display Text (Both Open & Close dates)
-  const timelineDisplay = React.useMemo(() => {
-    const hasOpen = !!ipo.open_date;
-    const hasClose = !!ipo.close_date;
-    const hasListing = !!ipo.listing_date;
-
-    if (hasOpen && hasClose) {
-      if (displayStatus === 'Listed' && hasListing) {
-        return `${ipo.open_date} – ${ipo.close_date} • Listed ${ipo.listing_date}`;
-      }
-      return `${ipo.open_date} – ${ipo.close_date}`;
-    }
-
-    if (displayStatus === 'Listed' && hasListing) {
-      return `Listed ${ipo.listing_date}`;
-    }
-
-    if (hasClose) return `Closes ${ipo.close_date}`;
-    if (hasOpen) return `Opens ${ipo.open_date}`;
-    return 'Timeline TBA';
-  }, [ipo.open_date, ipo.close_date, ipo.listing_date, displayStatus]);
-
-  // Listed Performance Calculations (Listing Price, Premium %, Listing Profit / Lot)
-  const isListedStatus = displayStatus === 'Listed';
-  const issuePrice = ipo.price_band_max || ipo.price_band_min || 0;
-  const listingPriceNum = ipo.listing_price ?? ipo.current_price ?? null;
-
-  const listingGainPct = React.useMemo(() => {
-    if (ipo.listing_gain_percent != null) return ipo.listing_gain_percent;
-    if (listingPriceNum != null && issuePrice > 0) {
-      return ((listingPriceNum - issuePrice) / issuePrice) * 100;
-    }
-    return null;
-  }, [ipo.listing_gain_percent, listingPriceNum, issuePrice]);
-
-  const listingProfitLot = React.useMemo(() => {
-    if (listingPriceNum != null && issuePrice > 0 && ipo.lot_size) {
-      return (listingPriceNum - issuePrice) * ipo.lot_size;
-    }
-    if (ipo.profit_per_lot != null) return ipo.profit_per_lot;
-    if (listingGainPct != null && lotValue != null && lotValue > 0) {
-      return (lotValue * listingGainPct) / 100;
-    }
-    return null;
-  }, [listingPriceNum, issuePrice, ipo.lot_size, ipo.profit_per_lot, listingGainPct, lotValue]);
-
-  const listingPriceDisplay = listingPriceNum != null ? formatCurrency(listingPriceNum) : 'TBA';
-  const listingPremiumDisplay = listingGainPct != null
-    ? `${listingGainPct >= 0 ? '+' : ''}${listingGainPct.toFixed(1)}%`
-    : 'TBA';
-  const listingProfitDisplay = listingProfitLot != null
-    ? `${listingProfitLot >= 0 ? '+' : ''}${formatCurrency(Math.abs(listingProfitLot))}`
-    : 'TBA';
-
-  const listingColor = listingGainPct != null
-    ? (listingGainPct >= 0 ? '#10B981' : '#EF4444')
-    : colors.foreground;
+  const applyDateStr = formatApplyDates(ipo.open_date, ipo.close_date);
 
   return (
     <TouchableOpacity
@@ -214,15 +176,14 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
       delayLongPress={250}
       activeOpacity={0.88}
       style={[
-        styles.snapshotCard,
+        styles.card,
         { backgroundColor: colors.card, borderColor: isCompared ? colors.primary : colors.border },
         isCompared && { borderWidth: 1.5 },
       ]}
     >
-      {/* Top Identity Header Block */}
-      <View style={styles.headerBlock}>
-        {/* Row 1: Logo + Company Name & Dates + Action Icons */}
-        <View style={styles.headerTopRow}>
+      {/* Top Header: Logo on left, Segment & Actions on right */}
+      <View style={styles.cardHeaderRow}>
+        <View style={styles.logoWrap}>
           {resolvedLogo && !logoError ? (
             <Image
               source={{ uri: resolvedLogo }}
@@ -240,22 +201,13 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
               <Text style={styles.avatarText}>{initials}</Text>
             </LinearGradient>
           )}
+        </View>
 
-          <View style={styles.identityWrap}>
-            <Text style={[styles.companyName, { color: colors.foreground }]} numberOfLines={1}>
-              {companyNameStr}
-            </Text>
+        <View style={styles.headerRightWrap}>
+          <Text style={[styles.segmentLabelText, { color: colors.mutedForeground }]}>
+            {ipo.issue_type || 'Mainboard'}
+          </Text>
 
-            {/* Date Range directly below IPO Name */}
-            <View style={styles.headerDateRow}>
-              <Feather name="calendar" size={11} color={colors.mutedForeground} />
-              <Text style={[styles.headerDateText, { color: colors.mutedForeground }]} numberOfLines={1}>
-                {timelineDisplay}
-              </Text>
-            </View>
-          </View>
-
-          {/* Action Toggle Icons */}
           <View style={styles.iconActionsWrap}>
             <TouchableOpacity
               onPress={handleComparePress}
@@ -271,7 +223,7 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
             >
               <Feather
                 name="columns"
-                size={14}
+                size={13}
                 color={isCompared ? '#6366F1' : colors.mutedForeground}
               />
             </TouchableOpacity>
@@ -290,211 +242,93 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
             >
               <Feather
                 name="bookmark"
-                size={14}
+                size={13}
                 color={isFav ? '#D97706' : colors.mutedForeground}
               />
             </TouchableOpacity>
           </View>
         </View>
+      </View>
 
-        {/* Row 2: Status Chips starting from far left below the IPO logo */}
-        <View style={styles.badgeRowFullWidth}>
-          {ipo.issue_type ? (
-            <View style={[styles.tagBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Text style={[styles.tagText, { color: colors.mutedForeground }]}>{ipo.issue_type}</Text>
-            </View>
-          ) : null}
-          {ipo.exchange ? (
-            <View style={[styles.tagBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Text style={[styles.tagText, { color: colors.mutedForeground }]}>{ipo.exchange}</Text>
-            </View>
-          ) : null}
-          <IPOStatusChip status={displayStatus} />
+      {/* Company Title */}
+      <Text style={[styles.companyTitle, { color: colors.foreground }]} numberOfLines={2}>
+        {companyNameStr}
+      </Text>
+
+      {/* Bid Price Line */}
+      <View style={styles.infoLineRow}>
+        <Text style={[styles.infoLineLabel, { color: colors.mutedForeground }]}>Bid Price: </Text>
+        <Text style={[styles.infoLineVal, { color: colors.foreground }]}>{priceBandText}</Text>
+      </View>
+
+      {/* GMP Line */}
+      <View style={styles.infoLineRow}>
+        <Text style={[styles.infoLineLabel, { color: colors.mutedForeground }]}>GMP: </Text>
+        <Text style={[styles.gmpValText, { color: gmpColor }]}>
+          {gmpDisplay}
+        </Text>
+        {gmpFreshnessText ? (
+          <Text style={[styles.gmpUpdatedText, { color: colors.mutedForeground }]}>
+            {'  '}{gmpFreshnessText}
+          </Text>
+        ) : null}
+      </View>
+
+      {/* Bottom 3-Column Metrics Grid */}
+      <View style={[styles.metricsGridRow, { borderTopColor: colors.border }]}>
+        <View style={styles.metricGridCol}>
+          <Text style={[styles.metricGridLabel, { color: colors.mutedForeground }]}>Min Investment</Text>
+          <Text style={[styles.metricGridVal, { color: colors.foreground }]}>
+            {lotValue ? `₹ ${lotValue.toLocaleString('en-IN')}` : '—'}
+          </Text>
         </View>
-      </View>
 
-      {/* HERO MARKET SIGNALS BANNER (Primary Decision View) */}
-      <View style={[styles.heroSignalBanner, { backgroundColor: colors.surface }]}>
-        {isListedStatus ? (
-          <>
-            {/* Listing Signal 1: Listing Premium */}
-            <View style={styles.signalCell}>
-              <Text style={[styles.signalLabel, { color: colors.mutedForeground }]}>
-                LISTING PREMIUM
-              </Text>
-              <Text style={[styles.signalValue, { color: listingColor }]} numberOfLines={1}>
-                {listingPremiumDisplay}
-              </Text>
-            </View>
+        <View style={[styles.metricGridCol, { alignItems: 'center' }]}>
+          <Text style={[styles.metricGridLabel, { color: colors.mutedForeground }]}>Apply Date</Text>
+          <Text style={[styles.metricGridVal, { color: colors.foreground }]}>
+            {applyDateStr}
+          </Text>
+        </View>
 
-            <View style={[styles.signalDivider, { backgroundColor: colors.border }]} />
-
-            {/* Listing Signal 2: Listing Profit Per Lot */}
-            <View style={styles.signalCellRight}>
-              <Text style={[styles.signalLabel, { color: colors.mutedForeground }]}>LISTING PROFIT / LOT</Text>
-              <Text style={[styles.signalValue, { color: listingColor }]} numberOfLines={1}>
-                {listingProfitDisplay}
-              </Text>
-            </View>
-          </>
-        ) : (
-          <>
-            {/* Signal 1: GMP */}
-            <View style={styles.signalCell}>
-              <Text style={[styles.signalLabel, { color: colors.mutedForeground }]}>
-                EXPECTED PREMIUM (GMP){gmpFreshnessText}
-              </Text>
-              <Text style={[styles.signalValue, { color: gmpColor }]} numberOfLines={1}>
-                {gmpDisplay}
-              </Text>
-            </View>
-
-            <View style={[styles.signalDivider, { backgroundColor: colors.border }]} />
-
-            {/* Signal 2: Overall Demand / Subscription */}
-            <View style={styles.signalCellRight}>
-              <Text style={[styles.signalLabel, { color: colors.mutedForeground }]}>DEMAND / SUBSCRIPTION</Text>
-              <Text style={[styles.signalValue, { color: colors.foreground }]} numberOfLines={1}>
-                {subDisplay}
-              </Text>
-            </View>
-          </>
-        )}
-      </View>
-
-      {/* COMPACT INVESTMENT STRIP */}
-      <View style={styles.investmentStrip}>
-        {isListedStatus ? (
-          <>
-            <View style={styles.investCell}>
-              <Text style={[styles.investLabel, { color: colors.mutedForeground }]}>ISSUE PRICE</Text>
-              <Text style={[styles.investVal, { color: colors.foreground }]} numberOfLines={1}>
-                {issuePrice > 0 ? formatCurrency(issuePrice) : priceBandText}
-              </Text>
-            </View>
-
-            <View style={styles.investCell}>
-              <Text style={[styles.investLabel, { color: colors.mutedForeground }]}>LISTING PRICE</Text>
-              <Text style={[styles.investVal, { color: colors.foreground }]} numberOfLines={1}>
-                {listingPriceDisplay}
-              </Text>
-            </View>
-
-            <View style={styles.investCellRight}>
-              <Text style={[styles.investLabel, { color: colors.mutedForeground }]}>LISTING PROFIT</Text>
-              <Text style={[styles.investValHighlight, { color: listingColor }]} numberOfLines={1}>
-                {listingProfitDisplay}
-              </Text>
-            </View>
-          </>
-        ) : (
-          <>
-            <View style={styles.investCell}>
-              <Text style={[styles.investLabel, { color: colors.mutedForeground }]}>PRICE BAND</Text>
-              <Text style={[styles.investVal, { color: colors.foreground }]} numberOfLines={1}>
-                {priceBandText}
-              </Text>
-            </View>
-
-            <View style={styles.investCell}>
-              <Text style={[styles.investLabel, { color: colors.mutedForeground }]}>MIN LOT SIZE</Text>
-              <Text style={[styles.investVal, { color: colors.foreground }]} numberOfLines={1}>
-                {ipo.lot_size ? `${ipo.lot_size} Shares` : '—'}
-              </Text>
-            </View>
-
-            <View style={styles.investCellRight}>
-              <Text style={[styles.investLabel, { color: colors.mutedForeground }]}>MIN INVESTMENT</Text>
-              <Text style={[styles.investValHighlight, { color: colors.primary }]} numberOfLines={1}>
-                {lotValue ? formatCurrency(lotValue) : '—'}
-              </Text>
-            </View>
-          </>
-        )}
-      </View>
-
-      {/* ACTION BUTTONS */}
-      <View style={styles.actionRow}>
-        <TouchableOpacity
-          style={[styles.btnSecondary, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          onPress={() => onPress(ipo)}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.btnSecondaryText, { color: colors.foreground }]}>View Details</Text>
-        </TouchableOpacity>
-
-        {displayStatus === 'Upcoming' ? (
-          <TouchableOpacity
-            style={[
-              styles.btnPrimary,
-              { backgroundColor: isFav ? colors.surface : colors.primary, borderColor: colors.primary, borderWidth: 1 },
-            ]}
-            onPress={(e) => {
-              e.stopPropagation();
-              handleFavoritePress(e);
-            }}
-            activeOpacity={0.8}
-          >
-            <Feather name={isFav ? 'check' : 'bell'} size={13} color={isFav ? colors.primary : '#FFFFFF'} />
-            <Text style={[styles.btnPrimaryText, isFav && { color: colors.primary }]}>
-              {isFav ? 'Notified' : 'Notify Me'}
-            </Text>
-          </TouchableOpacity>
-        ) : displayStatus === 'Listed' ? (
-          <TouchableOpacity
-            style={[styles.btnPrimary, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]}
-            onPress={() => onPress(ipo)}
-            activeOpacity={0.8}
-          >
-            <Text style={[styles.btnPrimaryText, { color: colors.foreground }]}>Listing Performance</Text>
-            <Feather name="arrow-right" size={13} color={colors.foreground} />
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={[styles.btnPrimary, { backgroundColor: colors.primary }]}
-            onPress={(e) => {
-              e.stopPropagation();
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push({ pathname: '/apply-ipo', params: { ipoId: ipo.id } } as any);
-            }}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.btnPrimaryText}>Apply Now</Text>
-            <Feather name="arrow-right" size={13} color="#FFFFFF" />
-          </TouchableOpacity>
-        )}
+        <View style={[styles.metricGridCol, { alignItems: 'flex-end' }]}>
+          <Text style={[styles.metricGridLabel, { color: colors.mutedForeground }]}>Lot Size</Text>
+          <Text style={[styles.metricGridVal, { color: colors.foreground }]}>
+            {ipo.lot_size ?? '—'}
+          </Text>
+        </View>
       </View>
     </TouchableOpacity>
   );
 });
 
 const styles = StyleSheet.create({
-  snapshotCard: {
+  card: {
     marginHorizontal: 16,
     marginBottom: 12,
-    borderRadius: 24,
+    borderRadius: 20,
     borderWidth: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    padding: 16,
   },
-  headerBlock: {
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 10,
   },
-  headerTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+  logoWrap: {
+    width: 48,
+    height: 48,
   },
   logoImage: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 48,
+    height: 48,
+    borderRadius: 12,
     resizeMode: 'contain',
   },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 48,
+    height: 48,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -503,153 +337,72 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_700Bold',
     color: '#FFFFFF',
   },
-  identityWrap: {
-    flex: 1,
-  },
-  companyName: {
-    fontSize: 16,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.2,
-  },
-  headerDateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 3,
-  },
-  headerDateText: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_500Medium',
-  },
-  badgeRowFullWidth: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  headerRightWrap: {
+    alignItems: 'flex-end',
     gap: 6,
-    marginTop: 9,
-    flexWrap: 'wrap',
   },
-  tagBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tagText: {
-    fontSize: 8,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
+  segmentLabelText: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_500Medium',
   },
   iconActionsWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  iconBtn: {
-    padding: 6,
-  },
   softIconBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroSignalBanner: {
+  companyTitle: {
+    fontSize: 17,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
+    marginBottom: 6,
+  },
+  infoLineRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginBottom: 10,
+    marginBottom: 4,
+    flexWrap: 'wrap',
   },
-  signalCell: {
-    flex: 1.2,
+  infoLineLabel: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_400Regular',
   },
-  signalCellRight: {
-    flex: 1,
-    alignItems: 'flex-end',
-  },
-  signalDivider: {
-    width: 1,
-    height: 24,
-    marginHorizontal: 8,
-  },
-  signalLabel: {
-    fontSize: 9,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 0.4,
-  },
-  signalValue: {
-    fontSize: 15,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    marginTop: 1,
-  },
-
-  /* Compact Investment Strip */
-  investmentStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 2,
-    marginBottom: 10,
-  },
-  investCell: {
-    flex: 1,
-  },
-  investCellRight: {
-    flex: 1,
-    alignItems: 'flex-end',
-  },
-  investLabel: {
-    fontSize: 9,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 0.3,
-  },
-  investVal: {
-    fontSize: 12,
+  infoLineVal: {
+    fontSize: 13,
     fontFamily: 'GoogleSansFlex_500Medium',
-    marginTop: 1,
   },
-  investValHighlight: {
-    fontSize: 12,
+  gmpValText: {
+    fontSize: 13,
     fontFamily: 'GoogleSansFlex_700Bold',
-    marginTop: 1,
   },
-
-  /* Actions */
-  actionRow: {
+  gmpUpdatedText: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_400Regular',
+  },
+  metricsGridRow: {
     flexDirection: 'row',
-    gap: 8,
-  },
-  btnSecondary: {
-    flex: 1,
-    paddingVertical: 9,
-    minHeight: 40,
-    borderRadius: 12,
-    borderWidth: 1,
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
+    borderTopWidth: 1,
+    paddingTop: 12,
+    marginTop: 12,
   },
-  btnSecondaryText: {
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_700Bold',
-  },
-  btnPrimary: {
+  metricGridCol: {
     flex: 1,
-    flexDirection: 'row',
-    paddingVertical: 9,
-    minHeight: 40,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
   },
-  btnPrimaryText: {
-    fontSize: 12,
+  metricGridLabel: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginBottom: 4,
+  },
+  metricGridVal: {
+    fontSize: 14,
     fontFamily: 'GoogleSansFlex_700Bold',
-    color: '#FFFFFF',
   },
 });

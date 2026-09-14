@@ -224,7 +224,12 @@ export class ApplicationRepository implements IApplicationRepository {
     `);
   }
 
-  async addBulk(ipoId: string, userIds: string[], bankName?: string, upiApp?: string): Promise<void> {
+  async addBulk(
+    ipoId: string,
+    userIds: string[],
+    bankName?: string | Record<string, string>,
+    upiApp?: string | Record<string, string>
+  ): Promise<void> {
     if (!ipoId) {
       if (__DEV__) console.warn('[ApplicationRepository.addBulk] Called with empty ipoId');
       return;
@@ -240,6 +245,17 @@ export class ApplicationRepository implements IApplicationRepository {
     );
     const existingSet = new Set(existing.map((e) => e.user_id));
 
+    const uidsToFetch = userIds.filter((uid) => uid && !existingSet.has(uid));
+    let userMap = new Map<string, { bank_name: string; upi_app: string }>();
+    if (uidsToFetch.length > 0) {
+      const placeholders = uidsToFetch.map(() => '?').join(',');
+      const usersList = await this.db.getAllAsync<{ id: string; bank_name: string; upi_app: string }>(
+        `SELECT id, bank_name, upi_app FROM users_table WHERE id IN (${placeholders})`,
+        uidsToFetch
+      );
+      userMap = new Map(usersList.map((u) => [u.id, u]));
+    }
+
     for (const uid of userIds) {
       if (!uid) {
         if (__DEV__) console.warn('[ApplicationRepository.addBulk] Skipping empty uid');
@@ -252,13 +268,20 @@ export class ApplicationRepository implements IApplicationRepository {
           [now, ipoId, uid]
         );
         const id = Crypto.randomUUID();
+        const userObj = userMap.get(uid);
+        const rawBank = typeof bankName === 'object' && bankName !== null ? bankName[uid] : bankName;
+        const rawUpi = typeof upiApp === 'object' && upiApp !== null ? upiApp[uid] : upiApp;
+
+        const resolvedBank = rawBank && rawBank.trim() !== '' ? rawBank.trim() : (userObj?.bank_name || '');
+        const resolvedUpi = rawUpi && rawUpi.trim() !== '' ? rawUpi.trim() : (userObj?.upi_app || '');
+
         const appRow: any = {
           id,
           user_id: uid,
           ipo_id: ipoId,
           status: 'Applied',
-          bank_name: bankName ?? '',
-          upi_app: upiApp ?? '',
+          bank_name: resolvedBank,
+          upi_app: resolvedUpi,
           tax: 0,
           user_cut: 0,
           is_favorite: 0,

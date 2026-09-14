@@ -150,7 +150,12 @@ type DBContextType = {
   deleteIPO: (id: string) => Promise<void>;
   toggleIPOFavorite: (id: string, isFavorite: boolean) => Promise<void>;
   // Applications
-  addBulkApplications: (ipoId: string, userIds: string[], bankName?: string, upiApp?: string) => Promise<void>;
+  addBulkApplications: (
+    ipoId: string,
+    userIds: string[],
+    bankName?: string | Record<string, string>,
+    upiApp?: string | Record<string, string>
+  ) => Promise<void>;
   updateApplication: (
     id: string,
     status: ApplicationStatus,
@@ -158,6 +163,8 @@ type DBContextType = {
     saleDate?: string | null,
     tax?: number,
     userCut?: number,
+    bankName?: string,
+    upiApp?: string
   ) => Promise<void>;
   updateApplicationDetails: (
     id: string,
@@ -447,7 +454,12 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
   // ── Applications ───────────────────────────────────────────────────────────
 
-  const addBulkApplications = async (ipoId: string, userIds: string[], bankName?: string, upiApp?: string) => {
+  const addBulkApplications = async (
+    ipoId: string,
+    userIds: string[],
+    bankName?: string | Record<string, string>,
+    upiApp?: string | Record<string, string>
+  ) => {
     if (!ipoId) return;
     const now = new Date().toISOString();
     let resolvedId = ipoId;
@@ -531,7 +543,11 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       if (!app) return;
 
       const oldStatus = app.status;
-      const bankName = (details?.bank_name ?? app.user_bank_name ?? app.bank_name ?? '').trim();
+      const bankName = (
+        details?.bank_name ||
+        (app.bank_name && app.bank_name.trim() !== '' ? app.bank_name : app.user_bank_name) ||
+        ''
+      ).trim();
       if (!bankName) return;
 
       const buyPrice = details?.bid_price ?? app.bid_price ?? app.ipo_buy_price ?? 0;
@@ -569,10 +585,22 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     saleDate?: string | null,
     tax?: number,
     userCut?: number,
+    bankName?: string,
+    upiApp?: string,
   ) => {
-    await handleBankAllotmentDebit(db, id, status);
+    await handleBankAllotmentDebit(db, id, status, bankName ? { bank_name: bankName } : undefined);
     const repo = new ApplicationRepository(db);
     await repo.update(id, status, sellPrice, saleDate, tax, userCut);
+    if (bankName !== undefined || upiApp !== undefined) {
+      await db.runAsync(
+        `UPDATE ipo_applications SET
+          bank_name = COALESCE(?, bank_name),
+          upi_app = COALESCE(?, upi_app),
+          updated_at = ?
+         WHERE id = ?`,
+        [bankName ?? null, upiApp ?? null, new Date().toISOString(), id]
+      );
+    }
     await refresh();
   };
 
@@ -599,8 +627,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     if (details.bank_name || details.upi_app || details.app_number || details.lots || details.bid_price || details.mandate_status || details.category) {
       await db.runAsync(
         `UPDATE ipo_applications SET
-          user_bank_name = COALESCE(?, user_bank_name),
-          user_upi_app = COALESCE(?, user_upi_app),
+          bank_name = COALESCE(?, bank_name),
+          upi_app = COALESCE(?, upi_app),
           app_number = COALESCE(?, app_number),
           lots = COALESCE(?, lots),
           bid_price = COALESCE(?, bid_price),
