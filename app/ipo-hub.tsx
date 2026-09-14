@@ -133,55 +133,57 @@ export default function IPOHubScreen() {
           </LinearGradient>
         </TouchableOpacity>
 
-        {/* Feature 2: Analytics */}
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => router.push('/analytics-dashboard')}
-          style={styles.cardContainer}
-        >
-          <LinearGradient
-            colors={
-              isDark
-                ? ['#1F2937', '#111827']
-                : ['#FFFFFF', '#F9FAFB']
-            }
-            style={[styles.featureCard, { borderColor: colors.border }]}
+        {/* Feature 2: Analytics (Preserved in code, hidden from UI as requested) */}
+        {false && (
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => router.push('/analytics-dashboard')}
+            style={styles.cardContainer}
           >
-            <View style={styles.cardHeader}>
-              <View
-                style={[
-                  styles.iconWrap,
-                  { backgroundColor: '#10B98118' },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="chart-box-outline"
-                  size={24}
-                  color="#10B981"
-                />
+            <LinearGradient
+              colors={
+                isDark
+                  ? ['#1F2937', '#111827']
+                  : ['#FFFFFF', '#F9FAFB']
+              }
+              style={[styles.featureCard, { borderColor: colors.border }]}
+            >
+              <View style={styles.cardHeader}>
+                <View
+                  style={[
+                    styles.iconWrap,
+                    { backgroundColor: '#10B98118' },
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="chart-box-outline"
+                    size={24}
+                    color="#10B981"
+                  />
+                </View>
+                <View style={[styles.badge, { backgroundColor: '#10B98120' }]}>
+                  <Text style={[styles.badgeText, { color: '#10B981' }]}>
+                    PHASE 30 ANALYTICS
+                  </Text>
+                </View>
               </View>
-              <View style={[styles.badge, { backgroundColor: '#10B98120' }]}>
-                <Text style={[styles.badgeText, { color: '#10B981' }]}>
-                  PHASE 30 ANALYTICS
-                </Text>
-              </View>
-            </View>
 
-            <Text style={[styles.cardTitle, { color: colors.foreground }]}>
-              Analytics & Data Quality
-            </Text>
-            <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
-              Unified market trends, close-to-listing duration, descriptive allotment rates, and multi-dimension data-quality telemetry.
-            </Text>
-
-            <View style={styles.cardFooter}>
-              <Text style={[styles.actionText, { color: '#10B981' }]}>
-                View Dashboard
+              <Text style={[styles.cardTitle, { color: colors.foreground }]}>
+                Analytics & Data Quality
               </Text>
-              <Feather name="arrow-right" size={16} color="#10B981" />
-            </View>
-          </LinearGradient>
-        </TouchableOpacity>
+              <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
+                Unified market trends, close-to-listing duration, descriptive allotment rates, and multi-dimension data-quality telemetry.
+              </Text>
+
+              <View style={styles.cardFooter}>
+                <Text style={[styles.actionText, { color: '#10B981' }]}>
+                  View Dashboard
+                </Text>
+                <Feather name="arrow-right" size={16} color="#10B981" />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
 
         {/* Architecture Note */}
         <View style={[styles.noteBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>

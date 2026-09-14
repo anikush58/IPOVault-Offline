@@ -299,7 +299,7 @@ export default function DashboardScreen() {
             name="grid"
             variant="surface"
             size="md"
-            onPress={() => router.push('/ipo-hub')}
+            onPress={() => router.push('/new-ipos')}
           />
           <IconButton
             name="sliders"

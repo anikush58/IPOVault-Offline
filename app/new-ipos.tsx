@@ -24,11 +24,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconButton } from '@/components/ui/IconButton';
+import { Tabs } from '@/components/ui/Tabs';
 import { SegmentedTabControl } from '@/components/ui/SegmentedTabControl';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { BackendIpo } from '@/types/backend-ipo';
 
-type NewIpoTab = 'live' | 'upcoming' | 'listed';
+type NewIpoTab = 'live' | 'upcoming' | 'closed' | 'listed';
 type SortOption = 'DEFAULT' | 'GMP' | 'DATE' | 'MIN_INVEST' | 'NAME';
 
 const AVATAR_PALETTES: [string, string][] = [
@@ -106,7 +107,7 @@ export default function NewIposScreen() {
   const [activeTab, setActiveTab] = useState<NewIpoTab>('live');
   const [includeSme, setIncludeSme] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('DEFAULT');
-  const [showSortModal, setShowSortModal] = useState(false);
+  const [showFilterModal, setShowFilterModal] = useState(false);
 
   const fetchBackendIpos = useCallback(async () => {
     try {
@@ -156,8 +157,15 @@ export default function NewIposScreen() {
     return filteredRawIpos.filter((item) => item.status === 'UPCOMING');
   }, [filteredRawIpos]);
 
+  const closedList = useMemo(() => {
+    return filteredRawIpos.filter((item) => {
+      const st = (item.status || '').toUpperCase();
+      return st === 'CLOSED' || st.includes('ALLOT') || st.includes('AWAIT');
+    });
+  }, [filteredRawIpos]);
+
   const listedList = useMemo(() => {
-    return filteredRawIpos.filter((item) => item.status === 'LISTED' || item.status === 'CLOSED');
+    return filteredRawIpos.filter((item) => item.status === 'LISTED');
   }, [filteredRawIpos]);
 
   const displayedIpos = useMemo(() => {
@@ -168,6 +176,9 @@ export default function NewIposScreen() {
         break;
       case 'upcoming':
         list = [...upcomingList];
+        break;
+      case 'closed':
+        list = [...closedList];
         break;
       case 'listed':
         list = [...listedList];
@@ -202,7 +213,7 @@ export default function NewIposScreen() {
     }
 
     return list;
-  }, [activeTab, liveList, upcomingList, listedList, sortBy]);
+  }, [activeTab, liveList, upcomingList, closedList, listedList, sortBy]);
 
   const sortLabel = useMemo(() => {
     switch (sortBy) {
@@ -213,6 +224,21 @@ export default function NewIposScreen() {
       default: return 'Default';
     }
   }, [sortBy]);
+
+function getStatusBadge(status?: string, openDate?: string | null) {
+  const norm = (status || '').toUpperCase();
+  if (norm === 'OPEN' || norm === 'ACTIVE') {
+    return { text: 'Live Now', bg: '#DCFCE7', color: '#15803D', icon: 'activity' };
+  }
+  if (norm === 'LISTED') {
+    return { text: 'Listed', bg: '#E0E7FF', color: '#4338CA', icon: 'check-circle' };
+  }
+  if (norm === 'CLOSED') {
+    return { text: 'Closed', bg: '#F1F5F9', color: '#64748B', icon: 'lock' };
+  }
+  const formattedOpen = openDate ? formatApplyDates(openDate, null) : 'Soon';
+  return { text: `Opens ${formattedOpen}`, bg: '#E0F2FE', color: '#0369A1', icon: 'calendar' };
+}
 
   const renderItem = ({ item }: { item: BackendIpo }) => {
     const companyName = item.company?.displayName || item.companyName || item.symbol;
@@ -265,6 +291,9 @@ export default function NewIposScreen() {
       .join('')
       .toUpperCase();
 
+    const isSme = item.marketSegment === 'SME';
+    const statusBadge = getStatusBadge(item.status, item.openDate);
+
     return (
       <TouchableOpacity
         activeOpacity={0.88}
@@ -276,75 +305,161 @@ export default function NewIposScreen() {
         }
         style={[
           styles.itemCard,
-          { backgroundColor: colors.card, borderColor: colors.border },
+          {
+            backgroundColor: colors.card,
+            borderColor: isDark ? '#1E293B' : '#E2E8F0',
+          },
         ]}
       >
-        {/* Header Row: Logo on left, Market Segment (Mainboard/SME) on top right */}
+        {/* Card Header: Logo + Title + Segment & Exchange Badge */}
         <View style={styles.cardHeaderRow}>
-          <View style={styles.logoWrap}>
-            {logoUrl ? (
-              <Image source={{ uri: logoUrl }} style={styles.logoImage} resizeMode="contain" />
-            ) : (
-              <LinearGradient
-                colors={getAvatarGradient(companyName)}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.avatar}
-              >
-                <Text style={styles.avatarText}>{initials}</Text>
-              </LinearGradient>
-            )}
+          <View style={styles.headerLeftCol}>
+            <View style={styles.logoWrap}>
+              {logoUrl ? (
+                <Image source={{ uri: logoUrl }} style={styles.logoImage} resizeMode="contain" />
+              ) : (
+                <LinearGradient
+                  colors={getAvatarGradient(companyName)}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.avatar}
+                >
+                  <Text style={styles.avatarText}>{initials}</Text>
+                </LinearGradient>
+              )}
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.companyTitle, { color: colors.foreground }]} numberOfLines={1}>
+                {companyName}
+              </Text>
+              <Text style={[styles.bidPriceSubtitle, { color: colors.mutedForeground }]}>
+                Bid Price: <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>{priceBandText}</Text>
+              </Text>
+            </View>
           </View>
 
-          <Text style={[styles.segmentLabelText, { color: colors.mutedForeground }]}>
-            {item.marketSegment === 'SME' ? 'SME' : 'Mainboard'}
-          </Text>
-        </View>
-
-        {/* Company Title */}
-        <Text style={[styles.companyTitle, { color: colors.foreground }]} numberOfLines={2}>
-          {companyName}
-        </Text>
-
-        {/* Bid Price Line */}
-        <View style={styles.infoLineRow}>
-          <Text style={[styles.infoLineLabel, { color: colors.mutedForeground }]}>Bid Price: </Text>
-          <Text style={[styles.infoLineVal, { color: colors.foreground }]}>{priceBandText}</Text>
-        </View>
-
-        {/* GMP Line */}
-        <View style={styles.infoLineRow}>
-          <Text style={[styles.infoLineLabel, { color: colors.mutedForeground }]}>GMP: </Text>
-          <Text style={[styles.gmpValText, { color: gmpColor }]}>
-            {gmpDisplay}
-          </Text>
-          {gmpFreshnessText ? (
-            <Text style={[styles.gmpUpdatedText, { color: colors.mutedForeground }]}>
-              {'  '}{gmpFreshnessText}
+          <View style={{ alignItems: 'flex-end', gap: 4 }}>
+            <View
+              style={[
+                styles.segmentBadge,
+                {
+                  backgroundColor: isSme
+                    ? (isDark ? 'rgba(217, 119, 6, 0.15)' : '#FEF3C7')
+                    : (isDark ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF'),
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.segmentBadgeText,
+                  {
+                    color: isSme
+                      ? (isDark ? '#F59E0B' : '#D97706')
+                      : (isDark ? '#818CF8' : '#4F46E5'),
+                  },
+                ]}
+              >
+                {isSme ? 'SME' : 'Mainboard'}
+              </Text>
+            </View>
+            <Text style={[styles.topExchangeTag, { color: colors.mutedForeground }]}>
+              NSE • BSE
             </Text>
-          ) : null}
+          </View>
         </View>
 
-        {/* Bottom 3-Column Metrics Grid */}
-        <View style={[styles.metricsGridRow, { borderTopColor: colors.border }]}>
+        {/* Compact Feature Spotlight Box: Est. GMP & Status Pill */}
+        <View
+          style={[
+            styles.gmpSpotlightBox,
+            {
+              backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
+              borderColor: isDark ? '#334155' : '#EDF2F7',
+            },
+          ]}
+        >
+          <View style={styles.gmpSpotlightLeft}>
+            <Text style={[styles.gmpSpotlightLabel, { color: colors.mutedForeground }]}>
+              Est. GMP
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+              <View
+                style={[
+                  styles.gmpBadgePill,
+                  {
+                    backgroundColor: hasGmp
+                      ? ((gmpAmt || gmpPct || 0) >= 0
+                          ? (isDark ? 'rgba(16, 185, 129, 0.15)' : '#E6F4EA')
+                          : (isDark ? 'rgba(239, 68, 68, 0.15)' : '#FCE8E6'))
+                      : (isDark ? '#334155' : '#E2E8F0'),
+                  },
+                ]}
+              >
+                <Text style={[styles.gmpBadgeText, { color: gmpColor }]}>
+                  {gmpDisplay}
+                </Text>
+              </View>
+              {gmpFreshnessText ? (
+                <Text style={[styles.gmpFreshnessText, { color: colors.mutedForeground }]}>
+                  {gmpFreshnessText}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+
+          <View
+            style={[
+              styles.statusPill,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(255, 255, 255, 0.08)'
+                  : statusBadge.bg,
+              },
+            ]}
+          >
+            <Feather
+              name={statusBadge.icon as any}
+              size={11}
+              color={isDark ? colors.foreground : statusBadge.color}
+            />
+            <Text
+              style={[
+                styles.statusPillText,
+                { color: isDark ? colors.foreground : statusBadge.color },
+              ]}
+            >
+              {statusBadge.text}
+            </Text>
+          </View>
+        </View>
+
+        {/* 3-Column Key Metrics Grid */}
+        <View style={styles.metricsGridRow}>
           <View style={styles.metricGridCol}>
-            <Text style={[styles.metricGridLabel, { color: colors.mutedForeground }]}>Min Investment</Text>
+            <Text style={[styles.metricGridLabel, { color: colors.mutedForeground }]}>
+              Min Investment
+            </Text>
             <Text style={[styles.metricGridVal, { color: colors.foreground }]}>
-              {minInvestment ? `₹ ${minInvestment.toLocaleString('en-IN')}` : '—'}
+              {minInvestment ? `₹${minInvestment.toLocaleString('en-IN')}` : '—'}
             </Text>
           </View>
 
           <View style={[styles.metricGridCol, { alignItems: 'center' }]}>
-            <Text style={[styles.metricGridLabel, { color: colors.mutedForeground }]}>Apply Date</Text>
+            <Text style={[styles.metricGridLabel, { color: colors.mutedForeground }]}>
+              Apply Date
+            </Text>
             <Text style={[styles.metricGridVal, { color: colors.foreground }]}>
               {applyDateStr}
             </Text>
           </View>
 
           <View style={[styles.metricGridCol, { alignItems: 'flex-end' }]}>
-            <Text style={[styles.metricGridLabel, { color: colors.mutedForeground }]}>Lot Size</Text>
+            <Text style={[styles.metricGridLabel, { color: colors.mutedForeground }]}>
+              Lot Size
+            </Text>
             <Text style={[styles.metricGridVal, { color: colors.foreground }]}>
-              {item.lotSize ?? '—'}
+              {item.lotSize ? `${item.lotSize} Qty` : '—'}
             </Text>
           </View>
         </View>
@@ -372,16 +487,29 @@ export default function NewIposScreen() {
           variant="surface"
           size="md"
           onPress={() => router.back()}
+          style={{ zIndex: 2 }}
         />
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: topPad,
+            bottom: 0,
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1,
+          }}
+          pointerEvents="none"
+        >
           <Text style={[styles.headerEyebrow, { color: colors.primary, textAlign: 'center' }]}>
-            IPOVAULT CLOUD
+            PRIMARY MARKET
           </Text>
           <Text style={[styles.headerTitle, { color: colors.foreground, textAlign: 'center' }]}>
             New IPOs
           </Text>
         </View>
-        <View style={styles.headerRightActions}>
+        <View style={[styles.headerRightActions, { zIndex: 2 }]}>
           <IconButton
             name="search"
             variant={showSearch || searchQuery.length > 0 ? 'primary' : 'surface'}
@@ -389,6 +517,15 @@ export default function NewIposScreen() {
             onPress={() => {
               setShowSearch((prev) => !prev);
               if (showSearch) setSearchQuery('');
+            }}
+          />
+          <IconButton
+            name="sliders"
+            variant={includeSme || sortBy !== 'DEFAULT' ? 'primary' : 'surface'}
+            size="md"
+            onPress={() => {
+              try { Haptics.selectionAsync(); } catch {}
+              setShowFilterModal(true);
             }}
           />
         </View>
@@ -421,79 +558,21 @@ export default function NewIposScreen() {
         </View>
       ) : null}
 
-      {/* Sub-Tab Bar: Live | Upcoming | Listed (Pills matching applications page) */}
-      <View style={[styles.subTabBarWrap, { paddingVertical: 8 }]}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, flexDirection: 'row' }}>
-          {[
-            { key: 'live' as const, label: `Live (${liveList.length})` },
-            { key: 'upcoming' as const, label: `Upcoming (${upcomingList.length})` },
-            { key: 'listed' as const, label: `Listed (${listedList.length})` },
-          ].map((tab) => {
-            const isActive = activeTab === tab.key;
-            return (
-              <TouchableOpacity
-                key={tab.key}
-                onPress={() => {
-                  setActiveTab(tab.key);
-                  try { Haptics.selectionAsync(); } catch {}
-                }}
-                style={{
-                  height: 36,
-                  paddingHorizontal: 16,
-                  borderRadius: 9999,
-                  borderWidth: 1,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: isActive ? (isDark ? '#F8FAFC' : '#0B132B') : (isDark ? '#1E293B' : '#FFFFFF'),
-                  borderColor: isActive ? (isDark ? '#F8FAFC' : '#0B132B') : (isDark ? '#334155' : '#E2E8F0'),
-                }}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={{
-                    fontSize: 12.5,
-                    fontFamily: 'GoogleSansFlex_700Bold',
-                    color: isActive ? (isDark ? '#0B132B' : '#FFFFFF') : (isDark ? '#F8FAFC' : '#0B132B'),
-                  }}
-                >
-                  {tab.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
-
-      {/* SME Toggle Switch & Sort Bar */}
-      <View style={styles.toolbarRow}>
-        <View style={styles.smeToggleWrap}>
-          <Switch
-            value={includeSme}
-            onValueChange={(val) => {
-              setIncludeSme(val);
-              Haptics.selectionAsync();
-            }}
-            trackColor={{ false: colors.border, true: colors.primary + '80' }}
-            thumbColor={includeSme ? colors.primary : '#FFFFFF'}
-          />
-          <Text style={[styles.smeToggleText, { color: colors.foreground }]}>
-            SME IPOs
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          onPress={() => {
-            Haptics.selectionAsync();
-            setShowSortModal(true);
-          }}
-          style={[styles.sortDropdownBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.sortBtnText, { color: colors.foreground }]}>
-            Sort {sortLabel !== 'Default' ? `: ${sortLabel}` : ''}
-          </Text>
-          <Feather name="chevron-down" size={14} color={colors.mutedForeground} />
-        </TouchableOpacity>
+      {/* Sub-Tab Bar matching Manage Users spacing & badge pills */}
+      <View style={{ marginTop: 10, marginBottom: 12 }}>
+        <Tabs
+          variant="pills"
+          scrollable
+          tabs={[
+            { key: 'live', label: 'Live', count: liveList.length },
+            { key: 'upcoming', label: 'Upcoming', count: upcomingList.length },
+            { key: 'closed', label: 'Closed', count: closedList.length },
+            { key: 'listed', label: 'Listed', count: listedList.length },
+          ]}
+          activeTab={activeTab}
+          onChange={(newTab) => setActiveTab(newTab as NewIpoTab)}
+          style={{ paddingHorizontal: 16 }}
+        />
       </View>
 
       {/* Main Catalog Feed List */}
@@ -551,43 +630,104 @@ export default function NewIposScreen() {
         />
       )}
 
-      {/* Sort Menu Modal */}
-      <Modal visible={showSortModal} transparent animationType="fade" onRequestClose={() => setShowSortModal(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setShowSortModal(false)}>
-          <View style={[styles.sortModalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      {/* Filter & Sort Modal */}
+      <Modal visible={showFilterModal} transparent animationType="fade" onRequestClose={() => setShowFilterModal(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowFilterModal(false)}>
+          <Pressable style={[styles.filterModalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Sort IPOs</Text>
-              <TouchableOpacity onPress={() => setShowSortModal(false)} hitSlop={8}>
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Filter & Sort</Text>
+              <TouchableOpacity onPress={() => setShowFilterModal(false)} hitSlop={8}>
                 <Feather name="x" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             </View>
-            {[
-              { key: 'DEFAULT', label: 'Default' },
-              { key: 'GMP', label: 'GMP: Highest First' },
-              { key: 'DATE', label: 'Apply Date: Opening Soon' },
-              { key: 'MIN_INVEST', label: 'Min Investment: Low to High' },
-              { key: 'NAME', label: 'Alphabetical: A-Z' },
-            ].map((opt) => (
+
+            <View style={{ padding: 16, gap: 14 }}>
+              {/* Filter Section: SME Toggle */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                  <Text style={{ fontSize: 14.5, fontFamily: 'GoogleSansFlex_600SemiBold', color: colors.foreground }}>
+                    Include SME IPOs
+                  </Text>
+                  <Text style={{ fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground, marginTop: 2 }}>
+                    Show Small & Medium Enterprise IPOs
+                  </Text>
+                </View>
+                <Switch
+                  value={includeSme}
+                  onValueChange={(val) => {
+                    setIncludeSme(val);
+                    try { Haptics.selectionAsync(); } catch {}
+                  }}
+                  trackColor={{ false: colors.border, true: colors.primary + '80' }}
+                  thumbColor={includeSme ? colors.primary : '#FFFFFF'}
+                />
+              </View>
+
+              <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 2 }} />
+
+              {/* Sort Section Title */}
+              <Text style={{ fontSize: 12, fontFamily: 'GoogleSansFlex_700Bold', color: colors.mutedForeground, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                Sort By
+              </Text>
+
+              {[
+                { key: 'DEFAULT', label: 'Default Order' },
+                { key: 'GMP', label: 'GMP: Highest First' },
+                { key: 'DATE', label: 'Apply Date: Opening Soon' },
+                { key: 'MIN_INVEST', label: 'Min Investment: Low to High' },
+                { key: 'NAME', label: 'Alphabetical: A-Z' },
+              ].map((opt) => (
+                <TouchableOpacity
+                  key={opt.key}
+                  onPress={() => {
+                    setSortBy(opt.key as SortOption);
+                    try { Haptics.selectionAsync(); } catch {}
+                  }}
+                  style={[
+                    styles.sortOptionRow,
+                    {
+                      borderColor: sortBy === opt.key ? colors.primary : colors.border,
+                      backgroundColor: sortBy === opt.key ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : 'transparent',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.sortOptionText, { color: sortBy === opt.key ? colors.primary : colors.foreground }]}>
+                    {opt.label}
+                  </Text>
+                  {sortBy === opt.key ? <Feather name="check" size={16} color={colors.primary} /> : null}
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Modal Actions Footer */}
+            <View style={[styles.modalFooter, { borderTopColor: colors.border }]}>
               <TouchableOpacity
-                key={opt.key}
                 onPress={() => {
-                  setSortBy(opt.key as SortOption);
-                  setShowSortModal(false);
-                  Haptics.selectionAsync();
+                  setIncludeSme(false);
+                  setSortBy('DEFAULT');
+                  setShowFilterModal(false);
+                  try { Haptics.selectionAsync(); } catch {}
                 }}
-                style={[
-                  styles.sortOptionRow,
-                  { borderBottomColor: colors.border },
-                  sortBy === opt.key && { backgroundColor: colors.surface },
-                ]}
+                style={[styles.modalFooterResetBtn, { borderColor: colors.border }]}
               >
-                <Text style={[styles.sortOptionText, { color: sortBy === opt.key ? colors.primary : colors.foreground }]}>
-                  {opt.label}
+                <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold', color: colors.foreground }}>
+                  Reset All
                 </Text>
-                {sortBy === opt.key ? <Feather name="check" size={16} color={colors.primary} /> : null}
               </TouchableOpacity>
-            ))}
-          </View>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setShowFilterModal(false);
+                  try { Haptics.selectionAsync(); } catch {}
+                }}
+                style={[styles.modalFooterApplyBtn, { backgroundColor: colors.primary }]}
+              >
+                <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primaryForeground }}>
+                  Apply Filters
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
         </Pressable>
       </Modal>
     </View>
@@ -600,6 +740,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    position: 'relative',
   },
   headerRightActions: {
     flexDirection: 'row',
@@ -637,9 +779,8 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_400Regular',
   },
   subTabBarWrap: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
+    paddingTop: 4,
+    paddingBottom: 4,
   },
   toolbarRow: {
     flexDirection: 'row',
@@ -710,85 +851,126 @@ const styles = StyleSheet.create({
   itemCard: {
     marginHorizontal: 16,
     marginBottom: 12,
-    borderRadius: 20,
+    borderRadius: 18,
     borderWidth: 1,
-    padding: 16,
+    padding: 14,
   },
   cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 10,
   },
+  headerLeftCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+    marginRight: 8,
+  },
   logoWrap: {
-    width: 48,
-    height: 48,
+    width: 40,
+    height: 40,
   },
   logoImage: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     resizeMode: 'contain',
   },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'GoogleSansFlex_700Bold',
     color: '#FFFFFF',
   },
-  segmentLabelText: {
-    fontSize: 13,
-    fontFamily: 'GoogleSansFlex_500Medium',
-  },
   companyTitle: {
-    fontSize: 17,
+    fontSize: 15.5,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: -0.3,
-    marginBottom: 6,
   },
-  infoLineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-    flexWrap: 'wrap',
-  },
-  infoLineLabel: {
-    fontSize: 13,
+  bidPriceSubtitle: {
+    fontSize: 12,
     fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 1,
   },
-  infoLineVal: {
-    fontSize: 13,
+  segmentBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 6,
+  },
+  segmentBadgeText: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  topExchangeTag: {
+    fontSize: 10.5,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+    letterSpacing: 0.5,
+  },
+  gmpSpotlightBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  gmpSpotlightLeft: {
+    flex: 1,
+  },
+  gmpSpotlightLabel: {
+    fontSize: 11,
     fontFamily: 'GoogleSansFlex_500Medium',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  gmpValText: {
+  gmpBadgePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  gmpBadgeText: {
     fontSize: 13,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
-  gmpUpdatedText: {
+  gmpFreshnessText: {
     fontSize: 11,
     fontFamily: 'GoogleSansFlex_400Regular',
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 9999,
+  },
+  statusPillText: {
+    fontSize: 11.5,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
   },
   metricsGridRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderTopWidth: 1,
-    paddingTop: 12,
-    marginTop: 12,
+    paddingBottom: 12,
   },
   metricGridCol: {
     flex: 1,
   },
   metricGridLabel: {
     fontSize: 11,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    marginBottom: 4,
+    fontFamily: 'GoogleSansFlex_500Medium',
+    marginBottom: 3,
   },
   metricGridVal: {
     fontSize: 14,
@@ -801,9 +983,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  sortModalCard: {
+  filterModalCard: {
     width: '100%',
-    maxWidth: 340,
+    maxWidth: 360,
     borderRadius: 20,
     borderWidth: 1,
     overflow: 'hidden',
@@ -823,12 +1005,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
   },
   sortOptionText: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontFamily: 'GoogleSansFlex_500Medium',
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 10,
+    padding: 14,
+    borderTopWidth: 1,
+  },
+  modalFooterResetBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  modalFooterApplyBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 10,
   },
 });

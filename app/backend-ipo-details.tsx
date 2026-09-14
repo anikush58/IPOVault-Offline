@@ -1,7 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Linking,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Platform,
   ScrollView,
   StyleSheet,
@@ -13,12 +16,32 @@ import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconButton } from '@/components/ui/IconButton';
 import { backendIpoApiService, normalizeBackendIpo } from '@/services/ipo/BackendIpoApiService';
 import { BackendIpo } from '@/types/backend-ipo';
 import { formatCurrency, formatDate } from '@/utils/formatters';
+
+function formatDateShort(dateStr?: string | null): string {
+  if (!dateStr) return 'TBA';
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const clean = dateStr.trim();
+  const parts = clean.split('-');
+  if (parts.length === 3) {
+    const day = parseInt(parts[2], 10);
+    const mIdx = parseInt(parts[1], 10) - 1;
+    if (!isNaN(day) && mIdx >= 0 && mIdx < 12) {
+      return `${day} ${MONTHS[mIdx]}`;
+    }
+  }
+  const d = new Date(clean);
+  if (!isNaN(d.getTime())) {
+    return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  }
+  return clean;
+}
 
 export default function BackendIpoDetailsScreen() {
   const colors = useColors();
@@ -29,7 +52,12 @@ export default function BackendIpoDetailsScreen() {
   const params = useLocalSearchParams<{ id?: string; item?: string }>();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
-  type DetailTab = 'IPO' | 'GMP' | 'Subscription' | 'Company Info' | 'Docs';
+  type DetailTab = 'IPO' | 'Subscription' | 'Company Info' | 'Docs';
+
+  const mainScrollViewRef = useRef<ScrollView>(null);
+  const tabScrollViewRef = useRef<ScrollView>(null);
+  const sectionYMap = useRef<Record<string, number>>({});
+  const isManualScrollingRef = useRef<boolean>(false);
 
   const [ipo, setIpo] = useState<BackendIpo | null>(() => {
     if (params.item) {
@@ -44,6 +72,33 @@ export default function BackendIpoDetailsScreen() {
   });
   const [loading, setLoading] = useState(!ipo && !!params.id);
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>('IPO');
+
+  const handleTabPress = (tabKey: DetailTab) => {
+    setActiveDetailTab(tabKey);
+    isManualScrollingRef.current = true;
+    try { Haptics.selectionAsync(); } catch {}
+    const targetY = sectionYMap.current[tabKey] || 0;
+    mainScrollViewRef.current?.scrollTo({ y: Math.max(0, targetY - 10), animated: true });
+    setTimeout(() => {
+      isManualScrollingRef.current = false;
+    }, 700);
+  };
+
+  const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (isManualScrollingRef.current) return;
+    const scrollY = e.nativeEvent.contentOffset.y;
+    const tabs: DetailTab[] = ['IPO', 'Subscription', 'Company Info', 'Docs'];
+    let currentTab = tabs[0];
+    for (const tab of tabs) {
+      const y = sectionYMap.current[tab];
+      if (y !== undefined && scrollY >= y - 100) {
+        currentTab = tab;
+      }
+    }
+    if (currentTab !== activeDetailTab) {
+      setActiveDetailTab(currentTab);
+    }
+  };
 
   useEffect(() => {
     if (params.id) {
@@ -104,6 +159,25 @@ export default function BackendIpoDetailsScreen() {
     (p) => p.role === 'BRLM' || p.role === 'CO_BRLM',
   );
 
+  const leadManagersList =
+    brlms && brlms.length > 0
+      ? brlms.map((b) => b.name)
+      : ipo.company?.contactPerson
+      ? [ipo.company.contactPerson]
+      : [];
+
+  const priceBandText =
+    ipo.priceBandLow && ipo.priceBandHigh
+      ? ipo.priceBandLow === ipo.priceBandHigh
+        ? `₹${ipo.priceBandHigh}`
+        : `₹${ipo.priceBandLow} - ₹${ipo.priceBandHigh}`
+      : ipo.priceBandHigh
+      ? `₹${ipo.priceBandHigh}`
+      : ipo.priceBandLow
+      ? `₹${ipo.priceBandLow}`
+      : 'TBA';
+
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
@@ -139,17 +213,15 @@ export default function BackendIpoDetailsScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      {/* Top 5 Detail Tabs (Pills matching applications page) */}
-      <View style={[styles.detailTabBarWrap, { backgroundColor: colors.background, paddingVertical: 8, borderBottomColor: colors.border }]}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, flexDirection: 'row' }}>
-          {(['IPO', 'GMP', 'Subscription', 'Company Info', 'Docs'] as const).map((tabKey) => {
+      {/* Top 4 Detail Tabs (Scroll-synced Pills with no bottom border line) */}
+      <View style={[styles.detailTabBarWrap, { backgroundColor: colors.background, paddingVertical: 8, borderBottomWidth: 0 }]}>
+        <ScrollView ref={tabScrollViewRef} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, flexDirection: 'row' }}>
+          {(['IPO', 'Subscription', 'Company Info', 'Docs'] as const).map((tabKey) => {
             const isActive = activeDetailTab === tabKey;
             return (
               <TouchableOpacity
                 key={tabKey}
-                onPress={() => {
-                  setActiveDetailTab(tabKey);
-                }}
+                onPress={() => handleTabPress(tabKey)}
                 style={{
                   height: 36,
                   paddingHorizontal: 16,
@@ -178,6 +250,9 @@ export default function BackendIpoDetailsScreen() {
       </View>
 
       <ScrollView
+        ref={mainScrollViewRef}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
           paddingHorizontal: 16,
@@ -185,240 +260,315 @@ export default function BackendIpoDetailsScreen() {
           paddingBottom: insets.bottom + 100,
         }}
       >
-        {/* TAB 1: IPO */}
-        {activeDetailTab === 'IPO' && (
-          <>
-            {/* Status Header Card */}
-            <View
-              style={[
-                styles.card,
-                { backgroundColor: colors.card, borderColor: colors.border },
-              ]}
-            >
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>
-                  LIFECYCLE STATUS
-                </Text>
-                <Text style={[styles.value, { color: colors.primary }]}>
-                  {ipo.status}
-                </Text>
+        {/* ── SECTION 1: IPO OVERVIEW ── */}
+        <View onLayout={(e) => { sectionYMap.current['IPO'] = e.nativeEvent.layout.y; }}>
+          {/* HERO CARD (Redesigned with logo avatar & 2-column stats box) */}
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+              <View style={{ width: 54, height: 54, borderRadius: 14, overflow: 'hidden', backgroundColor: isDark ? '#1E293B' : '#F8FAFC', borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
+                {ipo.company?.logoUrl ? (
+                  <Image source={{ uri: ipo.company.logoUrl }} style={{ width: 44, height: 44 }} resizeMode="contain" />
+                ) : (
+                  <Text style={{ fontSize: 18, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary }}>
+                    {companyName.slice(0, 2).toUpperCase()}
+                  </Text>
+                )}
               </View>
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>
-                  EXCHANGE
+
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', color: colors.foreground, marginBottom: 4 }}>
+                  {companyName}
                 </Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>
-                  {ipo.exchange || 'NSE / BSE'}
-                </Text>
-              </View>
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>
-                  SEGMENT
-                </Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>
-                  {ipo.marketSegment}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={{ fontSize: 12, fontFamily: 'GoogleSansFlex_500Medium', color: colors.mutedForeground }}>
+                    {ipo.marketSegment === 'SME' ? 'SME' : 'Mainboard'}
+                  </Text>
+                  <View style={{ backgroundColor: '#D1FAE5', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                    <Text style={{ fontSize: 11, fontFamily: 'GoogleSansFlex_700Bold', color: '#059669' }}>
+                      {ipo.status}
+                    </Text>
+                  </View>
+                </View>
               </View>
             </View>
 
-            {/* Issue Structure & Terms */}
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-              ISSUE STRUCTURE & TERMS
+            <View style={{ flexDirection: 'row', gap: 10, backgroundColor: isDark ? '#1E293B' : '#F8FAFC', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, fontFamily: 'GoogleSansFlex_500Medium', color: colors.mutedForeground, marginBottom: 2 }}>
+                  Bid Price
+                </Text>
+                <Text style={{ fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', color: colors.foreground }}>
+                  {priceBandText}
+                </Text>
+              </View>
+
+              <View style={{ width: 1, backgroundColor: colors.border }} />
+
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 11, fontFamily: 'GoogleSansFlex_500Medium', color: colors.mutedForeground, marginBottom: 2 }}>
+                  Est. GMP
+                </Text>
+                <Text style={{ fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', color: ipo.currentGmp ? '#10B981' : colors.foreground }}>
+                  {ipo.currentGmp ? `₹${ipo.currentGmp.gmpAmount}${ipo.currentGmp.gmpPercentage != null ? ` (${ipo.currentGmp.gmpPercentage}%)` : ''}` : '—'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* IPO DETAILS CARD */}
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18, marginTop: 12 }]}>
+            <Text style={{ fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary, marginBottom: 16 }}>
+              IPO Details
             </Text>
-            <View
-              style={[
-                styles.card,
-                { backgroundColor: colors.card, borderColor: colors.border },
-              ]}
-            >
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>
-                  PRICE BAND
-                </Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>
-                  {ipo.priceBandLow !== null && ipo.priceBandLow !== undefined && ipo.priceBandHigh !== null && ipo.priceBandHigh !== undefined
-                    ? `₹${ipo.priceBandLow} - ₹${ipo.priceBandHigh}`
-                    : 'Pending'}
-                </Text>
-              </View>
 
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>
-                  LOT SIZE
-                </Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>
-                  {ipo.lotSize !== null && ipo.lotSize !== undefined
-                    ? `${ipo.lotSize} shares`
-                    : 'Pending'}
-                </Text>
-              </View>
+            {/* TIMELINE STEPPER (Pixel-perfect alignment matching reference image) */}
+            {(() => {
+              const norm = String(ipo.status || '').toUpperCase();
 
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>
-                  FACE VALUE
-                </Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>
-                  {ipo.faceValue !== null && ipo.faceValue !== undefined
-                    ? `₹${ipo.faceValue} per share`
-                    : 'N/A'}
-                </Text>
-              </View>
+              const checkDatePassed = (dateStr?: string | null) => {
+                if (!dateStr) return false;
+                const d = new Date(dateStr);
+                if (isNaN(d.getTime())) return false;
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                d.setHours(0, 0, 0, 0);
+                return today.getTime() >= d.getTime();
+              };
 
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>
-                  MINIMUM INVESTMENT
-                </Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>
-                  {minInvestAmount !== null
-                    ? formatCurrency(minInvestAmount)
-                    : 'Pending'}
-                </Text>
-              </View>
+              const isListed = norm.includes('LISTED');
+              const isAllotted = norm.includes('ALLOT') || norm.includes('REFUND') || norm.includes('CREDIT');
+              const isClosed = norm.includes('CLOSE');
+              const isOpen = norm.includes('OPEN') || norm.includes('LIVE');
 
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>
-                  TOTAL ISSUE SIZE
-                </Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>
-                  {ipo.issueSize !== null && ipo.issueSize !== undefined
-                    ? formatCurrency(Number(ipo.issueSize))
-                    : 'Pending'}
-                </Text>
-              </View>
-            </View>
+              const step0Achieved = isListed || isAllotted || isClosed || isOpen || checkDatePassed(ipo.openDate);
+              const step1Achieved = isListed || isAllotted || isClosed || checkDatePassed(ipo.closeDate);
+              const step2Achieved = isListed || isAllotted || checkDatePassed(ipo.allotmentDate);
+              const step3Achieved = isListed || checkDatePassed(ipo.listingDate);
 
-            {/* Offer Breakup & Investment Category Breakdown */}
-            <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Offer Breakup</Text>
-            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-                <View style={styles.donutRingPlaceholder}>
-                  <View style={[styles.donutInner, { backgroundColor: colors.card }]} />
-                </View>
-                <View style={{ flex: 1, gap: 6 }}>
-                  <View style={styles.cardRow}>
-                    <Text style={[styles.label, { color: colors.foreground }]}>QIB</Text>
-                    <Text style={[styles.value, { color: colors.foreground }]}>50%</Text>
-                  </View>
-                  <View style={styles.cardRow}>
-                    <Text style={[styles.label, { color: colors.foreground }]}>NII</Text>
-                    <Text style={[styles.value, { color: colors.foreground }]}>15%</Text>
-                  </View>
-                  <View style={styles.cardRow}>
-                    <Text style={[styles.label, { color: colors.foreground }]}>RII</Text>
-                    <Text style={[styles.value, { color: colors.foreground }]}>35%</Text>
-                  </View>
-                  <View style={styles.cardRow}>
-                    <Text style={[styles.label, { color: colors.foreground }]}>MM</Text>
-                    <Text style={[styles.value, { color: colors.foreground }]}>0%</Text>
-                  </View>
-                </View>
-              </View>
-            </View>
+              const stepAchievements = [step0Achieved, step1Achieved, step2Achieved, step3Achieved];
+              let maxContiguousAchieved = -1;
+              for (let i = 0; i < stepAchievements.length; i++) {
+                if (stepAchievements[i]) {
+                  maxContiguousAchieved = i;
+                } else {
+                  break;
+                }
+              }
 
-            {/* Investment Category Breakdown Table */}
-            <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Investment Category Breakdown</Text>
-            <View style={[styles.tableCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {ipo.lotSize && (ipo.priceBandHigh || ipo.priceBandLow) ? (
-                <>
-                  <View style={[styles.tableHeaderRow, { backgroundColor: isDark ? '#37271E' : '#FDF2E9' }]}>
-                    <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.6 }]}>Category</Text>
-                    <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 0.8, textAlign: 'center' }]}>Lot</Text>
-                    <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1, textAlign: 'center' }]}>Shares</Text>
-                    <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>Rates</Text>
-                    <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.5, textAlign: 'right' }]}>Amount</Text>
+              const timelineSteps = [
+                { label: 'Open', date: formatDateShort(ipo.openDate), isAchieved: step0Achieved },
+                { label: 'Close', date: formatDateShort(ipo.closeDate), isAchieved: step1Achieved },
+                { label: 'Allotment', date: formatDateShort(ipo.allotmentDate), isAchieved: step2Achieved },
+                { label: 'Listing', date: formatDateShort(ipo.listingDate), isAchieved: step3Achieved },
+              ];
+
+              return (
+                <View style={{ marginBottom: 22, paddingTop: 4 }}>
+                  {/* Node circles and connecting bar */}
+                  <View style={{ height: 26, justifyContent: 'center' }}>
+                    <View style={{ position: 'absolute', left: 12, right: 12, height: 2.5, backgroundColor: isDark ? '#334155' : '#E2E8F0', top: 12 }} />
+                    {maxContiguousAchieved > 0 && (
+                      <View
+                        style={{
+                          position: 'absolute',
+                          left: 12,
+                          width: `${(maxContiguousAchieved / 3) * 94}%`,
+                          height: 2.5,
+                          backgroundColor: '#10B981',
+                          top: 12,
+                        }}
+                      />
+                    )}
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      {timelineSteps.map((step, idx) => {
+                        const isAchieved = step.isAchieved;
+                        return (
+                          <View
+                            key={idx}
+                            style={{
+                              width: 24,
+                              height: 24,
+                              borderRadius: 12,
+                              backgroundColor: isAchieved ? '#10B981' : (isDark ? '#334155' : '#E2E8F0'),
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              zIndex: 2,
+                            }}
+                          >
+                            <Feather name="check" size={13} color={isAchieved ? '#FFFFFF' : (isDark ? '#64748B' : '#94A3B8')} />
+                          </View>
+                        );
+                      })}
+                    </View>
                   </View>
 
-                  {(() => {
-                    const lot = Number(ipo.lotSize);
-                    const price = Number(ipo.priceBandHigh || ipo.priceBandLow);
-                    const catRows = [
-                      { category: 'Retail (Min)', lots: 1 },
-                      { category: 'Retail (Max)', lots: Math.floor(200000 / (lot * price)) || 1 },
-                      { category: 'S-HNI (Min)', lots: Math.ceil(200000 / (lot * price)) || 15 },
-                      { category: 'S-HNI (Max)', lots: Math.floor(1000000 / (lot * price)) || 70 },
-                      { category: 'B-HNI (Min)', lots: Math.ceil(1000000 / (lot * price)) || 71 },
-                    ];
-                    return catRows.map((r, idx) => {
-                      const shares = r.lots * lot;
-                      const amount = shares * price;
+                  {/* Dates & Labels row (Left aligned on start, right aligned on end, centered in middle) */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
+                    {timelineSteps.map((step, idx) => {
+                      const alignItem = idx === 0 ? 'flex-start' : idx === 3 ? 'flex-end' : 'center';
+                      const textAlign = idx === 0 ? 'left' : idx === 3 ? 'right' : 'center';
                       return (
-                        <View key={idx} style={idx === catRows.length - 1 ? styles.tableBodyRowLast : styles.tableBodyRow}>
-                          <Text style={[styles.tableCellLabel, { color: colors.foreground, flex: 1.6 }]}>{r.category}</Text>
-                          <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 0.8, textAlign: 'center' }]}>{r.lots}</Text>
-                          <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1, textAlign: 'center' }]}>{shares}</Text>
-                          <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>{price.toLocaleString('en-IN')}</Text>
-                          <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.5, textAlign: 'right' }]}>{amount.toLocaleString('en-IN')}</Text>
+                        <View key={idx} style={{ flex: 1, alignItems: alignItem }}>
+                          <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold', color: colors.foreground, textAlign }}>
+                            {step.date || 'TBA'}
+                          </Text>
+                          <Text style={{ fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground, marginTop: 2, textAlign }}>
+                            {step.label}
+                          </Text>
                         </View>
                       );
-                    });
-                  })()}
-                </>
-              ) : (
-                <Text style={{ fontSize: 13, color: colors.mutedForeground, padding: 12 }}>
-                  Category breakdown calculation requires lot size & price band.
-                </Text>
-              )}
-            </View>
-
-            {/* Disclaimer */}
-            <View style={[styles.intelCardOrange, { backgroundColor: isDark ? '#37271E' : '#FFFBF8', borderColor: colors.primary + '44' }]}>
-              <Text style={[styles.disclaimerTitle, { color: colors.primary }]}>Disclaimer</Text>
-              <Text style={[styles.disclaimerBody, { color: colors.foreground }]}>
-                IPO Ideas specializes in innovative investment solutions and personalized financial planning, ensuring sustainable growth for clients. With a focus on transparency and excellence, it empowers individuals and businesses to achieve their financial goals.
-              </Text>
-            </View>
-          </>
-        )}
-
-        {/* TAB 2: GMP */}
-        {activeDetailTab === 'GMP' && (
-          <>
-            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>Expected Premium (GMP)</Text>
-              {ipo.currentGmp ? (
-                <>
-                  <View style={styles.cardRow}>
-                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Exp. Premium:</Text>
-                    <Text style={[styles.value, { color: '#10B981' }]}>
-                      ₹ {ipo.currentGmp.gmpAmount} ({ipo.currentGmp.gmpPercentage ?? '—'}%) per share
-                    </Text>
+                    })}
                   </View>
-                  <View style={styles.cardRow}>
-                    <Text style={[styles.label, { color: colors.mutedForeground }]}>As heard on:</Text>
-                    <Text style={[styles.value, { color: colors.foreground }]}>
-                      {ipo.currentGmp.observedAt ? formatDate(ipo.currentGmp.observedAt) : '—'}
-                    </Text>
-                  </View>
-                </>
-              ) : (
-                <View style={styles.cardRow}>
-                  <Text style={[styles.label, { color: colors.mutedForeground }]}>Exp. Premium:</Text>
-                  <Text style={[styles.value, { color: colors.foreground }]}>—</Text>
                 </View>
-              )}
-            </View>
+              );
+            })()}
 
-            {/* GMP TREND GRAPH CARD */}
-            <View style={[styles.chartContainerCard, { backgroundColor: isDark ? '#2A1D16' : '#FFF5EE', borderColor: colors.border }]}>
-              <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary, marginBottom: 12 }}>GMP Trend Chart</Text>
-              <View style={styles.chartPlotArea}>
-                <Text style={{ fontSize: 13, color: colors.mutedForeground, paddingVertical: 12 }}>
-                  No historical GMP trend data available.
+            <View style={{ gap: 10 }}>
+              <View style={styles.cardRow}>
+                <Text style={[styles.label, { color: colors.mutedForeground }]}>Face Value</Text>
+                <Text style={[styles.value, { color: colors.foreground }]}>
+                  {ipo.faceValue != null ? `₹${ipo.faceValue} Per Share` : '—'}
+                </Text>
+              </View>
+
+              <View style={styles.cardRow}>
+                <Text style={[styles.label, { color: colors.mutedForeground }]}>Min. Investment</Text>
+                <Text style={[styles.value, { color: colors.foreground }]}>
+                  {minInvestAmount != null ? `₹ ${minInvestAmount.toLocaleString('en-IN')}` : '—'}
+                </Text>
+              </View>
+
+              <View style={styles.cardRow}>
+                <Text style={[styles.label, { color: colors.mutedForeground }]}>Issue Size</Text>
+                <Text style={[styles.value, { color: colors.foreground }]}>
+                  {(() => {
+                    if (ipo.issueSize == null) return '—';
+                    const num = Number(ipo.issueSize);
+                    const cr = num >= 1000000 ? num / 10000000 : num;
+                    return `₹${cr.toLocaleString('en-IN', { maximumFractionDigits: 2 })} Cr`;
+                  })()}
+                </Text>
+              </View>
+
+              <View style={styles.cardRow}>
+                <Text style={[styles.label, { color: colors.mutedForeground }]}>Min. Quantity</Text>
+                <Text style={[styles.value, { color: colors.foreground }]}>
+                  {ipo.lotSize != null ? `${ipo.lotSize} Qty` : '—'}
+                </Text>
+              </View>
+
+              <View style={styles.cardRow}>
+                <Text style={[styles.label, { color: colors.mutedForeground }]}>Listing at</Text>
+                <Text style={[styles.value, { color: colors.foreground }]}>
+                  {(() => {
+                    const ex = String(ipo.exchange || '').trim().toUpperCase();
+                    if (!ex || ex === 'BOTH' || ex === 'BSE / NSE' || ex === 'NSE / BSE' || ex === 'BSE, NSE' || ex === 'BSE,NSE') {
+                      return 'NSE, BSE';
+                    }
+                    return ex;
+                  })()}
                 </Text>
               </View>
             </View>
+          </View>
 
-            <View style={[styles.intelCardOrange, { backgroundColor: isDark ? '#37271E' : '#FFFBF8', borderColor: colors.primary + '44' }]}>
-              <Text style={[styles.disclaimerTitle, { color: colors.primary }]}>Disclaimer</Text>
-              <Text style={[styles.disclaimerBody, { color: colors.foreground }]}>
-                The GMP graph represents historical grey market trends collected from market sources. Grey market trading is unofficial and unregulated. Investors should conduct their own research and not rely solely on GMP while making investment decisions.
+          {/* LEAD MANAGERS CARD */}
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18, marginTop: 12 }]}>
+            <Text style={{ fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary, marginBottom: 12 }}>
+              Lead Manager(s)
+            </Text>
+
+            {leadManagersList.length > 0 ? (
+              <View style={{ gap: 8 }}>
+                {leadManagersList.map((mgr, idx) => (
+                  <Text key={idx} style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', color: colors.foreground }}>
+                    {idx + 1}. {mgr}
+                  </Text>
+                ))}
+              </View>
+            ) : (
+              <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground }}>
+                Lead manager data unavailable.
               </Text>
-            </View>
-          </>
-        )}
+            )}
+          </View>
 
-        {/* TAB 3: SUBSCRIPTION */}
-        {activeDetailTab === 'Subscription' && (
+          {/* Offer Breakup & Investment Category Breakdown */}
+          <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Offer Breakup</Text>
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+              <View style={styles.donutRingPlaceholder}>
+                <View style={[styles.donutInner, { backgroundColor: colors.card }]} />
+              </View>
+              <View style={{ flex: 1, gap: 6 }}>
+                <View style={styles.cardRow}>
+                  <Text style={[styles.label, { color: colors.foreground }]}>QIB</Text>
+                  <Text style={[styles.value, { color: colors.foreground }]}>50%</Text>
+                </View>
+                <View style={styles.cardRow}>
+                  <Text style={[styles.label, { color: colors.foreground }]}>NII</Text>
+                  <Text style={[styles.value, { color: colors.foreground }]}>15%</Text>
+                </View>
+                <View style={styles.cardRow}>
+                  <Text style={[styles.label, { color: colors.foreground }]}>RII</Text>
+                  <Text style={[styles.value, { color: colors.foreground }]}>35%</Text>
+                </View>
+                <View style={styles.cardRow}>
+                  <Text style={[styles.label, { color: colors.foreground }]}>MM</Text>
+                  <Text style={[styles.value, { color: colors.foreground }]}>0%</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Investment Category Breakdown Table */}
+          <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Investment Category Breakdown</Text>
+          <View style={[styles.tableCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {ipo.lotSize && (ipo.priceBandHigh || ipo.priceBandLow) ? (
+              <>
+                <View style={[styles.tableHeaderRow, { backgroundColor: isDark ? '#37271E' : '#FDF2E9' }]}>
+                  <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.6 }]}>Category</Text>
+                  <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 0.8, textAlign: 'center' }]}>Lot</Text>
+                  <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1, textAlign: 'center' }]}>Shares</Text>
+                  <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>Rates</Text>
+                  <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.5, textAlign: 'right' }]}>Amount</Text>
+                </View>
+
+                {(() => {
+                  const lot = Number(ipo.lotSize);
+                  const price = Number(ipo.priceBandHigh || ipo.priceBandLow);
+                  const catRows = [
+                    { category: 'Retail (Min)', lots: 1 },
+                    { category: 'Retail (Max)', lots: Math.floor(200000 / (lot * price)) || 1 },
+                    { category: 'S-HNI (Min)', lots: Math.ceil(200000 / (lot * price)) || 15 },
+                    { category: 'S-HNI (Max)', lots: Math.floor(1000000 / (lot * price)) || 70 },
+                    { category: 'B-HNI (Min)', lots: Math.ceil(1000000 / (lot * price)) || 71 },
+                  ];
+                  return catRows.map((r, idx) => {
+                    const shares = r.lots * lot;
+                    const amount = shares * price;
+                    return (
+                      <View key={idx} style={idx === catRows.length - 1 ? styles.tableBodyRowLast : styles.tableBodyRow}>
+                        <Text style={[styles.tableCellLabel, { color: colors.foreground, flex: 1.6 }]}>{r.category}</Text>
+                        <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 0.8, textAlign: 'center' }]}>{r.lots}</Text>
+                        <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1, textAlign: 'center' }]}>{shares}</Text>
+                        <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>{price.toLocaleString('en-IN')}</Text>
+                        <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.5, textAlign: 'right' }]}>{amount.toLocaleString('en-IN')}</Text>
+                      </View>
+                    );
+                  });
+                })()}
+              </>
+            ) : (
+              <Text style={{ fontSize: 13, color: colors.mutedForeground, padding: 12 }}>
+                Category breakdown calculation requires lot size & price band.
+              </Text>
+            )}
+          </View>
+        </View>
+
+        {/* ── SECTION 2: SUBSCRIPTION ── */}
+        <View onLayout={(e) => { sectionYMap.current['Subscription'] = e.nativeEvent.layout.y; }} style={{ marginTop: 16 }}>
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>Subscription Figure</Text>
             {ipo.currentSubscription?.categories && ipo.currentSubscription.categories.length > 0 ? (
@@ -438,107 +588,123 @@ export default function BackendIpoDetailsScreen() {
               </View>
             )}
           </View>
-        )}
+        </View>
 
-        {/* TAB 4: COMPANY INFO */}
-        {activeDetailTab === 'Company Info' && (
-          <>
-            {/* ABOUT COMPANY */}
-            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>About Company</Text>
-              <Text style={[styles.disclaimerText, { color: colors.foreground }]}>
-                {ipo.company?.aboutDescription || 'No description available.'}
-              </Text>
-            </View>
+        {/* ── SECTION 3: COMPANY INFO ── */}
+        <View onLayout={(e) => { sectionYMap.current['Company Info'] = e.nativeEvent.layout.y; }} style={{ marginTop: 16 }}>
+          {/* ABOUT COMPANY */}
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>About Company</Text>
+            <Text style={[styles.disclaimerText, { color: colors.foreground }]}>
+              {ipo.company?.aboutDescription || 'No description available.'}
+            </Text>
+          </View>
 
-            {/* COMPANY FINANCIALS TABLE */}
-            <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Company financials (Amount in ₹ Crore)</Text>
-            <View style={[styles.tableCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {ipo.financials && ipo.financials.length > 0 ? (
-                <>
-                  <View style={[styles.tableHeaderRow, { backgroundColor: isDark ? '#37271E' : '#FDF2E9' }]}>
-                    <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.5 }]}>Period</Text>
-                    <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>Assets</Text>
-                    <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>Revenue</Text>
-                    <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>Profit</Text>
+          {/* COMPANY FINANCIALS TABLE */}
+          <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Company financials (Amount in ₹ Crore)</Text>
+          <View style={[styles.tableCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {ipo.financials && ipo.financials.length > 0 ? (
+              <>
+                <View style={[styles.tableHeaderRow, { backgroundColor: isDark ? '#37271E' : '#FDF2E9' }]}>
+                  <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.5 }]}>Period</Text>
+                  <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>Assets</Text>
+                  <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>Revenue</Text>
+                  <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>Profit</Text>
+                </View>
+                {ipo.financials.map((row: any, idx: number) => (
+                  <View key={idx} style={idx === ipo.financials!.length - 1 ? styles.tableBodyRowLast : styles.tableBodyRow}>
+                    <Text style={[styles.tableCellLabel, { color: colors.foreground, flex: 1.5 }]}>{row.period || row.year || '—'}</Text>
+                    <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>{row.assets ?? '—'}</Text>
+                    <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>{row.revenue ?? '—'}</Text>
+                    <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>{row.profit ?? '—'}</Text>
                   </View>
-                  {ipo.financials.map((row: any, idx: number) => (
-                    <View key={idx} style={idx === ipo.financials!.length - 1 ? styles.tableBodyRowLast : styles.tableBodyRow}>
-                      <Text style={[styles.tableCellLabel, { color: colors.foreground, flex: 1.5 }]}>{row.period || row.year || '—'}</Text>
-                      <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>{row.assets ?? '—'}</Text>
-                      <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>{row.revenue ?? '—'}</Text>
-                      <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>{row.profit ?? '—'}</Text>
-                    </View>
-                  ))}
-                </>
+                ))}
+              </>
+            ) : (
+              <Text style={{ fontSize: 13, color: colors.mutedForeground, padding: 12 }}>
+                Financial data not available.
+              </Text>
+            )}
+          </View>
+
+          {/* KEY FINANCIAL RATIOS */}
+          <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Key Financial Ratios</Text>
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.cardRow}>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>EBIDTA</Text>
+              <Text style={[styles.value, { color: colors.foreground }]}>{ipo.ebitdaPercent != null ? `${ipo.ebitdaPercent}%` : '—'}</Text>
+            </View>
+            <View style={styles.cardRow}>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>ROE</Text>
+              <Text style={[styles.value, { color: colors.foreground }]}>{ipo.roePercent != null ? `${ipo.roePercent}%` : '—'}</Text>
+            </View>
+            <View style={styles.cardRow}>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>PAT</Text>
+              <Text style={[styles.value, { color: colors.foreground }]}>{ipo.patPercent != null ? `${ipo.patPercent}%` : '—'}</Text>
+            </View>
+          </View>
+
+          {/* COMPANY CONTACT DETAILS */}
+          <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Company Contact Details</Text>
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.cardRow}>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>Name</Text>
+              <Text style={[styles.value, { color: colors.foreground }]}>{companyName}</Text>
+            </View>
+            <View style={styles.cardRow}>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>Phone</Text>
+              <Text style={[styles.value, { color: colors.foreground }]}>{ipo.company?.phone || '—'}</Text>
+            </View>
+            <View style={styles.cardRow}>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>Email</Text>
+              <Text style={[styles.value, { color: colors.foreground }]}>{ipo.company?.email || '—'}</Text>
+            </View>
+            <View style={styles.cardRow}>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>Website</Text>
+              {ipo.company?.website ? (
+                <TouchableOpacity onPress={() => handleOpenUrl(ipo.company?.website)}>
+                  <Text style={[styles.value, { color: colors.primary }]}>{ipo.company.website}</Text>
+                </TouchableOpacity>
               ) : (
-                <Text style={{ fontSize: 13, color: colors.mutedForeground, padding: 12 }}>
-                  Financial data not available.
-                </Text>
+                <Text style={[styles.value, { color: colors.foreground }]}>—</Text>
               )}
             </View>
-
-            {/* KEY FINANCIAL RATIOS */}
-            <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Key Financial Ratios</Text>
-            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>EBIDTA</Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>{ipo.ebitdaPercent != null ? `${ipo.ebitdaPercent}%` : '—'}</Text>
-              </View>
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>ROE</Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>{ipo.roePercent != null ? `${ipo.roePercent}%` : '—'}</Text>
-              </View>
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>PAT</Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>{ipo.patPercent != null ? `${ipo.patPercent}%` : '—'}</Text>
-              </View>
-            </View>
-
-            {/* COMPANY CONTACT DETAILS */}
-            <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Company Contact Details</Text>
-            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>Name</Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>{companyName}</Text>
-              </View>
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>Phone</Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>{ipo.company?.phone || '—'}</Text>
-              </View>
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>Email</Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>{ipo.company?.email || '—'}</Text>
-              </View>
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>Website</Text>
-                {ipo.company?.website ? (
-                  <TouchableOpacity onPress={() => Linking.openURL(ipo.company!.website!)}>
-                    <Text style={[styles.value, { color: colors.primary }]}>{ipo.company.website}</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <Text style={[styles.value, { color: colors.foreground }]}>—</Text>
-                )}
-              </View>
-            </View>
-          </>
-        )}
-
-        {/* TAB 5: DOCS */}
-        {activeDetailTab === 'Docs' && (
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>IPO Prospectus</Text>
-            <TouchableOpacity
-              onPress={() => (ipo.drhpUrl || ipo.rhpUrl || ipo.prospectusUrl) ? Linking.openURL(ipo.drhpUrl || ipo.rhpUrl || ipo.prospectusUrl!) : undefined}
-              style={styles.docRowBtn}
-            >
-              <Feather name="file-text" size={16} color={colors.foreground} />
-              <Text style={[styles.docBtnText, { color: colors.foreground }]}>
-                DHRP / DRHP Prospectus {!(ipo.drhpUrl || ipo.rhpUrl || ipo.prospectusUrl) && '(—)'}
-              </Text>
-            </TouchableOpacity>
           </View>
-        )}
+        </View>
+
+        {/* ── SECTION 4: DOCS & DISCLAIMER ── */}
+        <View onLayout={(e) => { sectionYMap.current['Docs'] = e.nativeEvent.layout.y; }} style={{ marginTop: 16 }}>
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>IPO Prospectus & Filings</Text>
+            {ipo.documents && ipo.documents.length > 0 ? (
+              ipo.documents.map((doc, idx) => (
+                <TouchableOpacity
+                  key={idx}
+                  onPress={() => doc.sourceUrl ? handleOpenUrl(doc.sourceUrl) : undefined}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: idx === ipo.documents!.length - 1 ? 0 : 1, borderBottomColor: colors.border }}
+                >
+                  <Feather name="file-text" size={16} color={colors.primary} />
+                  <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_500Medium', color: colors.foreground, flex: 1 }}>
+                    {doc.documentType} {doc.fileName ? `(${doc.fileName})` : ''}
+                  </Text>
+                  {doc.sourceUrl && <Feather name="external-link" size={14} color={colors.primary} />}
+                </TouchableOpacity>
+              ))
+            ) : (
+              <Text style={{ fontSize: 13, color: colors.mutedForeground, paddingVertical: 8 }}>
+                No document filings available.
+              </Text>
+            )}
+          </View>
+
+          {/* OFFICIAL IPOVAULT DISCLAIMER CARD */}
+          <View style={[styles.intelCardOrange, { backgroundColor: isDark ? '#37271E' : '#FFFBF8', borderColor: colors.primary + '44', marginTop: 16 }]}>
+            <Text style={[styles.disclaimerTitle, { color: colors.primary }]}>Disclaimer</Text>
+            <Text style={[styles.disclaimerBody, { color: colors.foreground }]}>
+              Disclaimer: IPOVault provides data and tracking information for educational and reference purposes only. We are not a SEBI-registered advisor and do not provide financial or investment advice. All IPO details, GMP estimates, subscription data, and allotment tracking are gathered from public market sources and subject to market risks. Please consult a qualified financial advisor before making any investment decisions.
+            </Text>
+          </View>
+        </View>
       </ScrollView>
 
       {/* Bottom Sticky Action Bar — Login To Apply */}

@@ -86,6 +86,7 @@ export interface IPOMasterRecord {
   price_band_min: number | null;
   price_band_max: number | null;
   lot_size: number | null;
+  face_value?: number | null;
   issue_size: number | null;
   listing_date: string | null;
   open_date: string | null;

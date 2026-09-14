@@ -51,6 +51,7 @@ export default function AddIPOManualScreen() {
   // Form Fields
   const [companyName, setCompanyName] = useState(params.initialName || '');
   const [ipoName, setIpoName] = useState('');
+  const [logoUrl, setLogoUrl] = useState('');
   const [symbol, setSymbol] = useState('');
   const [exchange, setExchange] = useState<'BSE' | 'NSE' | 'BSE / NSE'>('BSE / NSE');
   const [issueType, setIssueType] = useState<'Mainboard' | 'SME'>('Mainboard');
@@ -228,6 +229,162 @@ export default function AddIPOManualScreen() {
     }
   };
 
+  // JSON Document Import Handler
+  const handleUploadJSON = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: ['application/json', 'text/plain', '*/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (res.canceled || !res.assets || res.assets.length === 0) {
+        return;
+      }
+
+      const asset = res.assets[0];
+      setDocName(asset.name);
+      setParsingDoc(true);
+      setParseResults(null);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      const content = await FileSystem.readAsStringAsync(asset.uri);
+      const json = JSON.parse(content);
+
+      const companyObj = json.company || json;
+      const ipoObj = json.ipo || json;
+      const docsObj = json.documents || json.docs || json;
+
+      const keysFilled: string[] = [];
+
+      if (companyObj.legalName || companyObj.displayName || companyObj.name || companyObj.companyName) {
+        const cName = companyObj.displayName || companyObj.legalName || companyObj.companyName || companyObj.name;
+        setCompanyName(cName);
+        if (!ipoName) setIpoName(`${cName} IPO`);
+        keysFilled.push('Company Name');
+      }
+
+      if (companyObj.logoUrl || json.logoUrl) {
+        setLogoUrl(companyObj.logoUrl || json.logoUrl);
+        keysFilled.push('Logo URL');
+      }
+
+      if (companyObj.symbol || ipoObj.symbol) {
+        setSymbol(companyObj.symbol || ipoObj.symbol);
+        keysFilled.push('Symbol');
+      }
+
+      if (ipoObj.exchange || companyObj.exchange) {
+        const ex = String(ipoObj.exchange || companyObj.exchange).toUpperCase();
+        if (ex.includes('NSE') && ex.includes('BSE')) setExchange('BSE / NSE');
+        else if (ex.includes('NSE')) setExchange('NSE');
+        else if (ex.includes('BSE')) setExchange('BSE');
+        keysFilled.push('Exchange');
+      }
+
+      if (ipoObj.marketSegment || ipoObj.issueType || companyObj.marketSegment) {
+        const seg = String(ipoObj.marketSegment || ipoObj.issueType || companyObj.marketSegment).toUpperCase();
+        if (seg.includes('SME')) setIssueType('SME');
+        else setIssueType('Mainboard');
+        keysFilled.push('Issue Type');
+      }
+
+      if (companyObj.sector) {
+        setSector(companyObj.sector);
+        keysFilled.push('Sector');
+      }
+
+      if (ipoObj.priceBandLow !== undefined || ipoObj.priceBandMin !== undefined) {
+        setPriceBandMin(String(ipoObj.priceBandLow ?? ipoObj.priceBandMin ?? ''));
+        keysFilled.push('Min Price');
+      }
+
+      if (ipoObj.priceBandHigh !== undefined || ipoObj.priceBandMax !== undefined) {
+        setPriceBandMax(String(ipoObj.priceBandHigh ?? ipoObj.priceBandMax ?? ''));
+        keysFilled.push('Max Price');
+      }
+
+      if (ipoObj.lotSize !== undefined) {
+        setLotSize(String(ipoObj.lotSize));
+        keysFilled.push('Lot Size');
+      }
+
+      if (ipoObj.issueSize !== undefined) {
+        setIssueSize(String(ipoObj.issueSize));
+        keysFilled.push('Issue Size');
+      }
+
+      if (ipoObj.openDate || ipoObj.open_date) {
+        setOpenDate(ipoObj.openDate || ipoObj.open_date);
+        keysFilled.push('Open Date');
+      }
+
+      if (ipoObj.closeDate || ipoObj.close_date) {
+        setCloseDate(ipoObj.closeDate || ipoObj.close_date);
+        keysFilled.push('Close Date');
+      }
+
+      if (ipoObj.allotmentDate || ipoObj.allotment_date) {
+        setAllotmentDate(ipoObj.allotmentDate || ipoObj.allotment_date);
+        keysFilled.push('Allotment Date');
+      }
+
+      if (ipoObj.listingDate || ipoObj.listing_date) {
+        setListingDate(ipoObj.listingDate || ipoObj.listing_date);
+        keysFilled.push('Listing Date');
+      }
+
+      if (companyObj.registrar || ipoObj.registrar) {
+        setRegistrar(companyObj.registrar || ipoObj.registrar);
+        keysFilled.push('Registrar');
+      }
+
+      if (companyObj.leadManager || ipoObj.leadManager) {
+        setLeadManager(companyObj.leadManager || ipoObj.leadManager);
+        keysFilled.push('Lead Manager');
+      }
+
+      if (companyObj.website) {
+        setWebsite(companyObj.website);
+        keysFilled.push('Website');
+      }
+
+      if (companyObj.contactPhone || companyObj.companyPhone) {
+        setCompanyPhone(companyObj.contactPhone || companyObj.companyPhone);
+        keysFilled.push('Phone');
+      }
+
+      if (companyObj.contactEmail || companyObj.companyEmail) {
+        setCompanyEmail(companyObj.contactEmail || companyObj.companyEmail);
+        keysFilled.push('Email');
+      }
+
+      if (docsObj.drhpUrl) {
+        setDrhpUrl(docsObj.drhpUrl);
+        keysFilled.push('DRHP URL');
+      }
+
+      if (docsObj.rhpUrl) {
+        setRhpUrl(docsObj.rhpUrl);
+        keysFilled.push('RHP URL');
+      }
+
+      setParsingDoc(false);
+      setParseResults({
+        success: true,
+        documentType: 'Canonical JSON',
+        fieldsCount: keysFilled.length,
+        extractedFieldKeys: keysFilled,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      setParsingDoc(false);
+      setParseResults({
+        success: false,
+        warnings: [e?.message || 'Failed to parse JSON file.'],
+      });
+    }
+  };
+
   // UI / Validation State
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -375,42 +532,70 @@ export default function AddIPOManualScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        {/* Upload RHP / DRHP Banner Card */}
-        <TouchableOpacity
-          onPress={handleUploadRHP}
-          disabled={parsingDoc}
-          activeOpacity={0.85}
-          style={{
-            backgroundColor: isDark ? '#1E1B4B44' : '#EEF2FF',
-            borderWidth: 1.5,
-            borderColor: isDark ? '#4338CA' : '#A5B4FC',
-            borderRadius: 16,
-            padding: 16,
-            marginBottom: parseResults ? 12 : 20,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 14,
-          }}
-        >
-          <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: isDark ? '#312E81' : '#E0E7FF', alignItems: 'center', justifyContent: 'center' }}>
-            {parsingDoc ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <Feather name="file-text" size={22} color={colors.primary} />
-            )}
-          </View>
+        {/* Upload Banner Row: PDF & JSON Import */}
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: parseResults ? 12 : 20 }}>
+          <TouchableOpacity
+            onPress={handleUploadRHP}
+            disabled={parsingDoc}
+            activeOpacity={0.85}
+            style={{
+              flex: 1,
+              backgroundColor: isDark ? '#1E1B4B44' : '#EEF2FF',
+              borderWidth: 1.5,
+              borderColor: isDark ? '#4338CA' : '#A5B4FC',
+              borderRadius: 16,
+              padding: 14,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+            }}
+          >
+            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: isDark ? '#312E81' : '#E0E7FF', alignItems: 'center', justifyContent: 'center' }}>
+              {parsingDoc ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Feather name="file-text" size={18} color={colors.primary} />
+              )}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold', color: colors.foreground }} numberOfLines={1}>
+                {docName ? `PDF: ${docName}` : 'Import RHP PDF'}
+              </Text>
+              <Text style={{ fontSize: 11, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground, marginTop: 1 }}>
+                PDF Extractor
+              </Text>
+            </View>
+          </TouchableOpacity>
 
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', color: colors.foreground }}>
-              {docName ? `Uploaded: ${docName}` : 'Import from DRHP / RHP'}
-            </Text>
-            <Text style={{ fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground, marginTop: 2 }}>
-              {parsingDoc ? 'Reading PDF & extracting IPO parameters...' : 'Upload PDF document to prefill fields automatically'}
-            </Text>
-          </View>
-
-          <Feather name="upload-cloud" size={20} color={colors.primary} />
-        </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleUploadJSON}
+            disabled={parsingDoc}
+            activeOpacity={0.85}
+            style={{
+              flex: 1,
+              backgroundColor: isDark ? '#064E3B44' : '#ECFDF5',
+              borderWidth: 1.5,
+              borderColor: isDark ? '#047857' : '#6EE7B7',
+              borderRadius: 16,
+              padding: 14,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+            }}
+          >
+            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: isDark ? '#065F46' : '#D1FAE5', alignItems: 'center', justifyContent: 'center' }}>
+              <Feather name="code" size={18} color="#10B981" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold', color: colors.foreground }} numberOfLines={1}>
+                Import JSON
+              </Text>
+              <Text style={{ fontSize: 11, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground, marginTop: 1 }}>
+                Auto-fill fields
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
 
         {/* Extraction Feedback & Confidence Summary */}
         {parseResults ? (
@@ -533,6 +718,18 @@ export default function AddIPOManualScreen() {
               placeholder="e.g. Acme Tech IPO (defaults to company name)"
               placeholderTextColor={colors.mutedForeground + '70'}
               style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+            />
+          </View>
+
+          <View style={styles.field}>
+            <Text style={[styles.label, { color: colors.foreground }]}>Company Logo URL</Text>
+            <TextInput
+              value={logoUrl}
+              onChangeText={setLogoUrl}
+              placeholder="https://.../logo.png"
+              placeholderTextColor={colors.mutedForeground + '70'}
+              style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              autoCapitalize="none"
             />
           </View>
 
