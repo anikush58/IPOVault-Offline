@@ -9,10 +9,18 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.getipovault.in",
+        "EXPO_PUBLIC_IPO_SYNC_URL": "https://api.getipovault.in/api/v1/ipos"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.getipovault.in",
+        "EXPO_PUBLIC_IPO_SYNC_URL": "https://api.getipovault.in/api/v1/ipos"
+      }
     }
   },
   "submit": {

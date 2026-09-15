@@ -80,7 +80,7 @@ export class ApiClient {
     let httpStatus = 0;
     let isAborted = false;
     let errName: string | undefined;
-    let errMsg: string | undefined;
+    let errMsg = 'HTTP Request Failed';
     let errCode: string | undefined;
 
     try {
@@ -164,7 +164,7 @@ export class ApiClient {
     let httpStatus = 0;
     let isAborted = false;
     let errName: string | undefined;
-    let errMsg: string | undefined;
+    let errMsg = 'HTTP Request Failed';
     let errCode: string | undefined;
 
     try {

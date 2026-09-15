@@ -1,3 +1,5 @@
+declare const __DEV__: boolean;
+
 let Constants: any = {};
 try {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -59,16 +61,10 @@ function getApiBaseUrl(): string {
     return resolvedUrl.trim().replace(/\/+$/, '');
   }
 
-  // Fallback for Emulators
-  if (platformOs === 'android') {
-    if (typeof __DEV__ !== 'undefined' && __DEV__) console.log('[IPOVault Sync Config] Fallback Android Emulator URL: http://10.0.2.2:3000');
-    return 'http://10.0.2.2:3000';
-  }
-
-  // Default LAN IP of development machine (192.168.1.8)
-  const fallbackLan = 'http://192.168.1.8:3000';
-  if (typeof __DEV__ !== 'undefined' && __DEV__) console.log('[IPOVault Sync Config] Default LAN API URL:', fallbackLan);
-  return fallbackLan;
+  // Production Default Fallback (Standalone APK / Release builds)
+  const prodFallback = 'https://api.getipovault.in';
+  if (typeof __DEV__ !== 'undefined' && __DEV__) console.log('[IPOVault Sync Config] Fallback Production API URL:', prodFallback);
+  return prodFallback;
 }
 
 export const API_BASE_URL = getApiBaseUrl();
