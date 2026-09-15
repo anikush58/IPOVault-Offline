@@ -290,7 +290,7 @@ export class IPORepository {
       type: 'application/pdf',
     } as any);
 
-    const endpoint = `${API_BASE_URL}/api/ipo/parse-document`;
+    const endpoint = `${API_BASE_URL.replace(/\/+$/, '')}/api/v1/ipos/parse-document`;
     if (__DEV__) console.log(`[IPORepository] Posting PDF document to ${endpoint} (${fileName})`);
 
     const res = await fetch(endpoint, {

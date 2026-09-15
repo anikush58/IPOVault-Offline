@@ -47,16 +47,16 @@ function getApiBaseUrl(): string {
     if (lanIp && (envUrl.includes('localhost') || envUrl.includes('127.0.0.1'))) {
       const resolved = envUrl.replace(/localhost|127\.0\.0\.1/, lanIp);
       if (typeof __DEV__ !== 'undefined' && __DEV__) console.log('[IPOVault Sync Config] Mapped EXPO_PUBLIC_API_URL localhost to LAN IP:', resolved);
-      return resolved;
+      return resolved.trim().replace(/\/+$/, '');
     }
     if (typeof __DEV__ !== 'undefined' && __DEV__) console.log('[IPOVault Sync Config] Using EXPO_PUBLIC_API_URL:', envUrl);
-    return envUrl;
+    return envUrl.trim().replace(/\/+$/, '');
   }
 
   if (lanIp) {
     const resolvedUrl = `http://${lanIp}:3000`;
     if (typeof __DEV__ !== 'undefined' && __DEV__) console.log('[IPOVault Sync Config] Dynamically resolved Expo Go LAN API URL:', resolvedUrl);
-    return resolvedUrl;
+    return resolvedUrl.trim().replace(/\/+$/, '');
   }
 
   // Fallback for Emulators

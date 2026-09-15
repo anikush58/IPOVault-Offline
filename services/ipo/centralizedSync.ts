@@ -69,7 +69,7 @@ export async function triggerCentralizedIPOSync(
     const provider = new LiveIPOProvider();
 
     const since = await repo.getLastUpdatedTimestamp();
-    const syncUrl = `${API_BASE_URL}/api/ipo/sync`;
+    const syncUrl = `${API_BASE_URL}/api/v1/ipos`;
 
     if (__DEV__) {
       console.log('[IPOVault Sync] Starting sync');

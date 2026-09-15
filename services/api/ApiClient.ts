@@ -57,7 +57,9 @@ export class ApiClient {
     params?: Record<string, string | number>,
     customHeaders?: Record<string, string>,
   ): Promise<MobileApiResponse<T>> {
-    let url = `${this.baseUrl}${path}`;
+    const cleanBaseUrl = this.baseUrl.replace(/\/+$/, '');
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    let url = `${cleanBaseUrl}${cleanPath}`;
     if (params) {
       const searchParams = new URLSearchParams();
       Object.entries(params).forEach(([key, value]) => {
@@ -89,11 +91,19 @@ export class ApiClient {
       });
 
       httpStatus = response.status;
-      const body: MobileApiResponse<T> = await response.json();
+      const body: any = await response.json();
 
-      if (!response.ok || body.success === false) {
-        errCode = body.error?.code || 'HTTP_ERROR';
-        errMsg = body.error?.message || 'HTTP Request Failed';
+      if (!response.ok || body?.success === false) {
+        const rawMsg =
+          typeof body?.error === 'object' && body?.error?.message
+            ? body.error.message
+            : typeof body?.message === 'string'
+            ? body.message
+            : typeof body?.error === 'string'
+            ? body.error
+            : undefined;
+        errCode = body?.error?.code || (body?.statusCode ? String(body.statusCode) : 'HTTP_ERROR');
+        errMsg = rawMsg || `HTTP ${response.status} Request Failed`;
         throw new ApiError(
           errMsg,
           errCode,
@@ -102,7 +112,7 @@ export class ApiClient {
         );
       }
 
-      return body;
+      return body as MobileApiResponse<T>;
     } catch (err: unknown) {
       isAborted = controller.signal.aborted || (err as Error)?.name === 'AbortError';
       errName = (err as Error)?.name || 'Error';
@@ -144,7 +154,9 @@ export class ApiClient {
     bodyData?: unknown,
     customHeaders?: Record<string, string>,
   ): Promise<MobileApiResponse<T>> {
-    const url = `${this.baseUrl}${path}`;
+    const cleanBaseUrl = this.baseUrl.replace(/\/+$/, '');
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    const url = `${cleanBaseUrl}${cleanPath}`;
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     const startTime = Date.now();
     const controller = new AbortController();
@@ -164,11 +176,19 @@ export class ApiClient {
       });
 
       httpStatus = response.status;
-      const body: MobileApiResponse<T> = await response.json();
+      const body: any = await response.json();
 
-      if (!response.ok || body.success === false) {
-        errCode = body.error?.code || 'HTTP_ERROR';
-        errMsg = body.error?.message || 'HTTP Request Failed';
+      if (!response.ok || body?.success === false) {
+        const rawMsg =
+          typeof body?.error === 'object' && body?.error?.message
+            ? body.error.message
+            : typeof body?.message === 'string'
+            ? body.message
+            : typeof body?.error === 'string'
+            ? body.error
+            : undefined;
+        errCode = body?.error?.code || (body?.statusCode ? String(body.statusCode) : 'HTTP_ERROR');
+        errMsg = rawMsg || `HTTP ${response.status} Request Failed`;
         throw new ApiError(
           errMsg,
           errCode,
@@ -177,7 +197,7 @@ export class ApiClient {
         );
       }
 
-      return body;
+      return body as MobileApiResponse<T>;
     } catch (err: unknown) {
       isAborted = controller.signal.aborted || (err as Error)?.name === 'AbortError';
       errName = (err as Error)?.name || 'Error';

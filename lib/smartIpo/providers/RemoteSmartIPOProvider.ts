@@ -29,7 +29,7 @@ export class RemoteSmartIPOProvider implements IPODataProvider {
     this.baseUrl =
       config?.baseUrl ||
       process.env.EXPO_PUBLIC_IPO_SYNC_URL ||
-      `${API_BASE_URL}/api/ipo/sync`;
+      `${API_BASE_URL}/api/v1/ipos`;
     this.timeoutMs = config?.timeoutMs || 8000;
   }
 
