@@ -248,9 +248,23 @@ export async function validateAndUploadImageAsset(
     };
   }
 
-  // Stable private Storage Object Path: <auth_user_id>/images/<prefix>_<local_id>.<ext>
+  // Verify active authentication session to match auth.uid() in RLS policy
+  const { data: sessionData } = await supabase.auth.getSession();
+  const sessionUser = sessionData?.session?.user;
+  if (!sessionUser || !sessionUser.id) {
+    console.error(`[cloudBackupService] [Stage 4 Error] Unauthenticated upload attempt for user_id=${id}, user_name=${entityName}`);
+    return {
+      success: false,
+      errorPhase: 'SUPABASE_STORAGE_UPLOAD',
+      errorMessage: `Backup failed: Not authenticated with Supabase. Cannot upload image for ${entityName}. [Phase: SUPABASE_STORAGE_UPLOAD]`,
+    };
+  }
+
+  // Canonical storage path: <active_auth_uid>/images/<prefix>_<local_id>.<ext>
+  // Ensure no leading slashes so (storage.foldername(name))[1] in Postgres matches auth.uid()::text
+  const effectiveAuthUid = (sessionUser.id || authUid).trim().replace(/^\/+/, '');
   const filename = `${prefix}_${id}.${ext}`;
-  const storagePath = `${authUid}/images/${filename}`;
+  const storagePath = `${effectiveAuthUid}/images/${filename}`;
 
   // Stage 4 Diagnostic Log: Storage Path Generation
   console.log(`[cloudBackupService] [Stage 4 - Storage Path Generation] user_id=${id}, user_name=${entityName}, storage_path=${storagePath}`);
