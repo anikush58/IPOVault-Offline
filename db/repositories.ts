@@ -45,6 +45,15 @@ export interface IApplicationRepository {
     tax?: number,
     userCut?: number
   ): Promise<void>;
+  partialSell(
+    id: string,
+    soldShares: number,
+    totalShares: number,
+    sellPrice: number,
+    saleDate: string | null,
+    tax?: number,
+    userCut?: number
+  ): Promise<void>;
   updateBulkStatus(ids: string[], status: ApplicationStatus): Promise<void>;
   toggleFavorite(id: string, isFavorite: boolean): Promise<void>;
   delete(id: string): Promise<void>;
@@ -70,7 +79,7 @@ export class UserRepository implements IUserRepository {
       tpin: user.tpin || '',
       upi_app: user.upi_app || '',
       bank_name: user.bank_name || '',
-      avatar_url: user.avatar_url || '',
+      avatar_url: user.avatar_url || user.avatarUrl || '',
       default_amount_blocked: user.default_amount_blocked || 0,
       archived: 0,
       sync_version: 0,
@@ -90,7 +99,7 @@ export class UserRepository implements IUserRepository {
       tpin: user.tpin || '',
       upi_app: user.upi_app || '',
       bank_name: user.bank_name || '',
-      avatar_url: user.avatar_url || '',
+      avatar_url: user.avatar_url || user.avatarUrl || '',
       default_amount_blocked: user.default_amount_blocked || 0,
     };
     await repositoryAdapter.users.update(this.db, id, row);
@@ -207,7 +216,7 @@ export class ApplicationRepository implements IApplicationRepository {
     repositoryAdapter.applications.getAll(this.db).catch(() => {});
     return await this.db.getAllAsync<ApplicationWithDetails>(`
       SELECT a.id, a.user_id, a.ipo_id, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
-             a.is_favorite, a.created_at,
+             a.shares_count, a.is_favorite, a.created_at,
              u.name        AS user_name,
              u.broker      AS user_broker,
              u.client_id   AS user_client_id,
@@ -215,7 +224,7 @@ export class ApplicationRepository implements IApplicationRepository {
              u.avatar_url  AS user_avatar_url,
              COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
              COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
-             i.ipo_name, i.buy_price, i.quantity, i.open_date, i.logo_url AS ipo_logo_url
+             i.ipo_name, i.buy_price, COALESCE(a.shares_count, i.quantity) AS quantity, i.open_date, i.logo_url AS ipo_logo_url
       FROM   ipo_applications a
       JOIN   users_table u ON a.user_id = u.id
       JOIN   ipo_listings i ON a.ipo_id = i.id
@@ -314,6 +323,69 @@ export class ApplicationRepository implements IApplicationRepository {
       user_cut: userCut ?? 0,
     };
     await repositoryAdapter.applications.update(this.db, id, row);
+  }
+
+  async partialSell(
+    id: string,
+    soldShares: number,
+    totalShares: number,
+    sellPrice: number,
+    saleDate: string | null,
+    tax: number = 0,
+    userCut: number = 0,
+  ): Promise<void> {
+    if (!id || soldShares <= 0 || totalShares <= 0) return;
+    const remainingShares = totalShares - soldShares;
+    const now = getCurrentTime();
+
+    if (remainingShares <= 0) {
+      // Full sell
+      await repositoryAdapter.applications.update(this.db, id, {
+        status: 'Sold',
+        shares_count: totalShares,
+        sell_price: sellPrice,
+        sale_date: saleDate ?? getCurrentTime().slice(0, 10),
+        tax,
+        user_cut: userCut,
+        updated_at: now,
+      });
+    } else {
+      // Fetch original application details to clone
+      const rows = await this.db.getAllAsync<any>(
+        'SELECT * FROM ipo_applications WHERE id = ?',
+        [id]
+      );
+      const orig = rows?.[0];
+      if (!orig) return;
+
+      // Update original holding application with remaining shares
+      await repositoryAdapter.applications.update(this.db, id, {
+        status: 'Holding',
+        shares_count: remainingShares,
+        updated_at: now,
+      });
+
+      // Insert new sold application for sold shares
+      const newId = Crypto.randomUUID();
+      const soldRow: any = {
+        id: newId,
+        user_id: orig.user_id,
+        ipo_id: orig.ipo_id,
+        status: 'Sold',
+        shares_count: soldShares,
+        sell_price: sellPrice,
+        sale_date: saleDate ?? getCurrentTime().slice(0, 10),
+        tax,
+        user_cut: userCut,
+        bank_name: orig.bank_name || '',
+        upi_app: orig.upi_app || '',
+        is_favorite: 0,
+        sync_version: 0,
+        created_at: now,
+        updated_at: now,
+      };
+      await repositoryAdapter.applications.insert(this.db, soldRow);
+    }
   }
 
   async updateBulkStatus(ids: string[], status: ApplicationStatus): Promise<void> {

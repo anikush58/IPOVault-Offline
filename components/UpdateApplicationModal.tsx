@@ -51,7 +51,7 @@ function getAvatarGradient(name: string): [string, string] {
 
 export function UpdateApplicationModal({ application: app, onClose }: Props) {
   const colors = useColors();
-  const { ipos, bankAccounts, updateApplication, deleteApplication } = useDB();
+  const { ipos, bankAccounts, updateApplication, partialSellApplication, deleteApplication } = useDB();
   const { showError, showConfirm, showSuccess } = useDialog();
   const insets = useSafeAreaInsets();
 
@@ -61,6 +61,7 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
   const [saleDate, setSaleDate] = useState('');
   const [tax, setTax] = useState('0');
   const [userCut, setUserCut] = useState('0');
+  const [soldShares, setSoldShares] = useState('');
   const [selectedBankName, setSelectedBankName] = useState('');
   const [showBankPicker, setShowBankPicker] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -90,6 +91,7 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
       setSaleDate(app.sale_date ?? todayISO());
       setTax((app.tax ?? 0).toString());
       setUserCut((app.user_cut ?? 0).toString());
+      setSoldShares(app.quantity?.toString() ?? '1');
       setSelectedBankName(app.user_bank_name ?? '');
       setShowBankPicker(false);
       setConfirmDelete(false);
@@ -101,9 +103,15 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
   const isHolding = status === 'Holding';
   const availableStatuses: ApplicationStatus[] = STATUSES.filter((s) => s !== 'Applied');
 
+  const totalQty = app?.quantity ?? 1;
+  const soldQtyNum = Math.min(totalQty, Math.max(1, parseInt(soldShares, 10) || totalQty));
+  const isPartial = isSold && soldQtyNum < totalQty;
+  const remainingQty = totalQty - soldQtyNum;
+
+  const buyValueForSold = app ? app.buy_price * soldQtyNum : 0;
   const buyValue = app ? calcBuyValue(app.buy_price, app.quantity) : 0;
-  const previewSale = isSold && sellPrice ? calcSaleValue(parseFloat(sellPrice), app?.quantity ?? 0) : 0;
-  const previewPL = isSold ? calcProfitLoss(previewSale, buyValue) : 0;
+  const previewSale = isSold && sellPrice ? calcSaleValue(parseFloat(sellPrice), soldQtyNum) : 0;
+  const previewPL = isSold ? calcProfitLoss(previewSale, buyValueForSold) : 0;
   const previewNet = isSold ? calcNetProfit(previewPL, parseFloat(tax || '0'), parseFloat(userCut || '0')) : 0;
   const isProfit = previewNet >= 0;
 
@@ -117,21 +125,49 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
     if (!app) return;
     setSaving(true);
     try {
-      const effectivePrice = isSold
-        ? (sellPrice.trim() !== '' ? parseFloat(sellPrice) : null)
-        : isHolding
-        ? (currentPrice.trim() !== '' ? parseFloat(currentPrice) : null)
-        : null;
+      if (isSold) {
+        const soldQtyNum = parseInt(soldShares, 10) || app.quantity;
+        const sPrice = sellPrice.trim() !== '' ? parseFloat(sellPrice) : 0;
+        const sDate = saleDate.trim() !== '' ? saleDate : todayISO();
+        const taxVal = tax.trim() !== '' ? parseFloat(tax) : 0;
+        const userCutVal = userCut.trim() !== '' ? parseFloat(userCut) : 0;
 
-      await updateApplication(
-        app.id,
-        status,
-        effectivePrice,
-        isSold ? (saleDate || null) : null,
-        tax.trim() !== '' ? parseFloat(tax) : 0,
-        userCut.trim() !== '' ? parseFloat(userCut) : 0,
-        selectedBankName.trim() || undefined
-      );
+        if (soldQtyNum > 0 && soldQtyNum < app.quantity) {
+          await partialSellApplication(
+            app.id,
+            soldQtyNum,
+            app.quantity,
+            sPrice,
+            sDate,
+            taxVal,
+            userCutVal
+          );
+        } else {
+          await updateApplication(
+            app.id,
+            'Sold',
+            sPrice,
+            sDate,
+            taxVal,
+            userCutVal,
+            selectedBankName.trim() || undefined
+          );
+        }
+      } else {
+        const effectivePrice = isHolding
+          ? (currentPrice.trim() !== '' ? parseFloat(currentPrice) : null)
+          : null;
+
+        await updateApplication(
+          app.id,
+          status,
+          effectivePrice,
+          null,
+          tax.trim() !== '' ? parseFloat(tax) : 0,
+          userCut.trim() !== '' ? parseFloat(userCut) : 0,
+          selectedBankName.trim() || undefined
+        );
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onClose();
     } catch {
@@ -333,6 +369,26 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
                   <>
                     <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>SALE DETAILS</Text>
                     <View style={{ gap: 10, marginBottom: 12 }}>
+                      {/* Row 0: Shares to Sell (Total holding) */}
+                      <View>
+                        <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
+                          SHARES TO SELL (TOTAL ALLOTTED: {totalQty})
+                        </Text>
+                        <TextInput
+                          style={[styles.input, { borderColor: colors.border + '40', backgroundColor: colors.surface, color: colors.foreground }]}
+                          value={soldShares}
+                          onChangeText={setSoldShares}
+                          placeholder={`Max ${totalQty}`}
+                          placeholderTextColor={colors.mutedForeground}
+                          keyboardType="number-pad"
+                        />
+                        {isPartial ? (
+                          <Text style={{ fontSize: 12, color: colors.primary, marginTop: 4, fontFamily: 'GoogleSansFlex_600SemiBold' }}>
+                            💡 Partial Sell: {soldQtyNum} shares sold, {remainingQty} shares kept in Holdings.
+                          </Text>
+                        ) : null}
+                      </View>
+
                       {/* Row 1: Sell Price & Sale Date */}
                       <View style={{ flexDirection: 'row', gap: 10 }}>
                         <View style={{ flex: 1 }}>

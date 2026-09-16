@@ -312,6 +312,7 @@ export async function initDB(db: SQLiteDatabase) {
     'ALTER TABLE ipo_applications ADD COLUMN created_at TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE ipo_applications ADD COLUMN updated_at TEXT NOT NULL DEFAULT ""',
     'ALTER TABLE ipo_applications ADD COLUMN deleted_at TEXT',
+    'ALTER TABLE ipo_applications ADD COLUMN shares_count INTEGER DEFAULT NULL',
 
     // bank_accounts migrations
     'ALTER TABLE bank_accounts ADD COLUMN owner_id TEXT',

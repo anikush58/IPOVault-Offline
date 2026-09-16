@@ -137,17 +137,7 @@ export function AddUserModal({ visible, user, onClose }: Props) {
     if (!name.trim()) { showError('Required', 'Please enter a name.'); return; }
     setSaving(true);
     try {
-      let finalAvatarUrl = avatarUrl ? avatarUrl.trim() : '';
-      if (finalAvatarUrl && (finalAvatarUrl.startsWith('data:') || finalAvatarUrl.startsWith('file://') || finalAvatarUrl.startsWith('content://'))) {
-        try {
-          const savedPath = await saveBase64ToLocalImage(finalAvatarUrl, 'avatar', user?.id || 'user');
-          if (savedPath) {
-            finalAvatarUrl = savedPath;
-          }
-        } catch (imgErr) {
-          if (__DEV__) console.warn('[AddUserModal] Avatar save error:', imgErr);
-        }
-      }
+      const trimmedAvatarUrl = avatarUrl ? avatarUrl.trim() : '';
 
       const data = {
         name: name.trim(),
@@ -158,7 +148,8 @@ export function AddUserModal({ visible, user, onClose }: Props) {
         broker,
         upi_app: user?.upi_app ?? '',
         bank_name: user?.bank_name ?? '',
-        avatar_url: finalAvatarUrl,
+        avatar_url: trimmedAvatarUrl,
+        avatarUrl: trimmedAvatarUrl,
         default_amount_blocked: user?.default_amount_blocked ?? 0,
       };
       if (isEditing && user) await updateUser(user.id, data);

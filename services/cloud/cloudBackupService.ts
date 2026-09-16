@@ -7,6 +7,7 @@ import {
   extractBase64Payload,
   saveBase64ToLocalImage,
 } from '@/utils/imageUtils';
+import { getEffectiveAvatarUrl } from '@/utils/avatarUtils';
 
 export const LAST_CLOUD_BACKUP_KEY = 'ipovault_last_cloud_backup_ts';
 
@@ -289,7 +290,7 @@ export async function validateAndUploadImageAsset(
       return {
         success: false,
         errorPhase: 'SUPABASE_STORAGE_UPLOAD',
-        errorMessage: `Backup failed: Failed to upload required avatar image for user ${entityName}. Reason: Supabase Storage upload error: ${errorMsg} (status: ${statusCode}). [Phase: SUPABASE_STORAGE_UPLOAD, Storage Path: ${storagePath}]`,
+        errorMessage: `Backup failed: Failed to upload required image for ${entityName}. Reason: Supabase Storage upload error: ${errorMsg} (status: ${statusCode}). [Phase: SUPABASE_STORAGE_UPLOAD, Storage Path: ${storagePath}]`,
       };
     }
 
@@ -310,7 +311,7 @@ export async function validateAndUploadImageAsset(
     return {
       success: false,
       errorPhase: 'SUPABASE_STORAGE_UPLOAD',
-      errorMessage: `Backup failed: Failed to upload required avatar image for user ${entityName}. Reason: Storage upload exception: ${errorMsg} (status: ${statusCode}). [Phase: SUPABASE_STORAGE_UPLOAD, Storage Path: ${storagePath}]`,
+      errorMessage: `Backup failed: Failed to upload required image for ${entityName}. Reason: Storage upload exception: ${errorMsg} (status: ${statusCode}). [Phase: SUPABASE_STORAGE_UPLOAD, Storage Path: ${storagePath}]`,
     };
   }
 }
@@ -477,29 +478,15 @@ export async function createCloudBackup(
     const rawJsonStr = await exportJSONFn();
     const backupObj = JSON.parse(rawJsonStr);
 
-    // 2. Discover and Upload ALL Image Assets with Atomic Failure Check
+    // 2. Process User Avatars (URL/String only, NO Supabase Storage uploads)
     if (backupObj.users && Array.isArray(backupObj.users)) {
       for (const u of backupObj.users) {
-        const avatarUri = u.avatar_url || u.avatar?.data || (u.avatar_data ? `data:image/png;base64,${u.avatar_data}` : '');
-        if (avatarUri && typeof avatarUri === 'string' && !avatarUri.includes('/user-backups/')) {
-          const userName = u.name || u.id || 'User';
-          const uploadRes = await validateAndUploadImageAsset(authUid, avatarUri, 'avatar', u.id || 'user', userName);
-          if (!uploadRes.success || !uploadRes.storagePath) {
-            // ATOMIC FAILURE: Image upload failed, abort backup completely!
-            console.error(`[cloudBackupService] Backup failed: Avatar upload failed for user ${userName} (${u.id})`);
-            isBackupPending = true;
-            return {
-              success: false,
-              imagesUploaded,
-              error: uploadRes.errorMessage || `Backup failed: Failed to upload required avatar image for user ${userName}. Database snapshot not inserted.`,
-            };
-          }
-          // Store canonical Storage Object Path ONLY (never public URL or file:// URI)
-          u.avatar_url = uploadRes.storagePath;
-          u.storage_path = uploadRes.storagePath;
-          delete u.avatar; // Strip embedded Base64 payload
-          imagesUploaded++;
-        }
+        const effectiveUrl = getEffectiveAvatarUrl(u);
+        u.avatar_url = effectiveUrl;
+        u.avatarUrl = effectiveUrl;
+        delete u.avatar;
+        delete u.avatar_data;
+        delete u.storage_path;
       }
     }
 
@@ -731,17 +718,15 @@ export async function restoreCloudBackup(
 
     let imagesRestored = 0;
 
-    // 3. Download All Required Images BEFORE Modifying Local Database
+    // 3. Process User Avatars (URL/String only, NO Supabase Storage downloads)
     if (payload.users && Array.isArray(payload.users)) {
       for (const u of payload.users) {
-        const path = u.storage_path || u.avatar_url;
-        if (path && typeof path === 'string' && (path.includes('/') || path.includes('avatar_'))) {
-          const restoredLocalPath = await downloadStorageImageToLocal(path, 'avatar', u.id || 'user');
-          if (restoredLocalPath) {
-            u.avatar_url = restoredLocalPath;
-            imagesRestored++;
-          }
-        }
+        const effectiveUrl = getEffectiveAvatarUrl(u);
+        u.avatar_url = effectiveUrl;
+        u.avatarUrl = effectiveUrl;
+        delete u.avatar;
+        delete u.avatar_data;
+        delete u.storage_path;
       }
     }
 

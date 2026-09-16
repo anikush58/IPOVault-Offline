@@ -139,6 +139,14 @@ export interface IPOMasterRecord {
   retail_quota_percent?: number | null;
   drhp_url?: string;
   rhp_url?: string;
+  anchor_list_url?: string;
+  anchor_details?: {
+    portion?: number | null;
+    bidDate?: string | null;
+    lockIn?: string | null;
+    details?: string | null;
+    documentUrl?: string | null;
+  };
   
   // Intelligence & Score attributes
   intelligence?: IPOIntelligenceRecord;

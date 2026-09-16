@@ -295,7 +295,7 @@ export default function IPOManagementScreen() {
             );
 
             const companyNameStr = ipo.ipo_name || 'IPO';
-            const logoUrl = getResolvedLogoUrl(ipo.logo_url || ipo.logoUrl || ipo.company?.logoUrl);
+            const logoUrl = getResolvedLogoUrl(ipo.logo_url);
             const avatarGradient = getAvatarGradient(companyNameStr);
             const initials = companyNameStr
               .replace(/[^a-zA-Z0-9\s]/g, '')

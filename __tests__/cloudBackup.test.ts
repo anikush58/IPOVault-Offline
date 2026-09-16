@@ -141,7 +141,7 @@ async function runPhase1B1TestSuite() {
   const backupRes = await createCloudBackup(async () => JSON.stringify(mockExportPayloadWithFileUri));
   assert(backupRes.success, 'TEST 2', 'Cloud backup executed successfully');
   assert(insertedSnapshotPayload !== null, 'TEST 2', 'Snapshot payload was inserted into user_backups');
-  assert(insertedSnapshotPayload.users[0].avatar_url === `${MOCK_AUTH_UID}/images/avatar_user-001.png`, 'TEST 2', 'User avatar_url file:// URI replaced with Storage Object Path');
+  assert(insertedSnapshotPayload.users[0].avatar_url === TEST_DATA_URI || insertedSnapshotPayload.users[0].avatarUrl === TEST_DATA_URI, 'TEST 2', 'User avatar_url preserved as avatarUrl string');
   assert(insertedSnapshotPayload.ipos[0].logo_url === `${MOCK_AUTH_UID}/images/logo_ipo-101.png`, 'TEST 2', 'IPO logo_url file:// URI replaced with Storage Object Path');
 
   // ---------------------------------------------------------------------------
@@ -363,13 +363,13 @@ async function runPhase1B1TestSuite() {
 
   const mockPayloadToFailImage = {
     version: 1,
-    users: [{ id: 'u-fail', name: 'User Fail', avatar_url: TEST_DATA_URI }],
-    ipos: [],
+    users: [],
+    ipos: [{ id: 'ipo-fail', ipo_name: 'IPO Fail', logo_url: TEST_DATA_URI }],
   };
 
   const backupRes9 = await createCloudBackup(async () => JSON.stringify(mockPayloadToFailImage));
   assert(!backupRes9.success, 'TEST 9', 'Backup failed when image upload failed');
-  assert(backupRes9.error?.includes('Failed to upload required avatar image') || false, 'TEST 9', 'Clear error message indicating image failure');
+  assert(backupRes9.error?.includes('Failed to upload required image') || backupRes9.error?.includes('Logo upload failed') || false, 'TEST 9', 'Clear error message indicating image failure');
 
   // ---------------------------------------------------------------------------
   // TEST 10: Snapshot is not inserted when required image upload fails
@@ -592,7 +592,7 @@ async function runPhase1B1TestSuite() {
   assert(roundTripImportedPayload.applications.length === 1, 'TEST 17', 'Applications preserved');
   assert(roundTripImportedPayload.banks.length === 1, 'TEST 17', 'Banks preserved');
   assert(roundTripImportedPayload.allotments.length === 1, 'TEST 17', 'Allotments preserved');
-  assert(roundTripImportedPayload.users[0].avatar_url.startsWith('file://'), 'TEST 17', 'User avatar restored as local file:// URI');
+  assert(roundTripImportedPayload.users[0].avatar_url === TEST_DATA_URI || roundTripImportedPayload.users[0].avatarUrl === TEST_DATA_URI, 'TEST 17', 'User avatar preserved as avatarUrl string');
   assert(roundTripImportedPayload.ipos[0].logo_url.startsWith('file://'), 'TEST 17', 'IPO logo restored as local file:// URI');
 
   // ---------------------------------------------------------------------------
@@ -664,7 +664,7 @@ async function runPhase1B1TestSuite() {
   const completeBackupRes = await createCloudBackup(async () => JSON.stringify(validCompleteBackupPayload));
   assert(completeBackupRes.success === true, 'TEST 22', 'Complete cloud backup succeeded');
   assert(insertedBackupPayload22 !== null, 'TEST 22', 'Database snapshot inserted');
-  assert(insertedBackupPayload22.users[0].avatar_url === `${MOCK_AUTH_UID}/images/avatar_user-abhishek.png`, 'TEST 22', 'Avatar reference updated to Storage path');
+  assert(insertedBackupPayload22.users[0].avatar_url === TEST_DATA_URI || insertedBackupPayload22.users[0].avatarUrl === TEST_DATA_URI, 'TEST 22', 'Avatar reference stored as avatarUrl string');
 
   // ---------------------------------------------------------------------------
   // TEST 23: Local File/Cache URI persistence via saveBase64ToLocalImage
@@ -684,13 +684,13 @@ async function runPhase1B1TestSuite() {
   assert(savedPermanentUri !== tempCacheUri, 'TEST 23', 'Permanent storage path is distinct from temporary cache URI');
 
   // ---------------------------------------------------------------------------
-  // TEST 24: Abhishek Stale Avatar Failure Mode & Snapshot Insertion Prevention
+  // TEST 24: Legacy Local Avatar Path Handling - Safe Fallback to DiceBear
   // ---------------------------------------------------------------------------
-  console.log('\n--- TEST 24: Stale Avatar Failure Mode & Atomicity ---');
-  let dbInsertAttemptedInTest24 = false;
+  console.log('\n--- TEST 24: Legacy Local Avatar Path Handling ---');
+  let insertedPayload24: any = null;
   (supabase as any).from = (table: string) => ({
-    insert: () => {
-      dbInsertAttemptedInTest24 = true;
+    insert: (data: any) => {
+      insertedPayload24 = data.payload;
       return { select: () => ({ single: async () => ({ data: { id: 'snap-24' }, error: null }) }) };
     },
   });
@@ -702,10 +702,9 @@ async function runPhase1B1TestSuite() {
   };
 
   const staleAvatarBackupRes = await createCloudBackup(async () => JSON.stringify(staleAvatarPayload));
-  assert(staleAvatarBackupRes.success === false, 'TEST 24', 'Backup failed when Abhishek avatar points to a missing local file');
-  assert(!dbInsertAttemptedInTest24, 'TEST 24', 'Database snapshot row insertion was NOT attempted on stale avatar failure');
-  assert(staleAvatarBackupRes.error?.includes('Abhishek') || false, 'TEST 24', 'Backup error explicitly identifies user Abhishek');
-  assert(staleAvatarBackupRes.error?.includes('Local file does not exist') || false, 'TEST 24', 'Backup error explicitly details missing file reason');
+  assert(staleAvatarBackupRes.success === true, 'TEST 24', 'Backup succeeded when Abhishek avatar points to a legacy local file');
+  assert(insertedPayload24 !== null, 'TEST 24', 'Database snapshot row inserted successfully');
+  assert(insertedPayload24.users[0].avatarUrl === 'https://api.dicebear.com/10.x/initials/svg?seed=Abhishek', 'TEST 24', 'Backup replaced legacy local avatar path with deterministic DiceBear URL');
 
   console.log('\n===============================================================');
   console.log(`PHASE 1B.1 SUITE COMPLETED: Passed ${passCount} / ${passCount + failCount} tests.`);

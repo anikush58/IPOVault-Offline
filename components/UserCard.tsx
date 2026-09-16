@@ -6,6 +6,7 @@ import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { User } from '@/context/DBContext';
+import { getEffectiveAvatarUrl } from '@/utils/avatarUtils';
 
 type Props = {
   user: User;
@@ -59,9 +60,11 @@ export function UserCard({ user, applied, allotted, decided, onEdit, onDelete, o
   const [avatarError, setAvatarError] = useState(false);
   const [copiedPan, setCopiedPan] = useState(false);
 
+  const effectiveAvatarUrl = getEffectiveAvatarUrl(user);
+
   useEffect(() => {
     setAvatarError(false);
-  }, [user.avatar_url]);
+  }, [effectiveAvatarUrl]);
 
   const handleCopyPan = async () => {
     if (!user.pan_number) return;
@@ -79,9 +82,9 @@ export function UserCard({ user, applied, allotted, decided, onEdit, onDelete, o
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       {/* ── Top row: avatar · name/PAN · soft action buttons ── */}
       <View style={styles.topRow}>
-        {user.avatar_url && !avatarError ? (
+        {effectiveAvatarUrl && !avatarError ? (
           <Image
-            source={{ uri: user.avatar_url }}
+            source={{ uri: effectiveAvatarUrl }}
             style={styles.avatar}
             resizeMode="cover"
             onError={() => setAvatarError(true)}

@@ -10,6 +10,7 @@ import { uploadService } from '@/services/infrastructure';
 import { safeRunAsync, safeGetFirstAsync, safeGetAllAsync, runWithTransaction } from '@/utils/sqliteDebug';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { ensureBase64DataUrl, extractBase64Payload, saveBase64ToLocalImage } from '@/utils/imageUtils';
+import { getEffectiveAvatarUrl } from '@/utils/avatarUtils';
 import { getRegistrarConfig } from '@/services/allotment/registrarConfig';
 import { scheduleDebouncedCloudBackup, isRestoreInProgress } from '@/services/cloud/cloudBackupService';
 
@@ -26,6 +27,7 @@ export type User = {
   upi_app: string;
   bank_name: string;
   avatar_url?: string;
+  avatarUrl?: string;
   default_amount_blocked: number;
   archived?: number;
 };
@@ -166,6 +168,15 @@ type DBContextType = {
     bankName?: string,
     upiApp?: string
   ) => Promise<void>;
+  partialSellApplication: (
+    id: string,
+    soldShares: number,
+    totalShares: number,
+    sellPrice: number,
+    saleDate: string | null,
+    tax?: number,
+    userCut?: number
+  ) => Promise<void>;
   updateApplicationDetails: (
     id: string,
     details: {
@@ -246,22 +257,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       await db.runAsync('UPDATE bank_accounts SET id = ? WHERE rowid = ?', [Crypto.randomUUID(), r.rowid]);
     }
 
-    // Migrate any legacy Base64 or temporary cache/content avatar_url rows into permanent local image files
-    try {
-      const pendingUsers = await db.getAllAsync<{ id: string; avatar_url: string }>(
-        "SELECT id, avatar_url FROM users_table WHERE avatar_url LIKE 'data:%' OR avatar_url LIKE '%cache%' OR avatar_url LIKE 'content://%'"
-      );
-      for (const u of pendingUsers) {
-        if (u.avatar_url) {
-          const savedUri = await saveBase64ToLocalImage(u.avatar_url, 'avatar', u.id);
-          if (savedUri && savedUri !== u.avatar_url) {
-            await db.runAsync('UPDATE users_table SET avatar_url = ? WHERE id = ?', [savedUri, u.id]);
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('[DBContext] Error migrating user avatars:', err);
-    }
+
     // Self-healing migration: Synchronize ipo_applications status with ipo_allotments table
     try {
       const nowIso = new Date().toISOString();
@@ -604,6 +600,20 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     await refresh();
   };
 
+  const partialSellApplication = async (
+    id: string,
+    soldShares: number,
+    totalShares: number,
+    sellPrice: number,
+    saleDate: string | null,
+    tax?: number,
+    userCut?: number
+  ) => {
+    const repo = new ApplicationRepository(db);
+    await repo.partialSell(id, soldShares, totalShares, sellPrice, saleDate, tax, userCut);
+    await refresh();
+  };
+
   const updateApplicationDetails = async (
     id: string,
     details: {
@@ -910,25 +920,22 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
   // ── JSON export / import ─────────────────────────────────────────────────
 
   const exportJSON = async (): Promise<string> => {
-    const processedUsers = await Promise.all(
-      users.map(async (u) => {
-        const avatarBase64 = u.avatar_url ? await ensureBase64DataUrl(u.avatar_url) : '';
-        const payload = extractBase64Payload(avatarBase64);
-        return {
-          id: u.id,
-          name: u.name,
-          pan_number: u.pan_number,
-          broker: u.broker,
-          tpin: u.tpin,
-          upi_app: u.upi_app,
-          bank_name: u.bank_name,
-          avatar_url: avatarBase64 || null,
-          avatar: payload ? { mimeType: payload.mimeType, data: payload.base64Data } : null,
-          default_amount_blocked: u.default_amount_blocked,
-          archived: u.archived ?? 0,
-        };
-      })
-    );
+    const processedUsers = users.map((u) => {
+      const effectiveUrl = getEffectiveAvatarUrl(u);
+      return {
+        id: u.id,
+        name: u.name,
+        pan_number: u.pan_number,
+        broker: u.broker,
+        tpin: u.tpin,
+        upi_app: u.upi_app,
+        bank_name: u.bank_name,
+        avatar_url: effectiveUrl,
+        avatarUrl: effectiveUrl,
+        default_amount_blocked: u.default_amount_blocked,
+        archived: u.archived ?? 0,
+      };
+    });
 
     const processedIpos = await Promise.all(
       ipos.map(async (i) => {
@@ -1093,27 +1100,11 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
             );
           }
 
-          let restoredAvatarUrl = '';
-          const avatarInput = (u as any).avatar || (u as any).avatar_data || u.avatar_url;
-          if (avatarInput) {
-            if (typeof avatarInput === 'string' && (avatarInput.startsWith('http://') || avatarInput.startsWith('https://'))) {
-              restoredAvatarUrl = avatarInput;
-            } else {
-              try {
-                const savedPath = await saveBase64ToLocalImage(avatarInput, 'avatar', uId || 'user');
-                if (savedPath) {
-                  restoredAvatarUrl = savedPath;
-                } else if (typeof avatarInput === 'string' && avatarInput.startsWith('file://')) {
-                  const fileCheck = await FileSystem.getInfoAsync(avatarInput).catch(() => ({ exists: false }));
-                  if (fileCheck.exists) {
-                    restoredAvatarUrl = avatarInput;
-                  }
-                }
-              } catch (err) {
-                console.warn('[DBContext.importJSON] Failed to restore user avatar:', err);
-              }
-            }
-          }
+          const restoredAvatarUrl = getEffectiveAvatarUrl({
+            id: uId,
+            name: name,
+            avatar_url: u.avatar_url || (u as any).avatarUrl || (typeof (u as any).avatar === 'string' ? (u as any).avatar : null),
+          });
 
           const archivedVal = u.archived ? 1 : 0;
           if (existing) {
@@ -1859,6 +1850,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         deleteIPO,
         addBulkApplications,
         updateApplication,
+        partialSellApplication,
         updateApplicationDetails,
         updateBulkApplications,
         deleteApplication,

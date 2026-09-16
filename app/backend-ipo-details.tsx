@@ -74,6 +74,12 @@ export default function BackendIpoDetailsScreen() {
   const [loading, setLoading] = useState(!ipo && !!params.id);
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>('IPO');
 
+  const handleOpenUrl = (url?: string | null) => {
+    if (!url) return;
+    const formatted = url.startsWith('http') ? url : `https://${url}`;
+    Linking.openURL(formatted).catch(() => {});
+  };
+
   const handleTabPress = (tabKey: DetailTab) => {
     setActiveDetailTab(tabKey);
     isManualScrollingRef.current = true;
@@ -267,8 +273,8 @@ export default function BackendIpoDetailsScreen() {
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 }}>
               <View style={{ width: 54, height: 54, borderRadius: 14, overflow: 'hidden', backgroundColor: isDark ? '#1E293B' : '#F8FAFC', borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
-                {(ipo.company?.logoUrl || ipo.logoUrl || ipo.logo_url) ? (
-                  <Image source={{ uri: ipo.company?.logoUrl || ipo.logoUrl || ipo.logo_url }} style={{ width: 44, height: 44 }} resizeMode="contain" />
+                {ipo.company?.logoUrl ? (
+                  <Image source={{ uri: ipo.company.logoUrl }} style={{ width: 44, height: 44 }} resizeMode="contain" />
                 ) : (
                   <Text style={{ fontSize: 18, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary }}>
                     {companyName.slice(0, 2).toUpperCase()}
@@ -712,7 +718,7 @@ export default function BackendIpoDetailsScreen() {
           {/* COMPANY FINANCIALS TABLE */}
           <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Company financials (Amount in ₹ Crore)</Text>
           <View style={[styles.tableCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {ipo.financials && ipo.financials.length > 0 ? (
+            {ipo.company?.financials && ipo.company.financials.length > 0 ? (
               <>
                 <View style={[styles.tableHeaderRow, { backgroundColor: isDark ? '#37271E' : '#FDF2E9' }]}>
                   <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.5 }]}>Period</Text>
@@ -720,12 +726,12 @@ export default function BackendIpoDetailsScreen() {
                   <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>Revenue</Text>
                   <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>Profit</Text>
                 </View>
-                {ipo.financials.map((row: any, idx: number) => (
-                  <View key={idx} style={idx === ipo.financials!.length - 1 ? styles.tableBodyRowLast : styles.tableBodyRow}>
-                    <Text style={[styles.tableCellLabel, { color: colors.foreground, flex: 1.5 }]}>{row.period || row.year || '—'}</Text>
-                    <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>{row.assets ?? '—'}</Text>
-                    <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>{row.revenue ?? '—'}</Text>
-                    <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>{row.profit ?? '—'}</Text>
+                {ipo.company.financials.map((row: any, idx: number) => (
+                  <View key={idx} style={idx === ipo.company!.financials!.length - 1 ? styles.tableBodyRowLast : styles.tableBodyRow}>
+                    <Text style={[styles.tableCellLabel, { color: colors.foreground, flex: 1.5 }]}>{row.fiscalPeriod || row.period || '—'}</Text>
+                    <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>{row.totalAssets ?? row.assets ?? '—'}</Text>
+                    <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>{row.totalRevenue ?? row.revenue ?? '—'}</Text>
+                    <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>{row.pat ?? row.profit ?? '—'}</Text>
                   </View>
                 ))}
               </>
@@ -740,16 +746,16 @@ export default function BackendIpoDetailsScreen() {
           <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Key Financial Ratios</Text>
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.cardRow}>
-              <Text style={[styles.label, { color: colors.mutedForeground }]}>EBIDTA</Text>
-              <Text style={[styles.value, { color: colors.foreground }]}>{ipo.ebitdaPercent != null ? `${ipo.ebitdaPercent}%` : '—'}</Text>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>EBITDA</Text>
+              <Text style={[styles.value, { color: colors.foreground }]}>{ipo.company?.financials?.[0]?.ebitda != null ? `${ipo.company.financials[0].ebitda}` : '—'}</Text>
             </View>
             <View style={styles.cardRow}>
-              <Text style={[styles.label, { color: colors.mutedForeground }]}>ROE</Text>
-              <Text style={[styles.value, { color: colors.foreground }]}>{ipo.roePercent != null ? `${ipo.roePercent}%` : '—'}</Text>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>ROE %</Text>
+              <Text style={[styles.value, { color: colors.foreground }]}>{ipo.company?.financials?.[0]?.roePercentage != null ? `${ipo.company.financials[0].roePercentage}%` : '—'}</Text>
             </View>
             <View style={styles.cardRow}>
-              <Text style={[styles.label, { color: colors.mutedForeground }]}>PAT</Text>
-              <Text style={[styles.value, { color: colors.foreground }]}>{ipo.patPercent != null ? `${ipo.patPercent}%` : '—'}</Text>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>PAT Margin %</Text>
+              <Text style={[styles.value, { color: colors.foreground }]}>{ipo.company?.financials?.[0]?.patMarginPercent != null ? `${ipo.company.financials[0].patMarginPercent}%` : '—'}</Text>
             </View>
           </View>
 
@@ -781,29 +787,111 @@ export default function BackendIpoDetailsScreen() {
           </View>
         </View>
 
-        {/* ── SECTION 4: DOCS & DISCLAIMER ── */}
+        {/* ── SECTION 4: DOCS & ANCHOR LIST ── */}
         <View onLayout={(e) => { sectionYMap.current['Docs'] = e.nativeEvent.layout.y; }} style={{ marginTop: 16 }}>
+          {/* Document Filings Card */}
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>IPO Prospectus & Filings</Text>
-            {ipo.documents && ipo.documents.length > 0 ? (
-              ipo.documents.map((doc, idx) => (
+            <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>IPO Prospectus & Official Filings</Text>
+
+            {(() => {
+              const drhpDoc = ipo.documents?.find((d) => d.documentType === 'DRHP');
+              const rhpDoc = ipo.documents?.find((d) => d.documentType === 'RHP');
+              const prospectusDoc = ipo.documents?.find((d) => d.documentType === 'PROSPECTUS');
+              const anchorDoc = ipo.documents?.find((d) => d.documentType === 'ANCHOR_LIST');
+
+              const drhpUrl = ipo.drhpUrl || drhpDoc?.sourceUrl || drhpDoc?.fileUrl;
+              const rhpUrl = ipo.rhpUrl || rhpDoc?.sourceUrl || rhpDoc?.fileUrl;
+              const prospectusUrl = ipo.prospectusUrl || prospectusDoc?.sourceUrl || prospectusDoc?.fileUrl;
+              const anchorListUrl = ipo.anchorListUrl || ipo.anchorDetails?.documentUrl || anchorDoc?.sourceUrl || anchorDoc?.fileUrl;
+
+              return (
+                <>
+                  <TouchableOpacity
+                    onPress={() => drhpUrl ? handleOpenUrl(drhpUrl) : undefined}
+                    style={[{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border, opacity: drhpUrl ? 1 : 0.6 }]}
+                  >
+                    <Feather name="file-text" size={16} color={drhpUrl ? colors.primary : colors.mutedForeground} />
+                    <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_500Medium', color: colors.foreground, flex: 1 }}>
+                      DRHP Prospectus {!drhpUrl && '(Not Available)'}
+                    </Text>
+                    {drhpUrl && <Feather name="external-link" size={14} color={colors.primary} />}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => rhpUrl ? handleOpenUrl(rhpUrl) : undefined}
+                    style={[{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border, opacity: rhpUrl ? 1 : 0.6 }]}
+                  >
+                    <Feather name="file-text" size={16} color={rhpUrl ? colors.primary : colors.mutedForeground} />
+                    <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_500Medium', color: colors.foreground, flex: 1 }}>
+                      RHP Prospectus {!rhpUrl && '(Not Available)'}
+                    </Text>
+                    {rhpUrl && <Feather name="external-link" size={14} color={colors.primary} />}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => prospectusUrl ? handleOpenUrl(prospectusUrl) : undefined}
+                    style={[{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border, opacity: prospectusUrl ? 1 : 0.6 }]}
+                  >
+                    <Feather name="file-text" size={16} color={prospectusUrl ? colors.primary : colors.mutedForeground} />
+                    <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_500Medium', color: colors.foreground, flex: 1 }}>
+                      Final Prospectus {!prospectusUrl && '(Not Available)'}
+                    </Text>
+                    {prospectusUrl && <Feather name="external-link" size={14} color={colors.primary} />}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => anchorListUrl ? handleOpenUrl(anchorListUrl) : undefined}
+                    style={[{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, opacity: anchorListUrl ? 1 : 0.6 }]}
+                  >
+                    <Feather name="users" size={16} color={anchorListUrl ? colors.primary : colors.mutedForeground} />
+                    <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_500Medium', color: colors.foreground, flex: 1 }}>
+                      Anchor List {!anchorListUrl && '(Not Available)'}
+                    </Text>
+                    {anchorListUrl && <Feather name="external-link" size={14} color={colors.primary} />}
+                  </TouchableOpacity>
+                </>
+              );
+            })()}
+          </View>
+
+          {/* ANCHOR INVESTOR DETAILS CARD */}
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 16 }]}>
+            <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>Anchor Investor Details</Text>
+            <View style={{ gap: 8, marginTop: 4 }}>
+              {ipo.anchorDetails?.portion != null && (
+                <View style={styles.cardRow}>
+                  <Text style={[styles.label, { color: colors.mutedForeground }]}>Anchor Portion</Text>
+                  <Text style={[styles.value, { color: colors.foreground }]}>₹{ipo.anchorDetails.portion} Cr</Text>
+                </View>
+              )}
+              {ipo.anchorDetails?.bidDate && (
+                <View style={styles.cardRow}>
+                  <Text style={[styles.label, { color: colors.mutedForeground }]}>Bid Date</Text>
+                  <Text style={[styles.value, { color: colors.foreground }]}>{ipo.anchorDetails.bidDate}</Text>
+                </View>
+              )}
+              {ipo.anchorDetails?.lockIn && (
+                <View style={styles.cardRow}>
+                  <Text style={[styles.label, { color: colors.mutedForeground }]}>Lock-in Period</Text>
+                  <Text style={[styles.value, { color: colors.foreground }]}>{ipo.anchorDetails.lockIn}</Text>
+                </View>
+              )}
+              {ipo.anchorDetails?.details && (
+                <View style={{ marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: colors.border }}>
+                  <Text style={[styles.label, { color: colors.mutedForeground, marginBottom: 4 }]}>Anchor Breakdown & Allocation</Text>
+                  <Text style={{ fontSize: 13, color: colors.foreground, lineHeight: 18 }}>{ipo.anchorDetails.details}</Text>
+                </View>
+              )}
+              {(ipo.anchorListUrl || ipo.anchorDetails?.documentUrl) ? (
                 <TouchableOpacity
-                  key={idx}
-                  onPress={() => doc.sourceUrl ? handleOpenUrl(doc.sourceUrl) : undefined}
-                  style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: idx === ipo.documents!.length - 1 ? 0 : 1, borderBottomColor: colors.border }}
+                  onPress={() => handleOpenUrl(ipo.anchorListUrl || ipo.anchorDetails?.documentUrl)}
+                  style={{ marginTop: 8, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, backgroundColor: colors.primary + '15', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                 >
-                  <Feather name="file-text" size={16} color={colors.primary} />
-                  <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_500Medium', color: colors.foreground, flex: 1 }}>
-                    {doc.documentType} {doc.fileName ? `(${doc.fileName})` : ''}
-                  </Text>
-                  {doc.sourceUrl && <Feather name="external-link" size={14} color={colors.primary} />}
+                  <Feather name="file-text" size={14} color={colors.primary} />
+                  <Text style={{ fontSize: 13, color: colors.primary, fontFamily: 'GoogleSansFlex_600SemiBold' }}>View Anchor List PDF</Text>
                 </TouchableOpacity>
-              ))
-            ) : (
-              <Text style={{ fontSize: 13, color: colors.mutedForeground, paddingVertical: 8 }}>
-                No document filings available.
-              </Text>
-            )}
+              ) : null}
+            </View>
           </View>
 
           {/* OFFICIAL IPOVAULT DISCLAIMER CARD */}

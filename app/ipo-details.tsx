@@ -270,13 +270,10 @@ export default function IPODetailsScreen() {
   const strengthsList = intel?.strengths || [];
   const risksList = intel?.risks || [];
 
-  const leadManagersList = useMemo(() => {
-    if (!ipo?.lead_manager) return [];
-    return ipo.lead_manager
-      .split(/[,;\n]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }, [ipo?.lead_manager]);
+  const leadManagersList = (ipo.lead_manager || '')
+    .split(/[,;\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -372,8 +369,8 @@ export default function IPODetailsScreen() {
           <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 }}>
               <View style={{ width: 54, height: 54, borderRadius: 14, overflow: 'hidden', backgroundColor: isDark ? '#1E293B' : '#F8FAFC', borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
-                {(ipo.logo_url || ipo.logoUrl || ipo.company?.logoUrl) && !logoError ? (
-                  <Image source={{ uri: ipo.logo_url || ipo.logoUrl || ipo.company?.logoUrl }} style={{ width: 44, height: 44 }} resizeMode="contain" onError={() => setLogoError(true)} />
+                {ipo.logo_url && !logoError ? (
+                  <Image source={{ uri: ipo.logo_url }} style={{ width: 44, height: 44 }} resizeMode="contain" onError={() => setLogoError(true)} />
                 ) : (
                   <Text style={{ fontSize: 18, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary }}>{initials}</Text>
                 )}
@@ -934,29 +931,116 @@ export default function IPODetailsScreen() {
           </View>
         </View>
 
-        {/* ── SECTION 4: DOCS & DISCLAIMER ── */}
+        {/* ── SECTION 4: DOCS & ANCHOR LIST ── */}
         <View onLayout={(e) => { sectionYMap.current['Docs'] = e.nativeEvent.layout.y; }} style={{ marginTop: 16 }}>
+          {/* Document Filings Card */}
           <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>IPO Prospectus & Filings</Text>
-            <TouchableOpacity
-              onPress={() => (ipo.drhp_url || ipo.prospectus_url) ? handleOpenUrl(ipo.drhp_url || ipo.prospectus_url) : undefined}
-              style={styles.docRowBtn}
-            >
-              <Feather name="file-text" size={16} color={colors.foreground} />
-              <Text style={[styles.docBtnText, { color: colors.foreground }]}>
-                DHRP / DRHP Prospectus {!(ipo.drhp_url || ipo.prospectus_url) && '(—)'}
-              </Text>
-            </TouchableOpacity>
+            <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>IPO Prospectus & Official Filings</Text>
+            
+            {(() => {
+              const drhpUrl = ipo.drhp_url || ipo.intelligence?.drhp_url;
+              const rhpUrl = ipo.rhp_url || ipo.intelligence?.rhp_url;
+              const prospectusUrl = ipo.prospectus_url;
+              const anchorListUrl = ipo.anchor_list_url || ipo.intelligence?.anchor_investors_url || ipo.anchor_details?.documentUrl;
 
-            <TouchableOpacity
-              onPress={() => (ipo.rhp_url || ipo.prospectus_url) ? handleOpenUrl(ipo.rhp_url || ipo.prospectus_url) : undefined}
-              style={styles.docRowBtn}
-            >
-              <Feather name="file-text" size={16} color={colors.foreground} />
-              <Text style={[styles.docBtnText, { color: colors.foreground }]}>
-                RHP Prospectus {!(ipo.rhp_url || ipo.prospectus_url) && '(—)'}
-              </Text>
-            </TouchableOpacity>
+              return (
+                <>
+                  <TouchableOpacity
+                    onPress={() => drhpUrl ? handleOpenUrl(drhpUrl) : undefined}
+                    style={[styles.docRowBtn, { opacity: drhpUrl ? 1 : 0.6 }]}
+                  >
+                    <Feather name="file-text" size={16} color={drhpUrl ? colors.primary : colors.mutedForeground} />
+                    <Text style={[styles.docBtnText, { color: colors.foreground }]}>
+                      DRHP Prospectus {!drhpUrl && '(Not Available)'}
+                    </Text>
+                    {drhpUrl && <Feather name="external-link" size={14} color={colors.primary} style={{ marginLeft: 'auto' }} />}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => rhpUrl ? handleOpenUrl(rhpUrl) : undefined}
+                    style={[styles.docRowBtn, { opacity: rhpUrl ? 1 : 0.6 }]}
+                  >
+                    <Feather name="file-text" size={16} color={rhpUrl ? colors.primary : colors.mutedForeground} />
+                    <Text style={[styles.docBtnText, { color: colors.foreground }]}>
+                      RHP Prospectus {!rhpUrl && '(Not Available)'}
+                    </Text>
+                    {rhpUrl && <Feather name="external-link" size={14} color={colors.primary} style={{ marginLeft: 'auto' }} />}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => prospectusUrl ? handleOpenUrl(prospectusUrl) : undefined}
+                    style={[styles.docRowBtn, { opacity: prospectusUrl ? 1 : 0.6 }]}
+                  >
+                    <Feather name="file-text" size={16} color={prospectusUrl ? colors.primary : colors.mutedForeground} />
+                    <Text style={[styles.docBtnText, { color: colors.foreground }]}>
+                      Final Prospectus {!prospectusUrl && '(Not Available)'}
+                    </Text>
+                    {prospectusUrl && <Feather name="external-link" size={14} color={colors.primary} style={{ marginLeft: 'auto' }} />}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={() => anchorListUrl ? handleOpenUrl(anchorListUrl) : undefined}
+                    style={[styles.docRowBtn, { opacity: anchorListUrl ? 1 : 0.6 }]}
+                  >
+                    <Feather name="users" size={16} color={anchorListUrl ? colors.primary : colors.mutedForeground} />
+                    <Text style={[styles.docBtnText, { color: colors.foreground }]}>
+                      Anchor List {!anchorListUrl && '(Not Available)'}
+                    </Text>
+                    {anchorListUrl && <Feather name="external-link" size={14} color={colors.primary} style={{ marginLeft: 'auto' }} />}
+                  </TouchableOpacity>
+                </>
+              );
+            })()}
+          </View>
+
+          {/* ANCHOR INVESTOR DETAILS CARD */}
+          <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 16 }]}>
+            <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>Anchor Investor Details</Text>
+
+            <View style={{ gap: 8, marginTop: 8 }}>
+              {ipo.anchor_sub != null && (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
+                  <Text style={{ fontSize: 13, color: colors.mutedForeground }}>Anchor Subscription</Text>
+                  <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>{ipo.anchor_sub}x</Text>
+                </View>
+              )}
+              {ipo.anchor_details?.portion != null && (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
+                  <Text style={{ fontSize: 13, color: colors.mutedForeground }}>Anchor Portion</Text>
+                  <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>₹{ipo.anchor_details.portion} Cr</Text>
+                </View>
+              )}
+              {ipo.anchor_details?.bidDate && (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
+                  <Text style={{ fontSize: 13, color: colors.mutedForeground }}>Bid Date</Text>
+                  <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>{ipo.anchor_details.bidDate}</Text>
+                </View>
+              )}
+              {ipo.anchor_details?.lockIn && (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
+                  <Text style={{ fontSize: 13, color: colors.mutedForeground }}>Lock-in Period</Text>
+                  <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>{ipo.anchor_details.lockIn}</Text>
+                </View>
+              )}
+              {ipo.anchor_details?.details && (
+                <View style={{ marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: colors.border }}>
+                  <Text style={{ fontSize: 12, color: colors.mutedForeground, marginBottom: 4 }}>Anchor Breakdown & Allocation</Text>
+                  <Text style={{ fontSize: 13, color: colors.foreground, lineHeight: 18 }}>{ipo.anchor_details.details}</Text>
+                </View>
+              )}
+              {(ipo.anchor_list_url || ipo.intelligence?.anchor_investors_url || ipo.anchor_details?.documentUrl) ? (
+                <TouchableOpacity
+                  onPress={() => {
+                    const url = ipo.anchor_list_url || ipo.intelligence?.anchor_investors_url || ipo.anchor_details?.documentUrl;
+                    if (url) handleOpenUrl(url);
+                  }}
+                  style={{ marginTop: 10, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, backgroundColor: colors.primary + '15', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                >
+                  <Feather name="file-text" size={14} color={colors.primary} />
+                  <Text style={{ fontSize: 13, color: colors.primary, fontFamily: 'GoogleSansFlex_600SemiBold' }}>View Anchor List PDF</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
           </View>
 
           {/* OFFICIAL IPOVAULT DISCLAIMER CARD */}

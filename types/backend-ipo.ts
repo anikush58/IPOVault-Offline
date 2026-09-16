@@ -65,7 +65,7 @@ export interface BackendParticipant {
 
 export interface BackendDocument {
   id?: string;
-  documentType: 'DRHP' | 'RHP' | 'PROSPECTUS' | 'OTHER';
+  documentType: 'DRHP' | 'RHP' | 'PROSPECTUS' | 'ANCHOR_LIST' | 'OTHER';
   title?: string | null;
   fileName?: string | null;
   fileUrl?: string | null;
@@ -73,6 +73,14 @@ export interface BackendDocument {
   sourceUrl?: string | null;
   mimeType?: string | null;
   fileSizeBytes?: number | null;
+}
+
+export interface BackendAnchorDetails {
+  portion?: number | null;
+  bidDate?: string | null;
+  lockIn?: string | null;
+  details?: string | null;
+  documentUrl?: string | null;
 }
 
 export interface BackendAllotment {
@@ -129,6 +137,11 @@ export interface BackendIpo {
   companyName?: string;
   offerCategories?: BackendOfferCategory[];
   participants?: BackendParticipant[];
+  drhpUrl?: string | null;
+  rhpUrl?: string | null;
+  prospectusUrl?: string | null;
+  anchorListUrl?: string | null;
+  anchorDetails?: BackendAnchorDetails | null;
   documents?: BackendDocument[];
   allotment?: BackendAllotment | null;
   currentGmp?: BackendGmp | null;
