@@ -344,7 +344,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
              COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
              i.ipo_name,
              i.buy_price,
-             i.quantity,
+             COALESCE(a.shares_count, i.quantity) AS quantity,
              i.open_date,
              i.logo_url AS ipo_logo_url
       FROM   ipo_applications a

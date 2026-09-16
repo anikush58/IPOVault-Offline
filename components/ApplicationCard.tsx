@@ -96,23 +96,23 @@ export function ApplicationCard({
       case 'Mandate Approved':
       case 'Applied':
         return {
-          bg: isDark ? '#1E3A8A44' : '#EFF6FF',
-          text: isDark ? '#93C5FD' : '#2563EB',
+          bg: colors.statusAppliedBg,
+          text: colors.statusApplied,
           label: status === 'Mandate Approved' ? 'Mandate Approved' : 'Applied',
           hasChevron: false,
         };
       case 'Allotted':
         return {
-          bg: isDark ? '#064E3B44' : '#DCFCE7',
-          text: isDark ? '#6EE7B7' : '#16A34A',
+          bg: colors.statusAllottedBg,
+          text: colors.statusAllotted,
           label: 'Allotted',
           hasChevron: false,
         };
       case 'Not Allotted':
       case 'Cancelled':
         return {
-          bg: isDark ? '#7F1D1D44' : '#FEE2E2',
-          text: isDark ? '#FCA5A5' : '#DC2626',
+          bg: colors.statusNotAllottedBg,
+          text: colors.statusNotAllotted,
           label: 'Not Allotted',
           hasChevron: false,
         };
@@ -126,8 +126,8 @@ export function ApplicationCard({
       case 'Holding':
       default:
         return {
-          bg: isDark ? '#581C8744' : '#F3E8FF',
-          text: isDark ? '#E9D5FF' : '#9333EA',
+          bg: colors.statusHoldingBg,
+          text: colors.statusHolding,
           label: 'Holding',
           hasChevron: false,
         };
@@ -226,7 +226,7 @@ export function ApplicationCard({
         style={[
           styles.cardContainer,
           {
-            backgroundColor: isDark ? '#161622' : '#F3F4F6',
+            backgroundColor: colors.surface,
             borderColor: isSelectionMode && isSelected ? (isDark ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.25)') : colors.border,
             transform: [{ translateX: pan.x }, { rotate: cardRotate }],
           },

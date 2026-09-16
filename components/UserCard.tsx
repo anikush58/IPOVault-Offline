@@ -130,9 +130,9 @@ export function UserCard({ user, applied, allotted, decided, onEdit, onDelete, o
             <TouchableOpacity
               onPress={() => onArchive(user)}
               activeOpacity={0.7}
-              style={[styles.softActionBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9' }]}
+              style={[styles.softActionBtn, { backgroundColor: colors.softBtnBg }]}
             >
-              <Feather name="archive" size={14} color={isDark ? '#F8FAFC' : '#0F172A'} />
+              <Feather name="archive" size={14} color={colors.foreground} />
             </TouchableOpacity>
           ) : null}
 
@@ -140,26 +140,26 @@ export function UserCard({ user, applied, allotted, decided, onEdit, onDelete, o
             <TouchableOpacity
               onPress={() => onUnarchive(user)}
               activeOpacity={0.7}
-              style={[styles.softActionBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9' }]}
+              style={[styles.softActionBtn, { backgroundColor: colors.softBtnBg }]}
             >
-              <Feather name="rotate-ccw" size={14} color={isDark ? '#F8FAFC' : '#0F172A'} />
+              <Feather name="rotate-ccw" size={14} color={colors.foreground} />
             </TouchableOpacity>
           ) : null}
 
           <TouchableOpacity
             onPress={() => onEdit(user)}
             activeOpacity={0.7}
-            style={[styles.softActionBtn, { backgroundColor: isDark ? 'rgba(59,130,246,0.15)' : '#EFF6FF' }]}
+            style={[styles.softActionBtn, { backgroundColor: colors.statusAppliedBg }]}
           >
-            <Feather name="edit-2" size={14} color="#3B82F6" />
+            <Feather name="edit-2" size={14} color={colors.statusApplied} />
           </TouchableOpacity>
 
           <TouchableOpacity
             onPress={() => onDelete(user)}
             activeOpacity={0.7}
-            style={[styles.softActionBtn, { backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : '#FEE2E2' }]}
+            style={[styles.softActionBtn, { backgroundColor: colors.negativeBg }]}
           >
-            <Feather name="trash-2" size={14} color="#EF4444" />
+            <Feather name="trash-2" size={14} color={colors.negative} />
           </TouchableOpacity>
         </View>
       </View>
@@ -172,25 +172,25 @@ export function UserCard({ user, applied, allotted, decided, onEdit, onDelete, o
       >
         <View style={styles.chips}>
           {user.broker ? (
-            <View style={[styles.chip, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9' }]}>
+            <View style={[styles.chip, { backgroundColor: colors.badgeBg }]}>
               <Feather name="briefcase" size={11} color={colors.mutedForeground} />
               <Text style={[styles.chipText, { color: colors.foreground }]}>{user.broker}</Text>
             </View>
           ) : null}
           {user.client_id ? (
-            <View style={[styles.chip, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9' }]}>
+            <View style={[styles.chip, { backgroundColor: colors.badgeBg }]}>
               <Feather name="folder" size={11} color={colors.mutedForeground} />
               <Text style={[styles.chipText, { color: colors.foreground }]}>Demat: {user.client_id}</Text>
             </View>
           ) : null}
           {user.upi_id ? (
-            <View style={[styles.chip, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9' }]}>
+            <View style={[styles.chip, { backgroundColor: colors.badgeBg }]}>
               <Feather name="credit-card" size={11} color={colors.mutedForeground} />
               <Text style={[styles.chipText, { color: colors.foreground }]}>{user.upi_id}</Text>
             </View>
           ) : null}
           {user.tpin ? (
-            <View style={[styles.chip, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9' }]}>
+            <View style={[styles.chip, { backgroundColor: colors.badgeBg }]}>
               <Feather name="lock" size={11} color={colors.mutedForeground} />
               <Text style={[styles.chipText, { color: colors.foreground }]}>
                 {user.tpin}

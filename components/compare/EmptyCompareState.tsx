@@ -24,8 +24,8 @@ export const EmptyCompareState = React.memo(function EmptyCompareState() {
         style={[styles.btn, { backgroundColor: colors.primary }]}
         activeOpacity={0.85}
       >
-        <Text style={styles.btnText}>Browse IPOs</Text>
-        <Feather name="arrow-right" size={16} color="#FFFFFF" />
+        <Text style={[styles.btnText, { color: colors.primaryForeground }]}>Browse IPOs</Text>
+        <Feather name="arrow-right" size={16} color={colors.primaryForeground} />
       </TouchableOpacity>
     </View>
   );

@@ -403,8 +403,8 @@ export function AddIPOModal({ visible, onClose }: Props) {
                         borderColor: selected ? colors.primary : colors.border,
                       }}
                     >
-                      {selected && <Feather name="check" size={12} color="#fff" style={{ marginRight: 4 }} />}
-                      <Text style={{ fontSize: 12, fontFamily: 'GoogleSansFlex_500Medium', color: selected ? '#fff' : colors.foreground }}>
+                      {selected && <Feather name="check" size={12} color={colors.primaryForeground} style={{ marginRight: 4 }} />}
+                      <Text style={{ fontSize: 12, fontFamily: 'GoogleSansFlex_500Medium', color: selected ? colors.primaryForeground : colors.foreground }}>
                         {r.label}
                       </Text>
                     </TouchableOpacity>
@@ -430,7 +430,7 @@ export function AddIPOModal({ visible, onClose }: Props) {
                         },
                       ]}
                     >
-                      <Text style={[styles.typePillText, { color: exchange === ex.code ? '#fff' : colors.foreground }]}>
+                      <Text style={[styles.typePillText, { color: exchange === ex.code ? colors.primaryForeground : colors.foreground }]}>
                         {ex.label}
                       </Text>
                     </TouchableOpacity>
@@ -453,7 +453,7 @@ export function AddIPOModal({ visible, onClose }: Props) {
                         },
                       ]}
                     >
-                      <Text style={[styles.typePillText, { color: issueType === t.code ? '#fff' : colors.foreground }]}>
+                      <Text style={[styles.typePillText, { color: issueType === t.code ? colors.primaryForeground : colors.foreground }]}>
                         {t.label}
                       </Text>
                     </TouchableOpacity>

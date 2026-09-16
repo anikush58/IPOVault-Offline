@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { ONBOARDING_SLIDES, ONBOARDING_STORAGE_KEY } from '@/constants/onboarding';
 import { useColorSchemeAssets } from '@/hooks/useColorSchemeAssets';
+import { useColors } from '@/hooks/useColors';
 import { OnboardingSlide } from '@/components/onboarding/OnboardingSlide';
 import { PageIndicator } from '@/components/onboarding/PageIndicator';
 import { PrimaryButton } from '@/components/onboarding/PrimaryButton';
@@ -48,9 +49,10 @@ export function OnboardingScreenView() {
     }
   };
 
-  const bgColor = isDark ? '#0A0A0A' : '#FFFFFF';
-  const textColor = isDark ? '#FFFFFF' : '#111827';
-  const subtitleColor = isDark ? '#9CA3AF' : '#6B7280';
+  const colors = useColors();
+  const bgColor = colors.background;
+  const textColor = colors.foreground;
+  const subtitleColor = colors.mutedForeground;
 
   const buttonLabel = currentIndex === ONBOARDING_SLIDES.length - 1 ? 'Get Started' : 'Next';
 

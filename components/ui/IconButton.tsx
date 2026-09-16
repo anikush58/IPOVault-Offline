@@ -75,9 +75,9 @@ export function IconButton({
 
     if (name === 'x' && (variant === 'primary' || variant === 'surface')) {
       iconSize = customIconSize ?? (size === 'lg' ? 16 : size === 'sm' ? 12 : 13);
-      bg = isDark ? '#FFFFFF' : '#0F172A';
+      bg = colors.primary;
       border = 'transparent';
-      iconColor = isDark ? '#0F172A' : '#FFFFFF';
+      iconColor = colors.primaryForeground;
     } else if (variant === 'primary') {
       bg = colors.primary + '18';
       border = colors.primary;

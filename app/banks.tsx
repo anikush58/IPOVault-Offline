@@ -486,8 +486,8 @@ export default function BanksScreen() {
             </Text>
             <TouchableOpacity onPress={openAdd} style={[styles.emptyBtn, { overflow: 'hidden' }]}>
               <LinearGradient colors={[colors.primary, colors.primaryLight]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
-              <Feather name="plus" size={16} color="#fff" />
-              <Text style={styles.emptyBtnText}>Add Bank Account</Text>
+              <Feather name="plus" size={16} color={colors.primaryForeground} />
+              <Text style={[styles.emptyBtnText, { color: colors.primaryForeground }]}>Add Bank Account</Text>
             </TouchableOpacity>
           </View>
         )}

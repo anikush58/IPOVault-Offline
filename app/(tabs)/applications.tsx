@@ -344,7 +344,7 @@ export default function ApplicationsScreen() {
                   end={{ x: 1, y: 0 }}
                   style={StyleSheet.absoluteFill}
                 />
-                <Text style={styles.checkAllotmentBtnText}>🔍 Check Allotment</Text>
+                <Text style={[styles.checkAllotmentBtnText, { color: colors.primaryForeground }]}>🔍 Check Allotment</Text>
               </TouchableOpacity>
             )}
           </View>

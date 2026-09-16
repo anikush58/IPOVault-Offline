@@ -132,17 +132,7 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
         const taxVal = tax.trim() !== '' ? parseFloat(tax) : 0;
         const userCutVal = userCut.trim() !== '' ? parseFloat(userCut) : 0;
 
-        if (soldQtyNum > 0 && soldQtyNum < app.quantity) {
-          await partialSellApplication(
-            app.id,
-            soldQtyNum,
-            app.quantity,
-            sPrice,
-            sDate,
-            taxVal,
-            userCutVal
-          );
-        } else {
+        if (app.status === 'Sold') {
           await updateApplication(
             app.id,
             'Sold',
@@ -151,6 +141,16 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
             taxVal,
             userCutVal,
             selectedBankName.trim() || undefined
+          );
+        } else {
+          await partialSellApplication(
+            app.id,
+            soldQtyNum,
+            app.quantity,
+            sPrice,
+            sDate,
+            taxVal,
+            userCutVal
           );
         }
       } else {
@@ -203,13 +203,16 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
     <Modal visible={!!app} animationType="fade" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         {/* Centered Modal Backdrop */}
-        <Pressable style={styles.centerModalOverlay} onPress={onClose}>
-          {/* Centered Card Dialog Box (Matching AddUserModal) */}
-          <Pressable style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {/* Header: Title on left, Close Cross Icon on top right (matching AddUserModal) */}
+        <View style={styles.centerModalOverlay}>
+          {/* Backdrop Tap Target to Close Modal */}
+          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+
+          {/* Centered Card Dialog Box (Plain View so touch gestures pass directly to ScrollView) */}
+          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {/* Header: Title on left, Close Cross Icon on top right */}
             <View style={[styles.modalHeader, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
               <Text style={[styles.modalTitle, { color: colors.foreground }]}>Update Application</Text>
               <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={8}>
@@ -219,9 +222,11 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
 
             {app ? (
               <ScrollView
+                style={{ flexGrow: 0, flexShrink: 1 }}
                 contentContainerStyle={styles.content}
                 keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={true}
               >
                 {/* Info card with Company Logo Avatar */}
                 <View style={[styles.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -508,8 +513,8 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
                 )}
               </ScrollView>
             ) : null}
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -517,7 +522,7 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  // Centered Backdrop and Floating Modal Box (Matching AddUserModal)
+  // Centered Backdrop and Floating Modal Box
   centerModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.55)',
@@ -529,6 +534,7 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 440,
     maxHeight: '85%',
+    flexShrink: 1,
     borderRadius: 24,
     borderWidth: 1,
     overflow: 'hidden',

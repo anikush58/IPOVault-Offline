@@ -1,7 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Linking from 'expo-linking';
+import { Feather } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { supabase } from '@/sync/supabase';
 import { useColors } from '@/hooks/useColors';
 import { useDialog } from '@/context/DialogContext';
@@ -13,6 +15,9 @@ export default function AuthCallbackScreen() {
   const params = useLocalSearchParams<{ returnTo?: string }>();
   const url = Linking.useURL();
   const { showError } = useDialog();
+
+  const [state, setState] = useState<'loading' | 'success'>('loading');
+  const [userEmail, setUserEmail] = useState('');
 
   useEffect(() => {
     let isMounted = true;
@@ -26,19 +31,30 @@ export default function AuthCallbackScreen() {
           throw new Error(errorCode);
         }
 
+        let email = '';
         if (urlParams?.code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(urlParams.code);
+          const { data, error } = await supabase.auth.exchangeCodeForSession(urlParams.code);
           if (error) throw error;
+          email = data?.user?.email || data?.session?.user?.email || '';
         } else if (urlParams?.access_token && urlParams?.refresh_token) {
-          const { error } = await supabase.auth.setSession({
+          const { data, error } = await supabase.auth.setSession({
             access_token: urlParams.access_token,
             refresh_token: urlParams.refresh_token,
           });
           if (error) throw error;
+          email = data?.user?.email || data?.session?.user?.email || '';
+        } else {
+          const { data } = await supabase.auth.getSession();
+          email = data?.session?.user?.email || '';
         }
 
         if (isMounted) {
-          router.replace(target as any);
+          setUserEmail(email);
+          setState('success');
+          try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
+          setTimeout(() => {
+            router.replace(target as any);
+          }, 1200);
         }
       } catch (err: any) {
         console.error('[OAuth Callback] Error handling session:', err);
@@ -56,7 +72,12 @@ export default function AuthCallbackScreen() {
         if (!isMounted) return;
         const target = (params.returnTo as string) || '/(tabs)/settings';
         if (session) {
-          router.replace(target as any);
+          setUserEmail(session.user?.email || '');
+          setState('success');
+          try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
+          setTimeout(() => {
+            router.replace(target as any);
+          }, 1200);
         } else {
           router.replace({ pathname: '/auth', params: { returnTo: target } });
         }
@@ -70,8 +91,26 @@ export default function AuthCallbackScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ActivityIndicator size="large" color={colors.primary} />
-      <Text style={[styles.text, { color: colors.foreground }]}>Completing Google Sign-In...</Text>
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {state === 'loading' ? (
+          <>
+            <ActivityIndicator size="large" color={colors.primary} style={{ marginBottom: 16 }} />
+            <Text style={[styles.title, { color: colors.foreground }]}>Completing Sign-In</Text>
+            <Text style={[styles.subText, { color: colors.mutedForeground }]}>Verifying Google credentials…</Text>
+          </>
+        ) : (
+          <>
+            <View style={styles.successBadge}>
+              <Feather name="check" size={32} color="#FFFFFF" />
+            </View>
+            <Text style={[styles.successTitle, { color: colors.foreground }]}>Authentication Successful!</Text>
+            {userEmail ? (
+              <Text style={[styles.emailText, { color: colors.primary }]}>Signed in as {userEmail}</Text>
+            ) : null}
+            <Text style={[styles.subText, { color: colors.mutedForeground }]}>Returning to settings…</Text>
+          </>
+        )}
+      </View>
     </View>
   );
 }
@@ -83,9 +122,44 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
   },
-  text: {
-    marginTop: 16,
-    fontSize: 16,
-    fontFamily: 'GoogleSansFlex_500Medium',
+  card: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 28,
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 20,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    marginBottom: 6,
+  },
+  subText: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    textAlign: 'center',
+  },
+  successBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  successTitle: {
+    fontSize: 20,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    color: '#10B981',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  emailText: {
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+    marginBottom: 10,
+    textAlign: 'center',
   },
 });

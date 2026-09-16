@@ -28,6 +28,7 @@ import { IPOMasterRecord } from '@/services/ipo/types';
 import { IPOStatusChip } from '@/components/ipo/IPOStatusChip';
 import { IPOSkeletonCard } from '@/components/ipo/IPOSkeleton';
 import { evaluateIPORadarScore } from '@/services/ipo/radarScoringEngine';
+import { AnchorInvestorAllocation } from '@/components/ipo/AnchorInvestorAllocation';
 import { calculateNormalizedIPOStatus } from '@/services/ipo/statusNormalizer';
 import { formatCurrency } from '@/utils/formatters';
 import { useCompare } from '@/context/CompareContext';
@@ -327,8 +328,8 @@ export default function IPODetailsScreen() {
                   borderWidth: 1,
                   alignItems: 'center',
                   justifyContent: 'center',
-                  backgroundColor: isActive ? (isDark ? '#F8FAFC' : '#0B132B') : (isDark ? '#1E293B' : '#FFFFFF'),
-                  borderColor: isActive ? (isDark ? '#F8FAFC' : '#0B132B') : (isDark ? '#334155' : '#E2E8F0'),
+                  backgroundColor: isActive ? colors.pillActiveBg : colors.pillInactiveBg,
+                  borderColor: isActive ? colors.pillActiveBg : colors.pillInactiveBorder,
                 }}
                 activeOpacity={0.8}
               >
@@ -336,7 +337,7 @@ export default function IPODetailsScreen() {
                   style={{
                     fontSize: 12.5,
                     fontFamily: 'GoogleSansFlex_700Bold',
-                    color: isActive ? (isDark ? '#0B132B' : '#FFFFFF') : (isDark ? '#F8FAFC' : '#0B132B'),
+                    color: isActive ? colors.pillActiveText : colors.pillInactiveText,
                   }}
                 >
                   {tabKey}
@@ -368,7 +369,7 @@ export default function IPODetailsScreen() {
           {/* HERO CARD (Redesigned with logo avatar & 2-column stats box) */}
           <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 }}>
-              <View style={{ width: 54, height: 54, borderRadius: 14, overflow: 'hidden', backgroundColor: isDark ? '#1E293B' : '#F8FAFC', borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
+              <View style={{ width: 54, height: 54, borderRadius: 14, overflow: 'hidden', backgroundColor: colors.cardAlt, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
                 {ipo.logo_url && !logoError ? (
                   <Image source={{ uri: ipo.logo_url }} style={{ width: 44, height: 44 }} resizeMode="contain" onError={() => setLogoError(true)} />
                 ) : (
@@ -389,7 +390,7 @@ export default function IPODetailsScreen() {
               </View>
             </View>
 
-            <View style={{ flexDirection: 'row', gap: 10, backgroundColor: isDark ? '#1E293B' : '#F8FAFC', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border }}>
+            <View style={{ flexDirection: 'row', gap: 10, backgroundColor: colors.cardAlt, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border }}>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 11, fontFamily: 'GoogleSansFlex_500Medium', color: colors.mutedForeground, marginBottom: 2 }}>
                   Bid Price
@@ -433,16 +434,20 @@ export default function IPODetailsScreen() {
               };
 
               const isListed = norm.includes('LISTED');
-              const isAllotted = norm.includes('ALLOT') || norm.includes('REFUND') || norm.includes('CREDIT');
-              const isClosed = norm.includes('CLOSE');
-              const isOpen = norm.includes('OPEN') || norm.includes('LIVE');
+              const isRefunded = norm.includes('REFUND') || norm.includes('CREDIT') || isListed;
+              const isAllotted = norm.includes('ALLOT') || isRefunded;
+              const isClosed = norm.includes('CLOSE') || isAllotted;
+              const isOpen = norm.includes('OPEN') || norm.includes('LIVE') || isClosed;
 
-              const step0Achieved = isListed || isAllotted || isClosed || isOpen || checkDatePassed(ipo.open_date);
-              const step1Achieved = isListed || isAllotted || isClosed || checkDatePassed(ipo.close_date);
-              const step2Achieved = isListed || isAllotted || checkDatePassed(ipo.allotment_date);
-              const step3Achieved = isListed || checkDatePassed(ipo.listing_date);
+              const refundDateStr = ipo.refund_date || (ipo.allotment_date ? ipo.allotment_date : null);
 
-              const stepAchievements = [step0Achieved, step1Achieved, step2Achieved, step3Achieved];
+              const step0Achieved = isOpen || checkDatePassed(ipo.open_date);
+              const step1Achieved = isClosed || checkDatePassed(ipo.close_date);
+              const step2Achieved = isAllotted || checkDatePassed(ipo.allotment_date);
+              const step3Achieved = isRefunded || checkDatePassed(refundDateStr);
+              const step4Achieved = isListed || checkDatePassed(ipo.listing_date);
+
+              const stepAchievements = [step0Achieved, step1Achieved, step2Achieved, step3Achieved, step4Achieved];
               let maxContiguousAchieved = -1;
               for (let i = 0; i < stepAchievements.length; i++) {
                 if (stepAchievements[i]) {
@@ -456,32 +461,56 @@ export default function IPODetailsScreen() {
                 { label: 'Open', date: formatDateShort(ipo.open_date), isAchieved: step0Achieved },
                 { label: 'Close', date: formatDateShort(ipo.close_date), isAchieved: step1Achieved },
                 { label: 'Allotment', date: formatDateShort(ipo.allotment_date), isAchieved: step2Achieved },
-                { label: 'Listing', date: formatDateShort(ipo.listing_date), isAchieved: step3Achieved },
+                { label: 'Refund', date: formatDateShort(refundDateStr), isAchieved: step3Achieved },
+                { label: 'Listing', date: formatDateShort(ipo.listing_date), isAchieved: step4Achieved },
               ];
 
               return (
                 <View style={{ marginBottom: 22, paddingTop: 4 }}>
-                  {/* Node circles and connecting bar */}
-                  <View style={{ height: 26, justifyContent: 'center' }}>
-                    <View style={{ position: 'absolute', left: 12, right: 12, height: 2.5, backgroundColor: isDark ? '#334155' : '#E2E8F0', top: 12 }} />
+                  <View style={{ height: 68, position: 'relative', marginHorizontal: 16 }}>
+                    {/* Track line (gray background) */}
+                    <View
+                      style={{
+                        position: 'absolute',
+                        left: 0,
+                        right: 0,
+                        height: 2.5,
+                        backgroundColor: isDark ? '#334155' : '#E2E8F0',
+                        top: 10.75,
+                      }}
+                    />
+
+                    {/* Track line (green completed) */}
                     {maxContiguousAchieved > 0 && (
                       <View
                         style={{
                           position: 'absolute',
-                          left: 12,
-                          width: `${(maxContiguousAchieved / 3) * 94}%`,
+                          left: 0,
+                          width: `${(maxContiguousAchieved / 4) * 100}%`,
                           height: 2.5,
                           backgroundColor: '#10B981',
-                          top: 12,
+                          top: 10.75,
                         }}
                       />
                     )}
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      {timelineSteps.map((step, idx) => {
-                        const isAchieved = step.isAchieved;
-                        return (
+
+                    {/* 5 Milestone Step Columns */}
+                    {timelineSteps.map((step, idx) => {
+                      const isAchieved = step.isAchieved;
+                      return (
+                        <View
+                          key={idx}
+                          style={{
+                            position: 'absolute',
+                            left: `${(idx / 4) * 100}%`,
+                            width: 64,
+                            marginLeft: -32,
+                            alignItems: 'center',
+                            top: 0,
+                          }}
+                        >
+                          {/* Circle Icon */}
                           <View
-                            key={idx}
                             style={{
                               width: 24,
                               height: 24,
@@ -494,22 +523,32 @@ export default function IPODetailsScreen() {
                           >
                             <Feather name="check" size={13} color={isAchieved ? '#FFFFFF' : (isDark ? '#64748B' : '#94A3B8')} />
                           </View>
-                        );
-                      })}
-                    </View>
-                  </View>
 
-                  {/* Dates & Labels row (Left aligned on start, right aligned on end, centered in middle) */}
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
-                    {timelineSteps.map((step, idx) => {
-                      const alignItem = idx === 0 ? 'flex-start' : idx === 3 ? 'flex-end' : 'center';
-                      const textAlign = idx === 0 ? 'left' : idx === 3 ? 'right' : 'center';
-                      return (
-                        <View key={idx} style={{ flex: 1, alignItems: alignItem }}>
-                          <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold', color: colors.foreground, textAlign }}>
+                          {/* Date Value */}
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              fontFamily: 'GoogleSansFlex_700Bold',
+                              color: colors.foreground,
+                              textAlign: 'center',
+                              marginTop: 8,
+                            }}
+                            numberOfLines={1}
+                          >
                             {step.date || 'TBA'}
                           </Text>
-                          <Text style={{ fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground, marginTop: 2, textAlign }}>
+
+                          {/* Step Label */}
+                          <Text
+                            style={{
+                              fontSize: 11,
+                              fontFamily: 'GoogleSansFlex_400Regular',
+                              color: colors.mutedForeground,
+                              textAlign: 'center',
+                              marginTop: 2,
+                            }}
+                            numberOfLines={1}
+                          >
                             {step.label}
                           </Text>
                         </View>
@@ -726,12 +765,12 @@ export default function IPODetailsScreen() {
           <View style={styles.sectionWrap}>
             <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Investment Category Breakdown</Text>
             <View style={[styles.tableCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <View style={[styles.tableHeaderRow, { backgroundColor: isDark ? '#37271E' : '#FDF2E9' }]}>
-                <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.6 }]}>Category</Text>
-                <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 0.8, textAlign: 'center' }]}>Lot</Text>
-                <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1, textAlign: 'center' }]}>Shares</Text>
-                <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>Rates</Text>
-                <Text style={[styles.tableHeaderCell, { color: colors.foreground, flex: 1.5, textAlign: 'right' }]}>Amount</Text>
+              <View style={[styles.tableHeaderRow, { backgroundColor: colors.tableHeaderBg }]}>
+                <Text style={[styles.tableHeaderCell, { color: colors.tableHeaderForeground, flex: 1.6 }]}>Category</Text>
+                <Text style={[styles.tableHeaderCell, { color: colors.tableHeaderForeground, flex: 0.8, textAlign: 'center' }]}>Lot</Text>
+                <Text style={[styles.tableHeaderCell, { color: colors.tableHeaderForeground, flex: 1, textAlign: 'center' }]}>Shares</Text>
+                <Text style={[styles.tableHeaderCell, { color: colors.tableHeaderForeground, flex: 1.2, textAlign: 'right' }]}>Rates</Text>
+                <Text style={[styles.tableHeaderCell, { color: colors.tableHeaderForeground, flex: 1.5, textAlign: 'right' }]}>Amount</Text>
               </View>
 
               {(() => {
@@ -934,114 +973,48 @@ export default function IPODetailsScreen() {
         {/* ── SECTION 4: DOCS & ANCHOR LIST ── */}
         <View onLayout={(e) => { sectionYMap.current['Docs'] = e.nativeEvent.layout.y; }} style={{ marginTop: 16 }}>
           {/* Document Filings Card */}
-          <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>IPO Prospectus & Official Filings</Text>
-            
-            {(() => {
-              const drhpUrl = ipo.drhp_url || ipo.intelligence?.drhp_url;
-              const rhpUrl = ipo.rhp_url || ipo.intelligence?.rhp_url;
-              const prospectusUrl = ipo.prospectus_url;
-              const anchorListUrl = ipo.anchor_list_url || ipo.intelligence?.anchor_investors_url || ipo.anchor_details?.documentUrl;
+          {(() => {
+            const drhpUrl = (ipo.drhp_url || ipo.intelligence?.drhp_url || '').trim();
+            const rhpUrl = (ipo.rhp_url || ipo.intelligence?.rhp_url || '').trim();
+            const prospectusUrl = (ipo.prospectus_url || '').trim();
+            const anchorListUrl = (ipo.anchor_list_url || ipo.intelligence?.anchor_investors_url || ipo.anchor_details?.documentUrl || '').trim();
 
-              return (
-                <>
+            const availableDocs = [
+              { title: 'DRHP Prospectus', url: drhpUrl, icon: 'file-text' as const },
+              { title: 'RHP Prospectus', url: rhpUrl, icon: 'file-text' as const },
+              { title: 'Final Prospectus', url: prospectusUrl, icon: 'file-text' as const },
+              { title: 'Anchor List', url: anchorListUrl, icon: 'users' as const },
+            ].filter((d) => Boolean(d.url));
+
+            if (availableDocs.length === 0) return null;
+
+            return (
+              <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>
+                  IPO Prospectus & Official Filings
+                </Text>
+                {availableDocs.map((doc, idx) => (
                   <TouchableOpacity
-                    onPress={() => drhpUrl ? handleOpenUrl(drhpUrl) : undefined}
-                    style={[styles.docRowBtn, { opacity: drhpUrl ? 1 : 0.6 }]}
+                    key={doc.title + idx}
+                    onPress={() => handleOpenUrl(doc.url)}
+                    style={styles.docRowBtn}
                   >
-                    <Feather name="file-text" size={16} color={drhpUrl ? colors.primary : colors.mutedForeground} />
-                    <Text style={[styles.docBtnText, { color: colors.foreground }]}>
-                      DRHP Prospectus {!drhpUrl && '(Not Available)'}
-                    </Text>
-                    {drhpUrl && <Feather name="external-link" size={14} color={colors.primary} style={{ marginLeft: 'auto' }} />}
+                    <Feather name={doc.icon} size={16} color={colors.primary} />
+                    <Text style={[styles.docBtnText, { color: colors.foreground }]}>{doc.title}</Text>
+                    <Feather name="external-link" size={14} color={colors.primary} style={{ marginLeft: 'auto' }} />
                   </TouchableOpacity>
+                ))}
+              </View>
+            );
+          })()}
 
-                  <TouchableOpacity
-                    onPress={() => rhpUrl ? handleOpenUrl(rhpUrl) : undefined}
-                    style={[styles.docRowBtn, { opacity: rhpUrl ? 1 : 0.6 }]}
-                  >
-                    <Feather name="file-text" size={16} color={rhpUrl ? colors.primary : colors.mutedForeground} />
-                    <Text style={[styles.docBtnText, { color: colors.foreground }]}>
-                      RHP Prospectus {!rhpUrl && '(Not Available)'}
-                    </Text>
-                    {rhpUrl && <Feather name="external-link" size={14} color={colors.primary} style={{ marginLeft: 'auto' }} />}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    onPress={() => prospectusUrl ? handleOpenUrl(prospectusUrl) : undefined}
-                    style={[styles.docRowBtn, { opacity: prospectusUrl ? 1 : 0.6 }]}
-                  >
-                    <Feather name="file-text" size={16} color={prospectusUrl ? colors.primary : colors.mutedForeground} />
-                    <Text style={[styles.docBtnText, { color: colors.foreground }]}>
-                      Final Prospectus {!prospectusUrl && '(Not Available)'}
-                    </Text>
-                    {prospectusUrl && <Feather name="external-link" size={14} color={colors.primary} style={{ marginLeft: 'auto' }} />}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    onPress={() => anchorListUrl ? handleOpenUrl(anchorListUrl) : undefined}
-                    style={[styles.docRowBtn, { opacity: anchorListUrl ? 1 : 0.6 }]}
-                  >
-                    <Feather name="users" size={16} color={anchorListUrl ? colors.primary : colors.mutedForeground} />
-                    <Text style={[styles.docBtnText, { color: colors.foreground }]}>
-                      Anchor List {!anchorListUrl && '(Not Available)'}
-                    </Text>
-                    {anchorListUrl && <Feather name="external-link" size={14} color={colors.primary} style={{ marginLeft: 'auto' }} />}
-                  </TouchableOpacity>
-                </>
-              );
-            })()}
-          </View>
-
-          {/* ANCHOR INVESTOR DETAILS CARD */}
-          <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 16 }]}>
-            <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>Anchor Investor Details</Text>
-
-            <View style={{ gap: 8, marginTop: 8 }}>
-              {ipo.anchor_sub != null && (
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
-                  <Text style={{ fontSize: 13, color: colors.mutedForeground }}>Anchor Subscription</Text>
-                  <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>{ipo.anchor_sub}x</Text>
-                </View>
-              )}
-              {ipo.anchor_details?.portion != null && (
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
-                  <Text style={{ fontSize: 13, color: colors.mutedForeground }}>Anchor Portion</Text>
-                  <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>₹{ipo.anchor_details.portion} Cr</Text>
-                </View>
-              )}
-              {ipo.anchor_details?.bidDate && (
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
-                  <Text style={{ fontSize: 13, color: colors.mutedForeground }}>Bid Date</Text>
-                  <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>{ipo.anchor_details.bidDate}</Text>
-                </View>
-              )}
-              {ipo.anchor_details?.lockIn && (
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
-                  <Text style={{ fontSize: 13, color: colors.mutedForeground }}>Lock-in Period</Text>
-                  <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>{ipo.anchor_details.lockIn}</Text>
-                </View>
-              )}
-              {ipo.anchor_details?.details && (
-                <View style={{ marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: colors.border }}>
-                  <Text style={{ fontSize: 12, color: colors.mutedForeground, marginBottom: 4 }}>Anchor Breakdown & Allocation</Text>
-                  <Text style={{ fontSize: 13, color: colors.foreground, lineHeight: 18 }}>{ipo.anchor_details.details}</Text>
-                </View>
-              )}
-              {(ipo.anchor_list_url || ipo.intelligence?.anchor_investors_url || ipo.anchor_details?.documentUrl) ? (
-                <TouchableOpacity
-                  onPress={() => {
-                    const url = ipo.anchor_list_url || ipo.intelligence?.anchor_investors_url || ipo.anchor_details?.documentUrl;
-                    if (url) handleOpenUrl(url);
-                  }}
-                  style={{ marginTop: 10, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, backgroundColor: colors.primary + '15', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                >
-                  <Feather name="file-text" size={14} color={colors.primary} />
-                  <Text style={{ fontSize: 13, color: colors.primary, fontFamily: 'GoogleSansFlex_600SemiBold' }}>View Anchor List PDF</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-          </View>
+          {/* ANCHOR INVESTOR ALLOCATION */}
+          <AnchorInvestorAllocation
+            anchorDetails={ipo.anchor_details}
+            anchorSub={ipo.anchor_sub}
+            anchorListUrl={ipo.anchor_list_url || ipo.intelligence?.anchor_investors_url}
+            onOpenUrl={handleOpenUrl}
+          />
 
           {/* OFFICIAL IPOVAULT DISCLAIMER CARD */}
           <View style={[styles.intelCardOrange, { backgroundColor: isDark ? '#37271E' : '#FFFBF8', borderColor: colors.primary + '44', marginTop: 16 }]}>

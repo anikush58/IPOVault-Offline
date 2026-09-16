@@ -205,7 +205,7 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
               }
             };
 
-            const activeText = '#FFFFFF';
+            const activeText = colors.primaryForeground;
             const inactiveText = colors.mutedForeground;
 
             return (
@@ -251,7 +251,7 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
             <Feather
               name={getFabIconName()}
               size={22}
-              color="#FFFFFF"
+              color={isDestructiveState ? '#FFFFFF' : colors.primaryForeground}
             />
           </TouchableOpacity>
         </Animated.View>

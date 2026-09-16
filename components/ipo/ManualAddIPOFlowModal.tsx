@@ -187,8 +187,8 @@ export const ManualAddIPOFlowModal = React.memo(function ManualAddIPOFlowModal({
               style={[styles.createBtn, { backgroundColor: colors.primary }]}
               activeOpacity={0.85}
             >
-              <Feather name="plus-circle" size={18} color="#FFFFFF" />
-              <Text style={styles.createBtnText}>Create Manually</Text>
+              <Feather name="plus-circle" size={18} color={colors.primaryForeground} />
+              <Text style={[styles.createBtnText, { color: colors.primaryForeground }]}>Create Manually</Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -263,8 +263,8 @@ export function AddUserModal({ visible, user, onClose }: Props) {
                 </View>
               </View>
 
-              <TouchableOpacity onPress={handleSave} style={styles.goldBtn} activeOpacity={0.8} disabled={saving}>
-                <Text style={styles.goldBtnText}>{saving ? 'Saving...' : (isEditing ? 'Save Changes' : 'Add User')}</Text>
+              <TouchableOpacity onPress={handleSave} style={[styles.goldBtn, { backgroundColor: colors.primary }]} activeOpacity={0.8} disabled={saving}>
+                <Text style={[styles.goldBtnText, { color: colors.primaryForeground }]}>{saving ? 'Saving...' : (isEditing ? 'Save Changes' : 'Add User')}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>

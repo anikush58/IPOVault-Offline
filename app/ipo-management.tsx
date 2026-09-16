@@ -274,8 +274,8 @@ export default function IPOManagementScreen() {
                 style={[styles.emptyActionBtnPrimary, { backgroundColor: colors.primary }]}
                 activeOpacity={0.85}
               >
-                <Feather name="plus-circle" size={16} color="#fff" style={{ marginRight: 6 }} />
-                <Text style={styles.emptyActionBtnPrimaryText}>Add IPO Listing</Text>
+                <Feather name="plus-circle" size={16} color={colors.primaryForeground} style={{ marginRight: 6 }} />
+                <Text style={[styles.emptyActionBtnPrimaryText, { color: colors.primaryForeground }]}>Add IPO Listing</Text>
               </TouchableOpacity>
             )}
           </View>

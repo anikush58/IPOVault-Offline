@@ -185,8 +185,8 @@ export function DatePickerModal({ visible, value, label, onConfirm, onClose }: P
               style={[styles.confirmBtn, { backgroundColor: colors.primary }]}
               activeOpacity={0.85}
             >
-              <Feather name="check" size={15} color="#fff" style={{ marginRight: 6 }} />
-              <Text style={styles.confirmText}>Confirm</Text>
+              <Feather name="check" size={15} color={colors.primaryForeground} style={{ marginRight: 6 }} />
+              <Text style={[styles.confirmText, { color: colors.primaryForeground }]}>Confirm</Text>
             </TouchableOpacity>
           </View>
         </Pressable>

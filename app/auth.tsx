@@ -10,6 +10,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
+import * as Haptics from 'expo-haptics';
 import { makeRedirectUri } from 'expo-auth-session';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
 
@@ -21,8 +22,11 @@ export default function AuthScreen() {
   const params = useLocalSearchParams<{ returnTo?: string }>();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
-  const [loading, setLoading] = useState(false);
   const { showError } = useDialog();
+
+  const [authState, setAuthState] = useState<'idle' | 'loading' | 'success'>('idle');
+  const [authMessage, setAuthMessage] = useState('Connecting to Google...');
+  const [userEmail, setUserEmail] = useState('');
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const hasNavigatedRef = React.useRef(false);
@@ -39,13 +43,21 @@ export default function AuthScreen() {
   }, [params.returnTo, router]);
 
   useEffect(() => {
-    if (user) {
-      handleNavigateReturn();
+    if (user && authState === 'idle') {
+      setUserEmail(user.email || '');
+      setAuthState('success');
+      setAuthMessage('Authentication Successful!');
+      const t = setTimeout(() => {
+        handleNavigateReturn();
+      }, 1000);
+      return () => clearTimeout(t);
     }
-  }, [user, handleNavigateReturn]);
+  }, [user, authState, handleNavigateReturn]);
 
   async function signInWithGoogle() {
-    setLoading(true);
+    setAuthState('loading');
+    setAuthMessage('Connecting to Google...');
+
     const redirectTo = makeRedirectUri({
       scheme: 'ipovault',
       path: 'auth/callback',
@@ -62,7 +74,7 @@ export default function AuthScreen() {
 
       if (error) {
         showError('Google Sign-In Failed', error.message);
-        setLoading(false);
+        setAuthState('idle');
         return;
       }
 
@@ -71,31 +83,47 @@ export default function AuthScreen() {
         WebBrowser.dismissBrowser();
 
         if (res.type === 'success') {
+          setAuthMessage('Verifying account & setting up session...');
           const { url } = res;
           const { params: urlParams, errorCode } = QueryParams.getQueryParams(url);
 
           if (errorCode) throw new Error(errorCode);
 
+          let activeUser = null;
           if (urlParams?.code) {
-            const { error: sessionError } = await supabase.auth.exchangeCodeForSession(urlParams.code);
+            const { data: sessData, error: sessionError } = await supabase.auth.exchangeCodeForSession(urlParams.code);
             if (sessionError) throw sessionError;
-            handleNavigateReturn();
+            activeUser = sessData?.user || sessData?.session?.user;
           } else if (urlParams?.access_token && urlParams?.refresh_token) {
-            const { error: sessionError } = await supabase.auth.setSession({
+            const { data: sessData, error: sessionError } = await supabase.auth.setSession({
               access_token: urlParams.access_token,
               refresh_token: urlParams.refresh_token,
             });
             if (sessionError) throw sessionError;
-            handleNavigateReturn();
+            activeUser = sessData?.user || sessData?.session?.user;
           } else {
-            showError('Auth Error', 'No session tokens returned in response.');
+            const { data: fallbackData } = await supabase.auth.getSession();
+            activeUser = fallbackData?.session?.user;
           }
+
+          const resolvedEmail = activeUser?.email || user?.email || 'Google User';
+          setUserEmail(resolvedEmail);
+          setAuthState('success');
+          setAuthMessage('Authentication Successful!');
+          try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
+
+          setTimeout(() => {
+            handleNavigateReturn();
+          }, 1200);
+        } else {
+          setAuthState('idle');
         }
+      } else {
+        setAuthState('idle');
       }
     } catch (err: any) {
       showError('Google Sign-In Failed', err?.message || 'Failed to complete Google Sign-In');
-    } finally {
-      setLoading(false);
+      setAuthState('idle');
     }
   }
 
@@ -108,6 +136,7 @@ export default function AuthScreen() {
           variant="surface"
           size="md"
           onPress={handleNavigateReturn}
+          disabled={authState !== 'idle'}
         />
         <View style={styles.headerCenter}>
           <Text style={[styles.headerEyebrow, { color: colors.primary }]}>IPOVault</Text>
@@ -116,46 +145,80 @@ export default function AuthScreen() {
         <View style={{ width: 44, height: 44 }} />
       </View>
 
-      {/* Main Content */}
+      {/* Main Content Body */}
       <View style={styles.content}>
-        <View style={styles.heroSection}>
-          <LinearGradient
-            colors={[colors.primary + '33', colors.primary + '0A']}
-            style={styles.logoBadge}
-          >
-            <Feather name="trending-up" size={42} color={colors.primary} />
-          </LinearGradient>
+        {authState === 'loading' && (
+          <View style={styles.stateCenterContainer}>
+            <View style={[styles.stateCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.spinnerBadge, { backgroundColor: colors.primary + '15' }]}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+              <Text style={[styles.stateTitle, { color: colors.foreground }]}>
+                Signing In
+              </Text>
+              <Text style={[styles.stateSubtitle, { color: colors.mutedForeground }]}>
+                {authMessage}
+              </Text>
+            </View>
+          </View>
+        )}
 
-          <Text style={[styles.welcomeTitle, { color: colors.foreground }]}>
-            Welcome to IPOVault
-          </Text>
-          <Text style={[styles.welcomeSubtitle, { color: colors.mutedForeground }]}>
-            Sign in with your Google account to sync your IPO applications, bank accounts, and family profiles seamlessly.
-          </Text>
-        </View>
+        {authState === 'success' && (
+          <View style={styles.stateCenterContainer}>
+            <View style={[styles.stateCard, { backgroundColor: colors.card, borderColor: '#10B98150' }]}>
+              <View style={styles.successBadge}>
+                <Feather name="check" size={36} color="#FFFFFF" />
+              </View>
+              <Text style={[styles.successTitle, { color: colors.foreground }]}>
+                Authentication Successful!
+              </Text>
+              {userEmail ? (
+                <Text style={[styles.userEmailText, { color: colors.primary }]}>
+                  Signed in as {userEmail}
+                </Text>
+              ) : null}
+              <Text style={[styles.returningText, { color: colors.mutedForeground }]}>
+                Returning to settings…
+              </Text>
+            </View>
+          </View>
+        )}
 
-        {/* Action Section */}
-        <View style={styles.actionSection}>
-          <TouchableOpacity
-            style={[styles.googleButton, { backgroundColor: colors.primary }]}
-            onPress={signInWithGoogle}
-            disabled={loading}
-            activeOpacity={0.8}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <>
+        {authState === 'idle' && (
+          <>
+            <View style={styles.heroSection}>
+              <LinearGradient
+                colors={[colors.primary + '33', colors.primary + '0A']}
+                style={styles.logoBadge}
+              >
+                <Feather name="trending-up" size={42} color={colors.primary} />
+              </LinearGradient>
+
+              <Text style={[styles.welcomeTitle, { color: colors.foreground }]}>
+                Welcome to IPOVault
+              </Text>
+              <Text style={[styles.welcomeSubtitle, { color: colors.mutedForeground }]}>
+                Sign in with your Google account to sync your IPO applications, bank accounts, and family profiles seamlessly.
+              </Text>
+            </View>
+
+            {/* Action Section */}
+            <View style={styles.actionSection}>
+              <TouchableOpacity
+                style={[styles.googleButton, { backgroundColor: colors.primary }]}
+                onPress={signInWithGoogle}
+                activeOpacity={0.8}
+              >
                 <Feather name="globe" size={20} color="#FFFFFF" style={styles.googleIcon} />
                 <Text style={styles.googleButtonText}>Continue with Google</Text>
-              </>
-            )}
-          </TouchableOpacity>
+              </TouchableOpacity>
 
-          <Text style={[styles.disclaimerText, { color: colors.mutedForeground }]}>
-            Secured by Supabase Authentication & Google OAuth
-          </Text>
-        </View>
+              <Text style={[styles.disclaimerText, { color: colors.mutedForeground }]}>
+                Secured by Supabase Authentication & Google OAuth
+              </Text>
+            </View>
+          </>
+        )}
       </View>
     </View>
   );
@@ -171,17 +234,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerGlow: {
-    ...StyleSheet.absoluteFillObject,
   },
   headerCenter: {
     alignItems: 'center',
@@ -206,7 +258,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: 28,
     justifyContent: 'space-between',
-    paddingTop: 48,
+    paddingTop: 40,
     paddingBottom: 40,
   },
   heroSection: {
@@ -264,5 +316,75 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_400Regular',
     textAlign: 'center',
     marginTop: 18,
+  },
+  stateCenterContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stateCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 28,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  spinnerBadge: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  successBadge: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  stateTitle: {
+    fontSize: 20,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  stateSubtitle: {
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  successTitle: {
+    fontSize: 20,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    textAlign: 'center',
+    marginBottom: 8,
+    color: '#10B981',
+  },
+  userEmailText: {
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+    textAlign: 'center',
+    marginBottom: 14,
+  },
+  returningText: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    textAlign: 'center',
   },
 });

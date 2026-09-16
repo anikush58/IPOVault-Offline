@@ -19,7 +19,7 @@ export const FloatingCompareBar = React.memo(function FloatingCompareBar() {
       <View style={[styles.bar, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.left}>
           <View style={[styles.badge, { backgroundColor: colors.primary }]}>
-            <Text style={styles.badgeText}>{selectedIds.length}</Text>
+            <Text style={[styles.badgeText, { color: colors.primaryForeground }]}>{selectedIds.length}</Text>
           </View>
           <Text style={[styles.label, { color: colors.foreground }]}>
             IPO{selectedIds.length > 1 ? 's' : ''} Selected
@@ -36,8 +36,8 @@ export const FloatingCompareBar = React.memo(function FloatingCompareBar() {
             style={[styles.compareBtn, { backgroundColor: colors.primary }]}
             activeOpacity={0.85}
           >
-            <Text style={styles.compareBtnText}>Compare ({selectedIds.length})</Text>
-            <Feather name="arrow-right" size={14} color="#FFFFFF" />
+            <Text style={[styles.compareBtnText, { color: colors.primaryForeground }]}>Compare ({selectedIds.length})</Text>
+            <Feather name="arrow-right" size={14} color={colors.primaryForeground} />
           </TouchableOpacity>
         </View>
       </View>

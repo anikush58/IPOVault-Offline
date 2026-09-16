@@ -335,56 +335,107 @@ export class ApplicationRepository implements IApplicationRepository {
     userCut: number = 0,
   ): Promise<void> {
     if (!id || soldShares <= 0 || totalShares <= 0) return;
-    const remainingShares = totalShares - soldShares;
     const now = getCurrentTime();
 
-    if (remainingShares <= 0) {
-      // Full sell
-      await repositoryAdapter.applications.update(this.db, id, {
+    // Fetch original application details
+    const origRows = await this.db.getAllAsync<any>(
+      'SELECT * FROM ipo_applications WHERE id = ? AND deleted_at IS NULL',
+      [id]
+    );
+    const orig = origRows?.[0];
+    if (!orig) return;
+
+    const actualSoldQty = Math.min(soldShares, totalShares);
+    const remainingShares = totalShares - actualSoldQty;
+
+    // Check if an existing 'Sold' application card exists for the same user & IPO
+    const existingSoldRows = await this.db.getAllAsync<any>(
+      "SELECT * FROM ipo_applications WHERE user_id = ? AND ipo_id = ? AND status = 'Sold' AND id != ? AND deleted_at IS NULL ORDER BY created_at DESC",
+      [orig.user_id, orig.ipo_id, id]
+    );
+    const existingSold = existingSoldRows?.[0];
+
+    if (existingSold) {
+      // ── CONSOLIDATE WITH EXISTING SOLD CARD ──
+      const prevQty = existingSold.shares_count || 0;
+      const prevPrice = existingSold.sell_price || 0;
+      const prevTax = existingSold.tax || 0;
+      const prevUserCut = existingSold.user_cut || 0;
+
+      const prevVal = prevPrice * prevQty;
+      const newVal = sellPrice * actualSoldQty;
+
+      const combinedQty = prevQty + actualSoldQty;
+      const combinedVal = prevVal + newVal;
+      const weightedAvgPrice = combinedQty > 0 ? combinedVal / combinedQty : sellPrice;
+
+      // Update existing Sold application card
+      await repositoryAdapter.applications.update(this.db, existingSold.id, {
         status: 'Sold',
-        shares_count: totalShares,
-        sell_price: sellPrice,
+        shares_count: combinedQty,
+        sell_price: Number(weightedAvgPrice.toFixed(2)),
         sale_date: saleDate ?? getCurrentTime().slice(0, 10),
-        tax,
-        user_cut: userCut,
+        tax: prevTax + tax,
+        user_cut: prevUserCut + userCut,
         updated_at: now,
       });
+
+      if (remainingShares > 0) {
+        // Update original holding application with remaining shares
+        await repositoryAdapter.applications.update(this.db, id, {
+          status: 'Holding',
+          shares_count: remainingShares,
+          updated_at: now,
+        });
+      } else {
+        // Soft delete original holding application as 0 shares remain
+        await repositoryAdapter.applications.update(this.db, id, {
+          shares_count: 0,
+        });
+        await repositoryAdapter.applications.delete(this.db, id);
+      }
     } else {
-      // Fetch original application details to clone
-      const rows = await this.db.getAllAsync<any>(
-        'SELECT * FROM ipo_applications WHERE id = ?',
-        [id]
-      );
-      const orig = rows?.[0];
-      if (!orig) return;
+      // ── NO EXISTING SOLD CARD FOR THIS USER + IPO ──
+      if (remainingShares <= 0) {
+        // Full sell - update original record to Sold
+        await repositoryAdapter.applications.update(this.db, id, {
+          status: 'Sold',
+          shares_count: totalShares,
+          sell_price: sellPrice,
+          sale_date: saleDate ?? getCurrentTime().slice(0, 10),
+          tax,
+          user_cut: userCut,
+          updated_at: now,
+        });
+      } else {
+        // Partial sell - update original holding with remaining shares
+        await repositoryAdapter.applications.update(this.db, id, {
+          status: 'Holding',
+          shares_count: remainingShares,
+          updated_at: now,
+        });
 
-      // Update original holding application with remaining shares
-      await repositoryAdapter.applications.update(this.db, id, {
-        status: 'Holding',
-        shares_count: remainingShares,
-        updated_at: now,
-      });
-
-      // Insert new sold application for sold shares
-      const newId = Crypto.randomUUID();
-      const soldRow: any = {
-        id: newId,
-        user_id: orig.user_id,
-        ipo_id: orig.ipo_id,
-        status: 'Sold',
-        shares_count: soldShares,
-        sell_price: sellPrice,
-        sale_date: saleDate ?? getCurrentTime().slice(0, 10),
-        tax,
-        user_cut: userCut,
-        bank_name: orig.bank_name || '',
-        upi_app: orig.upi_app || '',
-        is_favorite: 0,
-        sync_version: 0,
-        created_at: now,
-        updated_at: now,
-      };
-      await repositoryAdapter.applications.insert(this.db, soldRow);
+        // Insert new Sold application card for sold shares
+        const newId = Crypto.randomUUID();
+        const soldRow: any = {
+          id: newId,
+          user_id: orig.user_id,
+          ipo_id: orig.ipo_id,
+          status: 'Sold',
+          shares_count: actualSoldQty,
+          sell_price: sellPrice,
+          sale_date: saleDate ?? getCurrentTime().slice(0, 10),
+          tax,
+          user_cut: userCut,
+          bank_name: orig.bank_name || '',
+          upi_app: orig.upi_app || '',
+          is_favorite: 0,
+          sync_version: 0,
+          created_at: now,
+          updated_at: now,
+        };
+        await repositoryAdapter.applications.insert(this.db, soldRow);
+      }
     }
   }
 

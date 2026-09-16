@@ -255,7 +255,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
                 style={
                   bulkLoading || !bulkIPOId || selectedUserIds.size === 0
                     ? [styles.goldBtnDisabled, isDark && { backgroundColor: colors.surface }]
-                    : styles.goldBtn
+                    : [styles.goldBtn, { backgroundColor: colors.primary }]
                 }
                 activeOpacity={0.85}
               >
@@ -263,7 +263,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
                   style={
                     bulkLoading || !bulkIPOId || selectedUserIds.size === 0
                       ? [styles.goldBtnTextDisabled, isDark && { color: colors.mutedForeground }]
-                      : styles.goldBtnText
+                      : [styles.goldBtnText, { color: colors.primaryForeground }]
                   }
                 >
                   {bulkLoading ? 'Creating…' : `Create ${selectedUserIds.size} Application${selectedUserIds.size !== 1 ? 's' : ''}`}

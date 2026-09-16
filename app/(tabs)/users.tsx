@@ -197,8 +197,8 @@ export default function UsersScreen() {
                 style={[styles.emptyAddBtn, { backgroundColor: colors.primary }]}
                 activeOpacity={0.85}
               >
-                <Feather name="plus" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.emptyAddBtnText}>Add First User</Text>
+                <Feather name="plus" size={16} color={colors.primaryForeground} style={{ marginRight: 6 }} />
+                <Text style={[styles.emptyAddBtnText, { color: colors.primaryForeground }]}>Add First User</Text>
               </TouchableOpacity>
             )}
           </View>

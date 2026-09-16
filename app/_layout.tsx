@@ -84,8 +84,10 @@ function RootLayoutNav() {
   );
 }
 
+let hasShownInitialSplash = false;
+
 export default function RootLayout() {
-  const [splashFinished, setSplashFinished] = React.useState(false);
+  const [splashFinished, setSplashFinished] = React.useState(hasShownInitialSplash);
 
   const [fontsLoaded, fontsError] = useFonts({
     GoogleSansFlex_400Regular,
@@ -127,7 +129,10 @@ export default function RootLayout() {
                           {!splashFinished && (
                             <AnimatedSplashScreen
                               isReady={ready}
-                              onAnimationComplete={() => setSplashFinished(true)}
+                              onAnimationComplete={() => {
+                                hasShownInitialSplash = true;
+                                setSplashFinished(true);
+                              }}
                             />
                           )}
                         </AppStoreProvider>

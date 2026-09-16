@@ -15,9 +15,9 @@ export function StatusBadge({ status, small }: Props) {
       dot: colors.statusApplied,
     },
     'Mandate Approved': {
-      bg: '#DBEAFE',
-      text: '#2563EB',
-      dot: '#2563EB',
+      bg: colors.statusAppliedBg,
+      text: colors.statusApplied,
+      dot: colors.statusApplied,
     },
     Allotted: {
       bg: colors.statusAllottedBg,
@@ -25,9 +25,9 @@ export function StatusBadge({ status, small }: Props) {
       dot: colors.statusAllotted,
     },
     'Partially Allotted': {
-      bg: '#D1FAE5',
-      text: '#059669',
-      dot: '#059669',
+      bg: colors.statusAllottedBg,
+      text: colors.statusAllotted,
+      dot: colors.statusAllotted,
     },
     Holding: {
       bg: colors.statusHoldingBg,

@@ -70,10 +70,10 @@ export function Button({
             borderWidth: 0,
           },
           text: {
-            color: '#FFFFFF',
+            color: colors.primaryForeground,
             fontFamily: DesignSystem.typography.fontBold,
           },
-          spinnerColor: '#FFFFFF',
+          spinnerColor: colors.primaryForeground,
         };
       case 'secondary':
         return {
@@ -132,16 +132,16 @@ export function Button({
             borderWidth: 0,
           },
           text: {
-            color: '#FFFFFF',
+            color: colors.primaryForeground,
             fontFamily: DesignSystem.typography.fontBold,
           },
-          spinnerColor: '#FFFFFF',
+          spinnerColor: colors.primaryForeground,
         };
       default:
         return {
           container: { backgroundColor: colors.primary },
-          text: { color: '#FFFFFF', fontFamily: DesignSystem.typography.fontBold },
-          spinnerColor: '#FFFFFF',
+          text: { color: colors.primaryForeground, fontFamily: DesignSystem.typography.fontBold },
+          spinnerColor: colors.primaryForeground,
         };
     }
   };

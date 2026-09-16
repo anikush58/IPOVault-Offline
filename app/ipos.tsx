@@ -432,8 +432,8 @@ export default function IPOHubScreen() {
         ]}
         activeOpacity={0.85}
       >
-        <Feather name="check-circle" size={18} color="#FFFFFF" />
-        <Text style={[styles.allotmentFabText, { color: '#FFFFFF' }]}>Allotment Checker</Text>
+        <Feather name="check-circle" size={18} color={colors.primaryForeground} />
+        <Text style={[styles.allotmentFabText, { color: colors.primaryForeground }]}>Allotment Checker</Text>
       </TouchableOpacity>
     </View>
   );

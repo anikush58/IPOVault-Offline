@@ -288,7 +288,7 @@ export function FilterSheet({
             </ScrollView>
 
             <TouchableOpacity onPress={onClose} style={[styles.applyBtn, { backgroundColor: colors.primary }]} activeOpacity={0.85}>
-              <Text style={styles.applyBtnText}>Apply Filters</Text>
+              <Text style={[styles.applyBtnText, { color: colors.primaryForeground }]}>Apply Filters</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -507,7 +507,7 @@ export function FilterSheet({
             </ScrollView>
 
             <TouchableOpacity onPress={() => setActivePicker(null)} style={[styles.applyBtn, { backgroundColor: colors.primary, marginTop: 14 }]} activeOpacity={0.85}>
-              <Text style={styles.applyBtnText}>Done</Text>
+              <Text style={[styles.applyBtnText, { color: colors.primaryForeground }]}>Done</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>

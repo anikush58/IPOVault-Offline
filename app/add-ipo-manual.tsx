@@ -1177,16 +1177,16 @@ export default function AddIPOManualScreen() {
           activeOpacity={0.85}
         >
           {saving ? (
-            <ActivityIndicator color="#FFFFFF" />
+            <ActivityIndicator color={showSuccess ? '#FFFFFF' : colors.primaryForeground} />
           ) : showSuccess ? (
             <>
               <Feather name="check" size={20} color="#FFFFFF" />
-              <Text style={styles.saveBtnText}>IPO Created Successfully!</Text>
+              <Text style={[styles.saveBtnText, { color: '#FFFFFF' }]}>IPO Created Successfully!</Text>
             </>
           ) : (
             <>
-              <Feather name="check-circle" size={18} color="#FFFFFF" />
-              <Text style={styles.saveBtnText}>Save & Open IPO</Text>
+              <Feather name="check-circle" size={18} color={colors.primaryForeground} />
+              <Text style={[styles.saveBtnText, { color: colors.primaryForeground }]}>Save & Open IPO</Text>
             </>
           )}
         </TouchableOpacity>

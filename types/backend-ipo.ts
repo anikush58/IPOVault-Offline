@@ -75,12 +75,26 @@ export interface BackendDocument {
   fileSizeBytes?: number | null;
 }
 
+export interface AnchorInvestorRow {
+  id?: string;
+  anchorName: string;
+  sharesAllotted?: number | null;
+  amtCr?: number | null;
+  pctAllocated?: number | null;
+  pctOfIssue?: number | null;
+}
+
 export interface BackendAnchorDetails {
   portion?: number | null;
   bidDate?: string | null;
   lockIn?: string | null;
   details?: string | null;
   documentUrl?: string | null;
+  price?: number | null;
+  qibPct?: number | null;
+  lockIn30?: string | null;
+  lockIn90?: string | null;
+  investors?: AnchorInvestorRow[];
 }
 
 export interface BackendAllotment {
@@ -131,6 +145,8 @@ export interface BackendIpo {
   openDate?: string | null;
   closeDate?: string | null;
   allotmentDate?: string | null;
+  refundDate?: string | null;
+  refundInitiationDate?: string | null;
   listingDate?: string | null;
   lifecycle?: BackendIpoLifecycle;
   company?: BackendIpoCompany;

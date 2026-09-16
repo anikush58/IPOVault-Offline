@@ -13,24 +13,27 @@ const colors = {
     // Base surfaces — crisp premium white and soft grey
     background: '#F8F9FA',
     surface: '#F1F3F5',
+    surfaceElevated: '#FFFFFF',
     card: '#FFFFFF',
     cardAlt: '#F8F9FA',
+    cardBorder: '#E5E7EB',
 
     // Text
     foreground: '#111827',
     secondaryForeground: '#374151',
     mutedForeground: '#6B7280',
 
-    // Borders
+    // Borders & Dividers
     border: '#E5E7EB',
     borderStrong: '#D1D5DB',
+    borderSubtle: '#F1F5F9',
+    divider: '#E5E7EB',
 
-    // Primary — crisp dark charcoal / black
+    // Primary & Accent — crisp dark charcoal / black
     primary: '#111827',
     primaryLight: '#374151',
     primaryForeground: '#FFFFFF',
 
-    // Accent
     accent: '#111827',
     accentForeground: '#FFFFFF',
 
@@ -54,6 +57,37 @@ const colors = {
     negative: '#EF4444',
     negativeBg: '#FEF2F2',
     negativeDim: '#FEE2E2',
+
+    // Amber / Warning
+    amber: '#F59E0B',
+    amberBg: '#FEF3C7',
+
+    // Tables
+    tableHeaderBg: '#FDF2E9',
+    tableHeaderForeground: '#111827',
+    tableBorder: '#E2E8F0',
+
+    // Tabs & Filter Pills
+    pillActiveBg: '#111827',
+    pillActiveText: '#FFFFFF',
+    pillInactiveBg: '#F1F5F9',
+    pillInactiveBorder: '#E5E7EB',
+    pillInactiveText: '#6B7280',
+
+    // Badges & Soft Buttons
+    badgeBg: '#F1F5F9',
+    softBtnBg: '#F1F5F9',
+
+    // Inputs & Controls
+    inputBg: '#F1F3F5',
+    inputBorder: '#E5E7EB',
+    inputPlaceholder: '#9CA3AF',
+
+    // Navigation & Modals
+    navBackground: '#FFFFFF',
+    navBorder: '#E5E7EB',
+    modalBg: '#FFFFFF',
+    modalOverlay: 'rgba(0, 0, 0, 0.55)',
 
     // Status badges (Consistent everywhere)
     statusApplied: '#2563EB',
@@ -84,8 +118,10 @@ const colors = {
     // Layered obsidian dark — smooth depth, zero eye strain, avoiding pure black
     background: '#0E1117',
     surface: '#161B22',
+    surfaceElevated: '#252B37',
     card: '#1F242D',
     cardAlt: '#282E39',
+    cardBorder: '#2E3545',
 
     foreground: '#F3F4F6',
     secondaryForeground: '#D1D5DB',
@@ -93,6 +129,8 @@ const colors = {
 
     border: '#2E3545',
     borderStrong: '#3E4659',
+    borderSubtle: '#252B37',
+    divider: '#2E3545',
 
     primary: '#F3F4F6',
     primaryLight: '#D1D5DB',
@@ -110,27 +148,52 @@ const colors = {
     muted: '#1F242D',
 
     positive: '#34D399',
-    positiveBg: '#064E3B22',
-    positiveDim: '#064E3B44',
+    positiveBg: 'rgba(16, 185, 129, 0.15)',
+    positiveDim: 'rgba(16, 185, 129, 0.30)',
 
     negative: '#F87171',
-    negativeBg: '#7F1D1D22',
-    negativeDim: '#7F1D1D44',
+    negativeBg: 'rgba(239, 68, 68, 0.15)',
+    negativeDim: 'rgba(239, 68, 68, 0.30)',
+
+    amber: '#FBBF24',
+    amberBg: 'rgba(245, 158, 11, 0.15)',
+
+    tableHeaderBg: '#37271E',
+    tableHeaderForeground: '#F3F4F6',
+    tableBorder: '#2E3545',
+
+    pillActiveBg: '#F3F4F6',
+    pillActiveText: '#0E1117',
+    pillInactiveBg: '#1F242D',
+    pillInactiveBorder: '#2E3545',
+    pillInactiveText: '#9CA3AF',
+
+    badgeBg: '#282E39',
+    softBtnBg: 'rgba(255, 255, 255, 0.08)',
+
+    inputBg: '#161B22',
+    inputBorder: '#2E3545',
+    inputPlaceholder: '#6B7280',
+
+    navBackground: '#161B22',
+    navBorder: '#2E3545',
+    modalBg: '#1F242D',
+    modalOverlay: 'rgba(0, 0, 0, 0.75)',
 
     statusApplied: '#60A5FA',
-    statusAppliedBg: '#1E3A8A33',
-    statusAllotted: '#10B981',
+    statusAppliedBg: 'rgba(37, 99, 235, 0.20)',
+    statusAllotted: '#34D399',
     statusAllottedBg: 'rgba(16, 185, 129, 0.20)',
     statusHolding: '#A78BFA',
-    statusHoldingBg: '#4C1D9533',
+    statusHoldingBg: 'rgba(139, 92, 246, 0.20)',
     statusNotAllotted: '#F87171',
-    statusNotAllottedBg: '#7F1D1D33',
+    statusNotAllottedBg: 'rgba(239, 68, 68, 0.20)',
     statusPending: '#FBBF24',
-    statusPendingBg: '#78350F33',
+    statusPendingBg: 'rgba(245, 158, 11, 0.20)',
     statusListed: '#A78BFA',
-    statusListedBg: '#4C1D9533',
+    statusListedBg: 'rgba(139, 92, 246, 0.20)',
     statusRefund: '#9CA3AF',
-    statusRefundBg: '#37415133',
+    statusRefundBg: 'rgba(107, 114, 128, 0.20)',
     statusSold: '#F59E0B',
     statusSoldBg: 'rgba(245, 158, 11, 0.20)',
 
@@ -144,3 +207,4 @@ const colors = {
 };
 
 export default colors;
+
