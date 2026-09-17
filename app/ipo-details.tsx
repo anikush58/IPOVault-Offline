@@ -893,6 +893,7 @@ export default function IPODetailsScreen() {
             <Text style={[styles.disclaimerBody, { color: colors.foreground }]}>
               IPOVault specializes in innovative investment solutions and personalized financial planning, ensuring sustainable growth for clients. With a focus on transparency and excellence, it empowers individuals and businesses to achieve their financial goals.
             </Text>
+          </View>
         </ScrollView>
 
         {/* ── TAB 2: SUBSCRIPTION ── */}
