@@ -13,6 +13,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -70,10 +71,28 @@ export default function IPODetailsScreen() {
 
   type DetailTab = 'IPO' | 'Subscription' | 'Company Info' | 'Docs';
 
-  const mainScrollViewRef = useRef<ScrollView>(null);
+  const { width: screenWidth } = useWindowDimensions();
+
+  const horizontalScrollViewRef = useRef<ScrollView>(null);
   const tabScrollViewRef = useRef<ScrollView>(null);
-  const sectionYMap = useRef<Record<string, number>>({});
-  const isManualScrollingRef = useRef<boolean>(false);
+
+  const handleTabPress = (tabKey: DetailTab) => {
+    setActiveDetailTab(tabKey);
+    try { Haptics.selectionAsync(); } catch {}
+    const index = (['IPO', 'Subscription', 'Company Info', 'Docs'] as const).indexOf(tabKey);
+    if (index !== -1) {
+      horizontalScrollViewRef.current?.scrollTo({ x: index * screenWidth, animated: true });
+    }
+  };
+
+  const handleHorizontalScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const contentOffsetX = event.nativeEvent.contentOffset.x;
+    const index = Math.round(contentOffsetX / screenWidth);
+    const tabs = ['IPO', 'Subscription', 'Company Info', 'Docs'] as const;
+    if (tabs[index] && tabs[index] !== activeDetailTab) {
+      setActiveDetailTab(tabs[index]);
+    }
+  };
 
   const [ipo, setIpo] = useState<IPOMasterRecord | null>(null);
   const [officialMatch, setOfficialMatch] = useState<IPOMasterRecord | null>(null);
@@ -198,38 +217,27 @@ export default function IPODetailsScreen() {
     setOfficialMatch(null);
   };
 
-  const handleOpenUrl = (url?: string) => {
+  const handleOpenUrl = (url?: string | null) => {
     if (!url) return;
-    const formatted = url.startsWith('http') ? url : `https://${url}`;
+    const cleanUrl = url.trim();
+    if (!cleanUrl) return;
+    if (cleanUrl.startsWith('mailto:')) {
+      Linking.openURL(cleanUrl).catch(() => {});
+      return;
+    }
+    if (cleanUrl.startsWith('tel:')) {
+      Linking.openURL(cleanUrl).catch(() => {});
+      return;
+    }
+    if (cleanUrl.includes('@') && !cleanUrl.startsWith('http')) {
+      Linking.openURL(`mailto:${cleanUrl}`).catch(() => {});
+      return;
+    }
+    const formatted = cleanUrl.startsWith('http') ? cleanUrl : `https://${cleanUrl}`;
     Linking.openURL(formatted).catch(() => {});
   };
 
-  const handleTabPress = (tabKey: DetailTab) => {
-    setActiveDetailTab(tabKey);
-    isManualScrollingRef.current = true;
-    try { Haptics.selectionAsync(); } catch {}
-    const targetY = sectionYMap.current[tabKey] || 0;
-    mainScrollViewRef.current?.scrollTo({ y: Math.max(0, targetY - 10), animated: true });
-    setTimeout(() => {
-      isManualScrollingRef.current = false;
-    }, 700);
-  };
 
-  const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (isManualScrollingRef.current) return;
-    const scrollY = e.nativeEvent.contentOffset.y;
-    const tabs: DetailTab[] = ['IPO', 'Subscription', 'Company Info', 'Docs'];
-    let currentTab = tabs[0];
-    for (const tab of tabs) {
-      const y = sectionYMap.current[tab];
-      if (y !== undefined && scrollY >= y - 100) {
-        currentTab = tab;
-      }
-    }
-    if (currentTab !== activeDetailTab) {
-      setActiveDetailTab(currentTab);
-    }
-  };
 
   if (loading) {
     return (
@@ -381,30 +389,40 @@ export default function IPODetailsScreen() {
       </View>
 
       <ScrollView
-        ref={mainScrollViewRef}
-        onScroll={handleScroll}
+        ref={horizontalScrollViewRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={handleHorizontalScroll}
         scrollEventThrottle={16}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: insets.bottom + 90 }}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={colors.primary}
-          />
-        }
+        style={{ flex: 1 }}
       >
-        {/* Banner if local manual IPO has official match */}
-        {officialMatch && (
-          <MergeOfficialBanner
-            localIpo={ipo}
-            officialIpo={officialMatch}
-            onMerge={handleMerge}
-          />
-        )}
+        {/* ── TAB 1: IPO OVERVIEW ── */}
+        <ScrollView
+          style={{ width: screenWidth }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: insets.bottom + 100,
+          }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+            />
+          }
+        >
+          {/* Banner if local manual IPO has official match */}
+          {officialMatch && (
+            <MergeOfficialBanner
+              localIpo={ipo}
+              officialIpo={officialMatch}
+              onMerge={handleMerge}
+            />
+          )}
 
-        {/* ── SECTION 1: IPO OVERVIEW ── */}
-        <View onLayout={(e) => { sectionYMap.current['IPO'] = e.nativeEvent.layout.y; }}>
           {/* HERO CARD (Redesigned with logo avatar & 2-column stats box) */}
           <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 }}>
@@ -598,74 +616,74 @@ export default function IPODetailsScreen() {
               );
             })()}
 
-            <View style={{ gap: 10 }}>
-              <View style={styles.snapRow}>
-                <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Face Value</Text>
-                <Text style={[styles.snapVal, { color: colors.foreground }]}>
-                  {ipo.face_value != null ? `₹${ipo.face_value} Per Share` : '—'}
-                </Text>
-              </View>
+            {(() => {
+              const formatIssueSizeVal = (val?: number | string | null) => {
+                if (val == null || val === '' || val === 0) return '—';
+                const num = Number(val);
+                if (isNaN(num)) return '—';
+                const cr = num >= 1000000 ? num / 10000000 : num;
+                return `₹${cr.toLocaleString('en-IN', { maximumFractionDigits: 2 })} Cr`;
+              };
 
-              <View style={styles.snapRow}>
-                <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Min. Investment</Text>
-                <Text style={[styles.snapVal, { color: colors.foreground }]}>
-                  {minInvestment != null ? `₹ ${minInvestment.toLocaleString('en-IN')}` : '—'}
-                </Text>
-              </View>
+              return (
+                <View style={{ gap: 10 }}>
+                  <View style={styles.snapRow}>
+                    <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Min. Investment</Text>
+                    <Text style={[styles.snapVal, { color: colors.foreground }]}>
+                      {minInvestment != null ? `₹ ${minInvestment.toLocaleString('en-IN')}` : '—'}
+                    </Text>
+                  </View>
 
-              <View style={styles.snapRow}>
-                <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Issue Size</Text>
-                <Text style={[styles.snapVal, { color: colors.foreground }]}>
-                  {(() => {
-                    if (ipo.issue_size == null) return '—';
-                    const num = Number(ipo.issue_size);
-                    const cr = num >= 1000000 ? num / 10000000 : num;
-                    return `₹${cr.toLocaleString('en-IN', { maximumFractionDigits: 2 })} Cr`;
-                  })()}
-                </Text>
-              </View>
+                  <View style={styles.snapRow}>
+                    <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Min. Quantity</Text>
+                    <Text style={[styles.snapVal, { color: colors.foreground }]}>
+                      {ipo.lot_size != null ? `${ipo.lot_size} Qty` : '—'}
+                    </Text>
+                  </View>
 
-              <View style={styles.snapRow}>
-                <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Min. Quantity</Text>
-                <Text style={[styles.snapVal, { color: colors.foreground }]}>
-                  {ipo.lot_size != null ? `${ipo.lot_size} Qty` : '—'}
-                </Text>
-              </View>
+                  <View style={styles.snapRow}>
+                    <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Issue Size</Text>
+                    <Text style={[styles.snapVal, { color: colors.foreground }]}>
+                      {formatIssueSizeVal(ipo.issue_size)}
+                    </Text>
+                  </View>
 
-              <View style={styles.snapRowLast}>
-                <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Listing at</Text>
-                <Text style={[styles.snapVal, { color: colors.foreground }]}>
-                  {(() => {
-                    const ex = (ipo.exchange || '').trim().toUpperCase();
-                    if (!ex || ex === 'BOTH' || ex === 'BSE / NSE' || ex === 'NSE / BSE' || ex === 'BSE, NSE' || ex === 'BSE,NSE') {
-                      return 'NSE, BSE';
-                    }
-                    return ex;
-                  })()}
-                </Text>
-              </View>
-            </View>
-          </View>
+                  <View style={styles.snapRow}>
+                    <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Fresh Issue</Text>
+                    <Text style={[styles.snapVal, { color: colors.foreground }]}>
+                      {formatIssueSizeVal((ipo as any).fresh_issue_size)}
+                    </Text>
+                  </View>
 
-          {/* LEAD MANAGERS CARD */}
-          <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18, marginTop: 12 }]}>
-            <Text style={{ fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary, marginBottom: 12 }}>
-              Lead Manager(s)
-            </Text>
+                  <View style={styles.snapRow}>
+                    <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Offer for Sale</Text>
+                    <Text style={[styles.snapVal, { color: colors.foreground }]}>
+                      {formatIssueSizeVal((ipo as any).ofs_size)}
+                    </Text>
+                  </View>
 
-            {leadManagersList.length > 0 ? (
-              <View style={{ gap: 8 }}>
-                {leadManagersList.map((mgr, idx) => (
-                  <Text key={idx} style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', color: colors.foreground }}>
-                    {idx + 1}. {mgr}
-                  </Text>
-                ))}
-              </View>
-            ) : (
-              <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground }}>
-                Lead manager data unavailable.
-              </Text>
-            )}
+                  <View style={styles.snapRow}>
+                    <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Face Value</Text>
+                    <Text style={[styles.snapVal, { color: colors.foreground }]}>
+                      {ipo.face_value != null ? `₹${ipo.face_value} Per Share` : '—'}
+                    </Text>
+                  </View>
+
+                  <View style={styles.snapRowLast}>
+                    <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Listing at</Text>
+                    <Text style={[styles.snapVal, { color: colors.foreground }]}>
+                      {(() => {
+                        const ex = (ipo.exchange || '').trim().toUpperCase();
+                        if (!ex || ex === 'BOTH' || ex === 'BSE / NSE' || ex === 'NSE / BSE' || ex === 'BSE, NSE' || ex === 'BSE,NSE') {
+                          return 'NSE, BSE';
+                        }
+                        return ex;
+                      })()}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })()}
           </View>
 
           {/* OFFER BREAKUP */}
@@ -875,11 +893,25 @@ export default function IPODetailsScreen() {
             <Text style={[styles.disclaimerBody, { color: colors.foreground }]}>
               IPOVault specializes in innovative investment solutions and personalized financial planning, ensuring sustainable growth for clients. With a focus on transparency and excellence, it empowers individuals and businesses to achieve their financial goals.
             </Text>
-          </View>
-        </View>
+        </ScrollView>
 
-        {/* ── SECTION 2: SUBSCRIPTION ── */}
-        <View onLayout={(e) => { sectionYMap.current['Subscription'] = e.nativeEvent.layout.y; }} style={{ marginTop: 16 }}>
+        {/* ── TAB 2: SUBSCRIPTION ── */}
+        <ScrollView
+          style={{ width: screenWidth }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: insets.bottom + 100,
+          }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+            />
+          }
+        >
           <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>Subscription Figure</Text>
             
@@ -911,11 +943,25 @@ export default function IPODetailsScreen() {
                 </Text>
               </View>
             )}
-          </View>
-        </View>
+        </ScrollView>
 
-        {/* ── SECTION 3: COMPANY INFO ── */}
-        <View onLayout={(e) => { sectionYMap.current['Company Info'] = e.nativeEvent.layout.y; }} style={{ marginTop: 16 }}>
+        {/* ── TAB 3: COMPANY INFO ── */}
+        <ScrollView
+          style={{ width: screenWidth }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: insets.bottom + 100,
+          }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+            />
+          }
+        >
           {/* ABOUT COMPANY */}
           <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>About Company</Text>
@@ -972,9 +1018,17 @@ export default function IPODetailsScreen() {
                 <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>ROE</Text>
                 <Text style={[styles.snapVal, { color: colors.foreground }]}>{ipo.roe_percent != null ? `${ipo.roe_percent}%` : '—'}</Text>
               </View>
-              <View style={styles.snapRowLast}>
+              <View style={styles.snapRow}>
                 <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>PAT</Text>
                 <Text style={[styles.snapVal, { color: colors.foreground }]}>{ipo.pat_percent != null ? `${ipo.pat_percent}%` : '—'}</Text>
+              </View>
+              <View style={styles.snapRow}>
+                <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>EPS</Text>
+                <Text style={[styles.snapVal, { color: colors.foreground }]}>{(ipo as any).eps != null ? `₹${(ipo as any).eps}` : (ipo as any).intelligence?.eps != null ? `₹${(ipo as any).intelligence.eps}` : '—'}</Text>
+              </View>
+              <View style={styles.snapRowLast}>
+                <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>ROCE</Text>
+                <Text style={[styles.snapVal, { color: colors.foreground }]}>{(ipo as any).roce_percent != null ? `${(ipo as any).roce_percent}%` : (ipo as any).roce_percentage != null ? `${(ipo as any).roce_percentage}%` : (ipo as any).intelligence?.roce_percent != null ? `${(ipo as any).intelligence.roce_percent}%` : '—'}</Text>
               </View>
             </View>
           </View>
@@ -989,11 +1043,23 @@ export default function IPODetailsScreen() {
               </View>
               <View style={styles.snapRow}>
                 <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Phone</Text>
-                <Text style={[styles.snapVal, { color: colors.foreground }]}>{ipo.company_phone || ipo.intelligence?.company_phone || '—'}</Text>
+                {(ipo.company_phone || ipo.intelligence?.company_phone) ? (
+                  <TouchableOpacity onPress={() => handleOpenUrl(`tel:${ipo.company_phone || ipo.intelligence?.company_phone}`)}>
+                    <Text style={[styles.snapVal, { color: colors.primary }]}>{ipo.company_phone || ipo.intelligence?.company_phone}</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={[styles.snapVal, { color: colors.foreground }]}>—</Text>
+                )}
               </View>
               <View style={styles.snapRow}>
                 <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Email</Text>
-                <Text style={[styles.snapVal, { color: colors.foreground }]}>{ipo.company_email || ipo.intelligence?.company_email || '—'}</Text>
+                {(ipo.company_email || ipo.intelligence?.company_email) ? (
+                  <TouchableOpacity onPress={() => handleOpenUrl(`mailto:${ipo.company_email || ipo.intelligence?.company_email}`)}>
+                    <Text style={[styles.snapVal, { color: colors.primary }]}>{ipo.company_email || ipo.intelligence?.company_email}</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={[styles.snapVal, { color: colors.foreground }]}>—</Text>
+                )}
               </View>
               <View style={styles.snapRowLast}>
                 <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Website</Text>
@@ -1005,31 +1071,42 @@ export default function IPODetailsScreen() {
                   <Text style={[styles.snapVal, { color: colors.foreground }]}>—</Text>
                 )}
               </View>
-            </View>
-          </View>
-        </View>
+        </ScrollView>
 
-        {/* ── SECTION 4: DOCS & ANCHOR LIST ── */}
-        <View onLayout={(e) => { sectionYMap.current['Docs'] = e.nativeEvent.layout.y; }} style={{ marginTop: 16 }}>
+        {/* ── TAB 4: DOCS & ANCHOR LIST ── */}
+        <ScrollView
+          style={{ width: screenWidth }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: insets.bottom + 100,
+          }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+            />
+          }
+        >
           {/* Document Filings Card */}
           {(() => {
             const drhpUrl = (ipo.drhp_url || ipo.intelligence?.drhp_url || '').trim();
             const rhpUrl = (ipo.rhp_url || ipo.intelligence?.rhp_url || '').trim();
             const prospectusUrl = (ipo.prospectus_url || '').trim();
-            const anchorListUrl = (ipo.anchor_list_url || ipo.intelligence?.anchor_investors_url || ipo.anchor_details?.documentUrl || '').trim();
 
             const availableDocs = [
               { title: 'DRHP Prospectus', url: drhpUrl, icon: 'file-text' as const },
               { title: 'RHP Prospectus', url: rhpUrl, icon: 'file-text' as const },
               { title: 'Final Prospectus', url: prospectusUrl, icon: 'file-text' as const },
-              { title: 'Anchor List', url: anchorListUrl, icon: 'users' as const },
             ].filter((d) => Boolean(d.url));
 
             if (availableDocs.length === 0) {
               return (
                 <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>
-                    IPO Prospectus & Official Filings
+                    IPO Documents
                   </Text>
                   <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground, marginTop: 8 }}>
                     No documents uploaded
@@ -1041,7 +1118,7 @@ export default function IPODetailsScreen() {
             return (
               <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>
-                  IPO Prospectus & Official Filings
+                  IPO Documents
                 </Text>
                 {availableDocs.map((doc, idx) => (
                   <TouchableOpacity
@@ -1066,6 +1143,81 @@ export default function IPODetailsScreen() {
             onOpenUrl={handleOpenUrl}
           />
 
+          {/* REGISTRAR INFORMATION CARD */}
+          {(() => {
+            const regName = ipo.registrar || '—';
+            const regPhone = ipo.registrar_phone || ipo.intelligence?.registrar_phone || null;
+            const regEmail = ipo.registrar_email || ipo.intelligence?.registrar_email || null;
+            const regWebsite = ipo.registrar_website || null;
+
+            return (
+              <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18, marginTop: 16 }]}>
+                <Text style={{ fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary, marginBottom: 12 }}>
+                  Registrar Information
+                </Text>
+                <View style={{ gap: 8 }}>
+                  <View style={styles.snapRow}>
+                    <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Name</Text>
+                    <Text style={[styles.snapVal, { color: colors.foreground, flex: 1, textAlign: 'right' }]} numberOfLines={2}>
+                      {regName}
+                    </Text>
+                  </View>
+                  <View style={styles.snapRow}>
+                    <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Phone</Text>
+                    {regPhone ? (
+                      <TouchableOpacity onPress={() => handleOpenUrl(`tel:${regPhone}`)}>
+                        <Text style={[styles.snapVal, { color: colors.primary }]}>{regPhone}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={[styles.snapVal, { color: colors.foreground }]}>—</Text>
+                    )}
+                  </View>
+                  <View style={styles.snapRow}>
+                    <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Email</Text>
+                    {regEmail ? (
+                      <TouchableOpacity onPress={() => handleOpenUrl(`mailto:${regEmail}`)}>
+                        <Text style={[styles.snapVal, { color: colors.primary }]}>{regEmail}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={[styles.snapVal, { color: colors.foreground }]}>—</Text>
+                    )}
+                  </View>
+                  <View style={styles.snapRowLast}>
+                    <Text style={[styles.snapKey, { color: colors.mutedForeground }]}>Website</Text>
+                    {regWebsite ? (
+                      <TouchableOpacity onPress={() => handleOpenUrl(regWebsite)}>
+                        <Text style={[styles.snapVal, { color: colors.primary }]}>{regWebsite}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={[styles.snapVal, { color: colors.foreground }]}>—</Text>
+                    )}
+                  </View>
+                </View>
+              </View>
+            );
+          })()}
+
+          {/* LEAD MANAGERS CARD */}
+          <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18, marginTop: 16 }]}>
+            <Text style={{ fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary, marginBottom: 12 }}>
+              Lead Manager(s)
+            </Text>
+
+            {leadManagersList.length > 0 ? (
+              <View style={{ gap: 8 }}>
+                {leadManagersList.map((mgr, idx) => (
+                  <Text key={idx} style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', color: colors.foreground }}>
+                    {idx + 1}. {mgr}
+                  </Text>
+                ))}
+              </View>
+            ) : (
+              <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground }}>
+                Lead manager data unavailable.
+              </Text>
+            )}
+          </View>
+
           {/* OFFICIAL IPOVAULT DISCLAIMER CARD */}
           <View style={[styles.intelCardOrange, { backgroundColor: isDark ? '#37271E' : '#FFFBF8', borderColor: colors.primary + '44', marginTop: 16 }]}>
             <Text style={[styles.disclaimerTitle, { color: colors.primary }]}>Disclaimer</Text>
@@ -1073,11 +1225,10 @@ export default function IPODetailsScreen() {
               Disclaimer: IPOVault provides data and tracking information for educational and reference purposes only. We are not a SEBI-registered advisor and do not provide financial or investment advice. All IPO details, GMP estimates, subscription data, and allotment tracking are gathered from public market sources and subject to market risks. Please consult a qualified financial advisor before making any investment decisions.
             </Text>
           </View>
-        </View>
-
-        <Text style={[styles.footerDisclaimer, { color: colors.mutedForeground }]}>
-          Disclaimer: Investment in securities market are subject to market risks. Read all prospectus documents carefully before investing.
-        </Text>
+          <Text style={[styles.footerDisclaimer, { color: colors.mutedForeground, marginTop: 16 }]}>
+            Disclaimer: Investment in securities market are subject to market risks. Read all prospectus documents carefully before investing.
+          </Text>
+        </ScrollView>
       </ScrollView>
 
       {/* ── Sticky Bottom Apply Action Bar ── */}

@@ -134,6 +134,10 @@ export interface IPOMasterRecord {
   ebitda_percent?: number | null;
   roe_percent?: number | null;
   pat_percent?: number | null;
+  eps?: number | null;
+  roce_percent?: number | null;
+  fresh_issue_size?: number | null;
+  ofs_size?: number | null;
   qib_quota_percent?: number | null;
   nii_quota_percent?: number | null;
   retail_quota_percent?: number | null;

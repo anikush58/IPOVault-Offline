@@ -5,6 +5,8 @@ import {
   FlatList,
   Image,
   Modal,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Platform,
   Pressable,
   RefreshControl,
@@ -14,6 +16,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -135,10 +138,31 @@ export default function NewIposScreen() {
     outputRange: [0, 0, 1],
   });
   
+  const TABS: NewIpoTab[] = ['live', 'upcoming', 'closed', 'listed'];
+  const { width: screenWidth } = useWindowDimensions();
+  const horizontalScrollViewRef = useRef<ScrollView>(null);
+
   const [activeTab, setActiveTab] = useState<NewIpoTab>('live');
   const [includeSme, setIncludeSme] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('DEFAULT');
   const [showFilterModal, setShowFilterModal] = useState(false);
+
+  const handleTabPress = (tab: NewIpoTab) => {
+    setActiveTab(tab);
+    try { Haptics.selectionAsync(); } catch {}
+    const index = TABS.indexOf(tab);
+    if (index !== -1) {
+      horizontalScrollViewRef.current?.scrollTo({ x: index * screenWidth, animated: true });
+    }
+  };
+
+  const handleHorizontalScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const contentOffsetX = event.nativeEvent.contentOffset.x;
+    const index = Math.round(contentOffsetX / screenWidth);
+    if (TABS[index] && TABS[index] !== activeTab) {
+      setActiveTab(TABS[index]);
+    }
+  };
 
   const db = useSQLiteContext();
 
@@ -228,9 +252,9 @@ export default function NewIposScreen() {
     return filteredRawIpos.filter((item) => item.status === 'LISTED');
   }, [filteredRawIpos]);
 
-  const displayedIpos = useMemo(() => {
+  const getListForTab = useCallback((tab: NewIpoTab) => {
     let list: BackendIpo[] = [];
-    switch (activeTab) {
+    switch (tab) {
       case 'live':
         list = [...liveList];
         break;
@@ -273,7 +297,7 @@ export default function NewIposScreen() {
     }
 
     return list;
-  }, [activeTab, liveList, upcomingList, closedList, listedList, sortBy]);
+  }, [liveList, upcomingList, closedList, listedList, sortBy]);
 
   const sortLabel = useMemo(() => {
     switch (sortBy) {
@@ -629,12 +653,12 @@ function getStatusBadge(status?: string, openDate?: string | null) {
             { key: 'listed', label: 'Listed', count: listedList.length },
           ]}
           activeTab={activeTab}
-          onChange={(newTab) => setActiveTab(newTab as NewIpoTab)}
+          onChange={(newTab) => handleTabPress(newTab as NewIpoTab)}
           style={{ paddingHorizontal: 16 }}
         />
       </View>
 
-      {/* Main Catalog Feed List */}
+      {/* Main Catalog Feed List with Horizontal Swiping between Tabs */}
       {loading ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -669,42 +693,61 @@ function getStatusBadge(status?: string, openDate?: string | null) {
             </Text>
           </TouchableOpacity>
         </ScrollView>
-      ) : displayedIpos.length === 0 ? (
-        <ScrollView
-          contentContainerStyle={[styles.centerContainer, { flexGrow: 1, paddingBottom: Math.max(insets.bottom + 110, 135) }]}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={colors.primary}
-            />
-          }
-        >
-          <Feather name="inbox" size={32} color={colors.mutedForeground} />
-          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-            No IPOs Found
-          </Text>
-          <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
-            No matching IPO records in this view.
-          </Text>
-        </ScrollView>
       ) : (
-        <FlatList
-          data={displayedIpos}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={{
-            paddingTop: 4,
-            paddingBottom: Math.max(insets.bottom + 110, 135),
-          }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={colors.primary}
-            />
-          }
-        />
+        <ScrollView
+          ref={horizontalScrollViewRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={handleHorizontalScroll}
+          scrollEventThrottle={16}
+          style={{ flex: 1 }}
+        >
+          {TABS.map((tabKey) => {
+            const list = getListForTab(tabKey);
+            return (
+              <View key={tabKey} style={{ width: screenWidth, flex: 1 }}>
+                {list.length === 0 ? (
+                  <ScrollView
+                    contentContainerStyle={[styles.centerContainer, { flexGrow: 1, paddingBottom: Math.max(insets.bottom + 110, 135) }]}
+                    refreshControl={
+                      <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        tintColor={colors.primary}
+                      />
+                    }
+                  >
+                    <Feather name="inbox" size={32} color={colors.mutedForeground} />
+                    <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+                      No IPOs Found
+                    </Text>
+                    <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
+                      No matching IPO records in this view.
+                    </Text>
+                  </ScrollView>
+                ) : (
+                  <FlatList
+                    data={list}
+                    keyExtractor={(item) => item.id}
+                    renderItem={renderItem}
+                    contentContainerStyle={{
+                      paddingTop: 4,
+                      paddingBottom: Math.max(insets.bottom + 110, 135),
+                    }}
+                    refreshControl={
+                      <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        tintColor={colors.primary}
+                      />
+                    }
+                  />
+                )}
+              </View>
+            );
+          })}
+        </ScrollView>
       )}
 
       {/* Filter & Sort Modal */}

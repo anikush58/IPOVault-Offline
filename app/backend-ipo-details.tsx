@@ -11,6 +11,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -58,10 +59,10 @@ export default function BackendIpoDetailsScreen() {
 
   type DetailTab = 'IPO' | 'Subscription' | 'Company Info' | 'Docs';
 
-  const mainScrollViewRef = useRef<ScrollView>(null);
+  const { width: screenWidth } = useWindowDimensions();
+  const horizontalScrollViewRef = useRef<ScrollView>(null);
   const tabScrollViewRef = useRef<ScrollView>(null);
-  const sectionYMap = useRef<Record<string, number>>({});
-  const isManualScrollingRef = useRef<boolean>(false);
+  const DETAIL_TABS: DetailTab[] = ['IPO', 'Subscription', 'Company Info', 'Docs'];
 
   const [ipo, setIpo] = useState<BackendIpo | null>(() => {
     if (params.item) {
@@ -80,34 +81,37 @@ export default function BackendIpoDetailsScreen() {
 
   const handleOpenUrl = (url?: string | null) => {
     if (!url) return;
-    const formatted = url.startsWith('http') ? url : `https://${url}`;
+    const cleanUrl = url.trim();
+    if (!cleanUrl) return;
+    if (cleanUrl.startsWith('mailto:')) {
+      Linking.openURL(cleanUrl).catch(() => {});
+      return;
+    }
+    if (cleanUrl.startsWith('tel:')) {
+      Linking.openURL(cleanUrl).catch(() => {});
+      return;
+    }
+    if (cleanUrl.includes('@') && !cleanUrl.startsWith('http')) {
+      Linking.openURL(`mailto:${cleanUrl}`).catch(() => {});
+      return;
+    }
+    const formatted = cleanUrl.startsWith('http') ? cleanUrl : `https://${cleanUrl}`;
     Linking.openURL(formatted).catch(() => {});
   };
 
-  const handleTabPress = (tabKey: DetailTab) => {
+  const handleTabPress = (idx: number) => {
+    const tabKey = DETAIL_TABS[idx];
     setActiveDetailTab(tabKey);
-    isManualScrollingRef.current = true;
     try { Haptics.selectionAsync(); } catch {}
-    const targetY = sectionYMap.current[tabKey] || 0;
-    mainScrollViewRef.current?.scrollTo({ y: Math.max(0, targetY - 10), animated: true });
-    setTimeout(() => {
-      isManualScrollingRef.current = false;
-    }, 700);
+    horizontalScrollViewRef.current?.scrollTo({ x: idx * screenWidth, animated: true });
   };
 
-  const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (isManualScrollingRef.current) return;
-    const scrollY = e.nativeEvent.contentOffset.y;
-    const tabs: DetailTab[] = ['IPO', 'Subscription', 'Company Info', 'Docs'];
-    let currentTab = tabs[0];
-    for (const tab of tabs) {
-      const y = sectionYMap.current[tab];
-      if (y !== undefined && scrollY >= y - 100) {
-        currentTab = tab;
-      }
-    }
-    if (currentTab !== activeDetailTab) {
-      setActiveDetailTab(currentTab);
+  const handleHorizontalScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const x = e.nativeEvent.contentOffset.x;
+    const idx = Math.round(x / screenWidth);
+    if (idx >= 0 && idx < DETAIL_TABS.length && DETAIL_TABS[idx] !== activeDetailTab) {
+      setActiveDetailTab(DETAIL_TABS[idx]);
+      try { Haptics.selectionAsync(); } catch {}
     }
   };
 
@@ -259,15 +263,15 @@ export default function BackendIpoDetailsScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      {/* Top 4 Detail Tabs (Scroll-synced Pills with no bottom border line) */}
+      {/* Top 4 Detail Tabs */}
       <View style={[styles.detailTabBarWrap, { backgroundColor: colors.background, paddingVertical: 8, borderBottomWidth: 0 }]}>
         <ScrollView ref={tabScrollViewRef} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8, flexDirection: 'row' }}>
-          {(['IPO', 'Subscription', 'Company Info', 'Docs'] as const).map((tabKey) => {
+          {DETAIL_TABS.map((tabKey, idx) => {
             const isActive = activeDetailTab === tabKey;
             return (
               <TouchableOpacity
                 key={tabKey}
-                onPress={() => handleTabPress(tabKey)}
+                onPress={() => handleTabPress(idx)}
                 style={{
                   height: 36,
                   paddingHorizontal: 16,
@@ -296,25 +300,31 @@ export default function BackendIpoDetailsScreen() {
       </View>
 
       <ScrollView
-        ref={mainScrollViewRef}
-        onScroll={handleScroll}
+        ref={horizontalScrollViewRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={handleHorizontalScroll}
         scrollEventThrottle={16}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          paddingHorizontal: 16,
-          paddingTop: 12,
-          paddingBottom: insets.bottom + 100,
-        }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={colors.primary}
-          />
-        }
+        style={{ flex: 1 }}
       >
-        {/* ── SECTION 1: IPO OVERVIEW ── */}
-        <View onLayout={(e) => { sectionYMap.current['IPO'] = e.nativeEvent.layout.y; }}>
+        {/* ── TAB 1: IPO OVERVIEW ── */}
+        <ScrollView
+          style={{ width: screenWidth }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: insets.bottom + 100,
+          }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+            />
+          }
+        >
           {/* HERO CARD (Redesigned with logo avatar & 2-column stats box) */}
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 }}>
@@ -374,7 +384,7 @@ export default function BackendIpoDetailsScreen() {
               IPO Details
             </Text>
 
-            {/* TIMELINE STEPPER (Pixel-perfect alignment matching reference image) */}
+            {/* TIMELINE STEPPER */}
             {(() => {
               const norm = String(ipo.status || '').toUpperCase();
 
@@ -423,7 +433,6 @@ export default function BackendIpoDetailsScreen() {
               return (
                 <View style={{ marginBottom: 22, paddingTop: 4 }}>
                   <View style={{ height: 68, position: 'relative', marginHorizontal: 16 }}>
-                    {/* Track line (gray background) */}
                     <View
                       style={{
                         position: 'absolute',
@@ -435,7 +444,6 @@ export default function BackendIpoDetailsScreen() {
                       }}
                     />
 
-                    {/* Track line (green completed) */}
                     {maxContiguousAchieved > 0 && (
                       <View
                         style={{
@@ -449,7 +457,6 @@ export default function BackendIpoDetailsScreen() {
                       />
                     )}
 
-                    {/* 5 Milestone Step Columns */}
                     {timelineSteps.map((step, idx) => {
                       const isAchieved = step.isAchieved;
                       return (
@@ -464,7 +471,6 @@ export default function BackendIpoDetailsScreen() {
                             top: 0,
                           }}
                         >
-                          {/* Circle Icon */}
                           <View
                             style={{
                               width: 24,
@@ -479,7 +485,6 @@ export default function BackendIpoDetailsScreen() {
                             <Feather name="check" size={13} color={isAchieved ? '#FFFFFF' : (isDark ? '#64748B' : '#94A3B8')} />
                           </View>
 
-                          {/* Date Value */}
                           <Text
                             style={{
                               fontSize: 12,
@@ -493,7 +498,6 @@ export default function BackendIpoDetailsScreen() {
                             {step.date || 'TBA'}
                           </Text>
 
-                          {/* Step Label */}
                           <Text
                             style={{
                               fontSize: 11,
@@ -514,73 +518,104 @@ export default function BackendIpoDetailsScreen() {
               );
             })()}
 
-            <View style={{ gap: 10 }}>
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>Face Value</Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>
-                  {ipo.faceValue != null ? `₹${ipo.faceValue} Per Share` : '—'}
-                </Text>
-              </View>
+            {(() => {
+              const formatIssueSizeVal = (val?: number | string | null) => {
+                if (val == null || val === '' || val === 0) return '—';
+                const num = Number(val);
+                if (isNaN(num)) return '—';
+                const cr = num >= 1000000 ? num / 10000000 : num;
+                return `₹${cr.toLocaleString('en-IN', { maximumFractionDigits: 2 })} Cr`;
+              };
 
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>Min. Investment</Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>
-                  {minInvestAmount != null ? `₹ ${minInvestAmount.toLocaleString('en-IN')}` : '—'}
-                </Text>
-              </View>
+              return (
+                <View style={{ gap: 10 }}>
+                  <View style={styles.cardRow}>
+                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Min. Investment</Text>
+                    <Text style={[styles.value, { color: colors.foreground }]}>
+                      {minInvestAmount != null ? `₹ ${minInvestAmount.toLocaleString('en-IN')}` : '—'}
+                    </Text>
+                  </View>
 
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>Issue Size</Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>
-                  {(() => {
-                    if (ipo.issueSize == null) return '—';
-                    const num = Number(ipo.issueSize);
-                    const cr = num >= 1000000 ? num / 10000000 : num;
-                    return `₹${cr.toLocaleString('en-IN', { maximumFractionDigits: 2 })} Cr`;
-                  })()}
-                </Text>
-              </View>
+                  <View style={styles.cardRow}>
+                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Min. Quantity</Text>
+                    <Text style={[styles.value, { color: colors.foreground }]}>
+                      {ipo.lotSize != null ? `${ipo.lotSize} Qty` : '—'}
+                    </Text>
+                  </View>
 
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>Min. Quantity</Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>
-                  {ipo.lotSize != null ? `${ipo.lotSize} Qty` : '—'}
-                </Text>
-              </View>
+                  <View style={styles.cardRow}>
+                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Issue Size</Text>
+                    <Text style={[styles.value, { color: colors.foreground }]}>
+                      {formatIssueSizeVal(ipo.issueSize)}
+                    </Text>
+                  </View>
 
-              <View style={styles.cardRow}>
-                <Text style={[styles.label, { color: colors.mutedForeground }]}>Listing at</Text>
-                <Text style={[styles.value, { color: colors.foreground }]}>
-                  {(() => {
-                    const ex = String(ipo.exchange || '').trim().toUpperCase();
-                    if (!ex || ex === 'BOTH' || ex === 'BSE / NSE' || ex === 'NSE / BSE' || ex === 'BSE, NSE' || ex === 'BSE,NSE') {
-                      return 'NSE, BSE';
-                    }
-                    return ex;
-                  })()}
-                </Text>
-              </View>
-            </View>
+                  <View style={styles.cardRow}>
+                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Fresh Issue</Text>
+                    <Text style={[styles.value, { color: colors.foreground }]}>
+                      {formatIssueSizeVal(ipo.freshIssueSize)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.cardRow}>
+                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Offer for Sale</Text>
+                    <Text style={[styles.value, { color: colors.foreground }]}>
+                      {formatIssueSizeVal(ipo.ofsSize)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.cardRow}>
+                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Face Value</Text>
+                    <Text style={[styles.value, { color: colors.foreground }]}>
+                      {ipo.faceValue != null ? `₹${ipo.faceValue} Per Share` : '—'}
+                    </Text>
+                  </View>
+
+                  <View style={styles.cardRow}>
+                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Listing at</Text>
+                    <Text style={[styles.value, { color: colors.foreground }]}>
+                      {(() => {
+                        const ex = String(ipo.exchange || '').trim().toUpperCase();
+                        if (!ex || ex === 'BOTH' || ex === 'BSE / NSE' || ex === 'NSE / BSE' || ex === 'BSE, NSE' || ex === 'BSE,NSE') {
+                          return 'NSE, BSE';
+                        }
+                        return ex;
+                      })()}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })()}
           </View>
+        </ScrollView>
 
-          {/* LEAD MANAGERS CARD */}
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18, marginTop: 12 }]}>
-            <Text style={{ fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary, marginBottom: 12 }}>
-              Lead Manager(s)
-            </Text>
-
-            {leadManagersList.length > 0 ? (
-              <View style={{ gap: 8 }}>
-                {leadManagersList.map((mgr, idx) => (
-                  <Text key={idx} style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', color: colors.foreground }}>
-                    {idx + 1}. {mgr}
-                  </Text>
-                ))}
-              </View>
+        {/* ── TAB 2: SUBSCRIPTION ── */}
+        <ScrollView
+          style={{ width: screenWidth }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: insets.bottom + 100,
+          }}
+        >
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>Subscription Figure</Text>
+            {ipo.currentSubscription?.categories && ipo.currentSubscription.categories.length > 0 ? (
+              ipo.currentSubscription.categories.map((sub, idx) => (
+                <View key={idx} style={styles.cardRow}>
+                  <Text style={[styles.label, { color: colors.mutedForeground }]}>{sub.category}</Text>
+                  <Text style={[styles.value, { color: colors.foreground }]}>{sub.subscriptionMultiple}x</Text>
+                </View>
+              ))
             ) : (
-              <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground }}>
-                Lead manager data unavailable.
-              </Text>
+              <View style={[styles.subNoticeCard, { backgroundColor: isDark ? '#1C2E30' : '#F0FDFA', borderColor: '#0D948844' }]}>
+                <Text style={[styles.subNoticeTitle, { color: '#0F766E' }]}>Subscription Figures Unavailable</Text>
+                <Text style={[styles.subNoticeBody, { color: colors.foreground }]}>
+                  Subscription data will be available once bidding begins.{'\n'}
+                  Bidding will open from <Text style={{ fontFamily: 'GoogleSansFlex_700Bold' }}>10:00 AM to 5:00 PM</Text> on public issue days.
+                </Text>
+              </View>
             )}
           </View>
 
@@ -628,7 +663,7 @@ export default function BackendIpoDetailsScreen() {
             const COLOR_MM = '#9C27B0';
 
             return (
-              <>
+              <View style={{ marginTop: 16 }}>
                 <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Offer Breakup</Text>
                 <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 16 }]}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -716,81 +751,66 @@ export default function BackendIpoDetailsScreen() {
                     </View>
                   </View>
                 </View>
-              </>
+
+                {/* Investment Category Breakdown Table */}
+                <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 16 }]}>Investment Category Breakdown</Text>
+                <View style={[styles.tableCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  {ipo.lotSize && (ipo.priceBandHigh || ipo.priceBandLow) ? (
+                    <>
+                      <View style={[styles.tableHeaderRow, { backgroundColor: colors.tableHeaderBg }]}>
+                        <Text style={[styles.tableHeaderCell, { color: colors.tableHeaderForeground, flex: 1.6 }]}>Category</Text>
+                        <Text style={[styles.tableHeaderCell, { color: colors.tableHeaderForeground, flex: 0.8, textAlign: 'center' }]}>Lot</Text>
+                        <Text style={[styles.tableHeaderCell, { color: colors.tableHeaderForeground, flex: 1, textAlign: 'center' }]}>Shares</Text>
+                        <Text style={[styles.tableHeaderCell, { color: colors.tableHeaderForeground, flex: 1.2, textAlign: 'right' }]}>Rates</Text>
+                        <Text style={[styles.tableHeaderCell, { color: colors.tableHeaderForeground, flex: 1.5, textAlign: 'right' }]}>Amount</Text>
+                      </View>
+
+                      {(() => {
+                        const lot = Number(ipo.lotSize);
+                        const price = Number(ipo.priceBandHigh || ipo.priceBandLow);
+                        const catRows = [
+                          { category: 'Retail (Min)', lots: 1 },
+                          { category: 'Retail (Max)', lots: Math.floor(200000 / (lot * price)) || 1 },
+                          { category: 'S-HNI (Min)', lots: Math.ceil(200000 / (lot * price)) || 15 },
+                          { category: 'S-HNI (Max)', lots: Math.floor(1000000 / (lot * price)) || 70 },
+                          { category: 'B-HNI (Min)', lots: Math.ceil(1000000 / (lot * price)) || 71 },
+                        ];
+                        return catRows.map((r, idx) => {
+                          const shares = r.lots * lot;
+                          const amount = shares * price;
+                          return (
+                            <View key={idx} style={idx === catRows.length - 1 ? styles.tableBodyRowLast : styles.tableBodyRow}>
+                              <Text style={[styles.tableCellLabel, { color: colors.foreground, flex: 1.6 }]}>{r.category}</Text>
+                              <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 0.8, textAlign: 'center' }]}>{r.lots}</Text>
+                              <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1, textAlign: 'center' }]}>{shares}</Text>
+                              <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>{price.toLocaleString('en-IN')}</Text>
+                              <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.5, textAlign: 'right' }]}>{amount.toLocaleString('en-IN')}</Text>
+                            </View>
+                          );
+                        });
+                      })()}
+                    </>
+                  ) : (
+                    <Text style={{ fontSize: 13, color: colors.mutedForeground, padding: 12 }}>
+                      Category breakdown calculation requires lot size & price band.
+                    </Text>
+                  )}
+                </View>
+              </View>
             );
           })()}
+        </ScrollView>
 
-          {/* Investment Category Breakdown Table */}
-          <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Investment Category Breakdown</Text>
-          <View style={[styles.tableCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {ipo.lotSize && (ipo.priceBandHigh || ipo.priceBandLow) ? (
-              <>
-                <View style={[styles.tableHeaderRow, { backgroundColor: colors.tableHeaderBg }]}>
-                  <Text style={[styles.tableHeaderCell, { color: colors.tableHeaderForeground, flex: 1.6 }]}>Category</Text>
-                  <Text style={[styles.tableHeaderCell, { color: colors.tableHeaderForeground, flex: 0.8, textAlign: 'center' }]}>Lot</Text>
-                  <Text style={[styles.tableHeaderCell, { color: colors.tableHeaderForeground, flex: 1, textAlign: 'center' }]}>Shares</Text>
-                  <Text style={[styles.tableHeaderCell, { color: colors.tableHeaderForeground, flex: 1.2, textAlign: 'right' }]}>Rates</Text>
-                  <Text style={[styles.tableHeaderCell, { color: colors.tableHeaderForeground, flex: 1.5, textAlign: 'right' }]}>Amount</Text>
-                </View>
-
-                {(() => {
-                  const lot = Number(ipo.lotSize);
-                  const price = Number(ipo.priceBandHigh || ipo.priceBandLow);
-                  const catRows = [
-                    { category: 'Retail (Min)', lots: 1 },
-                    { category: 'Retail (Max)', lots: Math.floor(200000 / (lot * price)) || 1 },
-                    { category: 'S-HNI (Min)', lots: Math.ceil(200000 / (lot * price)) || 15 },
-                    { category: 'S-HNI (Max)', lots: Math.floor(1000000 / (lot * price)) || 70 },
-                    { category: 'B-HNI (Min)', lots: Math.ceil(1000000 / (lot * price)) || 71 },
-                  ];
-                  return catRows.map((r, idx) => {
-                    const shares = r.lots * lot;
-                    const amount = shares * price;
-                    return (
-                      <View key={idx} style={idx === catRows.length - 1 ? styles.tableBodyRowLast : styles.tableBodyRow}>
-                        <Text style={[styles.tableCellLabel, { color: colors.foreground, flex: 1.6 }]}>{r.category}</Text>
-                        <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 0.8, textAlign: 'center' }]}>{r.lots}</Text>
-                        <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1, textAlign: 'center' }]}>{shares}</Text>
-                        <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.2, textAlign: 'right' }]}>{price.toLocaleString('en-IN')}</Text>
-                        <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1.5, textAlign: 'right' }]}>{amount.toLocaleString('en-IN')}</Text>
-                      </View>
-                    );
-                  });
-                })()}
-              </>
-            ) : (
-              <Text style={{ fontSize: 13, color: colors.mutedForeground, padding: 12 }}>
-                Category breakdown calculation requires lot size & price band.
-              </Text>
-            )}
-          </View>
-        </View>
-
-        {/* ── SECTION 2: SUBSCRIPTION ── */}
-        <View onLayout={(e) => { sectionYMap.current['Subscription'] = e.nativeEvent.layout.y; }} style={{ marginTop: 16 }}>
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>Subscription Figure</Text>
-            {ipo.currentSubscription?.categories && ipo.currentSubscription.categories.length > 0 ? (
-              ipo.currentSubscription.categories.map((sub, idx) => (
-                <View key={idx} style={styles.cardRow}>
-                  <Text style={[styles.label, { color: colors.mutedForeground }]}>{sub.category}</Text>
-                  <Text style={[styles.value, { color: colors.foreground }]}>{sub.subscriptionMultiple}x</Text>
-                </View>
-              ))
-            ) : (
-              <View style={[styles.subNoticeCard, { backgroundColor: isDark ? '#1C2E30' : '#F0FDFA', borderColor: '#0D948844' }]}>
-                <Text style={[styles.subNoticeTitle, { color: '#0F766E' }]}>Subscription Figures Unavailable</Text>
-                <Text style={[styles.subNoticeBody, { color: colors.foreground }]}>
-                  Subscription data will be available once bidding begins.{'\n'}
-                  Bidding will open from <Text style={{ fontFamily: 'GoogleSansFlex_700Bold' }}>10:00 AM to 5:00 PM</Text> on public issue days.
-                </Text>
-              </View>
-            )}
-          </View>
-        </View>
-
-        {/* ── SECTION 3: COMPANY INFO ── */}
-        <View onLayout={(e) => { sectionYMap.current['Company Info'] = e.nativeEvent.layout.y; }} style={{ marginTop: 16 }}>
+        {/* ── TAB 3: COMPANY INFO ── */}
+        <ScrollView
+          style={{ width: screenWidth }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: insets.bottom + 100,
+          }}
+        >
           {/* ABOUT COMPANY */}
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>About Company</Text>
@@ -800,7 +820,7 @@ export default function BackendIpoDetailsScreen() {
           </View>
 
           {/* COMPANY FINANCIALS TABLE */}
-          <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Company financials (Amount in ₹ Crore)</Text>
+          <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 16 }]}>Company financials (Amount in ₹ Crore)</Text>
           <View style={[styles.tableCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             {ipo.company?.financials && ipo.company.financials.length > 0 ? (
               <>
@@ -827,7 +847,7 @@ export default function BackendIpoDetailsScreen() {
           </View>
 
           {/* KEY FINANCIAL RATIOS */}
-          <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Key Financial Ratios</Text>
+          <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 16 }]}>Key Financial Ratios</Text>
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.cardRow}>
               <Text style={[styles.label, { color: colors.mutedForeground }]}>EBITDA</Text>
@@ -841,10 +861,18 @@ export default function BackendIpoDetailsScreen() {
               <Text style={[styles.label, { color: colors.mutedForeground }]}>PAT Margin %</Text>
               <Text style={[styles.value, { color: colors.foreground }]}>{ipo.company?.financials?.[0]?.patMarginPercent != null ? `${ipo.company.financials[0].patMarginPercent}%` : '—'}</Text>
             </View>
+            <View style={styles.cardRow}>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>EPS</Text>
+              <Text style={[styles.value, { color: colors.foreground }]}>{ipo.company?.financials?.[0]?.eps != null ? `₹${ipo.company.financials[0].eps}` : '—'}</Text>
+            </View>
+            <View style={styles.cardRow}>
+              <Text style={[styles.label, { color: colors.mutedForeground }]}>ROCE %</Text>
+              <Text style={[styles.value, { color: colors.foreground }]}>{ipo.company?.financials?.[0]?.rocePercentage != null ? `${ipo.company.financials[0].rocePercentage}%` : '—'}</Text>
+            </View>
           </View>
 
           {/* COMPANY CONTACT DETAILS */}
-          <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Company Contact Details</Text>
+          <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 16 }]}>Company Contact Details</Text>
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={styles.cardRow}>
               <Text style={[styles.label, { color: colors.mutedForeground }]}>Name</Text>
@@ -852,11 +880,23 @@ export default function BackendIpoDetailsScreen() {
             </View>
             <View style={styles.cardRow}>
               <Text style={[styles.label, { color: colors.mutedForeground }]}>Phone</Text>
-              <Text style={[styles.value, { color: colors.foreground }]}>{ipo.company?.phone || '—'}</Text>
+              {ipo.company?.phone ? (
+                <TouchableOpacity onPress={() => handleOpenUrl(`tel:${ipo.company.phone}`)}>
+                  <Text style={[styles.value, { color: colors.primary }]}>{ipo.company.phone}</Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={[styles.value, { color: colors.foreground }]}>—</Text>
+              )}
             </View>
             <View style={styles.cardRow}>
               <Text style={[styles.label, { color: colors.mutedForeground }]}>Email</Text>
-              <Text style={[styles.value, { color: colors.foreground }]}>{ipo.company?.email || '—'}</Text>
+              {ipo.company?.email ? (
+                <TouchableOpacity onPress={() => handleOpenUrl(`mailto:${ipo.company.email}`)}>
+                  <Text style={[styles.value, { color: colors.primary }]}>{ipo.company.email}</Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={[styles.value, { color: colors.foreground }]}>—</Text>
+              )}
             </View>
             <View style={styles.cardRow}>
               <Text style={[styles.label, { color: colors.mutedForeground }]}>Website</Text>
@@ -869,27 +909,32 @@ export default function BackendIpoDetailsScreen() {
               )}
             </View>
           </View>
-        </View>
+        </ScrollView>
 
-        {/* ── SECTION 4: DOCS & ANCHOR LIST ── */}
-        <View onLayout={(e) => { sectionYMap.current['Docs'] = e.nativeEvent.layout.y; }} style={{ marginTop: 16 }}>
+        {/* ── TAB 4: DOCS & PARTIES ── */}
+        <ScrollView
+          style={{ width: screenWidth }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: insets.bottom + 100,
+          }}
+        >
           {/* Document Filings Card */}
           {(() => {
             const drhpDoc = ipo.documents?.find((d) => d.documentType === 'DRHP');
             const rhpDoc = ipo.documents?.find((d) => d.documentType === 'RHP');
             const prospectusDoc = ipo.documents?.find((d) => d.documentType === 'PROSPECTUS');
-            const anchorDoc = ipo.documents?.find((d) => d.documentType === 'ANCHOR_LIST');
 
             const drhpUrl = (ipo.drhpUrl || drhpDoc?.sourceUrl || drhpDoc?.fileUrl || drhpDoc?.documentUrl || '').trim();
             const rhpUrl = (ipo.rhpUrl || rhpDoc?.sourceUrl || rhpDoc?.fileUrl || rhpDoc?.documentUrl || '').trim();
             const prospectusUrl = (ipo.prospectusUrl || prospectusDoc?.sourceUrl || prospectusDoc?.fileUrl || prospectusDoc?.documentUrl || '').trim();
-            const anchorListUrl = (ipo.anchorListUrl || ipo.anchorDetails?.documentUrl || anchorDoc?.sourceUrl || anchorDoc?.fileUrl || anchorDoc?.documentUrl || '').trim();
 
             const availableDocs = [
               { title: 'DRHP Prospectus', url: drhpUrl, icon: 'file-text' as const },
               { title: 'RHP Prospectus', url: rhpUrl, icon: 'file-text' as const },
               { title: 'Final Prospectus', url: prospectusUrl, icon: 'file-text' as const },
-              { title: 'Anchor List', url: anchorListUrl, icon: 'users' as const },
             ].filter((d) => Boolean(d.url));
 
             if (ipo.documents && Array.isArray(ipo.documents)) {
@@ -908,7 +953,7 @@ export default function BackendIpoDetailsScreen() {
               return (
                 <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>
-                    IPO Prospectus & Official Filings
+                    IPO Documents
                   </Text>
                   <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground, marginTop: 8 }}>
                     No documents uploaded
@@ -920,7 +965,7 @@ export default function BackendIpoDetailsScreen() {
             return (
               <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>
-                  IPO Prospectus & Official Filings
+                  IPO Documents
                 </Text>
 
                 {availableDocs.map((doc, idx) => (
@@ -947,6 +992,81 @@ export default function BackendIpoDetailsScreen() {
             onOpenUrl={handleOpenUrl}
           />
 
+          {/* REGISTRAR INFORMATION CARD */}
+          {(() => {
+            const regName = registrar?.name || ipo.allotment?.registrar || '—';
+            const regPhone = registrar?.phone || null;
+            const regEmail = registrar?.email || null;
+            const regWebsite = registrar?.website || null;
+
+            return (
+              <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18, marginTop: 16 }]}>
+                <Text style={{ fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary, marginBottom: 12 }}>
+                  Registrar Information
+                </Text>
+                <View style={{ gap: 8 }}>
+                  <View style={styles.cardRow}>
+                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Name</Text>
+                    <Text style={[styles.value, { color: colors.foreground, flex: 1, textAlign: 'right' }]} numberOfLines={2}>
+                      {regName}
+                    </Text>
+                  </View>
+                  <View style={styles.cardRow}>
+                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Phone</Text>
+                    {regPhone ? (
+                      <TouchableOpacity onPress={() => handleOpenUrl(`tel:${regPhone}`)}>
+                        <Text style={[styles.value, { color: colors.primary }]}>{regPhone}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={[styles.value, { color: colors.foreground }]}>—</Text>
+                    )}
+                  </View>
+                  <View style={styles.cardRow}>
+                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Email</Text>
+                    {regEmail ? (
+                      <TouchableOpacity onPress={() => handleOpenUrl(`mailto:${regEmail}`)}>
+                        <Text style={[styles.value, { color: colors.primary }]}>{regEmail}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={[styles.value, { color: colors.foreground }]}>—</Text>
+                    )}
+                  </View>
+                  <View style={styles.cardRow}>
+                    <Text style={[styles.label, { color: colors.mutedForeground }]}>Website</Text>
+                    {regWebsite ? (
+                      <TouchableOpacity onPress={() => handleOpenUrl(regWebsite)}>
+                        <Text style={[styles.value, { color: colors.primary }]}>{regWebsite}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={[styles.value, { color: colors.foreground }]}>—</Text>
+                    )}
+                  </View>
+                </View>
+              </View>
+            );
+          })()}
+
+          {/* LEAD MANAGERS CARD */}
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18, marginTop: 16 }]}>
+            <Text style={{ fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary, marginBottom: 12 }}>
+              Lead Manager(s)
+            </Text>
+
+            {leadManagersList.length > 0 ? (
+              <View style={{ gap: 8 }}>
+                {leadManagersList.map((mgr, idx) => (
+                  <Text key={idx} style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', color: colors.foreground }}>
+                    {idx + 1}. {mgr}
+                  </Text>
+                ))}
+              </View>
+            ) : (
+              <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground }}>
+                Lead manager data unavailable.
+              </Text>
+            )}
+          </View>
+
           {/* OFFICIAL IPOVAULT DISCLAIMER CARD */}
           <View style={[styles.intelCardOrange, { backgroundColor: isDark ? '#37271E' : '#FFFBF8', borderColor: colors.primary + '44', marginTop: 16 }]}>
             <Text style={[styles.disclaimerTitle, { color: colors.primary }]}>Disclaimer</Text>
@@ -954,7 +1074,7 @@ export default function BackendIpoDetailsScreen() {
               Disclaimer: IPOVault provides data and tracking information for educational and reference purposes only. We are not a SEBI-registered advisor and do not provide financial or investment advice. All IPO details, GMP estimates, subscription data, and allotment tracking are gathered from public market sources and subject to market risks. Please consult a qualified financial advisor before making any investment decisions.
             </Text>
           </View>
-        </View>
+        </ScrollView>
       </ScrollView>
 
       {/* Bottom Sticky Action Bar — Login To Apply */}

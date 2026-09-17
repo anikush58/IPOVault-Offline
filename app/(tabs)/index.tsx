@@ -871,11 +871,7 @@ export default function DashboardScreen() {
                     <TouchableOpacity
                       activeOpacity={0.88}
                       onPress={() => {
-                        if (isClosedOrListed) {
-                          router.push({ pathname: '/backend-ipo-details', params: { id: ipo.id } } as any);
-                        } else {
-                          router.push({ pathname: '/apply-ipo', params: { ipoId: ipo.id } } as any);
-                        }
+                        router.push({ pathname: '/backend-ipo-details', params: { id: ipo.id } } as any);
                       }}
                       style={[
                         styles.openIpoCard,
@@ -975,10 +971,17 @@ export default function DashboardScreen() {
                         </Text>
 
                         {!isClosedOrListed ? (
-                          <View style={[styles.openIpoCtaButton, { backgroundColor: colors.primary }]}>
-                            <Text style={styles.openIpoCtaText}>APPLY NOW</Text>
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              router.push({ pathname: '/apply-ipo', params: { ipoId: ipo.id } } as any);
+                            }}
+                            style={[styles.openIpoCtaButton, { backgroundColor: colors.primary }]}
+                          >
+                            <Text style={styles.openIpoCtaText}>Apply Now</Text>
                             <Feather name="arrow-right" size={12} color="#FFFFFF" />
-                          </View>
+                          </TouchableOpacity>
                         ) : (
                           <View style={[styles.openIpoCtaButton, { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.border }]}>
                             <Text style={[styles.openIpoCtaText, { color: colors.mutedForeground }]}>View Details</Text>

@@ -61,6 +61,8 @@ export default function AddIPOManualScreen() {
   const [priceBandMax, setPriceBandMax] = useState('');
   const [lotSize, setLotSize] = useState('');
   const [issueSize, setIssueSize] = useState('');
+  const [freshIssueSize, setFreshIssueSize] = useState('');
+  const [ofsSize, setOfsSize] = useState('');
   const [gmpPercent, setGmpPercent] = useState('');
   const [gmpAmount, setGmpAmount] = useState('');
 
@@ -605,6 +607,8 @@ export default function AddIPOManualScreen() {
         price_band_max: priceBandMax ? parseFloat(priceBandMax) : null,
         lot_size: lotSize ? parseInt(lotSize, 10) : null,
         issue_size: issueSize ? parseFloat(issueSize) : null,
+        fresh_issue_size: freshIssueSize ? parseFloat(freshIssueSize) : null,
+        ofs_size: ofsSize ? parseFloat(ofsSize) : null,
         open_date: openDate.trim() || null,
         close_date: closeDate.trim() || null,
         allotment_date: allotmentDate.trim() || null,
@@ -1009,6 +1013,31 @@ export default function AddIPOManualScreen() {
                 value={issueSize}
                 onChangeText={setIssueSize}
                 placeholder="e.g. 450"
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              />
+            </View>
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>Fresh Issue (₹ Cr)</Text>
+              <TextInput
+                value={freshIssueSize}
+                onChangeText={setFreshIssueSize}
+                placeholder="e.g. 300"
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              />
+            </View>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>Offer for Sale (₹ Cr)</Text>
+              <TextInput
+                value={ofsSize}
+                onChangeText={setOfsSize}
+                placeholder="e.g. 150"
                 keyboardType="numeric"
                 placeholderTextColor={colors.mutedForeground + '70'}
                 style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
