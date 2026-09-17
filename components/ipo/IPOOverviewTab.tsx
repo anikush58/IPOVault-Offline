@@ -13,6 +13,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useDB } from '@/context/DBContext';
 import { IPOMasterRecord } from '@/services/ipo/types';
@@ -45,6 +46,8 @@ export function IPOsTab({
 }: IPOsTabProps) {
   const router = useRouter();
   const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const bottomPad = Math.max(insets.bottom + 110, 135);
   const { ipos: dbIpos, toggleFavorite: dbToggleFavorite } = useDB();
 
   const [activeSubTab, setActiveSubTab] = useState<IPOSubTab>(initialSubTab);
@@ -200,7 +203,7 @@ export function IPOsTab({
 
       {/* Primary Feed View */}
       {currentList.length > 0 ? (
-        <View style={styles.feedContainer}>
+        <View style={[styles.feedContainer, { paddingBottom: bottomPad }]}>
           {currentList.map((ipo) => (
             <IPOCard
               key={ipo.id}
@@ -263,7 +266,7 @@ export function IPOsTab({
     return (
       <ScrollView
         style={styles.rootContainer}
-        contentContainerStyle={styles.scrollPadding}
+        contentContainerStyle={[styles.scrollPadding, { paddingBottom: bottomPad }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl

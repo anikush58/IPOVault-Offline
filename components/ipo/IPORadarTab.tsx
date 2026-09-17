@@ -10,6 +10,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useDB } from '@/context/DBContext';
 import { IPOMasterRecord } from '@/services/ipo/types';
@@ -42,6 +43,8 @@ export function IPOInsightsTab({
 }: IPOInsightsTabProps) {
   const router = useRouter();
   const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const bottomPad = Math.max(insets.bottom + 110, 135);
   const { ipos: dbIpos } = useDB();
 
   const [activeFilter, setActiveFilter] = useState<InsightCategoryFilter>('all');
@@ -257,7 +260,7 @@ export function IPOInsightsTab({
   return (
     <ScrollView
       style={styles.rootContainer}
-      contentContainerStyle={styles.scrollPadding}
+      contentContainerStyle={[styles.scrollPadding, { paddingBottom: bottomPad }]}
       showsVerticalScrollIndicator={false}
       refreshControl={
         onRefresh ? (
@@ -309,7 +312,7 @@ export function IPOInsightsTab({
 
       {/* Deduplicated Insights List */}
       {filteredItems.length > 0 ? (
-        <View style={styles.feedContainer}>
+        <View style={[styles.feedContainer, { paddingBottom: bottomPad }]}>
           {filteredItems.map((item) => renderInsightCard(item.ipo, item.radar, item.signalTags))}
         </View>
       ) : (

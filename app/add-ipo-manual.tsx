@@ -233,7 +233,7 @@ export default function AddIPOManualScreen() {
   const handleUploadJSON = async () => {
     try {
       const res = await DocumentPicker.getDocumentAsync({
-        type: ['application/json', 'text/plain', '*/*'],
+        type: ['application/json', 'text/plain', 'text/*', '*/*'],
         copyToCacheDirectory: true,
       });
 
@@ -245,202 +245,296 @@ export default function AddIPOManualScreen() {
       setDocName(asset.name);
       setParsingDoc(true);
       setParseResults(null);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      if (Platform.OS !== 'web') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+      }
 
-      const content = await FileSystem.readAsStringAsync(asset.uri);
+      let content = '';
+      if (Platform.OS === 'web' && (asset as any).file) {
+        content = await (asset as any).file.text();
+      } else {
+        try {
+          content = await FileSystem.readAsStringAsync(asset.uri);
+        } catch {
+          const resp = await fetch(asset.uri);
+          content = await resp.text();
+        }
+      }
+
+      if (!content || !content.trim()) {
+        throw new Error('Selected JSON file is empty.');
+      }
+
       const json = JSON.parse(content);
 
-      const companyObj = json.company || json;
-      const ipoObj = json.ipo || json;
-      const lifecycleObj = json.lifecycle || json;
-      const docsObj = json.documents || json.docs || json;
-      const configObj = json.allotmentConfig || json;
-      const gmpObj = json.gmp || json;
+      // Unwrap root array or nested wrapper object if present
+      let targetObj: any = json;
+      if (Array.isArray(json)) {
+        targetObj = json[0] || {};
+      } else if (json && typeof json === 'object') {
+        if (Array.isArray(json.items) && json.items.length > 0) targetObj = json.items[0];
+        else if (Array.isArray(json.data) && json.data.length > 0) targetObj = json.data[0];
+        else if (Array.isArray(json.ipos) && json.ipos.length > 0) targetObj = json.ipos[0];
+        else if (json.data && typeof json.data === 'object' && !Array.isArray(json.data)) targetObj = json.data;
+        else if (json.item && typeof json.item === 'object') targetObj = json.item;
+        else if (json.ipo && typeof json.ipo === 'object') targetObj = json.ipo;
+      }
+
+      const companyObj = targetObj.company || targetObj;
+      const ipoObj = targetObj.ipo || targetObj;
+      const lifecycleObj = targetObj.lifecycle || targetObj;
+      const docsObj = targetObj.documents || targetObj.docs || targetObj;
+      const configObj = targetObj.allotmentConfig || targetObj;
+      const gmpObj = targetObj.gmp || targetObj;
 
       const keysFilled: string[] = [];
 
-      if (companyObj.legalName || companyObj.displayName || companyObj.name || companyObj.companyName || json.companyName) {
-        const cName = companyObj.displayName || companyObj.legalName || companyObj.companyName || companyObj.name || json.companyName;
-        setCompanyName(cName);
-        if (!ipoName) setIpoName(json.ipoName || ipoObj.ipoName || `${cName} IPO`);
+      const cleanDateStr = (d: any): string => {
+        if (!d) return '';
+        const s = String(d).trim();
+        if (s.includes('T')) return s.split('T')[0];
+        return s;
+      };
+
+      // Company Name & IPO Name
+      const cName = targetObj.companyName || targetObj.company_name || companyObj.displayName || companyObj.legalName || companyObj.companyName || companyObj.name || companyObj.company_name;
+      if (cName) {
+        const cleanCName = String(cName).trim();
+        setCompanyName(cleanCName);
         keysFilled.push('Company Name');
+        const iName = targetObj.ipoName || targetObj.ipo_name || ipoObj.ipoName || ipoObj.ipo_name || `${cleanCName} IPO`;
+        setIpoName(String(iName).trim());
+        keysFilled.push('IPO Name');
+      } else if (targetObj.ipoName || targetObj.ipo_name || ipoObj.ipoName || ipoObj.ipo_name) {
+        const iName = targetObj.ipoName || targetObj.ipo_name || ipoObj.ipoName || ipoObj.ipo_name;
+        setIpoName(String(iName).trim());
+        keysFilled.push('IPO Name');
       }
 
-      if (json.ipoName || ipoObj.ipoName) {
-        setIpoName(json.ipoName || ipoObj.ipoName);
-        if (!keysFilled.includes('IPO Name')) keysFilled.push('IPO Name');
-      }
-
-      if (companyObj.logoUrl || json.logoUrl) {
-        setLogoUrl(companyObj.logoUrl || json.logoUrl);
+      // Logo URL
+      const logo = targetObj.logoUrl || targetObj.logo_url || companyObj.logoUrl || companyObj.logo_url;
+      if (logo) {
+        setLogoUrl(String(logo).trim());
         keysFilled.push('Logo URL');
       }
 
-      if (companyObj.symbol || ipoObj.symbol || json.symbol) {
-        setSymbol(companyObj.symbol || ipoObj.symbol || json.symbol);
+      // Symbol
+      const sym = targetObj.symbol || companyObj.symbol || ipoObj.symbol;
+      if (sym) {
+        setSymbol(String(sym).trim().toUpperCase());
         keysFilled.push('Symbol');
       }
 
-      if (json.exchange || ipoObj.exchange || companyObj.exchange) {
-        const ex = String(json.exchange || ipoObj.exchange || companyObj.exchange).toUpperCase();
+      // Exchange
+      const exVal = targetObj.exchange || ipoObj.exchange || companyObj.exchange;
+      if (exVal) {
+        const ex = String(exVal).toUpperCase();
         if (ex.includes('NSE') && ex.includes('BSE')) setExchange('BSE / NSE');
         else if (ex.includes('NSE')) setExchange('NSE');
         else if (ex.includes('BSE')) setExchange('BSE');
         keysFilled.push('Exchange');
       }
 
-      if (json.issueType || ipoObj.issueType || ipoObj.marketSegment || companyObj.marketSegment) {
-        const seg = String(json.issueType || ipoObj.issueType || ipoObj.marketSegment || companyObj.marketSegment).toUpperCase();
+      // Issue Type
+      const segVal = targetObj.issueType || targetObj.issue_type || targetObj.marketSegment || ipoObj.issueType || ipoObj.issue_type || ipoObj.marketSegment || companyObj.marketSegment;
+      if (segVal) {
+        const seg = String(segVal).toUpperCase();
         if (seg.includes('SME')) setIssueType('SME');
         else setIssueType('Mainboard');
         keysFilled.push('Issue Type');
       }
 
-      if (companyObj.sector || json.sector) {
-        setSector(companyObj.sector || json.sector);
+      // Sector
+      const sec = targetObj.sector || companyObj.sector;
+      if (sec) {
+        setSector(String(sec).trim());
         keysFilled.push('Sector');
       }
 
-      if (json.priceBandMin !== undefined || ipoObj.priceBandMin !== undefined || ipoObj.priceBandLow !== undefined) {
-        setPriceBandMin(String(json.priceBandMin ?? ipoObj.priceBandMin ?? ipoObj.priceBandLow ?? ''));
+      // Price Band Min
+      const pMin = targetObj.priceBandMin ?? targetObj.price_band_min ?? targetObj.priceBandLow ?? ipoObj.priceBandMin ?? ipoObj.price_band_min ?? ipoObj.priceBandLow;
+      if (pMin !== undefined && pMin !== null && String(pMin).trim() !== '') {
+        setPriceBandMin(String(pMin).trim());
         keysFilled.push('Min Price');
       }
 
-      if (json.priceBandMax !== undefined || ipoObj.priceBandMax !== undefined || ipoObj.priceBandHigh !== undefined) {
-        setPriceBandMax(String(json.priceBandMax ?? ipoObj.priceBandMax ?? ipoObj.priceBandHigh ?? ''));
+      // Price Band Max
+      const pMax = targetObj.priceBandMax ?? targetObj.price_band_max ?? targetObj.priceBandHigh ?? targetObj.buy_price ?? ipoObj.priceBandMax ?? ipoObj.price_band_max ?? ipoObj.priceBandHigh ?? ipoObj.buy_price;
+      if (pMax !== undefined && pMax !== null && String(pMax).trim() !== '') {
+        setPriceBandMax(String(pMax).trim());
         keysFilled.push('Max Price');
       }
 
-      if (json.lotSize !== undefined || ipoObj.lotSize !== undefined) {
-        setLotSize(String(json.lotSize ?? ipoObj.lotSize ?? ''));
+      // Lot Size
+      const lot = targetObj.lotSize ?? targetObj.lot_size ?? targetObj.quantity ?? ipoObj.lotSize ?? ipoObj.lot_size ?? ipoObj.quantity;
+      if (lot !== undefined && lot !== null && String(lot).trim() !== '') {
+        setLotSize(String(lot).trim());
         keysFilled.push('Lot Size');
       }
 
-      if (json.issueSize !== undefined || ipoObj.issueSize !== undefined) {
-        setIssueSize(String(json.issueSize ?? ipoObj.issueSize ?? ''));
+      // Issue Size
+      const iss = targetObj.issueSize ?? targetObj.issue_size ?? ipoObj.issueSize ?? ipoObj.issue_size;
+      if (iss !== undefined && iss !== null && String(iss).trim() !== '') {
+        setIssueSize(String(iss).trim());
         keysFilled.push('Issue Size');
       }
 
-      if (json.gmpAmount !== undefined || gmpObj.gmpAmount !== undefined) {
-        setGmpAmount(String(json.gmpAmount ?? gmpObj.gmpAmount ?? ''));
+      // GMP Amount
+      const gAmt = targetObj.gmpAmount ?? targetObj.gmp_amount ?? targetObj.gmp_value ?? gmpObj.gmpAmount ?? gmpObj.gmp_amount ?? gmpObj.gmp_value;
+      if (gAmt !== undefined && gAmt !== null && String(gAmt).trim() !== '') {
+        setGmpAmount(String(gAmt).trim());
         keysFilled.push('GMP Amount');
       }
 
-      if (json.gmpPercent !== undefined || gmpObj.gmpPercent !== undefined || gmpObj.gmpPercentage !== undefined) {
-        setGmpPercent(String(json.gmpPercent ?? gmpObj.gmpPercent ?? gmpObj.gmpPercentage ?? ''));
+      // GMP Percent
+      const gPct = targetObj.gmpPercent ?? targetObj.gmp_percent ?? gmpObj.gmpPercent ?? gmpObj.gmp_percent ?? gmpObj.gmpPercentage;
+      if (gPct !== undefined && gPct !== null && String(gPct).trim() !== '') {
+        setGmpPercent(String(gPct).trim());
         keysFilled.push('GMP Percent');
       }
 
-      if (json.openDate || lifecycleObj.openDate || ipoObj.openDate) {
-        setOpenDate(json.openDate || lifecycleObj.openDate || ipoObj.openDate);
+      // Dates
+      const oDate = targetObj.openDate || targetObj.open_date || lifecycleObj.openDate || lifecycleObj.open_date || ipoObj.openDate || ipoObj.open_date;
+      if (oDate) {
+        setOpenDate(cleanDateStr(oDate));
         keysFilled.push('Open Date');
       }
 
-      if (json.closeDate || lifecycleObj.closeDate || ipoObj.closeDate) {
-        setCloseDate(json.closeDate || lifecycleObj.closeDate || ipoObj.closeDate);
+      const cDate = targetObj.closeDate || targetObj.close_date || lifecycleObj.closeDate || lifecycleObj.close_date || ipoObj.closeDate || ipoObj.close_date;
+      if (cDate) {
+        setCloseDate(cleanDateStr(cDate));
         keysFilled.push('Close Date');
       }
 
-      if (json.allotmentDate || lifecycleObj.allotmentDate || ipoObj.allotmentDate) {
-        setAllotmentDate(json.allotmentDate || lifecycleObj.allotmentDate || ipoObj.allotmentDate);
+      const aDate = targetObj.allotmentDate || targetObj.allotment_date || lifecycleObj.allotmentDate || lifecycleObj.allotment_date || ipoObj.allotmentDate || ipoObj.allotment_date;
+      if (aDate) {
+        setAllotmentDate(cleanDateStr(aDate));
         keysFilled.push('Allotment Date');
       }
 
-      if (json.listingDate || lifecycleObj.listingDate || ipoObj.listingDate) {
-        setListingDate(json.listingDate || lifecycleObj.listingDate || ipoObj.listingDate);
+      const lDate = targetObj.listingDate || targetObj.listing_date || lifecycleObj.listingDate || lifecycleObj.listing_date || ipoObj.listingDate || ipoObj.listing_date;
+      if (lDate) {
+        setListingDate(cleanDateStr(lDate));
         keysFilled.push('Listing Date');
       }
 
-      if (json.registrar || configObj.registrar || companyObj.registrar || ipoObj.registrar) {
-        setRegistrar(json.registrar || configObj.registrar || companyObj.registrar || ipoObj.registrar);
+      // Registrar
+      const reg = targetObj.registrar || configObj.registrar || companyObj.registrar || ipoObj.registrar;
+      if (reg) {
+        setRegistrar(String(reg).trim());
         keysFilled.push('Registrar');
       }
 
-      if (json.registrarPhone || configObj.registrarPhone) {
-        setRegistrarPhone(json.registrarPhone || configObj.registrarPhone);
+      const regPhone = targetObj.registrarPhone || targetObj.registrar_phone || configObj.registrarPhone || configObj.registrar_phone;
+      if (regPhone) {
+        setRegistrarPhone(String(regPhone).trim());
         keysFilled.push('Registrar Phone');
       }
 
-      if (json.registrarEmail || configObj.registrarEmail) {
-        setRegistrarEmail(json.registrarEmail || configObj.registrarEmail);
+      const regEmail = targetObj.registrarEmail || targetObj.registrar_email || configObj.registrarEmail || configObj.registrar_email;
+      if (regEmail) {
+        setRegistrarEmail(String(regEmail).trim());
         keysFilled.push('Registrar Email');
       }
 
-      if (json.leadManager || companyObj.leadManager || ipoObj.leadManager) {
-        setLeadManager(json.leadManager || companyObj.leadManager || ipoObj.leadManager);
+      // Lead Manager
+      const lm = targetObj.leadManager || targetObj.lead_manager || companyObj.leadManager || companyObj.lead_manager || ipoObj.leadManager || ipoObj.lead_manager;
+      if (lm) {
+        setLeadManager(String(lm).trim());
         keysFilled.push('Lead Manager');
       }
 
-      if (companyObj.website || json.website) {
-        setWebsite(companyObj.website || json.website);
+      // Website
+      const web = companyObj.website || targetObj.website;
+      if (web) {
+        setWebsite(String(web).trim());
         keysFilled.push('Website');
       }
 
-      if (json.companyPhone || companyObj.companyPhone || companyObj.phone || companyObj.contactPhone) {
-        setCompanyPhone(json.companyPhone || companyObj.companyPhone || companyObj.phone || companyObj.contactPhone);
+      // Phone
+      const ph = targetObj.companyPhone || targetObj.company_phone || companyObj.companyPhone || companyObj.company_phone || companyObj.phone || companyObj.contactPhone;
+      if (ph) {
+        setCompanyPhone(String(ph).trim());
         keysFilled.push('Phone');
       }
 
-      if (json.companyEmail || companyObj.companyEmail || companyObj.email || companyObj.contactEmail) {
-        setCompanyEmail(json.companyEmail || companyObj.companyEmail || companyObj.email || companyObj.contactEmail);
+      // Email
+      const em = targetObj.companyEmail || targetObj.company_email || companyObj.companyEmail || companyObj.company_email || companyObj.email || companyObj.contactEmail;
+      if (em) {
+        setCompanyEmail(String(em).trim());
         keysFilled.push('Email');
       }
 
-      if (json.drhpUrl || docsObj.drhpUrl || ipoObj.drhpUrl) {
-        setDrhpUrl(json.drhpUrl || docsObj.drhpUrl || ipoObj.drhpUrl);
+      // Document URLs
+      const drhp = targetObj.drhpUrl || targetObj.drhp_url || docsObj.drhpUrl || docsObj.drhp_url || ipoObj.drhpUrl || ipoObj.drhp_url;
+      if (drhp) {
+        setDrhpUrl(String(drhp).trim());
         keysFilled.push('DRHP URL');
       }
 
-      if (json.rhpUrl || docsObj.rhpUrl || ipoObj.rhpUrl) {
-        setRhpUrl(json.rhpUrl || docsObj.rhpUrl || ipoObj.rhpUrl);
+      const rhp = targetObj.rhpUrl || targetObj.rhp_url || docsObj.rhpUrl || docsObj.rhp_url || ipoObj.rhpUrl || ipoObj.rhp_url;
+      if (rhp) {
+        setRhpUrl(String(rhp).trim());
         keysFilled.push('RHP URL');
       }
 
-      if (json.notes || companyObj.notes || companyObj.aboutDescription || ipoObj.notes) {
-        setNotes(json.notes || companyObj.notes || companyObj.aboutDescription || ipoObj.notes);
+      // Notes
+      const nts = targetObj.notes || companyObj.notes || companyObj.aboutDescription || ipoObj.notes;
+      if (nts) {
+        setNotes(String(nts).trim());
         keysFilled.push('Notes');
       }
 
-      // Financials array or flat financial ratios
-      const fins = companyObj.financials || json.financials;
+      // Financial Ratios
+      const fins = companyObj.financials || targetObj.financials;
       if (Array.isArray(fins) && fins.length > 0) {
         const latestFin = fins[0];
-        if (latestFin.ebitdaPercent !== undefined || latestFin.ebitda !== undefined) {
-          setEbitdaPercent(String(latestFin.ebitdaPercent ?? latestFin.ebitda ?? ''));
-        }
-        if (latestFin.roePercent !== undefined || latestFin.roePercentage !== undefined) {
-          setRoePercent(String(latestFin.roePercent ?? latestFin.roePercentage ?? ''));
-        }
-        if (latestFin.patPercent !== undefined || latestFin.patMarginPercent !== undefined) {
-          setPatPercent(String(latestFin.patPercent ?? latestFin.patMarginPercent ?? ''));
-        }
+        const ebitda = latestFin.ebitdaPercent ?? latestFin.ebitda_percent ?? latestFin.ebitda;
+        const roe = latestFin.roePercent ?? latestFin.roe_percent ?? latestFin.roePercentage;
+        const pat = latestFin.patPercent ?? latestFin.pat_percent ?? latestFin.patMarginPercent;
+        if (ebitda !== undefined && ebitda !== null) setEbitdaPercent(String(ebitda));
+        if (roe !== undefined && roe !== null) setRoePercent(String(roe));
+        if (pat !== undefined && pat !== null) setPatPercent(String(pat));
         keysFilled.push('Financial Ratios');
       } else {
-        if (json.ebitdaPercent !== undefined || companyObj.ebitdaPercent !== undefined) {
-          setEbitdaPercent(String(json.ebitdaPercent ?? companyObj.ebitdaPercent ?? ''));
-        }
-        if (json.roePercent !== undefined || companyObj.roePercent !== undefined) {
-          setRoePercent(String(json.roePercent ?? companyObj.roePercent ?? ''));
-        }
-        if (json.patPercent !== undefined || companyObj.patPercent !== undefined) {
-          setPatPercent(String(json.patPercent ?? companyObj.patPercent ?? ''));
-        }
+        const ebitda = targetObj.ebitdaPercent ?? targetObj.ebitda_percent ?? companyObj.ebitdaPercent ?? companyObj.ebitda_percent;
+        const roe = targetObj.roePercent ?? targetObj.roe_percent ?? companyObj.roePercent ?? companyObj.roe_percent;
+        const pat = targetObj.patPercent ?? targetObj.pat_percent ?? companyObj.patPercent ?? companyObj.pat_percent;
+        if (ebitda !== undefined && ebitda !== null) setEbitdaPercent(String(ebitda));
+        if (roe !== undefined && roe !== null) setRoePercent(String(roe));
+        if (pat !== undefined && pat !== null) setPatPercent(String(pat));
       }
 
       setParsingDoc(false);
-      setParseResults({
-        success: true,
-        documentType: 'Canonical JSON',
-        fieldsCount: keysFilled.length,
-        extractedFieldKeys: keysFilled,
-      });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      if (keysFilled.length === 0) {
+        setParseResults({
+          success: false,
+          warnings: ['No recognized IPO fields were found in the selected JSON file.'],
+        });
+        if (Platform.OS !== 'web') {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+        }
+      } else {
+        setParseResults({
+          success: true,
+          documentType: 'JSON File',
+          fieldsCount: keysFilled.length,
+          extractedFieldKeys: keysFilled,
+        });
+        if (Platform.OS !== 'web') {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        }
+      }
     } catch (e: any) {
       setParsingDoc(false);
       setParseResults({
         success: false,
         warnings: [e?.message || 'Failed to parse JSON file.'],
       });
+      if (Platform.OS !== 'web') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      }
     }
   };
 

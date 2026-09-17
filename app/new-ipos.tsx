@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   Image,
   Modal,
@@ -18,7 +19,8 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useSQLiteContext } from 'expo-sqlite';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
@@ -28,6 +30,10 @@ import { Tabs } from '@/components/ui/Tabs';
 import { SegmentedTabControl } from '@/components/ui/SegmentedTabControl';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { BackendIpo } from '@/types/backend-ipo';
+import { useDB } from '@/context/DBContext';
+import { formatCurrency } from '@/utils/formatters';
+import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
+import { triggerCentralizedIPOSync } from '@/services/ipo/centralizedSync';
 
 type NewIpoTab = 'live' | 'upcoming' | 'closed' | 'listed';
 type SortOption = 'DEFAULT' | 'GMP' | 'DATE' | 'MIN_INVEST' | 'NAME';
@@ -96,6 +102,7 @@ export default function NewIposScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
+  const { applications } = useDB();
 
   const [rawIpos, setRawIpos] = useState<BackendIpo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -103,11 +110,37 @@ export default function NewIposScreen() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
+  const searchAnim = useRef(new Animated.Value(0)).current;
+  const searchRef = useRef<TextInput>(null);
+
+  const toggleSearch = () => {
+    if (showSearch) {
+      Animated.timing(searchAnim, { toValue: 0, duration: 180, useNativeDriver: false }).start();
+      setShowSearch(false);
+      setSearchQuery('');
+    } else {
+      setShowSearch(true);
+      Animated.timing(searchAnim, { toValue: 1, duration: 220, useNativeDriver: false }).start(() =>
+        searchRef.current?.focus()
+      );
+    }
+  };
+
+  const searchBarHeight = searchAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 52],
+  });
+  const searchBarOpacity = searchAnim.interpolate({
+    inputRange: [0, 0.4, 1],
+    outputRange: [0, 0, 1],
+  });
   
   const [activeTab, setActiveTab] = useState<NewIpoTab>('live');
   const [includeSme, setIncludeSme] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('DEFAULT');
   const [showFilterModal, setShowFilterModal] = useState(false);
+
+  const db = useSQLiteContext();
 
   const fetchBackendIpos = useCallback(async () => {
     try {
@@ -129,10 +162,37 @@ export default function NewIposScreen() {
     fetchBackendIpos();
   }, [fetchBackendIpos]);
 
-  const onRefresh = () => {
+  // Screen Focus Auto-Refresh
+  useFocusEffect(
+    useCallback(() => {
+      fetchBackendIpos();
+    }, [fetchBackendIpos])
+  );
+
+  // 15-Second Periodic Polling & Global Event Sync Auto-Refresh
+  useEffect(() => {
+    const timer = setInterval(() => {
+      fetchBackendIpos();
+    }, 15000);
+
+    const unsubscribe = backendSyncEmitter.subscribe(() => {
+      fetchBackendIpos();
+    });
+
+    return () => {
+      clearInterval(timer);
+      unsubscribe();
+    };
+  }, [fetchBackendIpos]);
+
+  const onRefresh = useCallback(async () => {
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
     setRefreshing(true);
-    fetchBackendIpos();
-  };
+    await fetchBackendIpos();
+    if (db) {
+      triggerCentralizedIPOSync(db, { force: true, source: 'IPO Hub Manual Refresh' }).catch(() => {});
+    }
+  }, [fetchBackendIpos, db]);
 
   const filteredRawIpos = useMemo(() => {
     let list = rawIpos;
@@ -241,7 +301,7 @@ function getStatusBadge(status?: string, openDate?: string | null) {
 }
 
   const renderItem = ({ item }: { item: BackendIpo }) => {
-    const companyName = item.company?.displayName || item.companyName || item.symbol;
+    const companyName = item.company?.displayName || item.companyName || item.symbol || 'IPO';
     const priceBandText = item.priceBandLow && item.priceBandHigh
       ? item.priceBandLow === item.priceBandHigh
         ? `₹${item.priceBandHigh}`
@@ -252,37 +312,25 @@ function getStatusBadge(status?: string, openDate?: string | null) {
       ? `₹${item.priceBandLow}`
       : 'TBA';
 
-    const minInvestment = (item.priceBandHigh || item.priceBandLow) && item.lotSize
-      ? (item.priceBandHigh || item.priceBandLow!) * item.lotSize
-      : null;
+    const minPrice = item.priceBandHigh || item.priceBandLow || 0;
+    const lotQty = item.lotSize || 0;
+    const lotValue = minPrice && lotQty ? minPrice * lotQty : null;
 
     const gmpAmt = item.currentGmp?.gmpAmount != null ? Number(item.currentGmp.gmpAmount) : null;
     const gmpPct = item.currentGmp?.gmpPercentage != null ? Number(item.currentGmp.gmpPercentage) : null;
     const hasGmp = gmpAmt != null || gmpPct != null;
 
     const gmpDisplay = gmpAmt != null
-      ? `₹${gmpAmt}${gmpPct != null ? ` (${gmpPct > 0 ? '+' : ''}${gmpPct.toFixed(0)}%)` : ''}`
+      ? `${gmpAmt > 0 ? '+' : ''}₹${gmpAmt}${gmpPct != null ? ` (${gmpPct > 0 ? '+' : ''}${gmpPct.toFixed(1)}%)` : ''}`
       : gmpPct != null
-      ? `${gmpPct > 0 ? '+' : ''}${gmpPct.toFixed(0)}%`
+      ? `${gmpPct > 0 ? '+' : ''}${gmpPct.toFixed(1)}%`
       : 'TBA';
 
     const gmpColor = hasGmp ? ((gmpAmt || gmpPct || 0) >= 0 ? '#10B981' : '#EF4444') : colors.mutedForeground;
 
-    const gmpFreshnessText = item.currentGmp?.observedAt
-      ? (() => {
-          const diffMs = Date.now() - new Date(item.currentGmp.observedAt).getTime();
-          const diffHours = Math.floor(diffMs / (3600 * 1000));
-          if (diffHours >= 48) return 'Updated 2d ago';
-          if (diffHours >= 24) return 'Updated 1d ago';
-          const diffMins = Math.floor(diffMs / 60000);
-          if (diffMins < 60) return `Updated ${diffMins}m ago`;
-          return `Updated ${diffHours}h ago`;
-        })()
-      : '';
-
     const applyDateStr = formatApplyDates(item.openDate, item.closeDate);
 
-    const logoUrl = item.company?.logoUrl;
+    const logoUrl = item.company?.logoUrl || (item as any).logoUrl || (item as any).logo_url;
     const initials = companyName
       .replace(/[^a-zA-Z0-9\s]/g, '')
       .split(' ')
@@ -293,6 +341,21 @@ function getStatusBadge(status?: string, openDate?: string | null) {
 
     const isSme = item.marketSegment === 'SME';
     const statusBadge = getStatusBadge(item.status, item.openDate);
+
+    const normStatus = (item.status || '').toUpperCase();
+    const isClosedOrListed = normStatus === 'CLOSED' || normStatus === 'LISTED' || normStatus === 'ALLOTTED' || normStatus.includes('CLOSED') || normStatus.includes('LIST');
+
+    // Matching applications from SQLite
+    const matchingApps = applications.filter((a) => {
+      if (a.ipo_id === item.id) return true;
+      const aName = (a.ipo_name || '').toLowerCase().trim();
+      const iName = companyName.toLowerCase().trim();
+      return aName && iName && (aName === iName || aName.includes(iName) || iName.includes(aName));
+    });
+
+    const totalAppsCount = matchingApps.length;
+    const appliedCount = matchingApps.filter((a) => a.status === 'Applied' || a.status === 'Mandate Approved').length;
+    const allottedCount = matchingApps.filter((a) => a.status === 'Allotted' || a.status === 'Partially Allotted' || a.status === 'Holding' || a.status === 'Sold').length;
 
     return (
       <TouchableOpacity
@@ -307,11 +370,11 @@ function getStatusBadge(status?: string, openDate?: string | null) {
           styles.itemCard,
           {
             backgroundColor: colors.card,
-            borderColor: isDark ? '#1E293B' : '#E2E8F0',
+            borderColor: isDark ? '#1E293B' : colors.border,
           },
         ]}
       >
-        {/* Card Header: Logo + Title + Segment & Exchange Badge */}
+        {/* Card Header Row: Logo/Avatar + Company Title & Price + Segment & Exchange Badge */}
         <View style={styles.cardHeaderRow}>
           <View style={styles.headerLeftCol}>
             <View style={styles.logoWrap}>
@@ -369,99 +432,108 @@ function getStatusBadge(status?: string, openDate?: string | null) {
           </View>
         </View>
 
-        {/* Compact Feature Spotlight Box: Est. GMP & Status Pill */}
-        <View
-          style={[
-            styles.gmpSpotlightBox,
-            {
-              backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
-              borderColor: isDark ? '#334155' : '#EDF2F7',
-            },
-          ]}
-        >
-          <View style={styles.gmpSpotlightLeft}>
-            <Text style={[styles.gmpSpotlightLabel, { color: colors.mutedForeground }]}>
-              Est. GMP
+        {/* Compact Surface Box (Matching IPO Management card style) */}
+        <View style={[styles.middleGridCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          {/* Col 1: EST. GMP & % */}
+          <View style={styles.gridCol}>
+            <Text style={[styles.gridLabel, { color: colors.mutedForeground }]}>EST. GMP</Text>
+            <Text style={[styles.gridVal, { color: gmpColor }]} numberOfLines={1}>
+              {gmpDisplay}
             </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-              <View
-                style={[
-                  styles.gmpBadgePill,
-                  {
-                    backgroundColor: hasGmp
-                      ? ((gmpAmt || gmpPct || 0) >= 0
-                          ? (isDark ? 'rgba(16, 185, 129, 0.15)' : '#E6F4EA')
-                          : (isDark ? 'rgba(239, 68, 68, 0.15)' : '#FCE8E6'))
-                      : (isDark ? '#334155' : '#E2E8F0'),
-                  },
-                ]}
-              >
-                <Text style={[styles.gmpBadgeText, { color: gmpColor }]}>
-                  {gmpDisplay}
-                </Text>
-              </View>
-              {gmpFreshnessText ? (
-                <Text style={[styles.gmpFreshnessText, { color: colors.mutedForeground }]}>
-                  {gmpFreshnessText}
-                </Text>
-              ) : null}
-            </View>
+          </View>
+
+          <View style={[styles.gridDivider, { backgroundColor: colors.border }]} />
+
+          {/* Col 2: LOT QTY / SIZE */}
+          <View style={[styles.gridCol, { alignItems: 'center' }]}>
+            <Text style={[styles.gridLabel, { color: colors.mutedForeground }]}>LOT QTY</Text>
+            <Text style={[styles.gridVal, { color: colors.foreground }]} numberOfLines={1}>
+              {lotQty ? `${lotQty} shares` : '—'}
+            </Text>
+          </View>
+
+          <View style={[styles.gridDivider, { backgroundColor: colors.border }]} />
+
+          {/* Col 3: LOT VALUE / MIN INVEST */}
+          <View style={[styles.gridCol, { alignItems: 'flex-end' }]}>
+            <Text style={[styles.gridLabel, { color: colors.mutedForeground }]}>LOT VALUE</Text>
+            <Text style={[styles.gridVal, { color: colors.foreground }]} numberOfLines={1}>
+              {lotValue ? formatCurrency(lotValue) : '—'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Timeline & Status Badge Row */}
+        <View style={styles.dateAndStatusRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+            <Feather name="calendar" size={12} color={colors.mutedForeground} />
+            <Text style={[styles.dateRowText, { color: colors.mutedForeground }]} numberOfLines={1}>
+              Apply: <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>{applyDateStr}</Text>
+            </Text>
           </View>
 
           <View
             style={[
               styles.statusPill,
-              {
-                backgroundColor: isDark
-                  ? 'rgba(255, 255, 255, 0.08)'
-                  : statusBadge.bg,
-              },
+              { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : statusBadge.bg },
             ]}
           >
-            <Feather
-              name={statusBadge.icon as any}
-              size={11}
-              color={isDark ? colors.foreground : statusBadge.color}
-            />
-            <Text
-              style={[
-                styles.statusPillText,
-                { color: isDark ? colors.foreground : statusBadge.color },
-              ]}
-            >
+            <Feather name={statusBadge.icon as any} size={11} color={isDark ? colors.foreground : statusBadge.color} />
+            <Text style={[styles.statusPillText, { color: isDark ? colors.foreground : statusBadge.color }]}>
               {statusBadge.text}
             </Text>
           </View>
         </View>
 
-        {/* 3-Column Key Metrics Grid */}
-        <View style={styles.metricsGridRow}>
-          <View style={styles.metricGridCol}>
-            <Text style={[styles.metricGridLabel, { color: colors.mutedForeground }]}>
-              Min Investment
+        {/* Applications Stats Pill Row & Apply CTA Footer */}
+        <View style={[styles.footerRow, { borderTopColor: colors.border }]}>
+          <View style={styles.appPillsContainer}>
+            <Text style={[styles.totalAppsLabel, { color: colors.mutedForeground }]}>
+              Apps: <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_700Bold' }}>{totalAppsCount}</Text>
             </Text>
-            <Text style={[styles.metricGridVal, { color: colors.foreground }]}>
-              {minInvestment ? `₹${minInvestment.toLocaleString('en-IN')}` : '—'}
-            </Text>
+
+            <View style={[styles.countPill, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' }]}>
+              <Text style={[styles.countPillText, { color: isDark ? '#60A5FA' : '#2563EB' }]}>
+                {appliedCount} applied
+              </Text>
+            </View>
+
+            <View style={[styles.countPill, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7' }]}>
+              <Text style={[styles.countPillText, { color: isDark ? '#34D399' : '#15803D' }]}>
+                {allottedCount} allotted
+              </Text>
+            </View>
           </View>
 
-          <View style={[styles.metricGridCol, { alignItems: 'center' }]}>
-            <Text style={[styles.metricGridLabel, { color: colors.mutedForeground }]}>
-              Apply Date
-            </Text>
-            <Text style={[styles.metricGridVal, { color: colors.foreground }]}>
-              {applyDateStr}
-            </Text>
-          </View>
-
-          <View style={[styles.metricGridCol, { alignItems: 'flex-end' }]}>
-            <Text style={[styles.metricGridLabel, { color: colors.mutedForeground }]}>
-              Lot Size
-            </Text>
-            <Text style={[styles.metricGridVal, { color: colors.foreground }]}>
-              {item.lotSize ? `${item.lotSize} Qty` : '—'}
-            </Text>
-          </View>
+          {!isClosedOrListed ? (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() =>
+                router.push({
+                  pathname: '/apply-ipo',
+                  params: { ipoId: item.id },
+                } as any)
+              }
+              style={[styles.applyCtaBtn, { backgroundColor: colors.primary }]}
+            >
+              <Text style={styles.applyCtaText}>Apply Now</Text>
+              <Feather name="arrow-right" size={12} color="#FFFFFF" />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() =>
+                router.push({
+                  pathname: '/backend-ipo-details',
+                  params: { id: item.id, item: JSON.stringify(item) },
+                })
+              }
+              style={[styles.viewDetailsCtaBtn, { borderColor: colors.border }]}
+            >
+              <Text style={[styles.viewDetailsText, { color: colors.mutedForeground }]}>View Details</Text>
+              <Feather name="chevron-right" size={12} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          )}
         </View>
       </TouchableOpacity>
     );
@@ -482,42 +554,21 @@ function getStatusBadge(status?: string, openDate?: string | null) {
           },
         ]}
       >
-        <IconButton
-          name="arrow-left"
-          variant="surface"
-          size="md"
-          onPress={() => router.back()}
-          style={{ zIndex: 2 }}
-        />
-        <View
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            top: topPad,
-            bottom: 0,
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1,
-          }}
-          pointerEvents="none"
-        >
-          <Text style={[styles.headerEyebrow, { color: colors.primary, textAlign: 'center' }]}>
+        <View style={{ flex: 1, justifyContent: 'center' }}>
+          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>
             PRIMARY MARKET
           </Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground, textAlign: 'center' }]}>
-            New IPOs
+          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+            IPO Hub
           </Text>
         </View>
-        <View style={[styles.headerRightActions, { zIndex: 2 }]}>
+
+        <View style={styles.headerRightActions}>
           <IconButton
-            name="search"
-            variant={showSearch || searchQuery.length > 0 ? 'primary' : 'surface'}
+            name={showSearch ? 'x' : 'search'}
+            variant={showSearch ? 'primary' : 'surface'}
             size="md"
-            onPress={() => {
-              setShowSearch((prev) => !prev);
-              if (showSearch) setSearchQuery('');
-            }}
+            onPress={toggleSearch}
           />
           <IconButton
             name="sliders"
@@ -531,32 +582,40 @@ function getStatusBadge(status?: string, openDate?: string | null) {
         </View>
       </View>
 
-      {/* Search Input Bar */}
-      {showSearch || searchQuery.length > 0 ? (
-        <View style={styles.searchWrap}>
-          <View
-            style={[
-              styles.searchInputWrap,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
-          >
-            <Feather name="search" size={16} color={colors.mutedForeground} />
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search IPOs..."
-              placeholderTextColor={colors.mutedForeground}
-              style={[styles.searchInput, { color: colors.foreground }]}
-              autoFocus={showSearch && !searchQuery}
-            />
-            {searchQuery ? (
-              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-                <Feather name="x" size={14} color={colors.mutedForeground} />
-              </TouchableOpacity>
-            ) : null}
-          </View>
+      {/* Expandable Search Input */}
+      <Animated.View
+        style={[
+          styles.searchWrap,
+          {
+            height: searchBarHeight,
+            opacity: searchBarOpacity,
+            overflow: 'hidden',
+          },
+        ]}
+      >
+        <View
+          style={[
+            styles.searchInputWrap,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
+          <Feather name="search" size={16} color={colors.mutedForeground} />
+          <TextInput
+            ref={searchRef}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search IPOs..."
+            placeholderTextColor={colors.mutedForeground}
+            style={[styles.searchInput, { color: colors.foreground }]}
+            autoCorrect={false}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
+              <Feather name="x-circle" size={14} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          )}
         </View>
-      ) : null}
+      </Animated.View>
 
       {/* Sub-Tab Bar matching Manage Users spacing & badge pills */}
       <View style={{ marginTop: 10, marginBottom: 12 }}>
@@ -584,7 +643,16 @@ function getStatusBadge(status?: string, openDate?: string | null) {
           </Text>
         </View>
       ) : error ? (
-        <View style={styles.centerContainer}>
+        <ScrollView
+          contentContainerStyle={[styles.centerContainer, { flexGrow: 1, paddingBottom: Math.max(insets.bottom + 110, 135) }]}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+            />
+          }
+        >
           <Feather name="wifi-off" size={32} color={colors.destructive} />
           <Text style={[styles.errorTitle, { color: colors.foreground }]}>
             API Connection Error
@@ -600,9 +668,18 @@ function getStatusBadge(status?: string, openDate?: string | null) {
               Retry API Request
             </Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       ) : displayedIpos.length === 0 ? (
-        <View style={styles.centerContainer}>
+        <ScrollView
+          contentContainerStyle={[styles.centerContainer, { flexGrow: 1, paddingBottom: Math.max(insets.bottom + 110, 135) }]}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+            />
+          }
+        >
           <Feather name="inbox" size={32} color={colors.mutedForeground} />
           <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
             No IPOs Found
@@ -610,7 +687,7 @@ function getStatusBadge(status?: string, openDate?: string | null) {
           <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
             No matching IPO records in this view.
           </Text>
-        </View>
+        </ScrollView>
       ) : (
         <FlatList
           data={displayedIpos}
@@ -618,7 +695,7 @@ function getStatusBadge(status?: string, openDate?: string | null) {
           renderItem={renderItem}
           contentContainerStyle={{
             paddingTop: 4,
-            paddingBottom: insets.bottom + 40,
+            paddingBottom: Math.max(insets.bottom + 110, 135),
           }}
           refreshControl={
             <RefreshControl
@@ -914,123 +991,162 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_600SemiBold',
     letterSpacing: 0.5,
   },
-  gmpSpotlightBox: {
+  middleGridCard: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderRadius: 12,
     borderWidth: 1,
     marginBottom: 10,
   },
-  gmpSpotlightLeft: {
+  gridCol: {
     flex: 1,
   },
-  gmpSpotlightLabel: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_500Medium',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  gridDivider: {
+    width: 1,
+    height: 24,
+    marginHorizontal: 8,
   },
-  gmpBadgePill: {
+  gridLabel: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  gridVal: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  dateAndStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingHorizontal: 2,
+  },
+  dateRowText: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_400Regular',
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    paddingTop: 10,
+    marginTop: 2,
+  },
+  appPillsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+    flex: 1,
+    marginRight: 8,
+  },
+  totalAppsLabel: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_500Medium',
+  },
+  countPill: {
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
   },
-  gmpBadgeText: {
-    fontSize: 13,
+  countPillText: {
+    fontSize: 11,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
-  gmpFreshnessText: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_400Regular',
+  applyCtaBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 10,
+  },
+  applyCtaText: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    color: '#FFFFFF',
+  },
+  viewDetailsCtaBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  viewDetailsText: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
   },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 9999,
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 6,
   },
   statusPillText: {
-    fontSize: 11.5,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
-  },
-  metricsGridRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingBottom: 12,
-  },
-  metricGridCol: {
-    flex: 1,
-  },
-  metricGridLabel: {
     fontSize: 11,
-    fontFamily: 'GoogleSansFlex_500Medium',
-    marginBottom: 3,
-  },
-  metricGridVal: {
-    fontSize: 14,
-    fontFamily: 'GoogleSansFlex_700Bold',
+    fontFamily: 'GoogleSansFlex_600SemiBold',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'flex-end',
   },
   filterModalCard: {
-    width: '100%',
-    maxWidth: 360,
-    borderRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderWidth: 1,
-    overflow: 'hidden',
+    padding: 20,
+    maxHeight: '80%',
   },
   modalHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
+    justifyContent: 'space-between',
+    marginBottom: 16,
   },
   modalTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
   sortOptionRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 14,
+    justifyContent: 'space-between',
     paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
   },
   sortOptionText: {
-    fontSize: 13.5,
+    fontSize: 14,
     fontFamily: 'GoogleSansFlex_500Medium',
   },
   modalFooter: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 10,
-    padding: 14,
-    borderTopWidth: 1,
+    gap: 12,
+    marginTop: 20,
   },
   modalFooterResetBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
     borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalFooterApplyBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-    borderRadius: 10,
+    flex: 2,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

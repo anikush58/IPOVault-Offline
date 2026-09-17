@@ -1,6 +1,6 @@
 import React from 'react';
-import IPOManagementScreen from '../ipo-management';
+import NewIposScreen from '../new-ipos';
 
 export default function IPOSTabScreen() {
-  return <IPOManagementScreen />;
+  return <NewIposScreen />;
 }

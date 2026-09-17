@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import {
   Animated,
   Image,
@@ -17,6 +17,7 @@ import { BlurView } from 'expo-blur';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSQLiteContext } from 'expo-sqlite';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDB } from '@/context/DBContext';
@@ -28,6 +29,10 @@ import { Leaderboard } from '@/components/Leaderboard';
 import { FilterSheet } from '@/components/FilterSheet';
 import { BulkApplySheet } from '@/components/BulkApplySheet';
 import { formatCurrency, getResolvedLogoUrl } from '@/utils/formatters';
+import { calculateNormalizedIPOStatus } from '@/services/ipo/statusNormalizer';
+import { IPORepository } from '@/services/ipo/ipoRepository';
+import { triggerCentralizedIPOSync } from '@/services/ipo/centralizedSync';
+import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 
 const AVATAR_PALETTES: [string, string][] = [
   ['#8B5CF6', '#6D28D9'], // Purple
@@ -82,10 +87,113 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
+  const db = useSQLiteContext();
+  const [ipoHubItems, setIpoHubItems] = useState<any[]>([]);
+  const [refreshingIpoHub, setRefreshingIpoHub] = useState(false);
+
+  const loadIpoHubData = useCallback(async () => {
+    try {
+      const repo = new IPORepository(db);
+      // Trigger background sync with live API
+      triggerCentralizedIPOSync(db, { source: 'Dashboard' }).catch(() => {});
+
+      // Query local SQLite ipo_master
+      const [openRepo, upcomingRepo] = await Promise.all([
+        repo.getOpen().catch(() => []),
+        repo.getUpcoming().catch(() => []),
+      ]);
+
+      const repoCombined = [...openRepo, ...upcomingRepo];
+
+      // Fetch live backend IPO list if available
+      let backendItems: any[] = [];
+      try {
+        backendItems = await backendIpoApiService.listBackendIpos({ limit: 20 });
+      } catch {}
+
+      const map = new Map<string, any>();
+
+      for (const item of repoCombined) {
+        if (item && item.id) {
+          map.set(item.id, item);
+        }
+      }
+
+      for (const b of backendItems) {
+        if (!b) continue;
+        const id = b.id || b.symbol;
+        if (!id) continue;
+
+        const existing = map.get(id);
+        const companyName = b.company?.displayName || b.companyName || b.symbol || existing?.company_name || 'IPO';
+        const priceMin = b.priceBandLow ?? b.issuePriceInr ?? existing?.price_band_min;
+        const priceMax = b.priceBandHigh ?? b.issuePriceInr ?? existing?.price_band_max;
+        const lotSize = b.lotSize ?? existing?.lot_size;
+        const gmpAmt = b.currentGmp?.gmpAmount != null ? Number(b.currentGmp.gmpAmount) : existing?.gmp_amount;
+        const gmpPct = b.currentGmp?.gmpPercentage != null ? Number(b.currentGmp.gmpPercentage) : existing?.gmp_percent;
+        const totalSub = b.currentSubscription?.totalSubscriptionMultiple != null ? Number(b.currentSubscription.totalSubscriptionMultiple) : existing?.total_sub;
+
+        map.set(id, {
+          ...(existing || {}),
+          id,
+          company_name: companyName,
+          ipo_name: companyName,
+          symbol: b.symbol || existing?.symbol,
+          price_band_min: priceMin,
+          price_band_max: priceMax,
+          lot_size: lotSize,
+          issue_type: b.marketSegment === 'SME' ? 'SME' : (existing?.issue_type || 'Mainboard'),
+          open_date: b.openDate || existing?.open_date || '',
+          close_date: b.closeDate || existing?.close_date || '',
+          listing_date: b.listingDate || existing?.listing_date || '',
+          gmp_amount: gmpAmt,
+          gmp_percent: gmpPct,
+          total_sub: totalSub,
+          logo_url: b.company?.logoUrl || existing?.logo_url || '',
+          status: (b.status || existing?.status || 'OPEN').toUpperCase(),
+          lifecycle_status: (b.status || existing?.lifecycle_status || 'OPEN').toUpperCase(),
+        });
+      }
+
+      const allItems = Array.from(map.values());
+      if (allItems.length > 0) {
+        setIpoHubItems(allItems);
+      }
+    } catch (err) {
+      if (__DEV__) console.warn('[DashboardScreen] Failed to load IPO Hub data', err);
+    }
+  }, [db]);
+
+  useEffect(() => {
+    loadIpoHubData();
+  }, [loadIpoHubData]);
+
   const openIpoList = useMemo(() => {
-    const active = ipos.filter((i) => i.archived !== 1 && (i as any).archived !== true);
-    if (active.length > 0) {
-      return [...active].sort((a, b) => {
+    const sourceList = ipoHubItems.length > 0 ? ipoHubItems : ipos;
+    const active = sourceList.filter((i) => i.archived !== 1 && (i as any).archived !== true);
+    
+    // Filter for strictly OPEN IPOs matching IPO Hub status calculation
+    const openOnly = active.filter((i) => {
+      const st = (i.status || i.lifecycle_status || calculateNormalizedIPOStatus(i) || '').toUpperCase();
+      return st === 'OPEN' || st === 'ACTIVE' || st === 'LIVE';
+    });
+    
+    let targetList = openOnly;
+    if (targetList.length === 0) {
+      targetList = active.filter((i) => {
+        const st = (i.status || i.lifecycle_status || calculateNormalizedIPOStatus(i) || '').toUpperCase();
+        return st === 'OPEN' || st === 'UPCOMING' || st === 'ACTIVE' || st === 'LIVE';
+      });
+    }
+    if (targetList.length === 0) {
+      targetList = active.filter((i) => {
+        const st = (i.status || i.lifecycle_status || calculateNormalizedIPOStatus(i) || '').toUpperCase();
+        return st !== 'CLOSED' && st !== 'LISTED';
+      });
+    }
+
+    if (targetList.length > 0) {
+      return [...targetList].sort((a, b) => {
         if (a.close_date && b.close_date) {
           return a.close_date.localeCompare(b.close_date);
         }
@@ -94,17 +202,9 @@ export default function DashboardScreen() {
         return 0;
       });
     }
-    // Only return mock fallback if DB has ZERO IPOs total (first fresh launch before any IPO is created in DB)
-    if (ipos.length === 0) {
-      return [
-        { id: 'ola-elec', company_name: 'Ola Electric Mobility', ipo_name: 'Ola Electric Mobility IPO', price_band_min: 72, price_band_max: 76, lot_size: 195, issue_type: 'Mainboard', close_date: '31 Aug', gmp_percent: 16, gmp_amount: 12, total_sub: 4.2 },
-        { id: 'premier-eng', company_name: 'Premier Energies', ipo_name: 'Premier Energies IPO', price_band_min: 425, price_band_max: 450, lot_size: 33, issue_type: 'Mainboard', close_date: '02 Sep', gmp_percent: 42, gmp_amount: 189, total_sub: 74.3 },
-        { id: 'firstcry', company_name: 'Brainbees Solutions (FirstCry)', ipo_name: 'Brainbees Solutions IPO', price_band_min: 440, price_band_max: 465, lot_size: 32, issue_type: 'Mainboard', close_date: '04 Sep', gmp_percent: 12, gmp_amount: 56, total_sub: 12.2 },
-        { id: 'unicommerce', company_name: 'Unicommerce eSolutions', ipo_name: 'Unicommerce eSolutions IPO', price_band_min: 102, price_band_max: 108, lot_size: 135, issue_type: 'SME', close_date: '05 Sep', gmp_percent: 68, gmp_amount: 74, total_sub: 168.3 },
-      ];
-    }
+
     return [];
-  }, [ipos]);
+  }, [ipoHubItems, ipos]);
 
   // ── filter state ───────────────────────────────────────────────────────────
   const [filterUserIds, setFilterUserIds] = useState<string[]>([]);
@@ -277,6 +377,15 @@ export default function DashboardScreen() {
     outputRange: [0, 0, 1],
   });
 
+  const handleDashboardRefresh = useCallback(async () => {
+    setRefreshingIpoHub(true);
+    await Promise.all([
+      refresh().catch(() => {}),
+      loadIpoHubData().catch(() => {}),
+    ]);
+    setRefreshingIpoHub(false);
+  }, [refresh, loadIpoHubData]);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
@@ -293,13 +402,13 @@ export default function DashboardScreen() {
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Dashboard</Text>
         </View>
 
-        {/* Actions (IPO Hub & Filter) */}
+        {/* Actions (IPO Management & Filter) */}
         <View style={styles.headerActions}>
           <IconButton
             name="grid"
             variant="surface"
             size="md"
-            onPress={() => router.push('/new-ipos')}
+            onPress={() => router.push('/ipo-management')}
           />
           <IconButton
             name="sliders"
@@ -346,7 +455,7 @@ export default function DashboardScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={isLoading} onRefresh={refresh} tintColor={colors.primary} />
+          <RefreshControl refreshing={isLoading || refreshingIpoHub} onRefresh={handleDashboardRefresh} tintColor={colors.primary} />
         }
         contentContainerStyle={{ paddingBottom: insets.bottom + 90 }}
       >
@@ -744,6 +853,9 @@ export default function DashboardScreen() {
                   : 'TBA';
                 const gmpColor = hasGmp ? (isPos ? '#10B981' : colors.destructive) : colors.mutedForeground;
 
+                const cardStatus = (ipo.status || ipo.lifecycle_status || '').toUpperCase();
+                const isClosedOrListed = cardStatus === 'CLOSED' || cardStatus === 'ALLOTTED' || cardStatus === 'LISTED' || cardStatus.includes('CLOSED') || cardStatus.includes('ALLOT') || cardStatus.includes('LIST');
+
                 // Demand / Subscription
                 const totalSub = item.total_sub ?? item.total_subscription;
                 const subDisplay = totalSub != null ? `${totalSub.toFixed(1)}x` : (item.qib_sub != null ? `${item.qib_sub.toFixed(1)}x QIB` : '—');
@@ -758,7 +870,13 @@ export default function DashboardScreen() {
                   >
                     <TouchableOpacity
                       activeOpacity={0.88}
-                      onPress={() => router.push({ pathname: '/apply-ipo', params: { ipoId: ipo.id } } as any)}
+                      onPress={() => {
+                        if (isClosedOrListed) {
+                          router.push({ pathname: '/backend-ipo-details', params: { id: ipo.id } } as any);
+                        } else {
+                          router.push({ pathname: '/apply-ipo', params: { ipoId: ipo.id } } as any);
+                        }
+                      }}
                       style={[
                         styles.openIpoCard,
                         { backgroundColor: colors.card, borderColor: colors.border },
@@ -856,7 +974,7 @@ export default function DashboardScreen() {
                           {lotVal ? formatCurrency(lotVal) : '—'}
                         </Text>
 
-                        {ipo.lifecycle_status !== 'LISTED' && ipo.status !== 'Listed' && ipo.status !== 'LISTED' ? (
+                        {!isClosedOrListed ? (
                           <View style={[styles.openIpoCtaButton, { backgroundColor: colors.primary }]}>
                             <Text style={styles.openIpoCtaText}>APPLY NOW</Text>
                             <Feather name="arrow-right" size={12} color="#FFFFFF" />

@@ -126,7 +126,7 @@ export default function UsersScreen() {
           }}
         />
 
-        <View style={{ flex: 1, alignItems: 'center' }}>
+        <View style={{ flex: 1, justifyContent: 'center', marginLeft: 8 }}>
           <Text style={[styles.headerEyebrow, { color: colors.primary }]}>PROFILES</Text>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Users</Text>
         </View>

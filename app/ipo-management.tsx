@@ -168,20 +168,36 @@ export default function IPOManagementScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* ── Custom Single Header ── */}
+      {/* ── Sub-Page Header ── */}
       <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
-        <View style={{ flex: 1, justifyContent: 'center' }}>
-          <Text style={[styles.headerEyebrow, { color: colors.mutedForeground }]}>TRACK & MANAGE</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>IPOs</Text>
+        <IconButton
+          name="chevron-left"
+          variant="surface"
+          size="md"
+          onPress={() => {
+            if (router.canGoBack()) router.back();
+            else router.replace('/(tabs)');
+          }}
+        />
+
+        <View style={{ flex: 1, justifyContent: 'center', marginLeft: 8 }}>
+          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>TRACK & MANAGE</Text>
+          <Text style={[styles.headerTitle, { color: colors.foreground }]}>IPO Management</Text>
         </View>
 
-        {/* header actions: search only */}
+        {/* header actions: search & add */}
         <View style={styles.headerActions}>
           <IconButton
             name={showSearch ? 'x' : 'search'}
             variant={showSearch ? 'primary' : 'surface'}
             size="md"
             onPress={toggleSearch}
+          />
+          <IconButton
+            name="plus"
+            variant="surface"
+            size="md"
+            onPress={openAddPage}
           />
         </View>
       </View>

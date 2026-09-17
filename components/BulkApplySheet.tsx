@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Modal,
   Pressable,
   ScrollView,
@@ -10,14 +11,35 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useSQLiteContext } from 'expo-sqlite';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { useDB } from '@/context/DBContext';
+import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 import { useDialog } from '@/context/DialogContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatCurrency } from '@/utils/formatters';
+import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
+import { BackendIpo } from '@/types/backend-ipo';
 
 const UPI_APPS = ['GPay', 'PhonePe', 'Paytm', 'BHIM', 'BoB ASBA', 'IDFC ASBA', 'Other'];
+
+export interface BulkIPOOption {
+  id: string;
+  ipo_name: string;
+  company_name: string;
+  buy_price: number;
+  quantity: number;
+  open_date: string;
+  close_date: string;
+  listing_date?: string;
+  allotment_date?: string;
+  registrar?: string;
+  logo_url?: string;
+  issue_type?: string;
+  symbol?: string;
+  isBackend?: boolean;
+}
 
 type Props = {
   visible: boolean;
@@ -29,6 +51,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
   const insets = useSafeAreaInsets();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
+  const db = useSQLiteContext();
   const { ipos, users, applications, bankAccounts, addBulkApplications } = useDB();
   const { showError } = useDialog();
 
@@ -38,7 +61,10 @@ export function BulkApplySheet({ visible, onClose }: Props) {
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
 
-  // Reset all selections whenever the sheet is opened fresh
+  const [backendIpos, setBackendIpos] = useState<BackendIpo[]>([]);
+  const [loadingBackendIpos, setLoadingBackendIpos] = useState(false);
+
+  // Reset selections & fetch live open IPOs from IPO Hub whenever sheet is opened
   useEffect(() => {
     if (visible) {
       setBulkIPOId(null);
@@ -46,6 +72,24 @@ export function BulkApplySheet({ visible, onClose }: Props) {
       setBulkUPIApp(null);
       setSelectedUserIds(new Set());
       setBulkLoading(false);
+
+      let isMounted = true;
+      setLoadingBackendIpos(true);
+      backendIpoApiService
+        .listBackendIpos()
+        .then((data) => {
+          if (isMounted) {
+            setBackendIpos(data);
+            setLoadingBackendIpos(false);
+          }
+        })
+        .catch(() => {
+          if (isMounted) setLoadingBackendIpos(false);
+        });
+
+      return () => {
+        isMounted = false;
+      };
     }
   }, [visible]);
 
@@ -53,9 +97,78 @@ export function BulkApplySheet({ visible, onClose }: Props) {
   const [showBankPicker, setShowBankPicker] = useState(false);
   const [showUPIPicker, setShowUPIPicker] = useState(false);
 
-  const activeIPOs = useMemo(() => ipos.filter((i) => i.archived === 0), [ipos]);
+  const openBackendOptions = useMemo(() => {
+    return backendIpos
+      .filter((b) => {
+        const st = (b.status || '').toUpperCase();
+        return st === 'OPEN' || st === 'ACTIVE' || st === 'LIVE';
+      })
+      .map((b): BulkIPOOption => {
+        const price = b.priceBandHigh || b.priceBandLow || 100;
+        const lot = b.lotSize || 1;
+        const compName = b.company?.displayName || b.companyName || b.symbol || 'IPO';
+        return {
+          id: b.id,
+          ipo_name: compName,
+          company_name: compName,
+          buy_price: price,
+          quantity: lot,
+          open_date: b.openDate || '',
+          close_date: b.closeDate || '',
+          listing_date: b.listingDate || '',
+          allotment_date: b.allotmentDate || '',
+          registrar: b.registrar || '',
+          logo_url: b.logoUrl || b.company?.logoUrl || '',
+          issue_type: b.marketSegment === 'SME' ? 'SME' : 'Mainboard',
+          symbol: b.symbol || '',
+          isBackend: true,
+        };
+      });
+  }, [backendIpos]);
+
+  const openLocalOptions = useMemo(() => {
+    return ipos
+      .filter((i) => {
+        if (i.archived === 1) return false;
+        const st = (i.status || i.lifecycle_status || '').toUpperCase();
+        return !st.includes('CLOSED') && !st.includes('ALLOT') && !st.includes('LIST');
+      })
+      .map((i): BulkIPOOption => ({
+        id: i.id,
+        ipo_name: i.ipo_name,
+        company_name: i.company_name,
+        buy_price: i.buy_price,
+        quantity: i.quantity,
+        open_date: i.open_date,
+        close_date: i.close_date,
+        listing_date: i.listing_date,
+        allotment_date: i.allotment_date,
+        registrar: i.registrar,
+        logo_url: i.logo_url,
+        issue_type: i.issue_type,
+        symbol: i.symbol,
+        isBackend: false,
+      }));
+  }, [ipos]);
+
+  const activeIPOs = useMemo(() => {
+    const list: BulkIPOOption[] = [...openBackendOptions];
+    for (const loc of openLocalOptions) {
+      if (
+        !list.some(
+          (r) =>
+            r.id === loc.id ||
+            r.ipo_name.toLowerCase().trim() === loc.ipo_name.toLowerCase().trim()
+        )
+      ) {
+        list.push(loc);
+      }
+    }
+    return list;
+  }, [openBackendOptions, openLocalOptions]);
+
   const activeUsers = useMemo(() => users.filter((u) => u.archived === 0), [users]);
-  const selectedIPO = useMemo(() => ipos.find((i) => i.id === bulkIPOId), [ipos, bulkIPOId]);
+  const selectedIPO = useMemo(() => activeIPOs.find((i) => i.id === bulkIPOId), [activeIPOs, bulkIPOId]);
 
   const availableBankNames = useMemo(() => {
     const list: string[] = [];
@@ -96,7 +209,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
   };
 
   const handleBulkCreate = async () => {
-    if (!bulkIPOId) {
+    if (!bulkIPOId || !selectedIPO) {
       showError('', 'Please select an IPO first.');
       return;
     }
@@ -107,12 +220,40 @@ export function BulkApplySheet({ visible, onClose }: Props) {
 
     setBulkLoading(true);
     try {
+      // Sync selected IPO details into ipo_listings table to ensure complete metadata
+      const now = new Date().toISOString();
+      await db.runAsync(
+        `INSERT OR REPLACE INTO ipo_listings (
+          id, ipo_name, company_name, symbol, buy_price, quantity, open_date, close_date, listing_date, allotment_date,
+          registrar, exchange, issue_type, archived, is_favorite, logo_url, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)`,
+        [
+          selectedIPO.id,
+          selectedIPO.ipo_name,
+          selectedIPO.company_name,
+          selectedIPO.symbol || '',
+          selectedIPO.buy_price,
+          selectedIPO.quantity,
+          selectedIPO.open_date || '',
+          selectedIPO.close_date || '',
+          selectedIPO.listing_date || '',
+          selectedIPO.allotment_date || '',
+          selectedIPO.registrar || '',
+          'NSE, BSE',
+          selectedIPO.issue_type || 'Mainboard',
+          selectedIPO.logo_url || '',
+          now,
+          now,
+        ]
+      );
+
       await addBulkApplications(
-        bulkIPOId,
+        selectedIPO.id,
         Array.from(selectedUserIds),
         bulkBankName ?? undefined,
         bulkUPIApp ?? undefined
       );
+      backendSyncEmitter.notifyChange();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onClose();
     } catch (e: any) {
@@ -222,8 +363,8 @@ export function BulkApplySheet({ visible, onClose }: Props) {
                             style={[
                               styles.chipItem,
                               {
-                                borderColor: isChecked ? (isDark ? '#64748B' : '#334155') : colors.border,
-                                backgroundColor: isChecked ? (isDark ? '#27272A' : '#F1F5F9') : colors.card,
+                                borderColor: isChecked ? '#10B981' : colors.border,
+                                backgroundColor: isChecked ? (isDark ? colors.card : '#FFFFFF') : colors.card,
                               },
                             ]}
                             activeOpacity={0.75}
@@ -232,8 +373,8 @@ export function BulkApplySheet({ visible, onClose }: Props) {
                               style={[
                                 styles.checkbox,
                                 {
-                                  borderColor: isChecked ? (isDark ? '#64748B' : '#1E293B') : colors.mutedForeground,
-                                  backgroundColor: isChecked ? (isDark ? '#374151' : '#0F172A') : 'transparent',
+                                  borderColor: isChecked ? '#10B981' : colors.mutedForeground,
+                                  backgroundColor: isChecked ? '#10B981' : 'transparent',
                                 },
                               ]}
                             >
@@ -286,9 +427,16 @@ export function BulkApplySheet({ visible, onClose }: Props) {
               </TouchableOpacity>
             </View>
             <ScrollView keyboardShouldPersistTaps="handled">
-              {activeIPOs.length === 0 ? (
+              {loadingBackendIpos && activeIPOs.length === 0 ? (
+                <View style={{ padding: 24, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={{ marginTop: 8, fontSize: 13, color: colors.mutedForeground }}>
+                    Loading Open IPOs from IPO Hub…
+                  </Text>
+                </View>
+              ) : activeIPOs.length === 0 ? (
                 <Text style={{ padding: 20, fontStyle: 'italic', color: colors.mutedForeground, textAlign: 'center' }}>
-                  No active IPOs added yet.
+                  No open IPOs available currently.
                 </Text>
               ) : (
                 activeIPOs.map((ipo) => (
@@ -301,7 +449,16 @@ export function BulkApplySheet({ visible, onClose }: Props) {
                     style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: bulkIPOId === ipo.id ? (isDark ? '#27272A' : '#F1F5F9') : 'transparent' }]}
                   >
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.pickerRowName, { color: colors.foreground }]}>{ipo.ipo_name}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={[styles.pickerRowName, { color: colors.foreground }]}>{ipo.ipo_name}</Text>
+                        {ipo.isBackend && (
+                          <View style={{ backgroundColor: colors.primary + '18', paddingHorizontal: 6, paddingVertical: 1.5, borderRadius: 6 }}>
+                            <Text style={{ fontSize: 9, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary }}>
+                              IPO Hub
+                            </Text>
+                          </View>
+                        )}
+                      </View>
                       <Text style={{ fontSize: 12, color: colors.mutedForeground, marginTop: 2 }}>
                         {formatCurrency(ipo.buy_price)} × {ipo.quantity} = {formatCurrency(ipo.buy_price * ipo.quantity)}
                       </Text>

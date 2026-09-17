@@ -28,6 +28,7 @@ import { IPOMasterRecord } from '@/services/ipo/types';
 import { formatCurrency } from '@/utils/formatters';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { BackendIpo } from '@/types/backend-ipo';
+import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 
 const AVATAR_PALETTES: [string, string][] = [
   ['#8B5CF6', '#6D28D9'], // Purple
@@ -81,7 +82,13 @@ export default function ApplyIPOScreen() {
 
   const repo = useMemo(() => new IPORepository(db), [db]);
   const activeUsers = useMemo(() => users.filter((u) => u.archived !== 1), [users]);
-  const activeIPOs = useMemo(() => ipos.filter((ipo) => ipo.archived === 0), [ipos]);
+  const activeIPOs = useMemo(() => {
+    return ipos.filter((ipo) => {
+      if (ipo.archived !== 0) return false;
+      const st = (ipo.status || ipo.lifecycle_status || '').toUpperCase();
+      return !st.includes('CLOSED') && !st.includes('ALLOT') && !st.includes('LIST');
+    });
+  }, [ipos]);
 
   // Fetch record from ipo_master or backend API if selectedIpoId is passed
   useEffect(() => {
@@ -273,6 +280,7 @@ export default function ApplyIPOScreen() {
       });
 
       await addBulkApplications(selectedIpoId, Array.from(selectedUserIds), bankNameMap, upiAppMap);
+      backendSyncEmitter.notifyChange();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace('/(tabs)/bids');
     } catch (err: any) {
@@ -451,8 +459,8 @@ export default function ApplyIPOScreen() {
                 style={[
                   styles.applicantCard,
                   {
-                    backgroundColor: isCardSelected ? 'rgba(0, 0, 0, 0.02)' : colors.card,
-                    borderColor: isCardSelected ? 'rgba(0, 0, 0, 0.75)' : colors.border,
+                    backgroundColor: isCardSelected ? (isDark ? colors.card : '#FFFFFF') : colors.card,
+                    borderColor: isCardSelected ? '#10B981' : colors.border,
                     borderWidth: isCardSelected ? 1.5 : 1,
                     opacity: isAppliedForThisIpo ? 0.6 : 1,
                   },
@@ -489,8 +497,8 @@ export default function ApplyIPOScreen() {
 
                   <View style={styles.applicantHeaderRight}>
                     {isCardSelected && (
-                      <View style={[styles.selectedCheckBadge, { backgroundColor: colors.foreground }]}>
-                        <Feather name="check" size={10} color={isDark ? '#000000' : '#FFFFFF'} />
+                      <View style={[styles.selectedCheckBadge, { backgroundColor: '#10B981' }]}>
+                        <Feather name="check" size={11} color="#FFFFFF" />
                       </View>
                     )}
                     <View style={[styles.brokerBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>

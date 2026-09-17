@@ -305,16 +305,18 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     let masterRows: IPOListing[] = [];
     try {
       const masterIPOs = await db.getAllAsync<any>(
-        `SELECT id, ipo_name, company_name, price_band_max AS buy_price, lot_size AS quantity, open_date, close_date, listing_date, allotment_date, registrar, exchange, issue_type, logo_url, 0 AS archived, is_favorite FROM ipo_master WHERE deleted_at IS NULL AND (status = 'OPEN' OR status = 'UPCOMING' OR is_favorite = 1)`
+        `SELECT *, price_band_max AS buy_price, lot_size AS quantity FROM ipo_master WHERE deleted_at IS NULL AND (status = 'OPEN' OR status = 'UPCOMING' OR is_favorite = 1)`
       );
       const existingIds = new Set(ipoRows.map((r) => r.id));
       masterRows = masterIPOs
         .filter((m) => m && m.id && !existingIds.has(m.id))
         .map((m) => ({
+          ...m,
           id: m.id,
+          company_name: m.company_name || m.ipo_name || 'IPO',
           ipo_name: m.ipo_name || m.company_name || 'IPO',
-          buy_price: typeof m.buy_price === 'number' && m.buy_price > 0 ? m.buy_price : 100,
-          quantity: typeof m.quantity === 'number' && m.quantity > 0 ? m.quantity : 1,
+          buy_price: typeof m.buy_price === 'number' && m.buy_price > 0 ? m.buy_price : (m.price_band_max || 100),
+          quantity: typeof m.quantity === 'number' && m.quantity > 0 ? m.quantity : (m.lot_size || 1),
           open_date: m.open_date || '',
           close_date: m.close_date || '',
           listing_date: m.listing_date || '',
@@ -325,6 +327,12 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           exchange: m.exchange || '',
           issue_type: m.issue_type || 'Mainboard',
           logo_url: m.logo_url || '',
+          gmp_amount: m.gmp_amount ?? null,
+          gmp_percent: m.gmp_percent ?? null,
+          price_band_min: m.price_band_min ?? null,
+          price_band_max: m.price_band_max ?? null,
+          lot_size: m.lot_size ?? null,
+          total_sub: m.total_sub ?? null,
         }));
     } catch {
       // master table optional

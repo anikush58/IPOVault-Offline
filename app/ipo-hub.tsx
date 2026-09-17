@@ -62,7 +62,7 @@ export default function IPOHubScreen() {
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingTop: 12,
-          paddingBottom: insets.bottom + 40,
+          paddingBottom: Math.max(insets.bottom + 110, 135),
         }}
       >
         {/* Intro Card */}

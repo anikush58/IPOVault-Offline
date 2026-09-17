@@ -6,6 +6,7 @@ import {
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
+  RefreshControl,
   ScrollView,
   Share,
   StyleSheet,
@@ -16,7 +17,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import Svg, { Circle, G } from 'react-native-svg';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import * as Haptics from 'expo-haptics';
@@ -33,6 +34,7 @@ import { calculateNormalizedIPOStatus } from '@/services/ipo/statusNormalizer';
 import { formatCurrency } from '@/utils/formatters';
 import { useCompare } from '@/context/CompareContext';
 import { MergeOfficialBanner } from '@/components/ipo/MergeOfficialBanner';
+import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 
 function formatDateShort(dateStr?: string | null): string {
   if (!dateStr) return 'TBA';
@@ -76,6 +78,7 @@ export default function IPODetailsScreen() {
   const [ipo, setIpo] = useState<IPOMasterRecord | null>(null);
   const [officialMatch, setOfficialMatch] = useState<IPOMasterRecord | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [logoError, setLogoError] = useState(false);
   const [readMoreAbout, setReadMoreAbout] = useState(false);
   const [showEditGmpModal, setShowEditGmpModal] = useState(false);
@@ -125,32 +128,61 @@ export default function IPODetailsScreen() {
     setShowEditGmpModal(false);
   };
 
-  useEffect(() => {
-    async function fetchDetails() {
-      if (!id || id === 'undefined') {
-        setLoading(false);
-        router.back();
-        return;
-      }
-      try {
-        const record = await repo.getById(id);
-        setIpo(record);
-
-        if (record && record.source_type === 'LOCAL') {
-          const dups = await repo.findDuplicates(record.company_name, record.symbol);
-          const official = dups.find((d) => d.id !== record.id && d.source_type !== 'LOCAL');
-          if (official) {
-            setOfficialMatch(official);
-          }
-        }
-      } catch (err) {
-        if (__DEV__) console.warn('[IPODetailsScreen] Failed to fetch IPO details', err);
-      } finally {
-        setLoading(false);
-      }
+  const fetchDetails = React.useCallback(async () => {
+    if (!id || id === 'undefined') {
+      setLoading(false);
+      router.back();
+      return;
     }
+    try {
+      const record = await repo.getById(id);
+      setIpo(record);
+
+      if (record && record.source_type === 'LOCAL') {
+        const dups = await repo.findDuplicates(record.company_name, record.symbol);
+        const official = dups.find((d) => d.id !== record.id && d.source_type !== 'LOCAL');
+        if (official) {
+          setOfficialMatch(official);
+        }
+      }
+    } catch (err) {
+      if (__DEV__) console.warn('[IPODetailsScreen] Failed to fetch IPO details', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [id, repo, router]);
+
+  useEffect(() => {
     fetchDetails();
-  }, [id, repo]);
+  }, [fetchDetails]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchDetails();
+    }, [fetchDetails])
+  );
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      fetchDetails();
+    }, 15000);
+
+    const unsubscribe = backendSyncEmitter.subscribe(() => {
+      fetchDetails();
+    });
+
+    return () => {
+      clearInterval(timer);
+      unsubscribe();
+    };
+  }, [fetchDetails]);
+
+  const handleRefresh = React.useCallback(() => {
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+    setRefreshing(true);
+    fetchDetails();
+  }, [fetchDetails]);
 
   const handleToggleFav = async () => {
     if (!ipo) return;
@@ -354,6 +386,13 @@ export default function IPODetailsScreen() {
         scrollEventThrottle={16}
         contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: insets.bottom + 90 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+          />
+        }
       >
         {/* Banner if local manual IPO has official match */}
         {officialMatch && (
@@ -986,7 +1025,18 @@ export default function IPODetailsScreen() {
               { title: 'Anchor List', url: anchorListUrl, icon: 'users' as const },
             ].filter((d) => Boolean(d.url));
 
-            if (availableDocs.length === 0) return null;
+            if (availableDocs.length === 0) {
+              return (
+                <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>
+                    IPO Prospectus & Official Filings
+                  </Text>
+                  <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground, marginTop: 8 }}>
+                    No documents uploaded
+                  </Text>
+                </View>
+              );
+            }
 
             return (
               <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -1031,32 +1081,50 @@ export default function IPODetailsScreen() {
       </ScrollView>
 
       {/* ── Sticky Bottom Apply Action Bar ── */}
-      {normStatus !== 'Listed' && normStatus !== 'LISTED' && ipo.status !== 'LISTED' && ipo.status !== 'Listed' && (
-        <View
-          style={[
-            styles.stickyBottomBarSingle,
-            {
-              backgroundColor: colors.card,
-              borderTopColor: colors.border,
-              borderTopWidth: 1,
-              paddingBottom: Math.max(insets.bottom, 12),
-            },
-          ]}
-        >
-          <TouchableOpacity
-            style={[styles.fullWidthApplyBtn, { backgroundColor: colors.primary }]}
-            activeOpacity={0.88}
-            onPress={() =>
-              router.push({
-                pathname: '/apply-ipo',
-                params: { ipoId: ipo.id },
-              } as any)
-            }
+      {(() => {
+        const normUpper = (normStatus || '').toUpperCase();
+        const rawUpper = (ipo.status || '').toUpperCase();
+        const isClosedOrPast = 
+          normUpper === 'CLOSED' || 
+          normUpper === 'ALLOTTED' || 
+          normUpper === 'ALLOTTED_PENDING' || 
+          normUpper === 'ALLOTTED_AVAILABLE' || 
+          normUpper === 'LISTING_UPCOMING' || 
+          normUpper === 'LISTED' || 
+          rawUpper === 'CLOSED' || 
+          rawUpper === 'ALLOTTED' || 
+          rawUpper === 'LISTED' ||
+          rawUpper.includes('CLOSED') ||
+          rawUpper.includes('ALLOT');
+        if (isClosedOrPast) return null;
+
+        return (
+          <View
+            style={[
+              styles.stickyBottomBarSingle,
+              {
+                backgroundColor: colors.card,
+                borderTopColor: colors.border,
+                borderTopWidth: 1,
+                paddingBottom: Math.max(insets.bottom, 12),
+              },
+            ]}
           >
-            <Text style={styles.fullWidthApplyBtnText}>Apply Now</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+            <TouchableOpacity
+              style={[styles.fullWidthApplyBtn, { backgroundColor: colors.primary }]}
+              activeOpacity={0.88}
+              onPress={() =>
+                router.push({
+                  pathname: '/apply-ipo',
+                  params: { ipoId: ipo.id },
+                } as any)
+              }
+            >
+              <Text style={styles.fullWidthApplyBtnText}>Apply Now</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      })()}
 
       {/* ── Quick Edit GMP Modal ── */}
       {ipo ? (

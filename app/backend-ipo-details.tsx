@@ -6,6 +6,7 @@ import {
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,7 +16,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import Svg, { Circle, G } from 'react-native-svg';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
@@ -25,6 +26,7 @@ import { backendIpoApiService, normalizeBackendIpo } from '@/services/ipo/Backen
 import { BackendIpo } from '@/types/backend-ipo';
 import { formatCurrency, formatDate } from '@/utils/formatters';
 import { AnchorInvestorAllocation } from '@/components/ipo/AnchorInvestorAllocation';
+import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 
 function formatDateShort(dateStr?: string | null): string {
   if (!dateStr) return 'TBA';
@@ -73,6 +75,7 @@ export default function BackendIpoDetailsScreen() {
     return null;
   });
   const [loading, setLoading] = useState(!ipo && !!params.id);
+  const [refreshing, setRefreshing] = useState(false);
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>('IPO');
 
   const handleOpenUrl = (url?: string | null) => {
@@ -108,17 +111,52 @@ export default function BackendIpoDetailsScreen() {
     }
   };
 
+  const fetchDetail = React.useCallback(async () => {
+    if (!params.id) return;
+    try {
+      const res = await backendIpoApiService.getBackendIpoDetail(params.id);
+      if (res) setIpo(res);
+    } catch (e) {
+      console.warn('Failed to fetch backend IPO detail', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [params.id]);
+
   useEffect(() => {
     if (params.id) {
       setLoading(true);
-      backendIpoApiService
-        .getBackendIpoDetail(params.id)
-        .then((res) => {
-          if (res) setIpo(res);
-        })
-        .finally(() => setLoading(false));
+      fetchDetail();
     }
-  }, [params.id]);
+  }, [params.id, fetchDetail]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchDetail();
+    }, [fetchDetail])
+  );
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      fetchDetail();
+    }, 15000);
+
+    const unsubscribe = backendSyncEmitter.subscribe(() => {
+      fetchDetail();
+    });
+
+    return () => {
+      clearInterval(timer);
+      unsubscribe();
+    };
+  }, [fetchDetail]);
+
+  const handleRefresh = React.useCallback(() => {
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+    setRefreshing(true);
+    fetchDetail();
+  }, [fetchDetail]);
 
   if (loading) {
     return (
@@ -267,6 +305,13 @@ export default function BackendIpoDetailsScreen() {
           paddingTop: 12,
           paddingBottom: insets.bottom + 100,
         }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+          />
+        }
       >
         {/* ── SECTION 1: IPO OVERVIEW ── */}
         <View onLayout={(e) => { sectionYMap.current['IPO'] = e.nativeEvent.layout.y; }}>
@@ -835,10 +880,10 @@ export default function BackendIpoDetailsScreen() {
             const prospectusDoc = ipo.documents?.find((d) => d.documentType === 'PROSPECTUS');
             const anchorDoc = ipo.documents?.find((d) => d.documentType === 'ANCHOR_LIST');
 
-            const drhpUrl = (ipo.drhpUrl || drhpDoc?.sourceUrl || drhpDoc?.fileUrl || '').trim();
-            const rhpUrl = (ipo.rhpUrl || rhpDoc?.sourceUrl || rhpDoc?.fileUrl || '').trim();
-            const prospectusUrl = (ipo.prospectusUrl || prospectusDoc?.sourceUrl || prospectusDoc?.fileUrl || '').trim();
-            const anchorListUrl = (ipo.anchorListUrl || ipo.anchorDetails?.documentUrl || anchorDoc?.sourceUrl || anchorDoc?.fileUrl || '').trim();
+            const drhpUrl = (ipo.drhpUrl || drhpDoc?.sourceUrl || drhpDoc?.fileUrl || drhpDoc?.documentUrl || '').trim();
+            const rhpUrl = (ipo.rhpUrl || rhpDoc?.sourceUrl || rhpDoc?.fileUrl || rhpDoc?.documentUrl || '').trim();
+            const prospectusUrl = (ipo.prospectusUrl || prospectusDoc?.sourceUrl || prospectusDoc?.fileUrl || prospectusDoc?.documentUrl || '').trim();
+            const anchorListUrl = (ipo.anchorListUrl || ipo.anchorDetails?.documentUrl || anchorDoc?.sourceUrl || anchorDoc?.fileUrl || anchorDoc?.documentUrl || '').trim();
 
             const availableDocs = [
               { title: 'DRHP Prospectus', url: drhpUrl, icon: 'file-text' as const },
@@ -847,7 +892,30 @@ export default function BackendIpoDetailsScreen() {
               { title: 'Anchor List', url: anchorListUrl, icon: 'users' as const },
             ].filter((d) => Boolean(d.url));
 
-            if (availableDocs.length === 0) return null;
+            if (ipo.documents && Array.isArray(ipo.documents)) {
+              ipo.documents.forEach((doc) => {
+                const url = (doc.fileUrl || doc.documentUrl || doc.sourceUrl || '').trim();
+                if (url && doc.documentType === 'OTHER') {
+                  const title = doc.title || 'Other Document';
+                  if (!availableDocs.some((d) => d.url === url)) {
+                    availableDocs.push({ title, url, icon: 'file-text' as const });
+                  }
+                }
+              });
+            }
+
+            if (availableDocs.length === 0) {
+              return (
+                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>
+                    IPO Prospectus & Official Filings
+                  </Text>
+                  <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground, marginTop: 8 }}>
+                    No documents uploaded
+                  </Text>
+                </View>
+              );
+            }
 
             return (
               <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -890,31 +958,37 @@ export default function BackendIpoDetailsScreen() {
       </ScrollView>
 
       {/* Bottom Sticky Action Bar — Login To Apply */}
-      {ipo.status !== 'LISTED' && ipo.status !== 'Listed' && (
-        <View
-          style={[
-            styles.bottomBar,
-            {
-              backgroundColor: colors.card,
-              borderTopColor: colors.border,
-              paddingBottom: Math.max(insets.bottom, 12),
-            },
-          ]}
-        >
-          <TouchableOpacity
-            style={[styles.applyBtn, { backgroundColor: colors.primary }]}
-            activeOpacity={0.88}
-            onPress={() =>
-              router.push({
-                pathname: '/apply-ipo',
-                params: { ipoId: ipo.id },
-              } as any)
-            }
+      {(() => {
+        const statusUpper = (ipo.status || '').toUpperCase();
+        const isClosedOrPast = statusUpper === 'CLOSED' || statusUpper === 'ALLOTTED' || statusUpper === 'LISTED' || statusUpper.includes('CLOSED') || statusUpper.includes('ALLOT');
+        if (isClosedOrPast) return null;
+
+        return (
+          <View
+            style={[
+              styles.bottomBar,
+              {
+                backgroundColor: colors.card,
+                borderTopColor: colors.border,
+                paddingBottom: Math.max(insets.bottom, 12),
+              },
+            ]}
           >
-            <Text style={styles.applyBtnText}>Apply Now</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+            <TouchableOpacity
+              style={[styles.applyBtn, { backgroundColor: colors.primary }]}
+              activeOpacity={0.88}
+              onPress={() =>
+                router.push({
+                  pathname: '/apply-ipo',
+                  params: { ipoId: ipo.id },
+                } as any)
+              }
+            >
+              <Text style={styles.applyBtnText}>Apply Now</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      })()}
     </View>
   );
 }

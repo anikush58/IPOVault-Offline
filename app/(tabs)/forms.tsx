@@ -192,7 +192,7 @@ export default function FormsScreen() {
         />
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: insets.bottom + 90, gap: 18 }}>
+      <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: Math.max(insets.bottom + 110, 135), gap: 18 }}>
 
         {/* Render Curated IPO Hub Overview Tab */}
         <IPOOverviewTab repo={new IPORepository(useSQLiteContext())} onOpenManualAdd={() => router.push('/ipos')} />

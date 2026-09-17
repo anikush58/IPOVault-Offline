@@ -421,7 +421,7 @@ export default function BanksScreen() {
           }}
         />
 
-        <View style={{ flex: 1, alignItems: 'center' }}>
+        <View style={{ flex: 1, justifyContent: 'center', marginLeft: 8 }}>
           <Text style={[styles.headerEyebrow, { color: colors.primary }]}>CAPITAL</Text>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Banks</Text>
         </View>

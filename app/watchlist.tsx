@@ -145,7 +145,7 @@ export default function WatchlistScreen() {
           data={watchlist}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listPadding}
+          contentContainerStyle={[styles.listPadding, { paddingBottom: Math.max(insets.bottom + 110, 135) }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />

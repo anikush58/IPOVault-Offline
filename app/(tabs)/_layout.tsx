@@ -13,8 +13,8 @@ import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
 const MAIN_BAR_TABS = [
   { name: 'index',        title: 'Home',         icon: 'home'        },
-  { name: 'applications', title: 'Applications', icon: 'file-text'   },
   { name: 'ipos',         title: 'IPO Hub',      icon: 'grid'        },
+  { name: 'applications', title: 'Applications', icon: 'file-text'   },
   { name: 'settings',     title: 'Settings',     icon: 'settings'    },
 ] as const;
 

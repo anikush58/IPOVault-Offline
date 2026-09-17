@@ -12,6 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { IPOMasterRecord } from '@/services/ipo/types';
 import { useCompare } from '@/context/CompareContext';
@@ -58,6 +59,8 @@ export function IPOExploreTab({
 }: IPOExploreTabProps) {
   const router = useRouter();
   const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const bottomPad = Math.max(insets.bottom + 110, 135);
   const { selectedIds } = useCompare();
 
   const [activeMarketView, setActiveMarketView] = useState<'highest_gmp' | 'most_subscribed' | 'top_listed'>('highest_gmp');
@@ -116,7 +119,7 @@ export function IPOExploreTab({
   return (
     <ScrollView
       style={styles.rootContainer}
-      contentContainerStyle={styles.scrollPadding}
+      contentContainerStyle={[styles.scrollPadding, { paddingBottom: bottomPad }]}
       showsVerticalScrollIndicator={false}
       refreshControl={
         onRefresh ? (
