@@ -393,10 +393,10 @@ export default function IPODetailsScreen() {
             <View style={{ flexDirection: 'row', gap: 10, backgroundColor: colors.cardAlt, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border }}>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 11, fontFamily: 'GoogleSansFlex_500Medium', color: colors.mutedForeground, marginBottom: 2 }}>
-                  Bid Price
+                  {normStatus === 'Listed' || normStatus === 'LISTED' ? 'Listing Price' : 'Bid Price'}
                 </Text>
                 <Text style={{ fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', color: colors.foreground }}>
-                  {priceBandText}
+                  {normStatus === 'Listed' || normStatus === 'LISTED' ? (ipo.listing_price != null ? `₹${ipo.listing_price}${ipo.listing_gain_percent != null ? ` (${ipo.listing_gain_percent > 0 ? '+' : ''}${ipo.listing_gain_percent}%)` : ''}` : 'TBA') : priceBandText}
                 </Text>
               </View>
 
@@ -404,10 +404,10 @@ export default function IPODetailsScreen() {
 
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 11, fontFamily: 'GoogleSansFlex_500Medium', color: colors.mutedForeground, marginBottom: 2 }}>
-                  Est. GMP
+                  {normStatus === 'Listed' || normStatus === 'LISTED' ? 'Est. Profit' : 'Est. GMP'}
                 </Text>
-                <Text style={{ fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', color: gmpAmt != null ? '#10B981' : colors.foreground }}>
-                  {gmpAmt != null ? `₹${gmpAmt}${gmpPct != null ? ` (${gmpPct}%)` : ''}` : '—'}
+                <Text style={{ fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', color: (normStatus === 'Listed' || normStatus === 'LISTED') ? (ipo.listing_gain_percent != null && ipo.listing_gain_percent >= 0 ? '#10B981' : '#EF4444') : (gmpAmt != null ? '#10B981' : colors.foreground) }}>
+                  {normStatus === 'Listed' || normStatus === 'LISTED' ? (ipo.profit_amount != null ? `₹${Math.round(ipo.profit_amount).toLocaleString('en-IN')}${ipo.profit_percent != null ? ` (${ipo.profit_percent > 0 ? '+' : ''}${ipo.profit_percent}%)` : ''}` : (ipo.listing_price != null && ipo.price_band_max ? `₹${Math.round((ipo.listing_price - ipo.price_band_max) * (ipo.lot_size || 1)).toLocaleString('en-IN')}` : '—')) : (gmpAmt != null ? `₹${gmpAmt}${gmpPct != null ? ` (${gmpPct}%)` : ''}` : '—')}
                 </Text>
               </View>
             </View>
@@ -1031,30 +1031,32 @@ export default function IPODetailsScreen() {
       </ScrollView>
 
       {/* ── Sticky Bottom Apply Action Bar ── */}
-      <View
-        style={[
-          styles.stickyBottomBarSingle,
-          {
-            backgroundColor: colors.card,
-            borderTopColor: colors.border,
-            borderTopWidth: 1,
-            paddingBottom: Math.max(insets.bottom, 12),
-          },
-        ]}
-      >
-        <TouchableOpacity
-          style={[styles.fullWidthApplyBtn, { backgroundColor: colors.primary }]}
-          activeOpacity={0.88}
-          onPress={() =>
-            router.push({
-              pathname: '/apply-ipo',
-              params: { ipoId: ipo.id },
-            } as any)
-          }
+      {normStatus !== 'Listed' && normStatus !== 'LISTED' && ipo.status !== 'LISTED' && ipo.status !== 'Listed' && (
+        <View
+          style={[
+            styles.stickyBottomBarSingle,
+            {
+              backgroundColor: colors.card,
+              borderTopColor: colors.border,
+              borderTopWidth: 1,
+              paddingBottom: Math.max(insets.bottom, 12),
+            },
+          ]}
         >
-          <Text style={styles.fullWidthApplyBtnText}>Apply Now</Text>
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity
+            style={[styles.fullWidthApplyBtn, { backgroundColor: colors.primary }]}
+            activeOpacity={0.88}
+            onPress={() =>
+              router.push({
+                pathname: '/apply-ipo',
+                params: { ipoId: ipo.id },
+              } as any)
+            }
+          >
+            <Text style={styles.fullWidthApplyBtnText}>Apply Now</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* ── Quick Edit GMP Modal ── */}
       {ipo ? (

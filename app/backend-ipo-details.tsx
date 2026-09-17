@@ -303,10 +303,10 @@ export default function BackendIpoDetailsScreen() {
             <View style={{ flexDirection: 'row', gap: 10, backgroundColor: colors.cardAlt, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border }}>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 11, fontFamily: 'GoogleSansFlex_500Medium', color: colors.mutedForeground, marginBottom: 2 }}>
-                  Bid Price
+                  {ipo.status === 'LISTED' ? 'Listing Price' : 'Bid Price'}
                 </Text>
                 <Text style={{ fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', color: colors.foreground }}>
-                  {priceBandText}
+                  {ipo.status === 'LISTED' ? (ipo.listingPrice != null ? `₹${ipo.listingPrice}${ipo.listingGainPct != null ? ` (${ipo.listingGainPct > 0 ? '+' : ''}${ipo.listingGainPct}%)` : ''}` : 'TBA') : priceBandText}
                 </Text>
               </View>
 
@@ -314,10 +314,10 @@ export default function BackendIpoDetailsScreen() {
 
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 11, fontFamily: 'GoogleSansFlex_500Medium', color: colors.mutedForeground, marginBottom: 2 }}>
-                  Est. GMP
+                  {ipo.status === 'LISTED' ? 'Est. Profit' : 'Est. GMP'}
                 </Text>
-                <Text style={{ fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', color: ipo.currentGmp ? '#10B981' : colors.foreground }}>
-                  {ipo.currentGmp ? `₹${ipo.currentGmp.gmpAmount}${ipo.currentGmp.gmpPercentage != null ? ` (${ipo.currentGmp.gmpPercentage}%)` : ''}` : '—'}
+                <Text style={{ fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', color: ipo.status === 'LISTED' ? (ipo.listingGainPct != null && ipo.listingGainPct >= 0 ? '#10B981' : '#EF4444') : (ipo.currentGmp ? '#10B981' : colors.foreground) }}>
+                  {ipo.status === 'LISTED' ? (ipo.profitAmount != null ? `₹${Math.round(ipo.profitAmount).toLocaleString('en-IN')}${ipo.profitPercentage != null ? ` (${ipo.profitPercentage > 0 ? '+' : ''}${ipo.profitPercentage}%)` : ''}` : '—') : (ipo.currentGmp ? `₹${ipo.currentGmp.gmpAmount}${ipo.currentGmp.gmpPercentage != null ? ` (${ipo.currentGmp.gmpPercentage}%)` : ''}` : '—')}
                 </Text>
               </View>
             </View>
@@ -890,29 +890,31 @@ export default function BackendIpoDetailsScreen() {
       </ScrollView>
 
       {/* Bottom Sticky Action Bar — Login To Apply */}
-      <View
-        style={[
-          styles.bottomBar,
-          {
-            backgroundColor: colors.card,
-            borderTopColor: colors.border,
-            paddingBottom: Math.max(insets.bottom, 12),
-          },
-        ]}
-      >
-        <TouchableOpacity
-          style={[styles.applyBtn, { backgroundColor: colors.primary }]}
-          activeOpacity={0.88}
-          onPress={() =>
-            router.push({
-              pathname: '/apply-ipo',
-              params: { ipoId: ipo.id },
-            } as any)
-          }
+      {ipo.status !== 'LISTED' && ipo.status !== 'Listed' && (
+        <View
+          style={[
+            styles.bottomBar,
+            {
+              backgroundColor: colors.card,
+              borderTopColor: colors.border,
+              paddingBottom: Math.max(insets.bottom, 12),
+            },
+          ]}
         >
-          <Text style={styles.applyBtnText}>Apply Now</Text>
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity
+            style={[styles.applyBtn, { backgroundColor: colors.primary }]}
+            activeOpacity={0.88}
+            onPress={() =>
+              router.push({
+                pathname: '/apply-ipo',
+                params: { ipoId: ipo.id },
+              } as any)
+            }
+          >
+            <Text style={styles.applyBtnText}>Apply Now</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }

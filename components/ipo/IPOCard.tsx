@@ -167,6 +167,19 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
     return `Updated ${diffHours}h ago`;
   }, [hasGmp, ipo.gmp_updated_at]);
 
+  const isListed = ipo.status?.toUpperCase() === 'LISTED' || ipo.lifecycle_status?.toUpperCase() === 'LISTED';
+  const issuePrice = ipo.price_band_max || ipo.price_band_min || 0;
+  const listingPrice = ipo.listing_price;
+  const listingGainPct = ipo.listing_gain_percent ?? (listingPrice && issuePrice > 0 ? ((listingPrice - issuePrice) / issuePrice) * 100 : null);
+  const profitAmt = ipo.profit_amount ?? (listingPrice && issuePrice > 0 && ipo.lot_size ? (listingPrice - issuePrice) * ipo.lot_size : null);
+  const profitPct = ipo.profit_percent ?? listingGainPct;
+
+  const listingGainText = listingGainPct != null ? `${listingGainPct > 0 ? '+' : ''}${listingGainPct.toFixed(2)}%` : '—';
+  const profitAmtText = profitAmt != null ? `₹${profitAmt > 0 ? '+' : ''}${Math.round(profitAmt).toLocaleString('en-IN')}` : '—';
+  const profitPctText = profitPct != null ? `${profitPct > 0 ? '+' : ''}${profitPct.toFixed(2)}%` : '—';
+  const listingPriceText = listingPrice != null ? `₹${listingPrice}` : 'TBA';
+  const listingColor = listingGainPct != null ? (listingGainPct >= 0 ? '#10B981' : '#EF4444') : colors.mutedForeground;
+
   const applyDateStr = formatApplyDates(ipo.open_date, ipo.close_date);
 
   return (
@@ -255,24 +268,43 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
         {companyNameStr}
       </Text>
 
-      {/* Bid Price Line */}
-      <View style={styles.infoLineRow}>
-        <Text style={[styles.infoLineLabel, { color: colors.mutedForeground }]}>Bid Price: </Text>
-        <Text style={[styles.infoLineVal, { color: colors.foreground }]}>{priceBandText}</Text>
-      </View>
+      {/* Bid / Listing Price & GMP / Profit Lines */}
+      {isListed ? (
+        <>
+          <View style={styles.infoLineRow}>
+            <Text style={[styles.infoLineLabel, { color: colors.mutedForeground }]}>Listing Price: </Text>
+            <Text style={[styles.infoLineVal, { color: colors.foreground }]}>{listingPriceText}</Text>
+            <Text style={[styles.gmpValText, { color: listingColor, marginLeft: 6 }]}>
+              ({listingGainText})
+            </Text>
+          </View>
+          <View style={styles.infoLineRow}>
+            <Text style={[styles.infoLineLabel, { color: colors.mutedForeground }]}>Profit / Lot: </Text>
+            <Text style={[styles.gmpValText, { color: listingColor }]}>
+              {profitAmtText} ({profitPctText})
+            </Text>
+          </View>
+        </>
+      ) : (
+        <>
+          <View style={styles.infoLineRow}>
+            <Text style={[styles.infoLineLabel, { color: colors.mutedForeground }]}>Bid Price: </Text>
+            <Text style={[styles.infoLineVal, { color: colors.foreground }]}>{priceBandText}</Text>
+          </View>
 
-      {/* GMP Line */}
-      <View style={styles.infoLineRow}>
-        <Text style={[styles.infoLineLabel, { color: colors.mutedForeground }]}>GMP: </Text>
-        <Text style={[styles.gmpValText, { color: gmpColor }]}>
-          {gmpDisplay}
-        </Text>
-        {gmpFreshnessText ? (
-          <Text style={[styles.gmpUpdatedText, { color: colors.mutedForeground }]}>
-            {'  '}{gmpFreshnessText}
-          </Text>
-        ) : null}
-      </View>
+          <View style={styles.infoLineRow}>
+            <Text style={[styles.infoLineLabel, { color: colors.mutedForeground }]}>GMP: </Text>
+            <Text style={[styles.gmpValText, { color: gmpColor }]}>
+              {gmpDisplay}
+            </Text>
+            {gmpFreshnessText ? (
+              <Text style={[styles.gmpUpdatedText, { color: colors.mutedForeground }]}>
+                {'  '}{gmpFreshnessText}
+              </Text>
+            ) : null}
+          </View>
+        </>
+      )}
 
       {/* Bottom 3-Column Metrics Grid */}
       <View style={[styles.metricsGridRow, { borderTopColor: colors.border }]}>

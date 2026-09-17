@@ -819,13 +819,15 @@ export default function DashboardScreen() {
                         </View>
                       </View>
 
-                      {/* Main Decision Banner: Price Band | GMP | Demand */}
+                      {/* Main Decision Banner: Price Band | GMP / Listing */}
                       <View style={[styles.openIpoMetricsBanner, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(241, 243, 245, 0.65)', borderColor: colors.border }]}>
-                        {/* Price Band & Lot Size */}
+                        {/* Price Band or Listing Price */}
                         <View style={styles.openIpoMetricCell}>
-                          <Text style={[styles.openIpoMetricLabel, { color: colors.mutedForeground }]}>PRICE BAND</Text>
+                          <Text style={[styles.openIpoMetricLabel, { color: colors.mutedForeground }]}>
+                            {ipo.lifecycle_status === 'LISTED' || ipo.status === 'Listed' || ipo.status === 'LISTED' ? 'LISTING PRICE' : 'PRICE BAND'}
+                          </Text>
                           <Text style={[styles.openIpoMetricValue, { color: colors.foreground }]} numberOfLines={1}>
-                            {priceBandText}
+                            {ipo.lifecycle_status === 'LISTED' || ipo.status === 'Listed' || ipo.status === 'LISTED' ? (ipo.listing_price ? `₹${ipo.listing_price}` : 'TBA') : priceBandText}
                           </Text>
                           <Text style={[styles.openIpoMetricSub, { color: colors.mutedForeground }]} numberOfLines={1}>
                             {lotSize ? `${lotSize} Shares / Lot` : 'Min 1 Lot'}
@@ -834,14 +836,16 @@ export default function DashboardScreen() {
 
                         <View style={[styles.openIpoMetricDivider, { backgroundColor: colors.border }]} />
 
-                        {/* Expected GMP */}
+                        {/* Expected GMP or Listing Gain */}
                         <View style={styles.openIpoMetricCellRight}>
-                          <Text style={[styles.openIpoMetricLabel, { color: colors.mutedForeground }]}>EXPECTED GMP</Text>
-                          <Text style={[styles.openIpoMetricValue, { color: gmpColor }]} numberOfLines={1}>
-                            {gmpDisplay}
+                          <Text style={[styles.openIpoMetricLabel, { color: colors.mutedForeground }]}>
+                            {ipo.lifecycle_status === 'LISTED' || ipo.status === 'Listed' || ipo.status === 'LISTED' ? 'LISTING GAIN' : 'EXPECTED GMP'}
+                          </Text>
+                          <Text style={[styles.openIpoMetricValue, { color: (ipo.lifecycle_status === 'LISTED' || ipo.status === 'Listed' || ipo.status === 'LISTED') ? ((ipo.listing_gain_percent || 0) >= 0 ? '#10B981' : '#EF4444') : gmpColor }]} numberOfLines={1}>
+                            {(ipo.lifecycle_status === 'LISTED' || ipo.status === 'Listed' || ipo.status === 'LISTED') ? (ipo.listing_gain_percent != null ? `${ipo.listing_gain_percent > 0 ? '+' : ''}${ipo.listing_gain_percent.toFixed(2)}%` : '—') : gmpDisplay}
                           </Text>
                           <Text style={[styles.openIpoMetricSub, { color: colors.mutedForeground }]} numberOfLines={1}>
-                            {subDisplay !== '—' ? `${subDisplay} Subscribed` : 'Demand TBA'}
+                            {(ipo.lifecycle_status === 'LISTED' || ipo.status === 'Listed' || ipo.status === 'LISTED') ? (ipo.profit_amount != null ? `Est. Profit: ₹${Math.round(ipo.profit_amount).toLocaleString('en-IN')}` : 'Listed') : (subDisplay !== '—' ? `${subDisplay} Subscribed` : 'Demand TBA')}
                           </Text>
                         </View>
                       </View>
@@ -852,10 +856,17 @@ export default function DashboardScreen() {
                           {lotVal ? formatCurrency(lotVal) : '—'}
                         </Text>
 
-                        <View style={[styles.openIpoCtaButton, { backgroundColor: colors.primary }]}>
-                          <Text style={styles.openIpoCtaText}>APPLY NOW</Text>
-                          <Feather name="arrow-right" size={12} color="#FFFFFF" />
-                        </View>
+                        {ipo.lifecycle_status !== 'LISTED' && ipo.status !== 'Listed' && ipo.status !== 'LISTED' ? (
+                          <View style={[styles.openIpoCtaButton, { backgroundColor: colors.primary }]}>
+                            <Text style={styles.openIpoCtaText}>APPLY NOW</Text>
+                            <Feather name="arrow-right" size={12} color="#FFFFFF" />
+                          </View>
+                        ) : (
+                          <View style={[styles.openIpoCtaButton, { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.border }]}>
+                            <Text style={[styles.openIpoCtaText, { color: colors.mutedForeground }]}>View Details</Text>
+                            <Feather name="chevron-right" size={12} color={colors.mutedForeground} />
+                          </View>
+                        )}
                       </View>
                     </TouchableOpacity>
                   </Animated.View>
