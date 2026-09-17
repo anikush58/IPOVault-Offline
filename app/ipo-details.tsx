@@ -1006,6 +1006,72 @@ export default function IPODetailsScreen() {
             </View>
           </View>
 
+          {/* PRE vs POST IPO METRICS */}
+          <View style={styles.sectionWrap}>
+            <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Pre vs Post IPO Metrics</Text>
+            <View style={[styles.tableCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.tableHeaderRow, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9' }]}>
+                <Text style={[styles.tableHeaderCell, { color: colors.mutedForeground, flex: 1.6, fontFamily: 'GoogleSansFlex_700Bold', fontSize: 11 }]}>
+                  METRIC
+                </Text>
+                <Text style={[styles.tableHeaderCell, { color: colors.mutedForeground, flex: 1, textAlign: 'center', fontFamily: 'GoogleSansFlex_700Bold', fontSize: 11 }]}>
+                  PRE IPO
+                </Text>
+                <Text style={[styles.tableHeaderCell, { color: colors.mutedForeground, flex: 1, textAlign: 'right', fontFamily: 'GoogleSansFlex_700Bold', fontSize: 11 }]}>
+                  POST IPO
+                </Text>
+              </View>
+
+              <View style={styles.tableBodyRow}>
+                <Text style={[styles.tableCellLabel, { color: colors.foreground, flex: 1.6, fontFamily: 'GoogleSansFlex_700Bold', fontSize: 12 }]}>
+                  EPS (₹)
+                </Text>
+                <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1, textAlign: 'center', fontSize: 12 }]}>
+                  {ipo.pre_ipo_eps != null ? Number(ipo.pre_ipo_eps).toFixed(2) : '—'}
+                </Text>
+                <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1, textAlign: 'right', fontSize: 12 }]}>
+                  {ipo.post_ipo_eps != null ? Number(ipo.post_ipo_eps).toFixed(2) : (ipo.eps != null ? Number(ipo.eps).toFixed(2) : '—')}
+                </Text>
+              </View>
+
+              <View style={styles.tableBodyRow}>
+                <Text style={[styles.tableCellLabel, { color: colors.foreground, flex: 1.6, fontFamily: 'GoogleSansFlex_700Bold', fontSize: 12 }]}>
+                  P/E (x)
+                </Text>
+                <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1, textAlign: 'center', fontSize: 12 }]}>
+                  {ipo.pre_ipo_pe != null ? Number(ipo.pre_ipo_pe).toFixed(2) : '—'}
+                </Text>
+                <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1, textAlign: 'right', fontSize: 12 }]}>
+                  {ipo.post_ipo_pe != null ? Number(ipo.post_ipo_pe).toFixed(2) : '—'}
+                </Text>
+              </View>
+
+              <View style={styles.tableBodyRow}>
+                <Text style={[styles.tableCellLabel, { color: colors.foreground, flex: 1.6, fontFamily: 'GoogleSansFlex_700Bold', fontSize: 12 }]}>
+                  PROMOTER HOLDING
+                </Text>
+                <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1, textAlign: 'center', fontSize: 12 }]}>
+                  {ipo.pre_ipo_promoter_holding != null ? `${Number(ipo.pre_ipo_promoter_holding).toFixed(2)}%` : '—'}
+                </Text>
+                <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1, textAlign: 'right', fontSize: 12 }]}>
+                  {ipo.post_ipo_promoter_holding != null ? `${Number(ipo.post_ipo_promoter_holding).toFixed(2)}%` : '—'}
+                </Text>
+              </View>
+
+              <View style={styles.tableBodyRowLast}>
+                <Text style={[styles.tableCellLabel, { color: colors.foreground, flex: 1.6, fontFamily: 'GoogleSansFlex_700Bold', fontSize: 12 }]}>
+                  MARKET CAP
+                </Text>
+                <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1, textAlign: 'center', fontSize: 12 }]}>
+                  {ipo.pre_ipo_market_cap != null ? `₹${Number(ipo.pre_ipo_market_cap).toFixed(2)} Cr.` : '—'}
+                </Text>
+                <Text style={[styles.tableCellVal, { color: colors.foreground, flex: 1, textAlign: 'right', fontSize: 12 }]}>
+                  {ipo.post_ipo_market_cap != null ? `₹${Number(ipo.post_ipo_market_cap).toFixed(2)} Cr.` : (ipo.market_cap != null ? `₹${Number(ipo.market_cap).toFixed(2)} Cr.` : '—')}
+                </Text>
+              </View>
+            </View>
+          </View>
+
           {/* KEY FINANCIAL RATIOS */}
           <View style={styles.sectionWrap}>
             <Text style={[styles.sectionTitleOrange, { color: colors.primary }]}>Key Financial Ratios</Text>

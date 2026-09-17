@@ -139,6 +139,15 @@ export interface BackendIpo {
   issueSize?: number | null;
   freshIssueSize?: number | null;
   ofsSize?: number | null;
+  preIpoEps?: number | null;
+  postIpoEps?: number | null;
+  preIpoPe?: number | null;
+  postIpoPe?: number | null;
+  preIpoPromoterHolding?: number | null;
+  postIpoPromoterHolding?: number | null;
+  preIpoMarketCap?: number | null;
+  postIpoMarketCap?: number | null;
+  marketCap?: number | null;
   issueShareCount?: number | null;
   freshIssueShareCount?: number | null;
   ofsShareCount?: number | null;

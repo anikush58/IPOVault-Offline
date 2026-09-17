@@ -136,6 +136,15 @@ export interface IPOMasterRecord {
   pat_percent?: number | null;
   eps?: number | null;
   roce_percent?: number | null;
+  pre_ipo_eps?: number | null;
+  post_ipo_eps?: number | null;
+  pre_ipo_pe?: number | null;
+  post_ipo_pe?: number | null;
+  pre_ipo_promoter_holding?: number | null;
+  post_ipo_promoter_holding?: number | null;
+  pre_ipo_market_cap?: number | null;
+  post_ipo_market_cap?: number | null;
+  market_cap?: number | null;
   fresh_issue_size?: number | null;
   ofs_size?: number | null;
   qib_quota_percent?: number | null;

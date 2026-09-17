@@ -105,6 +105,14 @@ export default function AddIPOManualScreen() {
   const [ebitdaPercent, setEbitdaPercent] = useState('');
   const [roePercent, setRoePercent] = useState('');
   const [patPercent, setPatPercent] = useState('');
+  const [preIpoEps, setPreIpoEps] = useState('');
+  const [postIpoEps, setPostIpoEps] = useState('');
+  const [preIpoPe, setPreIpoPe] = useState('');
+  const [postIpoPe, setPostIpoPe] = useState('');
+  const [preIpoPromoterHolding, setPreIpoPromoterHolding] = useState('');
+  const [postIpoPromoterHolding, setPostIpoPromoterHolding] = useState('');
+  const [preIpoMarketCap, setPreIpoMarketCap] = useState('');
+  const [postIpoMarketCap, setPostIpoMarketCap] = useState('');
   const [drhpUrl, setDrhpUrl] = useState('');
   const [rhpUrl, setRhpUrl] = useState('');
   const [notes, setNotes] = useState('');
@@ -623,6 +631,15 @@ export default function AddIPOManualScreen() {
         ebitda_percent: ebitdaPercent ? parseFloat(ebitdaPercent) : null,
         roe_percent: roePercent ? parseFloat(roePercent) : null,
         pat_percent: patPercent ? parseFloat(patPercent) : null,
+        pre_ipo_eps: preIpoEps ? parseFloat(preIpoEps) : null,
+        post_ipo_eps: postIpoEps ? parseFloat(postIpoEps) : null,
+        pre_ipo_pe: preIpoPe ? parseFloat(preIpoPe) : null,
+        post_ipo_pe: postIpoPe ? parseFloat(postIpoPe) : null,
+        pre_ipo_promoter_holding: preIpoPromoterHolding ? parseFloat(preIpoPromoterHolding) : null,
+        post_ipo_promoter_holding: postIpoPromoterHolding ? parseFloat(postIpoPromoterHolding) : null,
+        pre_ipo_market_cap: preIpoMarketCap ? parseFloat(preIpoMarketCap) : null,
+        post_ipo_market_cap: postIpoMarketCap ? parseFloat(postIpoMarketCap) : null,
+        market_cap: postIpoMarketCap ? parseFloat(postIpoMarketCap) : (preIpoMarketCap ? parseFloat(preIpoMarketCap) : null),
         drhp_url: drhpUrl.trim() || undefined,
         rhp_url: rhpUrl.trim() || undefined,
         prospectus_url: rhpUrl.trim() || drhpUrl.trim() || undefined,
@@ -1071,7 +1088,110 @@ export default function AddIPOManualScreen() {
           </View>
         </View>
 
-        {/* Timeline Dates */}
+        {/* Pre & Post IPO Valuation Metrics */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.primary }]}>PRE & POST IPO METRICS</Text>
+
+          <View style={styles.row}>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>Pre-IPO EPS (₹)</Text>
+              <TextInput
+                value={preIpoEps}
+                onChangeText={setPreIpoEps}
+                placeholder="e.g. 9.00"
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              />
+            </View>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>Post-IPO EPS (₹)</Text>
+              <TextInput
+                value={postIpoEps}
+                onChangeText={setPostIpoEps}
+                placeholder="e.g. 7.97"
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              />
+            </View>
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>Pre-IPO P/E (x)</Text>
+              <TextInput
+                value={preIpoPe}
+                onChangeText={setPreIpoPe}
+                placeholder="e.g. 47.11"
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              />
+            </View>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>Post-IPO P/E (x)</Text>
+              <TextInput
+                value={postIpoPe}
+                onChangeText={setPostIpoPe}
+                placeholder="e.g. 53.20"
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              />
+            </View>
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>Pre Promoter Holding (%)</Text>
+              <TextInput
+                value={preIpoPromoterHolding}
+                onChangeText={setPreIpoPromoterHolding}
+                placeholder="e.g. 75.74"
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              />
+            </View>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>Post Promoter Holding (%)</Text>
+              <TextInput
+                value={postIpoPromoterHolding}
+                onChangeText={setPostIpoPromoterHolding}
+                placeholder="e.g. 0.00"
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              />
+            </View>
+          </View>
+
+          <View style={styles.row}>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>Pre Market Cap (₹ Cr)</Text>
+              <TextInput
+                value={preIpoMarketCap}
+                onChangeText={setPreIpoMarketCap}
+                placeholder="e.g. 2500.00"
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              />
+            </View>
+            <View style={[styles.field, { flex: 1 }]}>
+              <Text style={[styles.label, { color: colors.foreground }]}>Post Market Cap (₹ Cr)</Text>
+              <TextInput
+                value={postIpoMarketCap}
+                onChangeText={setPostIpoMarketCap}
+                placeholder="e.g. 3153.36"
+                keyboardType="numeric"
+                placeholderTextColor={colors.mutedForeground + '70'}
+                style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
+              />
+            </View>
+          </View>
+        </View>
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.primary }]}>TIMELINE DATES (YYYY-MM-DD)</Text>
 
