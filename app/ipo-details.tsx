@@ -944,6 +944,7 @@ export default function IPODetailsScreen() {
                 </Text>
               </View>
             )}
+          </View>
         </ScrollView>
 
         {/* ── TAB 3: COMPANY INFO ── */}
@@ -1138,6 +1139,8 @@ export default function IPODetailsScreen() {
                   <Text style={[styles.snapVal, { color: colors.foreground }]}>—</Text>
                 )}
               </View>
+            </View>
+          </View>
         </ScrollView>
 
         {/* ── TAB 4: DOCS & ANCHOR LIST ── */}
