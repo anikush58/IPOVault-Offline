@@ -113,22 +113,22 @@ export class IPORepository {
   }
 
   async getUpcoming(): Promise<IPOMasterRecord[]> {
-    const sql = "SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (UPPER(status) = 'UPCOMING' OR UPPER(lifecycle_status) = 'UPCOMING' OR open_date > date('now')) ORDER BY open_date ASC";
+    const sql = "SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (source_type = 'SERVER' OR source_type IS NULL OR source_type = '') AND id NOT LIKE 'manual-%' AND (UPPER(status) = 'UPCOMING' OR UPPER(lifecycle_status) = 'UPCOMING' OR open_date > date('now')) ORDER BY open_date ASC";
     return safeGetAllAsync<IPOMasterRecord>(this.db, sql, [], 'IPORepository.getUpcoming');
   }
 
   async getOpen(): Promise<IPOMasterRecord[]> {
-    const sql = "SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (UPPER(status) = 'OPEN' OR UPPER(lifecycle_status) = 'OPEN') ORDER BY close_date ASC";
+    const sql = "SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (source_type = 'SERVER' OR source_type IS NULL OR source_type = '') AND id NOT LIKE 'manual-%' AND (UPPER(status) = 'OPEN' OR UPPER(lifecycle_status) = 'OPEN') ORDER BY close_date ASC";
     return safeGetAllAsync<IPOMasterRecord>(this.db, sql, [], 'IPORepository.getOpen');
   }
 
   async getClosed(): Promise<IPOMasterRecord[]> {
-    const sql = "SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (UPPER(status) IN ('CLOSED', 'ALLOTTED_PENDING', 'ALLOTTED_AVAILABLE', 'ALLOTMENT') OR UPPER(lifecycle_status) IN ('CLOSED', 'ALLOTTED_PENDING', 'ALLOTTED_AVAILABLE')) ORDER BY close_date DESC";
+    const sql = "SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (source_type = 'SERVER' OR source_type IS NULL OR source_type = '') AND id NOT LIKE 'manual-%' AND (UPPER(status) IN ('CLOSED', 'ALLOTTED_PENDING', 'ALLOTTED_AVAILABLE', 'ALLOTMENT') OR UPPER(lifecycle_status) IN ('CLOSED', 'ALLOTTED_PENDING', 'ALLOTTED_AVAILABLE')) ORDER BY close_date DESC";
     return safeGetAllAsync<IPOMasterRecord>(this.db, sql, [], 'IPORepository.getClosed');
   }
 
   async getListed(): Promise<IPOMasterRecord[]> {
-    const sql = "SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (UPPER(status) = 'LISTED' OR UPPER(lifecycle_status) = 'LISTED') ORDER BY listing_date DESC";
+    const sql = "SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (source_type = 'SERVER' OR source_type IS NULL OR source_type = '') AND id NOT LIKE 'manual-%' AND (UPPER(status) = 'LISTED' OR UPPER(lifecycle_status) = 'LISTED') ORDER BY listing_date DESC";
     return safeGetAllAsync<IPOMasterRecord>(this.db, sql, [], 'IPORepository.getListed');
   }
 
@@ -162,7 +162,7 @@ export class IPORepository {
       params.push(q, q, q, q, q);
     }
 
-    const sql = `SELECT * FROM ipo_master WHERE deleted_at IS NULL AND ${conditions.join(' AND ')} ORDER BY open_date DESC LIMIT 50`;
+    const sql = `SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (source_type = 'SERVER' OR source_type IS NULL OR source_type = '') AND id NOT LIKE 'manual-%' AND ${conditions.join(' AND ')} ORDER BY open_date DESC LIMIT 50`;
     return safeGetAllAsync<IPOMasterRecord>(this.db, sql, params, 'IPORepository.search');
   }
 

@@ -93,65 +93,48 @@ export default function DashboardScreen() {
 
   const loadIpoHubData = useCallback(async () => {
     try {
-      const repo = new IPORepository(db);
       // Trigger background sync with live API
       triggerCentralizedIPOSync(db, { source: 'Dashboard' }).catch(() => {});
 
-      // Query local SQLite ipo_master
-      const [openRepo, upcomingRepo] = await Promise.all([
-        repo.getOpen().catch(() => []),
-        repo.getUpcoming().catch(() => []),
-      ]);
-
-      const repoCombined = [...openRepo, ...upcomingRepo];
-
-      // Fetch live backend IPO list if available
+      // Fetch live backend IPO list (only backend-published IPOs)
       let backendItems: any[] = [];
       try {
         backendItems = await backendIpoApiService.listBackendIpos({ limit: 20 });
-      } catch {}
+      } catch (err) {
+        if (__DEV__) console.warn('[Dashboard] Failed to fetch backend IPO list', err);
+      }
 
       const map = new Map<string, any>();
 
-      for (const item of repoCombined) {
-        if (item && item.id) {
-          map.set(item.id, item);
-        }
-      }
-
       for (const b of backendItems) {
-        if (!b) continue;
-        const id = b.id || b.symbol;
-        if (!id) continue;
-
-        const existing = map.get(id);
-        const companyName = b.company?.displayName || b.companyName || b.symbol || existing?.company_name || 'IPO';
-        const priceMin = b.priceBandLow ?? b.issuePriceInr ?? existing?.price_band_min;
-        const priceMax = b.priceBandHigh ?? b.issuePriceInr ?? existing?.price_band_max;
-        const lotSize = b.lotSize ?? existing?.lot_size;
-        const gmpAmt = b.currentGmp?.gmpAmount != null ? Number(b.currentGmp.gmpAmount) : existing?.gmp_amount;
-        const gmpPct = b.currentGmp?.gmpPercentage != null ? Number(b.currentGmp.gmpPercentage) : existing?.gmp_percent;
-        const totalSub = b.currentSubscription?.totalSubscriptionMultiple != null ? Number(b.currentSubscription.totalSubscriptionMultiple) : existing?.total_sub;
+        if (!b || !b.id) continue;
+        const id = b.id;
+        const companyName = b.company?.displayName || b.companyName || b.symbol || 'IPO';
+        const priceMin = b.priceBandLow ?? b.issuePriceInr;
+        const priceMax = b.priceBandHigh ?? b.issuePriceInr;
+        const lotSize = b.lotSize;
+        const gmpAmt = b.currentGmp?.gmpAmount != null ? Number(b.currentGmp.gmpAmount) : null;
+        const gmpPct = b.currentGmp?.gmpPercentage != null ? Number(b.currentGmp.gmpPercentage) : null;
+        const totalSub = b.currentSubscription?.totalSubscriptionMultiple != null ? Number(b.currentSubscription.totalSubscriptionMultiple) : null;
 
         map.set(id, {
-          ...(existing || {}),
           id,
           company_name: companyName,
           ipo_name: companyName,
-          symbol: b.symbol || existing?.symbol,
+          symbol: b.symbol || '',
           price_band_min: priceMin,
           price_band_max: priceMax,
           lot_size: lotSize,
-          issue_type: b.marketSegment === 'SME' ? 'SME' : (existing?.issue_type || 'Mainboard'),
-          open_date: b.openDate || existing?.open_date || '',
-          close_date: b.closeDate || existing?.close_date || '',
-          listing_date: b.listingDate || existing?.listing_date || '',
+          issue_type: b.marketSegment === 'SME' ? 'SME' : 'Mainboard',
+          open_date: b.openDate || '',
+          close_date: b.closeDate || '',
+          listing_date: b.listingDate || '',
           gmp_amount: gmpAmt,
           gmp_percent: gmpPct,
           total_sub: totalSub,
-          logo_url: b.company?.logoUrl || existing?.logo_url || '',
-          status: (b.status || existing?.status || 'OPEN').toUpperCase(),
-          lifecycle_status: (b.status || existing?.lifecycle_status || 'OPEN').toUpperCase(),
+          logo_url: b.company?.logoUrl || '',
+          status: (b.status || 'OPEN').toUpperCase(),
+          lifecycle_status: (b.status || 'OPEN').toUpperCase(),
         });
       }
 

@@ -151,6 +151,10 @@ export interface BackendIpo {
   issueShareCount?: number | null;
   freshIssueShareCount?: number | null;
   ofsShareCount?: number | null;
+  listingPrice?: number | null;
+  listingGainPct?: number | null;
+  profitAmount?: number | null;
+  profitPercentage?: number | null;
   openDate?: string | null;
   closeDate?: string | null;
   allotmentDate?: string | null;
@@ -160,6 +164,8 @@ export interface BackendIpo {
   lifecycle?: BackendIpoLifecycle;
   company?: BackendIpoCompany;
   companyName?: string;
+  registrar?: string | null;
+  logoUrl?: string | null;
   offerCategories?: BackendOfferCategory[];
   participants?: BackendParticipant[];
   drhpUrl?: string | null;
@@ -169,6 +175,7 @@ export interface BackendIpo {
   anchorDetails?: BackendAnchorDetails | null;
   documents?: BackendDocument[];
   allotment?: BackendAllotment | null;
+  allotmentConfig?: BackendAllotment | null;
   currentGmp?: BackendGmp | null;
   currentSubscription?: BackendSubscription | null;
   createdAt?: string;
