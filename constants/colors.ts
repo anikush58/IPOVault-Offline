@@ -132,14 +132,14 @@ const colors = {
     borderSubtle: '#252B37',
     divider: '#2E3545',
 
-    primary: '#F3F4F6',
-    primaryLight: '#D1D5DB',
-    primaryForeground: '#0E1117',
+    primary: '#FFFFFF',
+    primaryLight: '#E5E7EB',
+    primaryForeground: '#000000',
 
-    accent: '#F3F4F6',
-    accentForeground: '#0E1117',
+    accent: '#FFFFFF',
+    accentForeground: '#000000',
 
-    tint: '#F3F4F6',
+    tint: '#FFFFFF',
 
     destructive: '#F87171',
     destructiveForeground: '#FFFFFF',

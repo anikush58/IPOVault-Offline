@@ -1143,11 +1143,16 @@ export default function BackendIpoDetailsScreen() {
         </ScrollView>
       </ScrollView>
 
-      {/* Bottom Sticky Action Bar — Login To Apply */}
+      {/* Bottom Sticky Action Bar */}
       {(() => {
         const statusUpper = (ipo.status || '').toUpperCase();
-        const isClosedOrPast = statusUpper === 'CLOSED' || statusUpper === 'ALLOTTED' || statusUpper === 'LISTED' || statusUpper.includes('CLOSED') || statusUpper.includes('ALLOT');
-        if (isClosedOrPast) return null;
+        const isClosedOrPast =
+          statusUpper === 'CLOSED' ||
+          statusUpper === 'ALLOTTED' ||
+          statusUpper.includes('ALLOT') ||
+          statusUpper.includes('CLOSED') ||
+          statusUpper.includes('LIST');
+        const isAllotmentEligible = isClosedOrPast || Boolean(ipo.allotmentConfig);
 
         return (
           <View
@@ -1157,21 +1162,61 @@ export default function BackendIpoDetailsScreen() {
                 backgroundColor: colors.card,
                 borderTopColor: colors.border,
                 paddingBottom: Math.max(insets.bottom, 12),
+                flexDirection: 'row',
+                gap: 10,
               },
             ]}
           >
-            <TouchableOpacity
-              style={[styles.applyBtn, { backgroundColor: colors.primary }]}
-              activeOpacity={0.88}
-              onPress={() =>
-                router.push({
-                  pathname: '/apply-ipo',
-                  params: { ipoId: ipo.id },
-                } as any)
-              }
-            >
-              <Text style={styles.applyBtnText}>Apply Now</Text>
-            </TouchableOpacity>
+            {isAllotmentEligible && (
+              <TouchableOpacity
+                style={[
+                  styles.applyBtn,
+                  {
+                    flex: 1,
+                    backgroundColor: isClosedOrPast ? colors.primary : colors.cardAlt,
+                    borderWidth: isClosedOrPast ? 0 : 1,
+                    borderColor: colors.border,
+                  },
+                ]}
+                activeOpacity={0.88}
+                onPress={() =>
+                  router.push({
+                    pathname: '/allotment-checker',
+                    params: { ipoId: ipo.id },
+                  } as any)
+                }
+              >
+                <Feather
+                  name="check-circle"
+                  size={18}
+                  color={isClosedOrPast ? '#ffffff' : colors.primary}
+                  style={{ marginRight: 6 }}
+                />
+                <Text
+                  style={[
+                    styles.applyBtnText,
+                    { color: isClosedOrPast ? '#ffffff' : colors.primary },
+                  ]}
+                >
+                  Check Allotment
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {!isClosedOrPast && (
+              <TouchableOpacity
+                style={[styles.applyBtn, { flex: 1, backgroundColor: colors.primary }]}
+                activeOpacity={0.88}
+                onPress={() =>
+                  router.push({
+                    pathname: '/apply-ipo',
+                    params: { ipoId: ipo.id },
+                  } as any)
+                }
+              >
+                <Text style={styles.applyBtnText}>Apply Now</Text>
+              </TouchableOpacity>
+            )}
           </View>
         );
       })()}

@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 
@@ -154,6 +154,7 @@ export type UIApplicantState = {
     | 'partially_allotted'
     | 'not_allotted'
     | 'no_record'
+    | 'check_failed'
     | 'needs_review';
   sharesAllotted?: number;
   errorMessage?: string;
@@ -757,6 +758,7 @@ function DeveloperDiagnosticsPanel(props: {
 export default function AllotmentCheckerScreen() {
   const colors = useColors();
   const router = useRouter();
+  const params = useLocalSearchParams<{ ipoId?: string }>();
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
   const { applications, ipos, users } = useDB();
@@ -1067,18 +1069,19 @@ export default function AllotmentCheckerScreen() {
         setActiveJob(null);
         addLog(`Initiating automated check for IPO ID ${targetIpoId}`, 'info');
 
-        // 1. Collect local applicant PANs for sync
-        const ipoApps = applications.filter((app) => app.ipo_id === targetIpoId);
-        const localPanRecords = ipoApps
-          .map((app) => {
-            const usr = users.find((u) => u.id === app.user_id);
-            return {
+        // 1. Collect all local applicant PANs from user profiles and applications for sync
+        const userPanMap = new Map<string, { userId: string; pan: string; name: string }>();
+        users.forEach((usr) => {
+          const p = (usr.pan_number || '').trim().toUpperCase();
+          if (p.length === 10) {
+            userPanMap.set(p, {
               userId: activeUserId,
-              pan: usr?.pan_number || '',
-              name: usr?.name || 'Applicant',
-            };
-          })
-          .filter((p) => p.pan && p.pan.trim().length === 10);
+              pan: p,
+              name: usr.name || 'Applicant',
+            });
+          }
+        });
+        const localPanRecords = Array.from(userPanMap.values());
 
         // 2. Synchronize local user PANs to backend UserSavedPan model
         setPanSyncState({ status: 'RUNNING' });
@@ -1121,15 +1124,26 @@ export default function AllotmentCheckerScreen() {
         let resStatus: 'SUCCESS' | 'NOT_SYNCHRONIZED' = 'NOT_SYNCHRONIZED';
         let resMethod = 'Not Synchronized';
 
+        // Check if targetIpoId is directly a canonical UUID
+        const isTargetUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetIpoId.trim());
+        if (isTargetUuid) {
+          canonicalId = targetIpoId.trim();
+          resStatus = 'SUCCESS';
+          resMethod = 'Direct Canonical Backend UUID';
+          addLog(`Using direct canonical backend IPO ID '${canonicalId}'`, 'success');
+        }
+
         let backendIpos: any[] = [];
-        try {
-          backendIpos = await allotmentApiService.fetchBackendIpos();
-        } catch (resErr: any) {
-          addLog(`Error fetching backend IPO list: ${resErr?.message}`, 'warn');
+        if (!canonicalId) {
+          try {
+            backendIpos = await allotmentApiService.fetchBackendIpos();
+          } catch (resErr: any) {
+            addLog(`Error fetching backend IPO list: ${resErr?.message}`, 'warn');
+          }
         }
 
         // Step 1: Check explicit backend_ipo_id linkage if present in backendIpos response
-        if (explicitBackendId && explicitBackendId.trim().length > 0) {
+        if (!canonicalId && explicitBackendId && explicitBackendId.trim().length > 0) {
           const matchedByBackendId = backendIpos.find((b: any) => b.id === explicitBackendId.trim());
           if (matchedByBackendId) {
             canonicalId = explicitBackendId.trim();
@@ -1346,13 +1360,41 @@ export default function AllotmentCheckerScreen() {
     }
   }, [selectedIpoId, handleSelectIpo, addLog]);
 
+  // Handle route param ipoId if passed from IPO detail screen
+  useEffect(() => {
+    if (params.ipoId && params.ipoId !== selectedIpoId && !isCreatingJob && !isPolling) {
+      handleSelectIpo(params.ipoId);
+    }
+  }, [params.ipoId, selectedIpoId, isCreatingJob, isPolling, handleSelectIpo]);
+
   // Compute live applicant UI states by combining local user profiles with backend job items
   const uiApplicants = useMemo((): UIApplicantState[] => {
-    if (!currentApplications || currentApplications.length === 0) return [];
+    if (!selectedIpo) return [];
 
-    return currentApplications.map((app) => {
-      const usr = users.find((u) => u.id === app.user_id);
-      const pan = usr?.pan_number || '';
+    // Use current applications if available, otherwise fallback to all saved user profiles with valid PAN
+    const applicantProfiles = currentApplications.length > 0
+      ? currentApplications.map((app) => {
+          const usr = users.find((u) => u.id === app.user_id);
+          return {
+            applicationId: app.id,
+            userId: app.user_id,
+            userName: usr?.name || 'Applicant',
+            pan: usr?.pan_number || '',
+          };
+        })
+      : users
+          .filter((u) => u.pan_number && u.pan_number.trim().length === 10)
+          .map((u) => ({
+            applicationId: `saved_${u.id}`,
+            userId: u.id,
+            userName: u.name || 'Applicant',
+            pan: u.pan_number,
+          }));
+
+    if (applicantProfiles.length === 0) return [];
+
+    return applicantProfiles.map((profile) => {
+      const pan = profile.pan;
       const masked = maskPan(pan).toUpperCase();
       const expectedBackendMask = getBackendMaskedPan(pan);
 
@@ -1376,7 +1418,7 @@ export default function AllotmentCheckerScreen() {
       let errorMessage: string | undefined;
 
       if (!isAutomatedSupported) {
-        status = 'needs_review';
+        status = 'check_failed';
         errorMessage = `Automated checking unavailable for ${effectiveRegistrar}`;
       } else if (isCreatingJob && !matchedItem) {
         status = 'checking';
@@ -1394,27 +1436,36 @@ export default function AllotmentCheckerScreen() {
           backendStatus === 'APPLICATION_NOT_FOUND' ||
           backendStatus === 'NO_RECORD'
         ) {
-          status = 'needs_review';
-          errorMessage = matchedItem.errorMessage || 'Application details not found on KFin portal. Please verify manually.';
+          status = 'no_record';
+          errorMessage = matchedItem.errorMessage || 'No record found on registrar portal.';
+        } else if (
+          backendStatus === 'SOURCE_UNAVAILABLE' ||
+          backendStatus === 'REGISTRAR_UNRESOLVED' ||
+          backendStatus === 'REGISTRAR_UNSUPPORTED' ||
+          backendStatus === 'CAPTCHA_REQUIRED' ||
+          backendStatus === 'RATE_LIMITED' ||
+          backendStatus === 'TEMPORARY_ERROR'
+        ) {
+          status = 'check_failed';
+          errorMessage = matchedItem.errorMessage || 'Registrar portal unavailable or query failed.';
         } else if (
           backendStatus === 'UNKNOWN' &&
           (activeJob?.status === 'QUEUED' || activeJob?.status === 'RUNNING')
         ) {
           status = 'checking';
         } else {
-          // Technical failure / Rate limit / Source Unavailable -> Needs Review
           status = 'needs_review';
-          errorMessage = matchedItem.errorMessage || 'Technical Failure';
+          errorMessage = matchedItem.errorMessage || 'Status pending review.';
         }
       } else if ((activeJob || jobError) && !matchedItem) {
         status = 'needs_review';
-        errorMessage = jobError || 'Technical Failure';
+        errorMessage = jobError || 'Check incomplete.';
       }
 
       return {
-        applicationId: app.id,
-        userId: app.user_id,
-        userName: usr?.name || 'Applicant',
+        applicationId: profile.applicationId,
+        userId: profile.userId,
+        userName: profile.userName,
         pan,
         appliedQuantity: selectedIpo?.lot_size || 0,
         price: selectedIpo?.buy_price || 0,
@@ -1425,12 +1476,12 @@ export default function AllotmentCheckerScreen() {
       };
     });
   }, [
+    selectedIpo,
     currentApplications,
     users,
     activeJob,
     isCreatingJob,
     jobError,
-    selectedIpo,
     isAutomatedSupported,
     effectiveRegistrar,
   ]);

@@ -9,6 +9,8 @@ export type AllotmentBadgeStatus =
   | 'PARTIALLY_ALLOTTED'
   | 'NOT_ALLOTTED'
   | 'NO_RECORD'
+  | 'CHECK_FAILED'
+  | 'UNAVAILABLE'
   | 'NEEDS_REVIEW'
   | 'PENDING'
   | 'CHECKING'
@@ -16,6 +18,8 @@ export type AllotmentBadgeStatus =
   | 'partially_allotted'
   | 'not_allotted'
   | 'no_record'
+  | 'check_failed'
+  | 'unavailable'
   | 'needs_review'
   | 'pending'
   | 'checking';
@@ -81,6 +85,14 @@ export const AllotmentStatusBadge: React.FC<AllotmentStatusBadgeProps> = ({
       color = colors.mutedForeground;
       bg = colors.statusRefundBg;
       iconName = 'help-circle';
+      break;
+
+    case 'CHECK_FAILED':
+    case 'UNAVAILABLE':
+      label = label || 'Check Failed / Unavailable';
+      color = colors.destructive;
+      bg = '#FEE2E2';
+      iconName = 'slash';
       break;
 
     case 'NEEDS_REVIEW':

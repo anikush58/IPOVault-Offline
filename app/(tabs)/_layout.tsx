@@ -52,7 +52,7 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
         }),
         Animated.sequence([
           Animated.timing(liquidStretchAnim, {
-            toValue: 1.15,
+            toValue: 1.06,
             duration: 90,
             useNativeDriver: true,
           }),
@@ -129,7 +129,7 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
 
   const isDestructiveState = currentRouteName === 'applications' && appActiveTab === 'Applied' && isAppSelectionActive;
 
-  const tabWidth = capsuleWidth > 0 ? (capsuleWidth - 8) / 4 : 0;
+  const tabWidth = capsuleWidth > 0 ? (capsuleWidth - 12) / 4 : 0;
   const activeBg = isDark ? colors.primary : '#111827';
 
   const indicatorTranslateX = tabWidth > 0
@@ -319,9 +319,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 4,
+    padding: 6,
     borderRadius: 100,
     borderWidth: 1,
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.12,
@@ -331,9 +332,9 @@ const styles = StyleSheet.create({
   },
   liquidIndicator: {
     position: 'absolute',
-    left: 4,
-    top: 4,
-    bottom: 4,
+    left: 6,
+    top: 6,
+    bottom: 6,
     borderRadius: 100,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -343,7 +344,7 @@ const styles = StyleSheet.create({
   },
   tabItem: {
     flex: 1,
-    height: 48,
+    height: 46,
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
