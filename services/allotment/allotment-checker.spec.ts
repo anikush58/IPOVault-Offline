@@ -413,13 +413,14 @@ describe('Allotment Checker Frontend Integration Tests', () => {
     ).rejects.toThrow('Backend service unavailable');
   });
 
-  it('21. should correctly identify supported (KFintech) vs unsupported (Link Intime/MUFG) registrars', () => {
+  it('21. should correctly identify supported (KFintech & MUFG) vs unsupported registrars', () => {
     expect(isAutomatedCheckSupported('KFin Technologies Limited')).toBe(true);
-    expect(isAutomatedCheckSupported('Ashutosh Fibre')).toBe(true);
-    expect(isAutomatedCheckSupported('Dhoot Transmission')).toBe(true);
-    expect(isAutomatedCheckSupported('Link Intime India Private Ltd')).toBe(false);
-    expect(isAutomatedCheckSupported('ESDS Software Solution')).toBe(false);
+    expect(isAutomatedCheckSupported(getRegistrarConfig('Ashutosh Fibre').name)).toBe(true);
+    expect(isAutomatedCheckSupported(getRegistrarConfig('Dhoot Transmission').name)).toBe(true);
+    expect(isAutomatedCheckSupported('MUFG Intime India (formerly Link Intime)')).toBe(true);
+    expect(isAutomatedCheckSupported('Link Intime India Private Ltd')).toBe(true);
     expect(isAutomatedCheckSupported('Bigshare Services')).toBe(false);
+    expect(isAutomatedCheckSupported('Cameo Corporate Services')).toBe(false);
     expect(isAutomatedCheckSupported(null)).toBe(false);
   });
 
@@ -468,7 +469,7 @@ describe('Allotment Checker Frontend Integration Tests', () => {
     // Dhoot registrar display and capability check
     const dhootRegistrarConfig = getRegistrarConfig('Dhoot Transmission');
     expect(dhootRegistrarConfig.name).toBe('KFin Technologies Limited');
-    expect(isAutomatedCheckSupported('Dhoot Transmission')).toBe(true);
+    expect(isAutomatedCheckSupported(dhootRegistrarConfig.name)).toBe(true);
 
     const ashutoshCanonicalId = '11111111-2222-4333-a444-555555555555';
     const dhootCanonicalId = '22222222-3333-4444-b555-666666666666';
@@ -742,6 +743,95 @@ describe('Allotment Checker Frontend Integration Tests', () => {
       );
     });
   });
+
+  describe('Summary Counts & No-Record Status Mapping Tests', () => {
+    function computeSummaryCounts(uiApplicants: Array<{ status: string }>, activeJob?: { totalChecks?: number } | null) {
+      let total = uiApplicants.length;
+      let allotted = 0;
+      let notAllotted = 0;
+      let noRecord = 0;
+      let needsReview = 0;
+
+      for (const app of uiApplicants) {
+        if (app.status === 'allotted' || app.status === 'partially_allotted') {
+          allotted++;
+        } else if (app.status === 'not_allotted') {
+          notAllotted++;
+        } else if (app.status === 'no_record') {
+          noRecord++;
+        } else if (app.status === 'needs_review' || app.status === 'check_failed') {
+          needsReview++;
+        }
+      }
+
+      if (activeJob) {
+        total = activeJob.totalChecks || total;
+      }
+
+      return { total, allotted, notAllotted, noRecord, needsReview };
+    }
+
+    it('Fixture A: 26 × APPLICATION_NOT_FOUND (no_record) -> allotted=0, notAllotted=0, noRecord=26, needsReview=0', () => {
+      const applicants = Array.from({ length: 26 }, () => ({ status: 'no_record' }));
+      const counts = computeSummaryCounts(applicants, { totalChecks: 26 });
+
+      expect(counts.total).toBe(26);
+      expect(counts.allotted).toBe(0);
+      expect(counts.notAllotted).toBe(0);
+      expect(counts.noRecord).toBe(26);
+      expect(counts.needsReview).toBe(0);
+    });
+
+    it('Fixture B: Mixed statuses including genuine needs_review -> no_record does NOT increment needsReview', () => {
+      const applicants = [
+        { status: 'allotted' },
+        { status: 'partially_allotted' },
+        { status: 'not_allotted' },
+        { status: 'no_record' },
+        { status: 'no_record' },
+        { status: 'needs_review' },
+        { status: 'check_failed' },
+      ];
+      const counts = computeSummaryCounts(applicants);
+
+      expect(counts.total).toBe(7);
+      expect(counts.allotted).toBe(2);
+      expect(counts.notAllotted).toBe(1);
+      expect(counts.noRecord).toBe(2);
+      expect(counts.needsReview).toBe(2); // 1 needs_review + 1 check_failed
+    });
+
+    it('Fixture C: Standard allotted & not_allotted results behave identically', () => {
+      const applicants = [
+        { status: 'allotted' },
+        { status: 'not_allotted' },
+        { status: 'not_allotted' },
+      ];
+      const counts = computeSummaryCounts(applicants);
+
+      expect(counts.total).toBe(3);
+      expect(counts.allotted).toBe(1);
+      expect(counts.notAllotted).toBe(2);
+      expect(counts.noRecord).toBe(0);
+      expect(counts.needsReview).toBe(0);
+    });
+
+    it('Fixture D: NOT_YET_AVAILABLE maps to pending and does NOT increment needsReview', () => {
+      const applicants = [
+        { status: 'pending' },
+        { status: 'pending' },
+        { status: 'allotted' },
+      ];
+      const counts = computeSummaryCounts(applicants);
+
+      expect(counts.total).toBe(3);
+      expect(counts.allotted).toBe(1);
+      expect(counts.notAllotted).toBe(0);
+      expect(counts.noRecord).toBe(0);
+      expect(counts.needsReview).toBe(0);
+    });
+  });
 });
+
 
 

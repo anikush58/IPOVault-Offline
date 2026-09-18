@@ -7,16 +7,25 @@ export interface RegistrarConfig {
 
 export const REGISTRAR_CONFIGS: RegistrarConfig[] = [
   {
-    name: 'Link Intime India Private Ltd',
-    keywords: ['LINK INTIME', 'LINKINTIME', 'LINK', 'ESDS'],
-    url: 'https://linkintime.co.in/initial_offer/public-issues.html',
-    supportLevel: 'HYBRID',
+    name: 'MUFG Intime India (formerly Link Intime)',
+    keywords: [
+      'MUFG',
+      'MUFG_INTIME',
+      'MUFG INTIME',
+      'LINK INTIME',
+      'LINKINTIME',
+      'LINK',
+      'INTIME',
+      'ESDS',
+    ],
+    url: 'https://in.mpms.mufg.com/Initial_Offer/public-issues.html',
+    supportLevel: 'AUTOMATED',
   },
   {
     name: 'KFin Technologies Limited',
     keywords: ['KFIN', 'KFINTECH', 'KARVY', 'ASHUTOSH', 'DHOOT'],
     url: 'https://ris.kfintech.com/ipostatus/',
-    supportLevel: 'HYBRID',
+    supportLevel: 'AUTOMATED',
   },
   {
     name: 'Bigshare Services Pvt Ltd',
@@ -78,6 +87,12 @@ export function getRegistrarConfig(registrarName?: string | null): RegistrarConf
 export function isAutomatedCheckSupported(registrarName?: string | null): boolean {
   if (!registrarName) return false;
   const upper = registrarName.trim().toUpperCase();
-  return upper === 'KFINTECH' || upper.includes('KFIN');
+  return (
+    upper.includes('KFIN') ||
+    upper.includes('MUFG') ||
+    upper.includes('LINK') ||
+    upper.includes('INTIME') ||
+    upper.includes('ESDS')
+  );
 }
 

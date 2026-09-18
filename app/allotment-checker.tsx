@@ -32,8 +32,22 @@ import {
   isAutomatedCheckSupported,
 } from '@/services/allotment/registrarConfig';
 import { ApiClient, ApiRequestTrace } from '@/services/api/ApiClient';
+import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
+import { BackendIpo } from '@/types/backend-ipo';
+
+import {
+  AllotmentCheckerIpoItem,
+  isBackendIpoAllotmentEligible,
+  normalizeBackendIpoForChecker,
+} from '@/services/allotment/allotmentCheckerIpoSource';
 
 export const APP_DEBUG_BUILD = 'AC-DIAG-20260907-1640';
+
+export {
+  AllotmentCheckerIpoItem,
+  isBackendIpoAllotmentEligible,
+  normalizeBackendIpoForChecker,
+};
 
 // ==========================================
 // DIAGNOSTIC TYPES & HELPER INTERFACES
@@ -329,7 +343,7 @@ function computeStages(
       status: uiApplicants.length > 0 && activeJob ? 'SUCCESS' : 'WAITING',
       detail:
         uiApplicants.length > 0 && activeJob
-          ? `Mapped ${uiApplicants.length} applicants ➔ NEEDS_REVIEW`
+          ? `Mapped ${uiApplicants.length} applicants`
           : undefined,
     },
     {
@@ -367,7 +381,7 @@ function DeveloperDiagnosticsPanel(props: {
   apiTraces: ApiRequestTrace[];
   eventLogs: LogEntry[];
   uiApplicants: UIApplicantState[];
-  summaryCounts: { total: number; allotted: number; notAllotted: number; needsReview: number };
+  summaryCounts: { total: number; allotted: number; notAllotted: number; noRecord: number; needsReview: number };
   onClearDiagnostics: () => void;
   onRunCheckAgain: () => void;
 }) {
@@ -715,10 +729,10 @@ function DeveloperDiagnosticsPanel(props: {
           <View style={diagStyles.sectionBox}>
             <Text style={diagStyles.sectionTitle}>7. Frontend Mapping Summary</Text>
             <Text style={diagStyles.diagCodeLine}>
-              Rule: <Text style={diagStyles.diagVal}>APPLICATION_NOT_FOUND ➔ NEEDS_REVIEW (Needs Review)</Text>
+              Rule: <Text style={diagStyles.diagVal}>APPLICATION_NOT_FOUND ➔ NO_RECORD (No Record Found)</Text>
             </Text>
             <Text style={diagStyles.diagCodeLine}>
-              Counters: Total={props.summaryCounts.total}, Allotted={props.summaryCounts.allotted}, NotAllotted={props.summaryCounts.notAllotted}, NeedsReview={props.summaryCounts.needsReview}
+              Counters: Total={props.summaryCounts.total}, Allotted={props.summaryCounts.allotted}, NotAllotted={props.summaryCounts.notAllotted}, NoRecord={props.summaryCounts.noRecord}, NeedsReview={props.summaryCounts.needsReview}
             </Text>
           </View>
 
@@ -761,7 +775,7 @@ export default function AllotmentCheckerScreen() {
   const params = useLocalSearchParams<{ ipoId?: string }>();
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
-  const { applications, ipos, users } = useDB();
+  const { applications, users } = useDB();
   const { user } = useAuth();
 
   // Active user ID for backend scoping
@@ -769,6 +783,35 @@ export default function AllotmentCheckerScreen() {
     const firstUser = users[0] as { owner_id?: string; id?: string } | undefined;
     return user?.id || firstUser?.owner_id || firstUser?.id || 'default-user';
   }, [user, users]);
+
+  // Backend-published IPOs state
+  const [backendIpos, setBackendIpos] = useState<BackendIpo[]>([]);
+  const [isLoadingPublishedIpos, setIsLoadingPublishedIpos] = useState(false);
+  const [directSelectedIpo, setDirectSelectedIpo] = useState<AllotmentCheckerIpoItem | null>(null);
+
+  // Helper to append to chronological log
+  const addLog = useCallback((message: string, type: 'info' | 'success' | 'warn' | 'error' = 'info') => {
+    const timestamp =
+      new Date().toLocaleTimeString() + '.' + String(Date.now() % 1000).padStart(3, '0');
+    setEventLogs((prev) => [{ timestamp, message, type }, ...prev].slice(0, 60));
+  }, []);
+
+  const fetchPublishedIpos = useCallback(async () => {
+    try {
+      setIsLoadingPublishedIpos(true);
+      const items = await backendIpoApiService.listBackendIpos();
+      setBackendIpos(items);
+      addLog(`Loaded ${items.length} published IPOs from backend`, 'info');
+    } catch (err: any) {
+      addLog(`Failed to load published IPOs: ${err?.message || String(err)}`, 'warn');
+    } finally {
+      setIsLoadingPublishedIpos(false);
+    }
+  }, [addLog]);
+
+  useEffect(() => {
+    fetchPublishedIpos();
+  }, [fetchPublishedIpos]);
 
   // Selected IPO — Defaults to NULL on initial mount (idle state)
   const [selectedIpoId, setSelectedIpoId] = useState<string | null>(null);
@@ -808,13 +851,6 @@ export default function AllotmentCheckerScreen() {
     status: 'CHECKING...',
     url: `${API_BASE_URL}/api/v1/health`,
   });
-
-  // Helper to append to chronological log
-  const addLog = useCallback((message: string, type: 'info' | 'success' | 'warn' | 'error' = 'info') => {
-    const timestamp =
-      new Date().toLocaleTimeString() + '.' + String(Date.now() % 1000).padStart(3, '0');
-    setEventLogs((prev) => [{ timestamp, message, type }, ...prev].slice(0, 60));
-  }, []);
 
   const checkBackendHealth = useCallback(async () => {
     const startMs = Date.now();
@@ -893,18 +929,23 @@ export default function AllotmentCheckerScreen() {
   // Polling ref for cleanup
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Filter IPOs that have at least one application
-  const iposWithApps = useMemo(() => {
-    return ipos.filter((ipo) =>
-      applications.some((app) => app.ipo_id === ipo.id),
-    );
-  }, [ipos, applications]);
+  // Published backend IPOs filtered for allotment checking eligibility
+  const selectableIpos = useMemo((): AllotmentCheckerIpoItem[] => {
+    return backendIpos
+      .filter(isBackendIpoAllotmentEligible)
+      .map(normalizeBackendIpoForChecker);
+  }, [backendIpos]);
 
   // Selected IPO object (strictly derived from selectedIpoId, NO fallback auto-selection)
-  const selectedIpo = useMemo(() => {
+  const selectedIpo = useMemo((): AllotmentCheckerIpoItem | null => {
     if (!selectedIpoId) return null;
-    return ipos.find((i) => i.id === selectedIpoId) || null;
-  }, [ipos, selectedIpoId]);
+    const fromSelectable = selectableIpos.find((i) => i.id === selectedIpoId);
+    if (fromSelectable) return fromSelectable;
+    const fromAllBackend = backendIpos.find((i) => i.id === selectedIpoId);
+    if (fromAllBackend) return normalizeBackendIpoForChecker(fromAllBackend);
+    if (directSelectedIpo && directSelectedIpo.id === selectedIpoId) return directSelectedIpo;
+    return null;
+  }, [selectedIpoId, selectableIpos, backendIpos, directSelectedIpo]);
 
   // Effective registrar resolution (falls back to keyword matching / registrarConfig when empty)
   const effectiveRegistrar = useMemo(() => {
@@ -1058,7 +1099,7 @@ export default function AllotmentCheckerScreen() {
 
   // Trigger job creation (ONLY called upon explicit user IPO selection)
   const startAutomatedAllotmentCheck = useCallback(
-    async (targetIpoId: string) => {
+    async (targetIpoId: string, preResolvedIpo?: AllotmentCheckerIpoItem | null) => {
       const createStartMs = Date.now();
       const startStr =
         new Date().toLocaleTimeString() + '.' + String(createStartMs % 1000).padStart(3, '0');
@@ -1113,12 +1154,14 @@ export default function AllotmentCheckerScreen() {
           addLog('PAN sync skipped (no valid 10-char local PANs)', 'info');
         }
 
-        // 2.5 Resolve canonical backend IPO ID strictly in order
-        const selectedObj = ipos.find((i) => i.id === targetIpoId);
+        // 2.5 Resolve canonical backend IPO ID strictly
+        const selectedObj =
+          preResolvedIpo ||
+          selectableIpos.find((i) => i.id === targetIpoId) ||
+          (backendIpos.find((i) => i.id === targetIpoId)
+            ? normalizeBackendIpoForChecker(backendIpos.find((i) => i.id === targetIpoId)!)
+            : null);
         const selName = selectedObj?.ipo_name || 'IPO';
-        const selCompanyName = selectedObj?.company_name || selName;
-        const selSymbol = (selectedObj as any)?.symbol;
-        const explicitBackendId = selectedObj?.backend_ipo_id;
 
         let canonicalId: string | null = null;
         let resStatus: 'SUCCESS' | 'NOT_SYNCHRONIZED' = 'NOT_SYNCHRONIZED';
@@ -1133,84 +1176,7 @@ export default function AllotmentCheckerScreen() {
           addLog(`Using direct canonical backend IPO ID '${canonicalId}'`, 'success');
         }
 
-        let backendIpos: any[] = [];
         if (!canonicalId) {
-          try {
-            backendIpos = await allotmentApiService.fetchBackendIpos();
-          } catch (resErr: any) {
-            addLog(`Error fetching backend IPO list: ${resErr?.message}`, 'warn');
-          }
-        }
-
-        // Step 1: Check explicit backend_ipo_id linkage if present in backendIpos response
-        if (!canonicalId && explicitBackendId && explicitBackendId.trim().length > 0) {
-          const matchedByBackendId = backendIpos.find((b: any) => b.id === explicitBackendId.trim());
-          if (matchedByBackendId) {
-            canonicalId = explicitBackendId.trim();
-            resStatus = 'SUCCESS';
-            resMethod = 'Explicit Backend Linkage';
-            addLog(`Using explicit backend_ipo_id '${canonicalId}' for local IPO '${targetIpoId}'`, 'success');
-          } else {
-            addLog(
-              `Stored backend_ipo_id '${explicitBackendId.trim()}' is stale/not present in backend IPO list; falling back to symbol/name resolution.`,
-              'warn',
-            );
-          }
-        }
-
-        // Step 2: If unlinked, attempt Symbol match against backend IPOs
-        if (!canonicalId && selSymbol && selSymbol.trim().length > 0) {
-          const matchBySymbol = backendIpos.find(
-            (b: any) => (b.symbol || '').toLowerCase() === selSymbol.trim().toLowerCase()
-          );
-          if (matchBySymbol) {
-            canonicalId = matchBySymbol.id;
-            resStatus = 'SUCCESS';
-            resMethod = `Backend Symbol Match (${matchBySymbol.symbol})`;
-            addLog(`Symbol match: Local IPO '${selName}' (${selSymbol}) ➔ Backend ID '${canonicalId}'`, 'success');
-            // Persist resolved backend_ipo_id locally in SQLite
-            try {
-              await db.runAsync(
-                'UPDATE ipo_listings SET backend_ipo_id = ?, symbol = ? WHERE id = ?',
-                [canonicalId, matchBySymbol.symbol, targetIpoId]
-              );
-            } catch {}
-          }
-        }
-
-        // Step 3: If still unlinked, attempt Name match against backend IPOs
-        if (!canonicalId) {
-          const sName = selName.toLowerCase();
-          const sCompName = selCompanyName.toLowerCase();
-          const matchByName = backendIpos.find((b: any) => {
-            const bName = (b.company?.displayName || '').toLowerCase();
-            const bLegal = (b.company?.legalName || '').toLowerCase();
-            return (
-              bName.includes(sName) ||
-              sName.includes(bName) ||
-              bLegal.includes(sName) ||
-              bName.includes(sCompName) ||
-              sCompName.includes(bName)
-            );
-          });
-
-          if (matchByName) {
-            canonicalId = matchByName.id;
-            resStatus = 'SUCCESS';
-            resMethod = `Backend Name Match (${matchByName.company?.displayName || matchByName.symbol})`;
-            addLog(`Name match: Local IPO '${selName}' ➔ Backend ID '${canonicalId}' (${matchByName.company?.displayName})`, 'success');
-            // Persist resolved backend_ipo_id locally in SQLite
-            try {
-              await db.runAsync(
-                'UPDATE ipo_listings SET backend_ipo_id = ? WHERE id = ?',
-                [canonicalId, targetIpoId]
-              );
-            } catch {}
-          }
-        }
-
-        // Step 4: If no backend match could be resolved
-        if (!canonicalId || resStatus !== 'SUCCESS') {
           setIpoResolution({
             selectedName: selName,
             localId: targetIpoId,
@@ -1225,7 +1191,7 @@ export default function AllotmentCheckerScreen() {
           });
           setIsCreatingJob(false);
           setIsPolling(false);
-          addLog(`IPO '${selName}' is not synchronized with backend. Skipping automated check.`, 'warn');
+          addLog(`IPO '${selName}' is not a valid backend UUID. Skipping automated check.`, 'warn');
           return;
         }
 
@@ -1296,17 +1262,34 @@ export default function AllotmentCheckerScreen() {
         setIsPolling(false);
       }
     },
-    [applications, users, activeUserId, startPollingJob, addLog, setDiagnosticJobError],
+    [users, activeUserId, selectableIpos, backendIpos, startPollingJob, addLog, setDiagnosticJobError],
   );
 
-  // Handle explicit IPO selection from picker bottom sheet
+  // Handle explicit IPO selection from picker bottom sheet or route param
   const handleSelectIpo = useCallback(
-    (ipoId: string) => {
+    async (ipoId: string) => {
       setShowIpoPicker(false);
       resetCheckState();
       setSelectedIpoId(ipoId);
 
-      const targetIpo = ipos.find((i) => i.id === ipoId);
+      let targetIpo =
+        selectableIpos.find((i) => i.id === ipoId) ||
+        (backendIpos.find((i) => i.id === ipoId)
+          ? normalizeBackendIpoForChecker(backendIpos.find((i) => i.id === ipoId)!)
+          : null);
+
+      if (!targetIpo) {
+        try {
+          const fetched = await backendIpoApiService.getBackendIpoDetail(ipoId);
+          if (fetched) {
+            targetIpo = normalizeBackendIpoForChecker(fetched);
+            setDirectSelectedIpo(targetIpo);
+          }
+        } catch (err: any) {
+          addLog(`Could not fetch details for backend IPO ${ipoId}: ${err?.message}`, 'warn');
+        }
+      }
+
       const targetRegistrar = targetIpo
         ? getRegistrarConfig(targetIpo.registrar || targetIpo.ipo_name).name
         : '';
@@ -1314,19 +1297,19 @@ export default function AllotmentCheckerScreen() {
       addLog(`IPO selected: ${targetIpo?.ipo_name || ipoId} (Registrar: ${targetRegistrar})`, 'info');
 
       if (targetRegistrar && isAutomatedCheckSupported(targetRegistrar)) {
-        void startAutomatedAllotmentCheck(ipoId);
+        void startAutomatedAllotmentCheck(ipoId, targetIpo);
       } else {
         setIpoResolution({
           selectedName: targetIpo?.ipo_name,
           localId: ipoId,
-          backendId: 'NONE',
+          backendId: ipoId,
           resolutionStatus: 'WAITING',
           resolutionMethod: 'Manual Registrar',
         });
         addLog(`Automated check unavailable for ${targetRegistrar}`, 'warn');
       }
     },
-    [ipos, resetCheckState, startAutomatedAllotmentCheck, addLog],
+    [selectableIpos, backendIpos, resetCheckState, startAutomatedAllotmentCheck, addLog],
   );
 
   // Handle Switch IPO action
@@ -1438,6 +1421,9 @@ export default function AllotmentCheckerScreen() {
         ) {
           status = 'no_record';
           errorMessage = matchedItem.errorMessage || 'No record found on registrar portal.';
+        } else if (backendStatus === 'NOT_YET_AVAILABLE') {
+          status = 'pending';
+          errorMessage = matchedItem.errorMessage || 'Allotment is not yet available from registrar.';
         } else if (
           backendStatus === 'SOURCE_UNAVAILABLE' ||
           backendStatus === 'REGISTRAR_UNRESOLVED' ||
@@ -1491,6 +1477,7 @@ export default function AllotmentCheckerScreen() {
     let total = uiApplicants.length;
     let allotted = 0;
     let notAllotted = 0;
+    let noRecord = 0;
     let needsReview = 0;
 
     for (const app of uiApplicants) {
@@ -1498,7 +1485,9 @@ export default function AllotmentCheckerScreen() {
         allotted++;
       } else if (app.status === 'not_allotted') {
         notAllotted++;
-      } else if (app.status === 'needs_review' || app.status === 'no_record') {
+      } else if (app.status === 'no_record') {
+        noRecord++;
+      } else if (app.status === 'needs_review' || app.status === 'check_failed') {
         needsReview++;
       }
     }
@@ -1507,7 +1496,7 @@ export default function AllotmentCheckerScreen() {
       total = activeJob.totalChecks || total;
     }
 
-    return { total, allotted, notAllotted, needsReview };
+    return { total, allotted, notAllotted, noRecord, needsReview };
   }, [uiApplicants, activeJob]);
 
   // Progress text formatting
@@ -1835,6 +1824,24 @@ export default function AllotmentCheckerScreen() {
                 </Text>
               </View>
               <View style={styles.summaryItem}>
+                <Text
+                  style={[
+                    styles.summaryCount,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  {summaryCounts.noRecord}
+                </Text>
+                <Text
+                  style={[
+                    styles.summaryLabel,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  NO RECORD
+                </Text>
+              </View>
+              <View style={styles.summaryItem}>
                 <Text style={[styles.summaryCount, { color: '#FFB300' }]}>
                   {summaryCounts.needsReview}
                 </Text>
@@ -1967,18 +1974,29 @@ export default function AllotmentCheckerScreen() {
             <View style={styles.bottomSheetHeader}>
               <View>
                 <Text style={[styles.bottomSheetTitle, { color: colors.foreground }]}>
-                  Select IPO with Applications
+                  Select IPO to Check Allotment
                 </Text>
                 <Text style={[styles.bottomSheetSubtitle, { color: colors.mutedForeground }]}>
-                  Registered IPOs for which you have saved applications
+                  Select a published IPO to check your allotment.
                 </Text>
               </View>
               <IconButton name="x" onPress={() => setShowIpoPicker(false)} />
             </View>
 
             <FlatList
-              data={iposWithApps}
+              data={selectableIpos}
               keyExtractor={(item) => item.id}
+              ListEmptyComponent={
+                <View style={{ padding: 24, alignItems: 'center', justifyContent: 'center' }}>
+                  {isLoadingPublishedIpos ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Text style={{ color: colors.mutedForeground, fontSize: 13, textAlign: 'center' }}>
+                      No published IPOs available for allotment check.
+                    </Text>
+                  )}
+                </View>
+              }
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={[
