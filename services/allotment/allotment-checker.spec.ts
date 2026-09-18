@@ -831,6 +831,58 @@ describe('Allotment Checker Frontend Integration Tests', () => {
       expect(counts.needsReview).toBe(0);
     });
   });
+
+  describe('Allotment Checker Status Filtering Tests', () => {
+    // Import filter from allotmentCheckerIpoSource
+    const {
+      isBackendIpoAllotmentEligible,
+    } = require('./allotmentCheckerIpoSource');
+
+    it('Fixture 1: Includes strictly Closed, Allotment Out, and Listed IPOs', () => {
+      expect(isBackendIpoAllotmentEligible({ id: '1', status: 'Closed' })).toBe(true);
+      expect(isBackendIpoAllotmentEligible({ id: '2', status: 'CLOSED' })).toBe(true);
+      expect(isBackendIpoAllotmentEligible({ id: '3', status: 'Allotment Out' })).toBe(true);
+      expect(isBackendIpoAllotmentEligible({ id: '4', status: 'ALLOTMENT_OUT' })).toBe(true);
+      expect(isBackendIpoAllotmentEligible({ id: '5', status: 'ALLOTMENT' })).toBe(true);
+      expect(isBackendIpoAllotmentEligible({ id: '6', status: 'ALLOTTED' })).toBe(true);
+      expect(isBackendIpoAllotmentEligible({ id: '7', status: 'Listed' })).toBe(true);
+      expect(isBackendIpoAllotmentEligible({ id: '8', status: 'LISTED' })).toBe(true);
+    });
+
+    it('Fixture 2: Strictly excludes Upcoming, Open, Live, Draft, and Archived IPOs', () => {
+      expect(isBackendIpoAllotmentEligible({ id: '9', status: 'Upcoming' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '10', status: 'UPCOMING' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '11', status: 'Not yet open' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '12', status: 'Open' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '13', status: 'OPEN' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '14', status: 'Live' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '15', status: 'LIVE' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '16', status: 'Active' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '17', status: 'Bidding' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '18', status: 'Draft' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '19', status: 'DRAFT' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '20', status: 'Archived' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '21', status: 'ARCHIVED' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible(null)).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '' })).toBe(false);
+    });
+
+    it('Fixture 3: Mixed status batch filtering retains only valid Closed/Allotment Out/Listed IPOs', () => {
+      const mixedBatch = [
+        { id: '1', symbol: 'CLOSED_1', status: 'Closed' },
+        { id: '2', symbol: 'OPEN_1', status: 'Open' },
+        { id: '3', symbol: 'UPCOMING_1', status: 'Upcoming' },
+        { id: '4', symbol: 'ALLOT_1', status: 'Allotment Out' },
+        { id: '5', symbol: 'LISTED_1', status: 'Listed' },
+        { id: '6', symbol: 'LIVE_1', status: 'Live' },
+        { id: '7', symbol: 'DRAFT_1', status: 'Draft' },
+      ];
+
+      const filtered = mixedBatch.filter(isBackendIpoAllotmentEligible);
+      expect(filtered.map((i) => i.symbol)).toEqual(['CLOSED_1', 'ALLOT_1', 'LISTED_1']);
+      expect(filtered.length).toBe(3);
+    });
+  });
 });
 
 

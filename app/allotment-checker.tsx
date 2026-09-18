@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   FlatList,
   Linking,
   Modal,
@@ -11,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -20,6 +23,7 @@ import { AllotmentStatusBadge } from '@/components/allotment/AllotmentStatusBadg
 import { IconButton } from '@/components/ui/IconButton';
 import { useAuth } from '@/context/AuthContext';
 import { useDB } from '@/context/DBContext';
+import { useTheme } from '@/context/ThemeContext';
 import { useColors } from '@/hooks/useColors';
 import {
   allotmentApiService,
@@ -766,11 +770,117 @@ function DeveloperDiagnosticsPanel(props: {
 }
 
 // ==========================================
+// CONFETTI ANIMATION COMPONENT
+// ==========================================
+
+const NUM_CONFETTI = 45;
+const CONFETTI_COLORS = [
+  '#10B981',
+  '#F59E0B',
+  '#3B82F6',
+  '#EC4899',
+  '#8B5CF6',
+  '#EF4444',
+  '#FBBF24',
+  '#06B6D4',
+];
+
+const ConfettiParticle = ({ index }: { index: number }) => {
+  const animY = useRef(new Animated.Value(-20)).current;
+  const animX = useRef(new Animated.Value(0)).current;
+  const animRotate = useRef(new Animated.Value(0)).current;
+  const animOpacity = useRef(new Animated.Value(1)).current;
+
+  const randomLeft = useMemo(() => Math.random() * 95, []);
+  const randomColor = useMemo(
+    () => CONFETTI_COLORS[index % CONFETTI_COLORS.length],
+    [index],
+  );
+  const randomSize = useMemo(() => 6 + Math.random() * 8, []);
+  const randomShape = useMemo(
+    () => (index % 2 === 0 ? 'rect' : 'circle'),
+    [index],
+  );
+
+  useEffect(() => {
+    const delay = Math.random() * 400;
+    const duration = 2400 + Math.random() * 800;
+    const xOffset = (Math.random() - 0.5) * 140;
+
+    Animated.sequence([
+      Animated.delay(delay),
+      Animated.parallel([
+        Animated.timing(animY, {
+          toValue: 650,
+          duration,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(animX, {
+          toValue: xOffset,
+          duration,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(animRotate, {
+          toValue: 360 * (Math.random() > 0.5 ? 2 : -2),
+          duration,
+          useNativeDriver: true,
+        }),
+        Animated.timing(animOpacity, {
+          toValue: 0,
+          duration,
+          easing: Easing.in(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+  }, [animY, animX, animRotate, animOpacity]);
+
+  const spin = animRotate.interpolate({
+    inputRange: [0, 360],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: `${randomLeft}%`,
+        width: randomSize,
+        height: randomShape === 'circle' ? randomSize : randomSize * 1.5,
+        borderRadius: randomShape === 'circle' ? randomSize / 2 : 2,
+        backgroundColor: randomColor,
+        opacity: animOpacity,
+        transform: [
+          { translateY: animY },
+          { translateX: animX },
+          { rotate: spin },
+        ],
+      }}
+    />
+  );
+};
+
+const ConfettiContainer = () => {
+  return (
+    <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+      {Array.from({ length: NUM_CONFETTI }).map((_, i) => (
+        <ConfettiParticle key={i} index={i} />
+      ))}
+    </View>
+  );
+};
+
+// ==========================================
 // MAIN SCREEN COMPONENT
 // ==========================================
 
 export default function AllotmentCheckerScreen() {
   const colors = useColors();
+  const { resolvedScheme } = useTheme();
+  const isDark = resolvedScheme === 'dark';
   const router = useRouter();
   const params = useLocalSearchParams<{ ipoId?: string }>();
   const db = useSQLiteContext();
@@ -816,6 +926,8 @@ export default function AllotmentCheckerScreen() {
   // Selected IPO — Defaults to NULL on initial mount (idle state)
   const [selectedIpoId, setSelectedIpoId] = useState<string | null>(null);
   const [showIpoPicker, setShowIpoPicker] = useState(false);
+  const [showCelebrationModal, setShowCelebrationModal] = useState(false);
+  const celebratedJobIdsRef = useRef<Set<string>>(new Set());
 
   // Active Job state
   const [activeJob, setActiveJob] = useState<BackendJobResponse | null>(null);
@@ -842,6 +954,7 @@ export default function AllotmentCheckerScreen() {
   const [ipoResolution, setIpoResolution] = useState<IpoResolutionDiagState>({
     resolutionStatus: 'WAITING',
   });
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [healthState, setHealthState] = useState<{
     status: string;
     httpStatus?: number;
@@ -1343,6 +1456,22 @@ export default function AllotmentCheckerScreen() {
     }
   }, [selectedIpoId, handleSelectIpo, addLog]);
 
+  const [checkingApplicantId, setCheckingApplicantId] = useState<string | null>(null);
+
+  const handleCheckSingleApplicant = useCallback(
+    async (applicant: UIApplicantState) => {
+      if (!selectedIpoId || !selectedIpo) return;
+      setCheckingApplicantId(applicant.applicationId);
+      addLog(`Re-checking applicant ${applicant.userName} (${maskPan(applicant.pan)})`, 'info');
+      try {
+        await startAutomatedAllotmentCheck(selectedIpoId, selectedIpo);
+      } finally {
+        setCheckingApplicantId(null);
+      }
+    },
+    [selectedIpoId, selectedIpo, startAutomatedAllotmentCheck, addLog],
+  );
+
   // Handle route param ipoId if passed from IPO detail screen
   useEffect(() => {
     if (params.ipoId && params.ipoId !== selectedIpoId && !isCreatingJob && !isPolling) {
@@ -1376,7 +1505,7 @@ export default function AllotmentCheckerScreen() {
 
     if (applicantProfiles.length === 0) return [];
 
-    return applicantProfiles.map((profile) => {
+    const list = applicantProfiles.map((profile) => {
       const pan = profile.pan;
       const masked = maskPan(pan).toUpperCase();
       const expectedBackendMask = getBackendMaskedPan(pan);
@@ -1461,6 +1590,15 @@ export default function AllotmentCheckerScreen() {
         checkedAt: matchedItem?.checkedAt || activeJob?.updatedAt,
       };
     });
+
+    // Bring applicants with allotment to the top of the list
+    return list.sort((a, b) => {
+      const isAAllotted = a.status === 'allotted' || a.status === 'partially_allotted';
+      const isBAllotted = b.status === 'allotted' || b.status === 'partially_allotted';
+      if (isAAllotted && !isBAllotted) return -1;
+      if (!isAAllotted && isBAllotted) return 1;
+      return 0;
+    });
   }, [
     selectedIpo,
     currentApplications,
@@ -1471,6 +1609,26 @@ export default function AllotmentCheckerScreen() {
     isAutomatedSupported,
     effectiveRegistrar,
   ]);
+
+  // Trigger celebration modal with confetti when allotment is found
+  useEffect(() => {
+    if (!activeJob) return;
+    const isFinished =
+      activeJob.status === 'COMPLETED' ||
+      (activeJob.totalChecks > 0 && activeJob.processedChecks >= activeJob.totalChecks);
+    if (isFinished && !celebratedJobIdsRef.current.has(activeJob.id)) {
+      celebratedJobIdsRef.current.add(activeJob.id);
+      const hasAllotment = uiApplicants.some(
+        (a) => a.status === 'allotted' || a.status === 'partially_allotted',
+      );
+      if (hasAllotment) {
+        try {
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } catch {}
+        setShowCelebrationModal(true);
+      }
+    }
+  }, [activeJob, uiApplicants]);
 
   // Compute live summary statistics
   const summaryCounts = useMemo(() => {
@@ -1524,84 +1682,143 @@ export default function AllotmentCheckerScreen() {
           onPress={() => router.back()}
         />
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>
-            VERIFICATION ENGINE
-          </Text>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>
             Allotment Checker
           </Text>
         </View>
-        <View style={{ width: 44 }} />
+        <IconButton
+          name="terminal"
+          variant={showDiagnostics ? 'primary' : 'surface'}
+          size="md"
+          onPress={() => setShowDiagnostics((prev) => !prev)}
+        />
       </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Initial Idle IPO Selector Card */}
-        <TouchableOpacity
-          style={[
-            styles.ipoSelectorCard,
-            { backgroundColor: colors.surface, borderColor: colors.border },
-          ]}
-          onPress={() => setShowIpoPicker(true)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.ipoSelectorLeft}>
-            <Text
-              style={[styles.ipoSelectorLabel, { color: colors.mutedForeground }]}
-            >
-              {selectedIpo ? 'SELECTED IPO' : 'SELECT IPO TO CHECK ALLOTMENT'}
-            </Text>
-            <Text style={[styles.ipoSelectorName, { color: colors.foreground }]}>
-              {selectedIpo?.ipo_name || 'Choose from registered IPOs...'}
-            </Text>
-            {selectedIpo ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
-                <Text style={[styles.ipoRegistrarText, { color: colors.primary }]}>
-                  Registrar: {effectiveRegistrar}
-                </Text>
+        {/* Initial Idle IPO Selector Card (Only when no IPO is selected) */}
+        {!selectedIpo && (
+          <TouchableOpacity
+            style={[
+              styles.ipoSelectorCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+            onPress={() => setShowIpoPicker(true)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.ipoSelectorLeft}>
+              <Text
+                style={[styles.ipoSelectorLabel, { color: colors.mutedForeground }]}
+              >
+                SELECT IPO TO CHECK ALLOTMENT
+              </Text>
+              <Text style={[styles.ipoSelectorName, { color: colors.foreground }]}>
+                Choose from registered IPOs...
+              </Text>
+            </View>
+            <Feather name="chevron-down" size={24} color={colors.mutedForeground} />
+          </TouchableOpacity>
+        )}
+
+        {/* Empty State Graphics / How It Works Guide when no IPO is selected */}
+        {!selectedIpo && (
+          <View
+            style={[
+              styles.emptyHeroCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            {/* Top decorative badge & icon */}
+            <View style={styles.emptyHeroIconWrapper}>
+              <View
+                style={[
+                  styles.emptyHeroIconOuter,
+                  { backgroundColor: `${colors.primary}18`, borderColor: `${colors.primary}33` },
+                ]}
+              >
                 <View
-                  style={{
-                    backgroundColor: isAutomatedSupported ? '#DCFCE7' : '#FEF3C7',
-                    paddingHorizontal: 8,
-                    paddingVertical: 2,
-                    borderRadius: 12,
-                  }}
+                  style={[
+                    styles.emptyHeroIconInner,
+                    { backgroundColor: colors.primary },
+                  ]}
                 >
-                  <Text
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 'bold',
-                      color: isAutomatedSupported ? '#166534' : '#92400E',
-                    }}
-                  >
-                    {isAutomatedSupported ? 'Automated Check Available' : 'Automated Check Unavailable'}
+                  <Feather name="shield" size={24} color="#FFFFFF" />
+                </View>
+              </View>
+            </View>
+
+            <Text style={[styles.emptyHeroTitle, { color: colors.foreground }]}>
+              Instant Allotment Verification
+            </Text>
+            <Text style={[styles.emptyHeroSubtitle, { color: colors.mutedForeground }]}>
+              Check allotment status across multiple PAN applications simultaneously with direct registrar verification.
+            </Text>
+
+            {/* Feature Pill Cards */}
+            <View style={styles.featuresList}>
+              <View
+                style={[
+                  styles.featureRow,
+                  { backgroundColor: colors.background, borderColor: colors.border },
+                ]}
+              >
+                <View style={[styles.featureIconBadge, { backgroundColor: '#3B82F620' }]}>
+                  <Feather name="check-circle" size={16} color="#3B82F6" />
+                </View>
+                <View style={styles.featureTextWrapper}>
+                  <Text style={[styles.featureHeading, { color: colors.foreground }]}>
+                    Automated Registrar Query
+                  </Text>
+                  <Text style={[styles.featureSubtext, { color: colors.mutedForeground }]}>
+                    Direct discovery for KFin Technologies & MUFG Intime
                   </Text>
                 </View>
               </View>
-            ) : (
-              <Text style={[styles.ipoRegistrarText, { color: colors.mutedForeground }]}>
-                Select an IPO to begin checking.
-              </Text>
-            )}
+
+              <View
+                style={[
+                  styles.featureRow,
+                  { backgroundColor: colors.background, borderColor: colors.border },
+                ]}
+              >
+                <View style={[styles.featureIconBadge, { backgroundColor: '#10B98120' }]}>
+                  <Feather name="users" size={16} color="#10B981" />
+                </View>
+                <View style={styles.featureTextWrapper}>
+                  <Text style={[styles.featureHeading, { color: colors.foreground }]}>
+                    Batch Multi-Applicant Check
+                  </Text>
+                  <Text style={[styles.featureSubtext, { color: colors.mutedForeground }]}>
+                    Verify all saved family and applicant PANs in one single run
+                  </Text>
+                </View>
+              </View>
+
+              <View
+                style={[
+                  styles.featureRow,
+                  { backgroundColor: colors.background, borderColor: colors.border },
+                ]}
+              >
+                <View style={[styles.featureIconBadge, { backgroundColor: '#F59E0B20' }]}>
+                  <Feather name="zap" size={16} color="#F59E0B" />
+                </View>
+                <View style={styles.featureTextWrapper}>
+                  <Text style={[styles.featureHeading, { color: colors.foreground }]}>
+                    Live Status Summary
+                  </Text>
+                  <Text style={[styles.featureSubtext, { color: colors.mutedForeground }]}>
+                    Categorized Allotted, Not Allotted, and No Record counts
+                  </Text>
+                </View>
+              </View>
+            </View>
           </View>
+        )}
 
-          {selectedIpo ? (
-            <TouchableOpacity
-              style={[styles.switchButton, { backgroundColor: colors.border }]}
-              onPress={handleSwitchIpo}
-            >
-              <Text style={[styles.switchButtonText, { color: colors.foreground }]}>
-                Switch IPO
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            <Feather name="chevron-down" size={24} color={colors.mutedForeground} />
-          )}
-        </TouchableOpacity>
-
-        {/* Selected IPO Info Card */}
+        {/* Selected IPO Info Card (Shown when an IPO is selected) */}
         {selectedIpo && (
           <View
             style={[
@@ -1609,12 +1826,24 @@ export default function AllotmentCheckerScreen() {
               { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
-            <Text style={[styles.infoCardTitle, { color: colors.mutedForeground }]}>
-              IPO ALLOTMENT STATUS
-            </Text>
+            <View style={styles.infoHeaderRow}>
+              <Text style={[styles.infoCardTitle, { color: colors.mutedForeground }]}>
+                IPO ALLOTMENT STATUS
+              </Text>
+              <TouchableOpacity
+                style={[styles.switchButton, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}
+                onPress={handleSwitchIpo}
+              >
+                <Text style={[styles.switchButtonText, { color: colors.foreground }]}>
+                  Switch IPO
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             <Text style={[styles.infoCompanyName, { color: colors.foreground }]}>
               {selectedIpo.ipo_name}
             </Text>
+
             <View style={styles.infoGrid}>
               <View style={styles.infoGridItem}>
                 <Text style={[styles.infoGridLabel, { color: colors.mutedForeground }]}>
@@ -1644,8 +1873,8 @@ export default function AllotmentCheckerScreen() {
                 <Text style={[styles.infoGridLabel, { color: colors.mutedForeground }]}>
                   Applications
                 </Text>
-                <Text style={[styles.infoGridValue, { color: colors.primary, fontWeight: 'bold' }]}>
-                  {currentApplications.length}
+                <Text style={[styles.infoGridValue, { color: colors.foreground, fontWeight: 'bold' }]}>
+                  {uiApplicants.length || currentApplications.length}
                 </Text>
               </View>
             </View>
@@ -1739,33 +1968,35 @@ export default function AllotmentCheckerScreen() {
           </View>
         )}
 
-        {/* TEMPORARY DEVELOPER DIAGNOSTICS PANEL */}
-        <DeveloperDiagnosticsPanel
-          appBuildMarker={APP_DEBUG_BUILD}
-          apiBaseUrl={API_BASE_URL}
-          healthState={healthState}
-          userId={activeUserId}
-          ipoResolution={ipoResolution}
-          selectedIpo={selectedIpo}
-          effectiveRegistrar={effectiveRegistrar}
-          isAutomatedSupported={isAutomatedSupported}
-          activeJob={activeJob}
-          isCreatingJob={isCreatingJob}
-          isPolling={isPolling}
-          jobError={jobError}
-          lastErrorOrigin={lastErrorOrigin}
-          abortedOrigin={abortedOrigin}
-          panSyncState={panSyncState}
-          jobCreationState={jobCreationState}
-          jobTiming={jobTiming}
-          pollingDiag={pollingDiag}
-          apiTraces={apiTraces}
-          eventLogs={eventLogs}
-          uiApplicants={uiApplicants}
-          summaryCounts={summaryCounts}
-          onClearDiagnostics={handleClearDiagnostics}
-          onRunCheckAgain={handleRunCheckAgain}
-        />
+        {/* TEMPORARY DEVELOPER DIAGNOSTICS PANEL (Toggled via Header Icon) */}
+        {showDiagnostics && (
+          <DeveloperDiagnosticsPanel
+            appBuildMarker={APP_DEBUG_BUILD}
+            apiBaseUrl={API_BASE_URL}
+            healthState={healthState}
+            userId={activeUserId}
+            ipoResolution={ipoResolution}
+            selectedIpo={selectedIpo}
+            effectiveRegistrar={effectiveRegistrar}
+            isAutomatedSupported={isAutomatedSupported}
+            activeJob={activeJob}
+            isCreatingJob={isCreatingJob}
+            isPolling={isPolling}
+            jobError={jobError}
+            lastErrorOrigin={lastErrorOrigin}
+            abortedOrigin={abortedOrigin}
+            panSyncState={panSyncState}
+            jobCreationState={jobCreationState}
+            jobTiming={jobTiming}
+            pollingDiag={pollingDiag}
+            apiTraces={apiTraces}
+            eventLogs={eventLogs}
+            uiApplicants={uiApplicants}
+            summaryCounts={summaryCounts}
+            onClearDiagnostics={handleClearDiagnostics}
+            onRunCheckAgain={handleRunCheckAgain}
+          />
+        )}
 
         {/* Summary Card (Only rendered after an IPO has been selected) */}
         {selectedIpo && (
@@ -1775,9 +2006,6 @@ export default function AllotmentCheckerScreen() {
               { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
-            <Text style={[styles.summaryTitle, { color: colors.mutedForeground }]}>
-              ALLOTMENT SUMMARY
-            </Text>
             <View style={styles.summaryGrid}>
               <View style={styles.summaryItem}>
                 <Text style={[styles.summaryCount, { color: colors.foreground }]}>
@@ -1793,7 +2021,7 @@ export default function AllotmentCheckerScreen() {
                 </Text>
               </View>
               <View style={styles.summaryItem}>
-                <Text style={[styles.summaryCount, { color: '#4CAF50' }]}>
+                <Text style={[styles.summaryCount, { color: '#00C853' }]}>
                   {summaryCounts.allotted}
                 </Text>
                 <Text
@@ -1809,10 +2037,10 @@ export default function AllotmentCheckerScreen() {
                 <Text
                   style={[
                     styles.summaryCount,
-                    { color: colors.mutedForeground },
+                    { color: '#EF4444' },
                   ]}
                 >
-                  {summaryCounts.notAllotted}
+                  {summaryCounts.notAllotted + summaryCounts.noRecord}
                 </Text>
                 <Text
                   style={[
@@ -1821,24 +2049,6 @@ export default function AllotmentCheckerScreen() {
                   ]}
                 >
                   NOT ALLOTTED
-                </Text>
-              </View>
-              <View style={styles.summaryItem}>
-                <Text
-                  style={[
-                    styles.summaryCount,
-                    { color: colors.mutedForeground },
-                  ]}
-                >
-                  {summaryCounts.noRecord}
-                </Text>
-                <Text
-                  style={[
-                    styles.summaryLabel,
-                    { color: colors.mutedForeground },
-                  ]}
-                >
-                  NO RECORD
                 </Text>
               </View>
               <View style={styles.summaryItem}>
@@ -1897,6 +2107,7 @@ export default function AllotmentCheckerScreen() {
                   { backgroundColor: colors.surface, borderColor: colors.border },
                 ]}
               >
+                {/* Top Row: Name + PAN on Left, Status Badge on Right */}
                 <View style={styles.applicantHeaderRow}>
                   <View style={styles.applicantInfoLeft}>
                     <Text style={[styles.applicantName, { color: colors.foreground }]}>
@@ -1911,127 +2122,234 @@ export default function AllotmentCheckerScreen() {
                       {maskPan(applicant.pan)}
                     </Text>
                   </View>
-                  <AllotmentStatusBadge status={applicant.status as any} />
+                  <AllotmentStatusBadge
+                    status={
+                      applicant.status === 'no_record'
+                        ? 'not_allotted'
+                        : (applicant.status as any)
+                    }
+                    sharesAllotted={applicant.sharesAllotted}
+                  />
                 </View>
 
-                <View style={styles.applicantDetailsRow}>
-                  <Text
-                    style={[
-                      styles.applicantDetailText,
-                      { color: colors.mutedForeground },
-                    ]}
-                  >
-                    Applied:{' '}
-                    <Text style={{ color: colors.foreground }}>
-                      {applicant.appliedQuantity > 0
-                        ? `${applicant.appliedQuantity} shares`
-                        : 'Not available'}
-                    </Text>
-                  </Text>
-                  {applicant.sharesAllotted ? (
+                {/* Bottom Row: Timestamp/Status Text on Left, Black Refresh Button on Right */}
+                <View style={styles.applicantBottomRow}>
+                  <View style={styles.applicantBottomLeft}>
                     <Text
                       style={[
-                        styles.applicantDetailText,
-                        { color: '#4CAF50', fontWeight: 'bold' },
+                        styles.checkedTimeText,
+                        { color: colors.mutedForeground },
                       ]}
                     >
-                      Allotted: {applicant.sharesAllotted} shares
+                      {applicant.checkedAt
+                        ? `Last checked ${formatCheckedTime(applicant.checkedAt)}`
+                        : 'Not checked yet'}
                     </Text>
-                  ) : null}
-                </View>
+                  </View>
 
-                {applicant.checkedAt ? (
-                  <Text
-                    style={[styles.checkedTimeText, { color: colors.mutedForeground }]}
+                  <TouchableOpacity
+                    style={styles.applicantRefreshBtn}
+                    onPress={() => handleCheckSingleApplicant(applicant)}
+                    disabled={
+                      checkingApplicantId === applicant.applicationId ||
+                      isCreatingJob ||
+                      isPolling
+                    }
+                    activeOpacity={0.7}
                   >
-                    {formatCheckedTime(applicant.checkedAt)}
-                  </Text>
-                ) : null}
+                    {checkingApplicantId === applicant.applicationId ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Feather name="rotate-cw" size={14} color="#FFFFFF" />
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
             ))}
           </>
         )}
       </ScrollView>
 
-      {/* IPO Picker Bottom Sheet Modal */}
+      {/* IPO Picker Modal */}
       <Modal
         visible={showIpoPicker}
         transparent
-        animationType="slide"
+        animationType="fade"
+        statusBarTranslucent
         onRequestClose={() => setShowIpoPicker(false)}
       >
         <TouchableOpacity
-          style={styles.modalOverlay}
+          style={styles.pickerModalOverlay}
           activeOpacity={1}
           onPress={() => setShowIpoPicker(false)}
         >
-          <View
+          <TouchableOpacity
+            activeOpacity={1}
             style={[
-              styles.bottomSheet,
-              { backgroundColor: colors.surface, paddingBottom: insets.bottom + 16 },
+              styles.pickerModalCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
-            <View style={styles.bottomSheetHeader}>
-              <View>
-                <Text style={[styles.bottomSheetTitle, { color: colors.foreground }]}>
-                  Select IPO to Check Allotment
-                </Text>
-                <Text style={[styles.bottomSheetSubtitle, { color: colors.mutedForeground }]}>
-                  Select a published IPO to check your allotment.
-                </Text>
-              </View>
-              <IconButton name="x" onPress={() => setShowIpoPicker(false)} />
+            <View style={[styles.pickerModalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.pickerModalTitle, { color: colors.foreground }]}>
+                Select IPO to Check Allotment
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowIpoPicker(false)}
+                style={styles.pickerCloseBtn}
+                hitSlop={8}
+              >
+                <Feather name="x" size={18} color={colors.mutedForeground} />
+              </TouchableOpacity>
             </View>
 
             <FlatList
               data={selectableIpos}
               keyExtractor={(item) => item.id}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
               ListEmptyComponent={
                 <View style={{ padding: 24, alignItems: 'center', justifyContent: 'center' }}>
                   {isLoadingPublishedIpos ? (
                     <ActivityIndicator size="small" color={colors.primary} />
                   ) : (
                     <Text style={{ color: colors.mutedForeground, fontSize: 13, textAlign: 'center' }}>
-                      No published IPOs available for allotment check.
+                      No IPOs available for allotment checking.
                     </Text>
                   )}
                 </View>
               }
               renderItem={({ item }) => (
                 <TouchableOpacity
+                  key={item.id}
                   style={[
-                    styles.ipoSelectItem,
-                    selectedIpoId === item.id && {
-                      backgroundColor: colors.border,
+                    styles.pickerRow,
+                    {
+                      borderBottomColor: colors.border,
+                      backgroundColor:
+                        selectedIpoId === item.id
+                          ? (isDark ? '#27272A' : '#F1F5F9')
+                          : 'transparent',
                     },
                   ]}
                   onPress={() => handleSelectIpo(item.id)}
                 >
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={[styles.ipoSelectItemTitle, { color: colors.foreground }]}
-                    >
-                      {item.ipo_name}
-                    </Text>
-                    {item.registrar ? (
-                      <Text
-                        style={[
-                          styles.ipoSelectItemSub,
-                          { color: colors.mutedForeground },
-                        ]}
-                      >
-                        Registrar: {item.registrar}
-                      </Text>
-                    ) : null}
-                  </View>
+                  <Text
+                    style={[
+                      styles.pickerRowName,
+                      {
+                        color:
+                          selectedIpoId === item.id
+                            ? colors.primary
+                            : colors.foreground,
+                      },
+                    ]}
+                    numberOfLines={2}
+                  >
+                    {item.ipo_name}
+                  </Text>
                   {selectedIpoId === item.id && (
-                    <Feather name="check" size={20} color={colors.primary} />
+                    <Feather name="check" size={16} color={colors.primary} />
                   )}
                 </TouchableOpacity>
               )}
             />
-          </View>
+          </TouchableOpacity>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Allotment Celebration Modal */}
+      <Modal
+        visible={showCelebrationModal}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setShowCelebrationModal(false)}
+      >
+        <View style={styles.celebrationModalOverlay}>
+          <ConfettiContainer />
+          <View
+            style={[
+              styles.celebrationModalCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            {/* Trophy Icon Badge */}
+            <View style={styles.celebrationIconOuter}>
+              <View style={styles.celebrationIconInner}>
+                <Feather name="award" size={28} color="#FFFFFF" />
+              </View>
+            </View>
+
+            <Text style={[styles.celebrationTitle, { color: colors.foreground }]}>
+              Allotment Received! 🎉
+            </Text>
+            <Text
+              style={[
+                styles.celebrationSubtitle,
+                { color: colors.mutedForeground },
+              ]}
+            >
+              Congratulations! Shares have been allotted for {selectedIpo?.ipo_name}.
+            </Text>
+
+            {/* List of allotted applicants */}
+            <View style={styles.celebrationList}>
+              {uiApplicants
+                .filter(
+                  (a) =>
+                    a.status === 'allotted' || a.status === 'partially_allotted',
+                )
+                .map((app) => (
+                  <View
+                    key={app.applicationId}
+                    style={[
+                      styles.celebrationApplicantRow,
+                      {
+                        backgroundColor: isDark ? '#14291E' : '#ECFDF5',
+                        borderColor: isDark ? '#065F46' : '#A7F3D0',
+                      },
+                    ]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[
+                          styles.celebrationApplicantName,
+                          { color: colors.foreground },
+                        ]}
+                      >
+                        {app.userName}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.celebrationApplicantPan,
+                          { color: colors.mutedForeground },
+                        ]}
+                      >
+                        {maskPan(app.pan)}
+                      </Text>
+                    </View>
+                    <View style={styles.celebrationSharesBadge}>
+                      <Feather name="check" size={13} color="#059669" />
+                      <Text style={styles.celebrationSharesText}>
+                        {app.sharesAllotted
+                          ? `${app.sharesAllotted} shares`
+                          : 'Allotted'}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+            </View>
+
+            <TouchableOpacity
+              style={styles.celebrationDismissBtn}
+              onPress={() => setShowCelebrationModal(false)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.celebrationDismissBtnText}>Awesome!</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -2283,41 +2601,58 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.06)',
   },
   switchButtonText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   infoCard: {
-    padding: 16,
-    borderRadius: 16,
+    padding: 20,
+    borderRadius: 20,
     borderWidth: 1,
     gap: 12,
   },
+  infoHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   infoCardTitle: {
     fontSize: 11,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
   infoCompanyName: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.4,
   },
   infoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    rowGap: 12,
+    rowGap: 14,
+    marginTop: 4,
   },
   infoGridItem: {
     width: '50%',
-    gap: 2,
+    gap: 3,
   },
   infoGridLabel: {
-    fontSize: 11,
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_500Medium',
   },
   infoGridValue: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 15,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  readySectionTitle: {
+    fontSize: 15,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    marginTop: 6,
+    marginBottom: -4,
   },
   progressCard: {
     padding: 16,
@@ -2357,15 +2692,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   summaryCard: {
-    padding: 16,
-    borderRadius: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    borderRadius: 18,
     borderWidth: 1,
-    gap: 12,
-  },
-  summaryTitle: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
   },
   summaryGrid: {
     flexDirection: 'row',
@@ -2373,22 +2703,25 @@ const styles = StyleSheet.create({
   },
   summaryItem: {
     alignItems: 'center',
+    flex: 1,
     gap: 4,
   },
   summaryCount: {
     fontSize: 22,
-    fontWeight: 'bold',
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   summaryLabel: {
     fontSize: 10,
-    fontWeight: '600',
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.6,
   },
   sectionHeader: {
     marginTop: 8,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.2,
   },
   emptyCard: {
     alignItems: 'center',
@@ -2400,87 +2733,278 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   emptySubtitle: {
     fontSize: 13,
+    fontFamily: 'GoogleSansFlex_400Regular',
     textAlign: 'center',
     maxWidth: 260,
   },
   applicantCard: {
     padding: 16,
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
-    gap: 10,
+    gap: 16,
   },
   applicantHeaderRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
   },
   applicantInfoLeft: {
-    gap: 2,
+    gap: 3,
   },
   applicantName: {
-    fontSize: 15,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   applicantPan: {
     fontSize: 13,
     fontFamily: 'SpaceMono',
+    letterSpacing: 0.5,
   },
-  applicantDetailsRow: {
+  applicantBottomRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  applicantDetailText: {
-    fontSize: 13,
+  applicantBottomLeft: {
+    flex: 1,
+    marginRight: 12,
   },
   checkedTimeText: {
-    fontSize: 11,
-    marginTop: 2,
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_400Regular',
   },
-  modalOverlay: {
+  applicantRefreshBtn: {
+    backgroundColor: '#0F172A',
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickerModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  bottomSheet: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    maxHeight: '80%',
+  pickerModalCard: {
+    width: '92%',
+    maxWidth: 400,
+    borderRadius: 22,
+    borderWidth: 1,
+    maxHeight: '85%',
+    overflow: 'hidden',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
   },
-  bottomSheetHeader: {
+  pickerModalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
   },
-  bottomSheetTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+  pickerModalTitle: {
+    fontSize: 17,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
   },
-  bottomSheetSubtitle: {
-    fontSize: 12,
-    marginTop: 2,
+  pickerCloseBtn: {
+    minWidth: 36,
+    minHeight: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  ipoSelectItem: {
+  pickerRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    marginVertical: 4,
+    paddingHorizontal: 18,
+    borderBottomWidth: 1,
   },
-  ipoSelectItemTitle: {
-    fontSize: 15,
+  pickerRowName: {
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+    flex: 1,
+    marginRight: 8,
+  },
+  emptyHeroCard: {
+    padding: 24,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    gap: 12,
+  },
+  emptyHeroIconWrapper: {
+    marginBottom: 4,
+  },
+  emptyHeroIconOuter: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyHeroIconInner: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyHeroTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  emptyHeroSubtitle: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    maxWidth: 300,
+  },
+  featuresList: {
+    width: '100%',
+    gap: 10,
+    marginTop: 8,
+  },
+  featureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 12,
+  },
+  featureIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  featureTextWrapper: {
+    flex: 1,
+    gap: 2,
+  },
+  featureHeading: {
+    fontSize: 13,
     fontWeight: '600',
   },
-  ipoSelectItemSub: {
+  featureSubtext: {
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  celebrationModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  celebrationModalCard: {
+    width: '90%',
+    maxWidth: 380,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+  },
+  celebrationIconOuter: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#10B98122',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  celebrationIconInner: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  celebrationTitle: {
+    fontSize: 20,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  celebrationSubtitle: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  celebrationList: {
+    width: '100%',
+    gap: 8,
+    marginBottom: 20,
+  },
+  celebrationApplicantRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  celebrationApplicantName: {
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  celebrationApplicantPan: {
     fontSize: 12,
+    fontFamily: 'SpaceMono',
     marginTop: 2,
+  },
+  celebrationSharesBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#D1FAE5',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  celebrationSharesText: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    color: '#065F46',
+  },
+  celebrationDismissBtn: {
+    backgroundColor: '#10B981',
+    paddingVertical: 13,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+  },
+  celebrationDismissBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
 });
