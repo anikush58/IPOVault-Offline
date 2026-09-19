@@ -85,7 +85,9 @@ export default function ApplyIPOScreen() {
   const activeIPOs = useMemo(() => {
     return ipos.filter((ipo) => {
       if (ipo.archived !== 0) return false;
-      const st = (ipo.status || ipo.lifecycle_status || '').toUpperCase();
+      const name = (ipo.ipo_name || ipo.company_name || '').trim();
+      if (!name || name.toUpperCase() === 'IPO' || name.toLowerCase().includes('test')) return false;
+      const st = ((ipo as any).status || (ipo as any).lifecycle_status || '').toUpperCase();
       return !st.includes('CLOSED') && !st.includes('ALLOT') && !st.includes('LIST');
     });
   }, [ipos]);

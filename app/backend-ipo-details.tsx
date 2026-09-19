@@ -166,9 +166,8 @@ export default function BackendIpoDetailsScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.mutedForeground }]}>
-            Loading backend IPO details…
+            Loading...
           </Text>
         </View>
       </View>
@@ -947,8 +946,8 @@ export default function BackendIpoDetailsScreen() {
             <View style={styles.cardRow}>
               <Text style={[styles.label, { color: colors.mutedForeground }]}>Phone</Text>
               {ipo.company?.phone ? (
-                <TouchableOpacity onPress={() => handleOpenUrl(`tel:${ipo.company.phone}`)}>
-                  <Text style={[styles.value, { color: colors.primary }]}>{ipo.company.phone}</Text>
+                <TouchableOpacity onPress={() => handleOpenUrl(`tel:${ipo.company?.phone}`)}>
+                  <Text style={[styles.value, { color: colors.primary }]}>{ipo.company?.phone}</Text>
                 </TouchableOpacity>
               ) : (
                 <Text style={[styles.value, { color: colors.foreground }]}>—</Text>
@@ -957,8 +956,8 @@ export default function BackendIpoDetailsScreen() {
             <View style={styles.cardRow}>
               <Text style={[styles.label, { color: colors.mutedForeground }]}>Email</Text>
               {ipo.company?.email ? (
-                <TouchableOpacity onPress={() => handleOpenUrl(`mailto:${ipo.company.email}`)}>
-                  <Text style={[styles.value, { color: colors.primary }]}>{ipo.company.email}</Text>
+                <TouchableOpacity onPress={() => handleOpenUrl(`mailto:${ipo.company?.email}`)}>
+                  <Text style={[styles.value, { color: colors.primary }]}>{ipo.company?.email}</Text>
                 </TouchableOpacity>
               ) : (
                 <Text style={[styles.value, { color: colors.foreground }]}>—</Text>

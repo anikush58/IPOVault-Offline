@@ -9,17 +9,43 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/images/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#FAFAFC"
+      "image": "./assets/images/splash-light.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#FAFAFC",
+      "dark": {
+        "image": "./assets/images/splash-dark.png",
+        "backgroundColor": "#090A0C",
+        "resizeMode": "cover"
+      }
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "userInterfaceStyle": "automatic",
+      "splash": {
+        "image": "./assets/images/splash-light.png",
+        "resizeMode": "cover",
+        "backgroundColor": "#FAFAFC",
+        "dark": {
+          "image": "./assets/images/splash-dark.png",
+          "backgroundColor": "#090A0C",
+          "resizeMode": "cover"
+        }
+      }
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#FAFAFC",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
+      },
+      "splash": {
+        "image": "./assets/images/splash-light.png",
+        "resizeMode": "cover",
+        "backgroundColor": "#FAFAFC",
+        "dark": {
+          "image": "./assets/images/splash-dark.png",
+          "backgroundColor": "#090A0C",
+          "resizeMode": "cover"
+        }
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -34,12 +60,13 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 240,
-          "resizeMode": "contain",
+          "image": "./assets/images/splash-light.png",
+          "resizeMode": "cover",
           "backgroundColor": "#FAFAFC",
           "dark": {
-            "backgroundColor": "#FAFAFC"
+            "image": "./assets/images/splash-dark.png",
+            "backgroundColor": "#090A0C",
+            "resizeMode": "cover"
           }
         }
       ],

@@ -145,7 +145,18 @@ export default function NewIposScreen() {
   const [activeTab, setActiveTab] = useState<NewIpoTab>('live');
   const [includeSme, setIncludeSme] = useState(true);
   const [sortBy, setSortBy] = useState<SortOption>('DEFAULT');
+  const [tempIncludeSme, setTempIncludeSme] = useState(true);
+  const [tempSortBy, setTempSortBy] = useState<SortOption>('DEFAULT');
   const [showFilterModal, setShowFilterModal] = useState(false);
+
+  const hasActiveFilter = !includeSme || sortBy !== 'DEFAULT';
+
+  const openFilterModal = () => {
+    setTempIncludeSme(includeSme);
+    setTempSortBy(sortBy);
+    setShowFilterModal(true);
+    try { Haptics.selectionAsync(); } catch {}
+  };
 
   const handleTabPress = (tab: NewIpoTab) => {
     setActiveTab(tab);
@@ -370,7 +381,21 @@ function getStatusBadge(status?: string, openDate?: string | null) {
     const statusBadge = getStatusBadge(item.status, item.openDate);
 
     const normStatus = (item.status || '').toUpperCase();
-    const isClosedOrListed = normStatus === 'CLOSED' || normStatus === 'LISTED' || normStatus === 'ALLOTTED' || normStatus.includes('CLOSED') || normStatus.includes('LIST');
+    const isClosedOrListed =
+      normStatus === 'CLOSED' ||
+      normStatus === 'LISTED' ||
+      normStatus === 'ALLOTTED' ||
+      normStatus.includes('CLOSED') ||
+      normStatus.includes('LIST');
+    const isUpcoming = normStatus === 'UPCOMING' || activeTab === 'upcoming';
+    const isOpen =
+      (normStatus === 'OPEN' ||
+        normStatus === 'LIVE' ||
+        normStatus === 'BIDDING' ||
+        normStatus === 'ACTIVE' ||
+        activeTab === 'live') &&
+      !isUpcoming &&
+      !isClosedOrListed;
 
     // Matching applications from SQLite
     const matchingApps = applications.filter((a) => {
@@ -491,7 +516,7 @@ function getStatusBadge(status?: string, openDate?: string | null) {
         </View>
 
         {/* Timeline & Status Badge Row */}
-        <View style={styles.dateAndStatusRow}>
+        <View style={[styles.dateAndStatusRow, isUpcoming && { marginBottom: 0 }]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
             <Feather name="calendar" size={12} color={colors.mutedForeground} />
             <Text style={[styles.dateRowText, { color: colors.mutedForeground }]} numberOfLines={1}>
@@ -512,56 +537,58 @@ function getStatusBadge(status?: string, openDate?: string | null) {
           </View>
         </View>
 
-        {/* Applications Stats Pill Row & Apply CTA Footer */}
-        <View style={[styles.footerRow, { borderTopColor: colors.border }]}>
-          <View style={styles.appPillsContainer}>
-            <Text style={[styles.totalAppsLabel, { color: colors.mutedForeground }]}>
-              Apps: <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_700Bold' }}>{totalAppsCount}</Text>
-            </Text>
-
-            <View style={[styles.countPill, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' }]}>
-              <Text style={[styles.countPillText, { color: isDark ? '#60A5FA' : '#2563EB' }]}>
-                {appliedCount} applied
+        {/* Applications Stats Pill Row & Apply CTA Footer (Hidden for Upcoming tab/status) */}
+        {!isUpcoming && (
+          <View style={[styles.footerRow, { borderTopColor: colors.border }]}>
+            <View style={styles.appPillsContainer}>
+              <Text style={[styles.totalAppsLabel, { color: colors.mutedForeground }]}>
+                Apps: <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_700Bold' }}>{totalAppsCount}</Text>
               </Text>
+
+              <View style={[styles.countPill, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' }]}>
+                <Text style={[styles.countPillText, { color: isDark ? '#60A5FA' : '#2563EB' }]}>
+                  {appliedCount} applied
+                </Text>
+              </View>
+
+              <View style={[styles.countPill, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7' }]}>
+                <Text style={[styles.countPillText, { color: isDark ? '#34D399' : '#15803D' }]}>
+                  {allottedCount} allotted
+                </Text>
+              </View>
             </View>
 
-            <View style={[styles.countPill, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7' }]}>
-              <Text style={[styles.countPillText, { color: isDark ? '#34D399' : '#15803D' }]}>
-                {allottedCount} allotted
-              </Text>
-            </View>
+            {isOpen ? (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() =>
+                  router.push({
+                    pathname: '/apply-ipo',
+                    params: { ipoId: item.id },
+                  } as any)
+                }
+                style={[styles.applyCtaBtn, { backgroundColor: colors.primary }]}
+              >
+                <Text style={styles.applyCtaText}>Apply Now</Text>
+                <Feather name="arrow-right" size={12} color="#FFFFFF" />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() =>
+                  router.push({
+                    pathname: '/backend-ipo-details',
+                    params: { id: item.id, item: JSON.stringify(item) },
+                  })
+                }
+                style={[styles.viewDetailsCtaBtn, { borderColor: colors.border }]}
+              >
+                <Text style={[styles.viewDetailsText, { color: colors.mutedForeground }]}>View Details</Text>
+                <Feather name="chevron-right" size={12} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            )}
           </View>
-
-          {!isClosedOrListed ? (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() =>
-                router.push({
-                  pathname: '/apply-ipo',
-                  params: { ipoId: item.id },
-                } as any)
-              }
-              style={[styles.applyCtaBtn, { backgroundColor: colors.primary }]}
-            >
-              <Text style={styles.applyCtaText}>Apply Now</Text>
-              <Feather name="arrow-right" size={12} color="#FFFFFF" />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() =>
-                router.push({
-                  pathname: '/backend-ipo-details',
-                  params: { id: item.id, item: JSON.stringify(item) },
-                })
-              }
-              style={[styles.viewDetailsCtaBtn, { borderColor: colors.border }]}
-            >
-              <Text style={[styles.viewDetailsText, { color: colors.mutedForeground }]}>View Details</Text>
-              <Feather name="chevron-right" size={12} color={colors.mutedForeground} />
-            </TouchableOpacity>
-          )}
-        </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -599,12 +626,9 @@ function getStatusBadge(status?: string, openDate?: string | null) {
           />
           <IconButton
             name="sliders"
-            variant={includeSme || sortBy !== 'DEFAULT' ? 'primary' : 'surface'}
+            variant={hasActiveFilter ? 'primary' : 'surface'}
             size="md"
-            onPress={() => {
-              try { Haptics.selectionAsync(); } catch {}
-              setShowFilterModal(true);
-            }}
+            onPress={openFilterModal}
           />
         </View>
       </View>
@@ -664,12 +688,11 @@ function getStatusBadge(status?: string, openDate?: string | null) {
       {/* Main Catalog Feed List with Horizontal Swiping between Tabs */}
       {loading ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.mutedForeground }]}>
-            Fetching live IPO catalog…
+            Loading...
           </Text>
         </View>
-      ) : error ? (
+      ) : error && rawIpos.length === 0 ? (
         <ScrollView
           contentContainerStyle={[styles.centerContainer, { flexGrow: 1, paddingBottom: Math.max(insets.bottom + 110, 135) }]}
           refreshControl={
@@ -680,20 +703,11 @@ function getStatusBadge(status?: string, openDate?: string | null) {
             />
           }
         >
-          <Feather name="wifi-off" size={32} color={colors.destructive} />
-          <Text style={[styles.errorTitle, { color: colors.foreground }]}>
-            API Connection Error
-          </Text>
-          <Text style={[styles.errorSub, { color: colors.mutedForeground }]}>
-            {error}
-          </Text>
-          <TouchableOpacity
-            onPress={onRefresh}
-            style={[styles.retryBtn, { backgroundColor: colors.primary }]}
-          >
-            <Text style={{ color: colors.primaryForeground, fontWeight: '600' }}>
-              Retry API Request
-            </Text>
+          <Feather name="alert-circle" size={40} color={colors.destructive} />
+          <Text style={[styles.errorTitle, { color: colors.foreground }]}>Connection Error</Text>
+          <Text style={[styles.errorSub, { color: colors.mutedForeground }]}>{error}</Text>
+          <TouchableOpacity onPress={onRefresh} style={[styles.retryBtn, { backgroundColor: colors.primary }]}>
+            <Text style={styles.retryBtnText}>Retry</Text>
           </TouchableOpacity>
         </ScrollView>
       ) : (
@@ -703,16 +717,15 @@ function getStatusBadge(status?: string, openDate?: string | null) {
           pagingEnabled
           showsHorizontalScrollIndicator={false}
           onMomentumScrollEnd={handleHorizontalScroll}
-          scrollEventThrottle={16}
           style={{ flex: 1 }}
         >
-          {TABS.map((tabKey) => {
-            const list = getListForTab(tabKey);
+          {TABS.map((tab) => {
+            const listData = getListForTab(tab);
             return (
-              <View key={tabKey} style={{ width: screenWidth, flex: 1 }}>
-                {list.length === 0 ? (
+              <View key={tab} style={{ width: screenWidth, flex: 1 }}>
+                {listData.length === 0 ? (
                   <ScrollView
-                    contentContainerStyle={[styles.centerContainer, { flexGrow: 1, paddingBottom: Math.max(insets.bottom + 110, 135) }]}
+                    contentContainerStyle={styles.emptyCenter}
                     refreshControl={
                       <RefreshControl
                         refreshing={refreshing}
@@ -721,23 +734,26 @@ function getStatusBadge(status?: string, openDate?: string | null) {
                       />
                     }
                   >
-                    <Feather name="inbox" size={32} color={colors.mutedForeground} />
-                    <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-                      No IPOs Found
-                    </Text>
+                    <Feather name="inbox" size={48} color={colors.mutedForeground} style={{ opacity: 0.5 }} />
+                    <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No {tab} IPOs found</Text>
                     <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
-                      No matching IPO records in this view.
+                      {searchQuery
+                        ? `No results matching "${searchQuery}"`
+                        : !includeSme
+                        ? 'Try enabling SME IPOs in filters'
+                        : `There are currently no ${tab} IPOs listed.`}
                     </Text>
                   </ScrollView>
                 ) : (
                   <FlatList
-                    data={list}
+                    data={listData}
                     keyExtractor={(item) => item.id}
                     renderItem={renderItem}
                     contentContainerStyle={{
-                      paddingTop: 4,
-                      paddingBottom: Math.max(insets.bottom + 110, 135),
+                      paddingTop: 12,
+                      paddingBottom: Math.max(insets.bottom + 85, 100),
                     }}
+                    showsVerticalScrollIndicator={false}
                     refreshControl={
                       <RefreshControl
                         refreshing={refreshing}
@@ -776,13 +792,13 @@ function getStatusBadge(status?: string, openDate?: string | null) {
                   </Text>
                 </View>
                 <Switch
-                  value={includeSme}
+                  value={tempIncludeSme}
                   onValueChange={(val) => {
-                    setIncludeSme(val);
+                    setTempIncludeSme(val);
                     try { Haptics.selectionAsync(); } catch {}
                   }}
                   trackColor={{ false: colors.border, true: colors.primary + '80' }}
-                  thumbColor={includeSme ? colors.primary : '#FFFFFF'}
+                  thumbColor={tempIncludeSme ? colors.primary : '#FFFFFF'}
                 />
               </View>
 
@@ -803,21 +819,21 @@ function getStatusBadge(status?: string, openDate?: string | null) {
                 <TouchableOpacity
                   key={opt.key}
                   onPress={() => {
-                    setSortBy(opt.key as SortOption);
+                    setTempSortBy(opt.key as SortOption);
                     try { Haptics.selectionAsync(); } catch {}
                   }}
                   style={[
                     styles.sortOptionRow,
                     {
-                      borderColor: sortBy === opt.key ? colors.primary : colors.border,
-                      backgroundColor: sortBy === opt.key ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : 'transparent',
+                      borderColor: tempSortBy === opt.key ? colors.primary : colors.border,
+                      backgroundColor: tempSortBy === opt.key ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : 'transparent',
                     },
                   ]}
                 >
-                  <Text style={[styles.sortOptionText, { color: sortBy === opt.key ? colors.primary : colors.foreground }]}>
+                  <Text style={[styles.sortOptionText, { color: tempSortBy === opt.key ? colors.primary : colors.foreground }]}>
                     {opt.label}
                   </Text>
-                  {sortBy === opt.key ? <Feather name="check" size={16} color={colors.primary} /> : null}
+                  {tempSortBy === opt.key ? <Feather name="check" size={16} color={colors.primary} /> : null}
                 </TouchableOpacity>
               ))}
             </View>
@@ -826,7 +842,9 @@ function getStatusBadge(status?: string, openDate?: string | null) {
             <View style={[styles.modalFooter, { borderTopColor: colors.border }]}>
               <TouchableOpacity
                 onPress={() => {
-                  setIncludeSme(false);
+                  setTempIncludeSme(true);
+                  setTempSortBy('DEFAULT');
+                  setIncludeSme(true);
                   setSortBy('DEFAULT');
                   setShowFilterModal(false);
                   try { Haptics.selectionAsync(); } catch {}
@@ -840,6 +858,8 @@ function getStatusBadge(status?: string, openDate?: string | null) {
 
               <TouchableOpacity
                 onPress={() => {
+                  setIncludeSme(tempIncludeSme);
+                  setSortBy(tempSortBy);
                   setShowFilterModal(false);
                   try { Haptics.selectionAsync(); } catch {}
                 }}
@@ -961,6 +981,18 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 14,
     marginTop: 10,
+  },
+  retryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  emptyCenter: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+    gap: 12,
   },
   emptyTitle: {
     fontSize: 18,
@@ -1145,21 +1177,28 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
   },
   filterModalCard: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 24,
     borderWidth: 1,
     padding: 20,
-    maxHeight: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 12,
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    paddingBottom: 12,
   },
   modalTitle: {
     fontSize: 18,
@@ -1169,16 +1208,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
   },
   sortOptionText: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontFamily: 'GoogleSansFlex_500Medium',
   },
   modalFooter: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 20,
+    marginTop: 18,
+    paddingTop: 16,
+    borderTopWidth: 1,
   },
   modalFooterResetBtn: {
     flex: 1,

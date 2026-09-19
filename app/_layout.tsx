@@ -26,7 +26,7 @@ import { CompareProvider } from '@/context/CompareContext';
 import { NotificationProvider } from '@/context/NotificationContext';
 import { AnimatedSplashScreen } from '@/components/AnimatedSplashScreen';
 
-SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const queryClient = new QueryClient();
 
@@ -38,8 +38,6 @@ function RootLayoutNav() {
     safeAsyncStorage.getItem(ONBOARDING_STORAGE_KEY).then((value) => {
       if (!value) {
         router.replace('/onboarding');
-      } else {
-        router.replace('/(tabs)');
       }
     });
   }, []);

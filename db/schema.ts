@@ -412,9 +412,9 @@ export async function initDB(db: SQLiteDatabase) {
         'ipo-leap-india', 'ipo-technocraft', 'ipo-lapl-auto', 'ipo-molbio-diag',
         'ipo-dhoot-trans', 'ipo-shiprocket', 'ipo-lalithaa-jewellery', 'ipo-ola-electric',
         'ipo-swiggy', 'ipo-hyundai-motor'
-      ) OR id LIKE 'ipo-%' OR LOWER(company_name) LIKE '%test%' OR LOWER(ipo_name) LIKE '%test%' OR id LIKE '%test%';
+      ) OR id LIKE 'ipo-%' OR LOWER(company_name) LIKE '%test%' OR LOWER(ipo_name) LIKE '%test%' OR id LIKE '%test%' OR LOWER(TRIM(ipo_name)) = 'ipo';
 
-      DELETE FROM ipo_listings WHERE symbol = 'TESTENT' OR LOWER(company_name) LIKE '%test enterprise%' OR LOWER(ipo_name) LIKE '%test enterprise%';
+      DELETE FROM ipo_listings WHERE symbol = 'TESTENT' OR LOWER(company_name) LIKE '%test enterprise%' OR LOWER(ipo_name) LIKE '%test enterprise%' OR LOWER(TRIM(ipo_name)) = 'ipo' OR (TRIM(ipo_name) = '' AND TRIM(company_name) = '');
     `);
   } catch {
     // Purge ignored

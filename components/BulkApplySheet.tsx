@@ -101,12 +101,14 @@ export function BulkApplySheet({ visible, onClose }: Props) {
     return backendIpos
       .filter((b) => {
         const st = (b.status || '').toUpperCase();
+        const compName = (b.company?.displayName || b.companyName || b.symbol || '').trim();
+        if (!compName || compName.toUpperCase() === 'IPO') return false;
         return st === 'OPEN' || st === 'ACTIVE' || st === 'LIVE';
       })
       .map((b): BulkIPOOption => {
         const price = b.priceBandHigh || b.priceBandLow || 100;
         const lot = b.lotSize || 1;
-        const compName = b.company?.displayName || b.companyName || b.symbol || 'IPO';
+        const compName = (b.company?.displayName || b.companyName || b.symbol || '').trim();
         return {
           id: b.id,
           ipo_name: compName,
@@ -130,8 +132,10 @@ export function BulkApplySheet({ visible, onClose }: Props) {
     return ipos
       .filter((i) => {
         if (i.archived === 1) return false;
+        const name = (i.ipo_name || i.company_name || '').trim();
+        if (!name || name.toUpperCase() === 'IPO' || name.toLowerCase().includes('test')) return false;
         const st = (i.status || i.lifecycle_status || '').toUpperCase();
-        return !st.includes('CLOSED') && !st.includes('ALLOT') && !st.includes('LIST');
+        return st === 'OPEN' || st === 'ACTIVE' || st === 'LIVE';
       })
       .map((i): BulkIPOOption => ({
         id: i.id,

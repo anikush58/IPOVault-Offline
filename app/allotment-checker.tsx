@@ -2055,7 +2055,7 @@ export default function AllotmentCheckerScreen() {
                       <Image
                         source={{ uri: selectedIpo.logo_url }}
                         style={styles.infoCompanyLogoImage}
-                        resizeMode="contain"
+                        resizeMode="cover"
                         onError={() => setLogoLoadFailed(true)}
                       />
                     ) : (
@@ -2379,7 +2379,7 @@ export default function AllotmentCheckerScreen() {
                 ]}
               >
                 <Text style={[styles.summaryCount, { color: isDark ? '#FB7185' : '#F24E4E' }]}>
-                  {summaryCounts.notAllotted + summaryCounts.noRecord}
+                  {summaryCounts.notAllotted}
                 </Text>
                 <Text
                   numberOfLines={2}
@@ -2392,7 +2392,7 @@ export default function AllotmentCheckerScreen() {
                 </View>
               </View>
 
-              {/* Tile 4: NOT DECLARED */}
+              {/* Tile 4: NO RECORD */}
               <View
                 style={[
                   styles.summaryTile,
@@ -2400,37 +2400,16 @@ export default function AllotmentCheckerScreen() {
                 ]}
               >
                 <Text style={[styles.summaryCount, { color: isDark ? '#94A3B8' : '#607386' }]}>
-                  {summaryCounts.notAvailable}
+                  {summaryCounts.noRecord}
                 </Text>
                 <Text
                   numberOfLines={2}
                   style={[styles.summaryLabel, { color: isDark ? '#94A3B8' : '#607386' }]}
                 >
-                  NOT DECLARED
+                  NO RECORD
                 </Text>
                 <View style={styles.summaryIconWrap}>
-                  <Feather name="info" size={14} color={isDark ? '#94A3B8' : '#607386'} />
-                </View>
-              </View>
-
-              {/* Tile 5: NEEDS REVIEW */}
-              <View
-                style={[
-                  styles.summaryTile,
-                  { backgroundColor: isDark ? 'rgba(217, 119, 6, 0.18)' : '#FFF0D9' },
-                ]}
-              >
-                <Text style={[styles.summaryCount, { color: isDark ? '#FBBF24' : '#D97706' }]}>
-                  {summaryCounts.needsReview}
-                </Text>
-                <Text
-                  numberOfLines={2}
-                  style={[styles.summaryLabel, { color: isDark ? '#FBBF24' : '#D97706' }]}
-                >
-                  NEEDS REVIEW
-                </Text>
-                <View style={styles.summaryIconWrap}>
-                  <Ionicons name="time" size={14} color={isDark ? '#FBBF24' : '#D97706'} />
+                  <Feather name="search" size={14} color={isDark ? '#94A3B8' : '#607386'} />
                 </View>
               </View>
             </View>
@@ -3023,12 +3002,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 6,
     overflow: 'hidden',
+    padding: 0,
+    margin: 0,
   },
   infoCompanyLogoImage: {
-    width: '100%',
-    height: '100%',
+    ...StyleSheet.absoluteFillObject,
+    width: 54,
+    height: 54,
   },
   infoMonogramText: {
     fontSize: 20,
