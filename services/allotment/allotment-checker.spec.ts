@@ -990,6 +990,107 @@ describe('Allotment Checker Frontend Integration Tests', () => {
       expect(filtered.length).toBe(3);
     });
   });
+
+  describe('PAN Collision & Strict Canonical Mask Resolution Regression Tests', () => {
+    function getBackendMaskedPan(pan: string): string {
+      const p = (pan || '').trim().toUpperCase();
+      if (p.length === 10) {
+        return `${p.slice(0, 5)}****${p.slice(9)}`;
+      }
+      return p;
+    }
+
+    function matchApplicantToJobItem(
+      applicantPan: string,
+      jobItems: Array<{ maskedId: string; status: string; sharesAllotted?: number }>,
+      jobStatus: string = 'COMPLETED',
+    ) {
+      const expectedBackendMask = getBackendMaskedPan(applicantPan);
+      let matchedItem: { maskedId: string; status: string; sharesAllotted?: number } | undefined;
+      for (const item of jobItems) {
+        const backendMask = (item.maskedId || '').trim().toUpperCase();
+        if (backendMask === expectedBackendMask) {
+          matchedItem = item;
+          break;
+        }
+      }
+
+      if (matchedItem) {
+        if (matchedItem.status === 'ALLOTTED') {
+          return { status: 'allotted', sharesAllotted: matchedItem.sharesAllotted || 0 };
+        } else if (matchedItem.status === 'NOT_ALLOTTED') {
+          return { status: 'not_allotted', sharesAllotted: 0 };
+        } else if (matchedItem.status === 'APPLICATION_NOT_FOUND' || matchedItem.status === 'NO_RECORD') {
+          return { status: 'no_record', sharesAllotted: 0 };
+        }
+      } else if (jobStatus === 'COMPLETED' || jobStatus === 'COMPLETED_WITH_ERRORS') {
+        return {
+          status: 'needs_review',
+          sharesAllotted: 0,
+          errorMessage: 'Unable to match this applicant to the completed registrar result.',
+        };
+      }
+
+      return { status: 'pending', sharesAllotted: 0 };
+    }
+
+    it('A. Disallows loose 1st/last letter collisions between PANs sharing first and last characters', () => {
+      const applicantA = { name: 'Applicant A', pan: 'HRDPK1234H' };
+      const applicantB = { name: 'Applicant B', pan: 'HTYPK5678H' };
+
+      // Backend returns items where Applicant A is ALLOTTED and Applicant B is NOT_ALLOTTED,
+      // but Applicant B's item appears FIRST in the returned items array.
+      const backendItems = [
+        { maskedId: 'HTYPK****H', status: 'NOT_ALLOTTED', sharesAllotted: 0 },
+        { maskedId: 'HRDPK****H', status: 'ALLOTTED', sharesAllotted: 23 },
+      ];
+
+      const resultA = matchApplicantToJobItem(applicantA.pan, backendItems);
+      const resultB = matchApplicantToJobItem(applicantB.pan, backendItems);
+
+      // Verify each applicant receives only its exact matching backend item
+      expect(resultA.status).toBe('allotted');
+      expect(resultA.sharesAllotted).toBe(23);
+
+      expect(resultB.status).toBe('not_allotted');
+      expect(resultB.sharesAllotted).toBe(0);
+    });
+
+    it('B. Prevents ALLOTTED status from being stolen by another applicant with matching 1st/last char', () => {
+      const applicants = [
+        { name: 'Family Member 1', pan: 'AAAPK1111A' },
+        { name: 'Family Member 2', pan: 'AXXPK2222A' },
+        { name: 'Family Member 3', pan: 'AZZPK3333A' },
+      ];
+
+      const backendItems = [
+        { maskedId: 'AAAPK****A', status: 'NOT_ALLOTTED' },
+        { maskedId: 'AZZPK****A', status: 'APPLICATION_NOT_FOUND' },
+        { maskedId: 'AXXPK****A', status: 'ALLOTTED', sharesAllotted: 50 },
+      ];
+
+      const results = applicants.map((app) => ({
+        name: app.name,
+        ...matchApplicantToJobItem(app.pan, backendItems),
+      }));
+
+      expect(results.find((r) => r.name === 'Family Member 1')?.status).toBe('not_allotted');
+      expect(results.find((r) => r.name === 'Family Member 2')?.status).toBe('allotted');
+      expect(results.find((r) => r.name === 'Family Member 2')?.sharesAllotted).toBe(50);
+      expect(results.find((r) => r.name === 'Family Member 3')?.status).toBe('no_record');
+    });
+
+    it('C. Sets unmatched applicant in a COMPLETED job to needs_review instead of pending or no_record', () => {
+      const applicant = { name: 'Unmatched Member', pan: 'BCDPK9999Z' };
+      const backendItems = [
+        { maskedId: 'HRDPK****H', status: 'ALLOTTED', sharesAllotted: 23 },
+      ];
+
+      const result = matchApplicantToJobItem(applicant.pan, backendItems, 'COMPLETED');
+      expect(result.status).toBe('needs_review');
+      expect(result.errorMessage).toBe('Unable to match this applicant to the completed registrar result.');
+    });
+  });
 });
 
 
