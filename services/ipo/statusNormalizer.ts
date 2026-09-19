@@ -255,9 +255,11 @@ export function normalizeLifecycleStatus(value: string | null | undefined): Norm
     case 'ALLOTTED_AVAILABLE':
     case 'ALLOTTED':
     case 'ALLOTMENT_OUT':
+    case 'ALLOTMENT_COMPLETED':
       return 'ALLOTTED_AVAILABLE';
 
     case 'LISTING_UPCOMING':
+    case 'LISTING_PENDING':
     case 'PRE_LISTING':
       return 'LISTING_UPCOMING';
 
@@ -265,8 +267,9 @@ export function normalizeLifecycleStatus(value: string | null | undefined): Norm
       return 'LISTED';
 
     default:
+      if (clean.includes('LISTING')) return 'LISTING_UPCOMING';
       if (clean.includes('LISTED')) return 'LISTED';
-      if (clean.includes('ALLOTTED')) return 'ALLOTTED_AVAILABLE';
+      if (clean.includes('ALLOT')) return 'ALLOTTED_AVAILABLE';
       if (clean.includes('CLOSED')) return 'CLOSED';
       if (clean.includes('OPEN')) return 'OPEN';
       if (clean.includes('UPCOMING')) return 'UPCOMING';

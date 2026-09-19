@@ -28,6 +28,9 @@ export class LiveIPOProvider implements IPOProvider {
     const startTime = Date.now();
     try {
       const url = new URL(this.baseUrl);
+      if (!url.searchParams.has('limit')) {
+        url.searchParams.append('limit', '100');
+      }
       // Pass since version parameter if available
       if (since) {
         url.searchParams.append('since', since);

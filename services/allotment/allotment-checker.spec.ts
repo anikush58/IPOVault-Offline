@@ -744,12 +744,66 @@ describe('Allotment Checker Frontend Integration Tests', () => {
     });
   });
 
-  describe('Summary Counts & No-Record Status Mapping Tests', () => {
+  describe('Summary Counts & NOT_YET_AVAILABLE Status Mapping Tests', () => {
+    function mapBackendItemToUiStatus(backendStatus: string, activeJobStatus?: string): { status: string; errorMessage?: string } {
+      let status = 'pending';
+      let errorMessage: string | undefined;
+
+      if (backendStatus === 'ALLOTTED') {
+        status = 'allotted';
+      } else if (backendStatus === 'PARTIALLY_ALLOTTED') {
+        status = 'partially_allotted';
+      } else if (backendStatus === 'NOT_ALLOTTED') {
+        status = 'not_allotted';
+      } else if (
+        backendStatus === 'APPLICATION_NOT_FOUND' ||
+        backendStatus === 'NO_RECORD'
+      ) {
+        status = 'no_record';
+        errorMessage = 'No record found on registrar portal.';
+      } else if (backendStatus === 'NOT_YET_AVAILABLE') {
+        status = 'not_available';
+        errorMessage = 'Allotment information is not yet available from registrar.';
+      } else if (
+        backendStatus === 'SOURCE_UNAVAILABLE' ||
+        backendStatus === 'REGISTRAR_UNRESOLVED' ||
+        backendStatus === 'REGISTRAR_UNSUPPORTED' ||
+        backendStatus === 'CAPTCHA_REQUIRED' ||
+        backendStatus === 'RATE_LIMITED' ||
+        backendStatus === 'TEMPORARY_ERROR'
+      ) {
+        status = 'check_failed';
+        errorMessage = 'Registrar portal unavailable or query failed.';
+      } else if (
+        backendStatus === 'QUEUED' ||
+        backendStatus === 'PENDING' ||
+        backendStatus === 'PROCESSING' ||
+        backendStatus === 'IN_PROGRESS' ||
+        (backendStatus === 'UNKNOWN' && (activeJobStatus === 'QUEUED' || activeJobStatus === 'RUNNING'))
+      ) {
+        status = 'pending';
+      } else if (activeJobStatus === 'RUNNING' || activeJobStatus === 'QUEUED') {
+        status = 'pending';
+      } else {
+        status = 'needs_review';
+        errorMessage = 'Status pending review.';
+      }
+
+      return { status, errorMessage };
+    }
+
+    function filterVisibleApplicants(uiApplicants: Array<{ status: string }>) {
+      return uiApplicants.filter(
+        (applicant) => applicant.status !== 'pending' && applicant.status !== 'checking'
+      );
+    }
+
     function computeSummaryCounts(uiApplicants: Array<{ status: string }>, activeJob?: { totalChecks?: number } | null) {
       let total = uiApplicants.length;
       let allotted = 0;
       let notAllotted = 0;
       let noRecord = 0;
+      let notAvailable = 0;
       let needsReview = 0;
 
       for (const app of uiApplicants) {
@@ -759,6 +813,8 @@ describe('Allotment Checker Frontend Integration Tests', () => {
           notAllotted++;
         } else if (app.status === 'no_record') {
           noRecord++;
+        } else if (app.status === 'not_available') {
+          notAvailable++;
         } else if (app.status === 'needs_review' || app.status === 'check_failed') {
           needsReview++;
         }
@@ -768,67 +824,108 @@ describe('Allotment Checker Frontend Integration Tests', () => {
         total = activeJob.totalChecks || total;
       }
 
-      return { total, allotted, notAllotted, noRecord, needsReview };
+      return { total, allotted, notAllotted, noRecord, notAvailable, needsReview };
     }
 
-    it('Fixture A: 26 × APPLICATION_NOT_FOUND (no_record) -> allotted=0, notAllotted=0, noRecord=26, needsReview=0', () => {
-      const applicants = Array.from({ length: 26 }, () => ({ status: 'no_record' }));
-      const counts = computeSummaryCounts(applicants, { totalChecks: 26 });
+    it('Test 1 — OneEMI regression: 1 ALLOTTED + 25 APPLICATION_NOT_FOUND', () => {
+      const items = [
+        { backendStatus: 'ALLOTTED' },
+        ...Array.from({ length: 25 }, () => ({ backendStatus: 'APPLICATION_NOT_FOUND' })),
+      ];
+      const uiApplicants = items.map((i) => mapBackendItemToUiStatus(i.backendStatus, 'COMPLETED'));
+      const visible = filterVisibleApplicants(uiApplicants);
+      const counts = computeSummaryCounts(uiApplicants, { totalChecks: 26 });
+
+      expect(counts.total).toBe(26);
+      expect(counts.allotted).toBe(1);
+      expect(counts.notAllotted).toBe(0);
+      expect(counts.noRecord).toBe(25);
+      expect(counts.notAvailable).toBe(0);
+      expect(counts.needsReview).toBe(0);
+      expect(visible.length).toBe(26);
+    });
+
+    it('Test 2 — SBI regression: 26 NOT_YET_AVAILABLE (KFin)', () => {
+      const items = Array.from({ length: 26 }, () => ({ backendStatus: 'NOT_YET_AVAILABLE' }));
+      const uiApplicants = items.map((i) => mapBackendItemToUiStatus(i.backendStatus, 'COMPLETED'));
+      const visible = filterVisibleApplicants(uiApplicants);
+      const counts = computeSummaryCounts(uiApplicants, { totalChecks: 26 });
 
       expect(counts.total).toBe(26);
       expect(counts.allotted).toBe(0);
       expect(counts.notAllotted).toBe(0);
-      expect(counts.noRecord).toBe(26);
-      expect(counts.needsReview).toBe(0);
-    });
-
-    it('Fixture B: Mixed statuses including genuine needs_review -> no_record does NOT increment needsReview', () => {
-      const applicants = [
-        { status: 'allotted' },
-        { status: 'partially_allotted' },
-        { status: 'not_allotted' },
-        { status: 'no_record' },
-        { status: 'no_record' },
-        { status: 'needs_review' },
-        { status: 'check_failed' },
-      ];
-      const counts = computeSummaryCounts(applicants);
-
-      expect(counts.total).toBe(7);
-      expect(counts.allotted).toBe(2);
-      expect(counts.notAllotted).toBe(1);
-      expect(counts.noRecord).toBe(2);
-      expect(counts.needsReview).toBe(2); // 1 needs_review + 1 check_failed
-    });
-
-    it('Fixture C: Standard allotted & not_allotted results behave identically', () => {
-      const applicants = [
-        { status: 'allotted' },
-        { status: 'not_allotted' },
-        { status: 'not_allotted' },
-      ];
-      const counts = computeSummaryCounts(applicants);
-
-      expect(counts.total).toBe(3);
-      expect(counts.allotted).toBe(1);
-      expect(counts.notAllotted).toBe(2);
       expect(counts.noRecord).toBe(0);
+      expect(counts.notAvailable).toBe(26);
       expect(counts.needsReview).toBe(0);
+      expect(visible.length).toBe(26);
+      expect(uiApplicants[0].status).toBe('not_available');
+      expect(uiApplicants[0].errorMessage).toBe('Allotment information is not yet available from registrar.');
     });
 
-    it('Fixture D: NOT_YET_AVAILABLE maps to pending and does NOT increment needsReview', () => {
-      const applicants = [
-        { status: 'pending' },
-        { status: 'pending' },
-        { status: 'allotted' },
-      ];
-      const counts = computeSummaryCounts(applicants);
+    it('Test 3 — Symbiotec regression: 26 NOT_YET_AVAILABLE (MUFG)', () => {
+      const items = Array.from({ length: 26 }, () => ({ backendStatus: 'NOT_YET_AVAILABLE' }));
+      const uiApplicants = items.map((i) => mapBackendItemToUiStatus(i.backendStatus, 'COMPLETED'));
+      const visible = filterVisibleApplicants(uiApplicants);
+      const counts = computeSummaryCounts(uiApplicants, { totalChecks: 26 });
 
-      expect(counts.total).toBe(3);
-      expect(counts.allotted).toBe(1);
+      expect(counts.total).toBe(26);
+      expect(counts.allotted).toBe(0);
       expect(counts.notAllotted).toBe(0);
       expect(counts.noRecord).toBe(0);
+      expect(counts.notAvailable).toBe(26);
       expect(counts.needsReview).toBe(0);
+      expect(visible.length).toBe(26);
+    });
+
+    it('Test 4 — Mixed results: 1 ALLOTTED, 10 NOT_ALLOTTED, 10 APPLICATION_NOT_FOUND, 5 NOT_YET_AVAILABLE', () => {
+      const items = [
+        { backendStatus: 'ALLOTTED' },
+        ...Array.from({ length: 10 }, () => ({ backendStatus: 'NOT_ALLOTTED' })),
+        ...Array.from({ length: 10 }, () => ({ backendStatus: 'APPLICATION_NOT_FOUND' })),
+        ...Array.from({ length: 5 }, () => ({ backendStatus: 'NOT_YET_AVAILABLE' })),
+      ];
+      const uiApplicants = items.map((i) => mapBackendItemToUiStatus(i.backendStatus, 'COMPLETED'));
+      const visible = filterVisibleApplicants(uiApplicants);
+      const counts = computeSummaryCounts(uiApplicants, { totalChecks: 26 });
+
+      expect(counts.total).toBe(26);
+      expect(counts.allotted).toBe(1);
+      expect(counts.notAllotted).toBe(10);
+      expect(counts.noRecord).toBe(10);
+      expect(counts.notAvailable).toBe(5);
+      expect(counts.needsReview).toBe(0);
+      expect(visible.length).toBe(26);
+    });
+
+    it('Test 5 — Active pending behavior: genuinely pending/checking applicant remains hidden', () => {
+      const items = [
+        { backendStatus: 'ALLOTTED', jobStatus: 'RUNNING' },
+        { backendStatus: 'PROCESSING', jobStatus: 'RUNNING' },
+        { backendStatus: 'QUEUED', jobStatus: 'RUNNING' },
+      ];
+      const uiApplicants = items.map((i) => mapBackendItemToUiStatus(i.backendStatus, i.jobStatus));
+      const visible = filterVisibleApplicants(uiApplicants);
+
+      expect(uiApplicants[0].status).toBe('allotted');
+      expect(uiApplicants[1].status).toBe('pending');
+      expect(uiApplicants[2].status).toBe('pending');
+      expect(visible.length).toBe(1);
+      expect(visible[0].status).toBe('allotted');
+    });
+
+    it('Test 6 — Needs Review: existing NEEDS_REVIEW and technical failures behave unchanged', () => {
+      const items = [
+        { backendStatus: 'SOURCE_UNAVAILABLE' },
+        { backendStatus: 'CAPTCHA_REQUIRED' },
+        { backendStatus: 'UNKNOWN_CUSTOM_ERROR' },
+      ];
+      const uiApplicants = items.map((i) => mapBackendItemToUiStatus(i.backendStatus, 'COMPLETED'));
+      const counts = computeSummaryCounts(uiApplicants);
+
+      expect(uiApplicants[0].status).toBe('check_failed');
+      expect(uiApplicants[1].status).toBe('check_failed');
+      expect(uiApplicants[2].status).toBe('needs_review');
+      expect(counts.needsReview).toBe(3);
     });
   });
 
@@ -838,36 +935,39 @@ describe('Allotment Checker Frontend Integration Tests', () => {
       isBackendIpoAllotmentEligible,
     } = require('./allotmentCheckerIpoSource');
 
-    it('Fixture 1: Includes strictly Closed, Allotment Out, and Listed IPOs', () => {
-      expect(isBackendIpoAllotmentEligible({ id: '1', status: 'Closed' })).toBe(true);
-      expect(isBackendIpoAllotmentEligible({ id: '2', status: 'CLOSED' })).toBe(true);
-      expect(isBackendIpoAllotmentEligible({ id: '3', status: 'Allotment Out' })).toBe(true);
-      expect(isBackendIpoAllotmentEligible({ id: '4', status: 'ALLOTMENT_OUT' })).toBe(true);
-      expect(isBackendIpoAllotmentEligible({ id: '5', status: 'ALLOTMENT' })).toBe(true);
-      expect(isBackendIpoAllotmentEligible({ id: '6', status: 'ALLOTTED' })).toBe(true);
-      expect(isBackendIpoAllotmentEligible({ id: '7', status: 'Listed' })).toBe(true);
-      expect(isBackendIpoAllotmentEligible({ id: '8', status: 'LISTED' })).toBe(true);
+    it('Fixture 1: Includes strictly Allotment Out (including ALLOTMENT_COMPLETED) and Listed IPOs', () => {
+      expect(isBackendIpoAllotmentEligible({ id: '1', status: 'Allotment Out' })).toBe(true);
+      expect(isBackendIpoAllotmentEligible({ id: '2', status: 'ALLOTMENT_OUT' })).toBe(true);
+      expect(isBackendIpoAllotmentEligible({ id: '3', status: 'ALLOTMENT' })).toBe(true);
+      expect(isBackendIpoAllotmentEligible({ id: '4', status: 'ALLOTTED' })).toBe(true);
+      expect(isBackendIpoAllotmentEligible({ id: '5', status: 'ALLOTMENT_COMPLETED' })).toBe(true);
+      expect(isBackendIpoAllotmentEligible({ id: '6', status: 'Listed' })).toBe(true);
+      expect(isBackendIpoAllotmentEligible({ id: '7', status: 'LISTED' })).toBe(true);
     });
 
-    it('Fixture 2: Strictly excludes Upcoming, Open, Live, Draft, and Archived IPOs', () => {
-      expect(isBackendIpoAllotmentEligible({ id: '9', status: 'Upcoming' })).toBe(false);
-      expect(isBackendIpoAllotmentEligible({ id: '10', status: 'UPCOMING' })).toBe(false);
-      expect(isBackendIpoAllotmentEligible({ id: '11', status: 'Not yet open' })).toBe(false);
-      expect(isBackendIpoAllotmentEligible({ id: '12', status: 'Open' })).toBe(false);
-      expect(isBackendIpoAllotmentEligible({ id: '13', status: 'OPEN' })).toBe(false);
-      expect(isBackendIpoAllotmentEligible({ id: '14', status: 'Live' })).toBe(false);
-      expect(isBackendIpoAllotmentEligible({ id: '15', status: 'LIVE' })).toBe(false);
-      expect(isBackendIpoAllotmentEligible({ id: '16', status: 'Active' })).toBe(false);
-      expect(isBackendIpoAllotmentEligible({ id: '17', status: 'Bidding' })).toBe(false);
-      expect(isBackendIpoAllotmentEligible({ id: '18', status: 'Draft' })).toBe(false);
-      expect(isBackendIpoAllotmentEligible({ id: '19', status: 'DRAFT' })).toBe(false);
-      expect(isBackendIpoAllotmentEligible({ id: '20', status: 'Archived' })).toBe(false);
-      expect(isBackendIpoAllotmentEligible({ id: '21', status: 'ARCHIVED' })).toBe(false);
+    it('Fixture 2: Strictly excludes Upcoming, Open, Live, Closed, Allotment Pending, Listing Pending, Draft, and Archived IPOs', () => {
+      expect(isBackendIpoAllotmentEligible({ id: '8', status: 'Closed' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '9', status: 'CLOSED' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '10', status: 'ALLOTMENT_PENDING' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '11', status: 'LISTING_PENDING' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '12', status: 'Upcoming' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '13', status: 'UPCOMING' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '14', status: 'Not yet open' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '15', status: 'Open' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '16', status: 'OPEN' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '17', status: 'Live' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '18', status: 'LIVE' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '19', status: 'Active' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '20', status: 'Bidding' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '21', status: 'Draft' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '22', status: 'DRAFT' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '23', status: 'Archived' })).toBe(false);
+      expect(isBackendIpoAllotmentEligible({ id: '24', status: 'ARCHIVED' })).toBe(false);
       expect(isBackendIpoAllotmentEligible(null)).toBe(false);
       expect(isBackendIpoAllotmentEligible({ id: '' })).toBe(false);
     });
 
-    it('Fixture 3: Mixed status batch filtering retains only valid Closed/Allotment Out/Listed IPOs', () => {
+    it('Fixture 3: Mixed status batch filtering retains only valid Allotment Out/Listed IPOs', () => {
       const mixedBatch = [
         { id: '1', symbol: 'CLOSED_1', status: 'Closed' },
         { id: '2', symbol: 'OPEN_1', status: 'Open' },
@@ -876,10 +976,17 @@ describe('Allotment Checker Frontend Integration Tests', () => {
         { id: '5', symbol: 'LISTED_1', status: 'Listed' },
         { id: '6', symbol: 'LIVE_1', status: 'Live' },
         { id: '7', symbol: 'DRAFT_1', status: 'Draft' },
+        { id: '8', symbol: 'ALLOT_COMP_1', status: 'ALLOTMENT_COMPLETED' },
+        { id: '9', symbol: 'ALLOT_PEND_1', status: 'ALLOTMENT_PENDING' },
+        { id: '10', symbol: 'LIST_PEND_1', status: 'LISTING_PENDING' },
       ];
 
       const filtered = mixedBatch.filter(isBackendIpoAllotmentEligible);
-      expect(filtered.map((i) => i.symbol)).toEqual(['CLOSED_1', 'ALLOT_1', 'LISTED_1']);
+      expect(filtered.map((i) => i.symbol)).toEqual([
+        'ALLOT_1',
+        'LISTED_1',
+        'ALLOT_COMP_1',
+      ]);
       expect(filtered.length).toBe(3);
     });
   });

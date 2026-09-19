@@ -36,9 +36,13 @@ export class BackendIpoApiService {
   public async listBackendIpos(
     filter?: BackendIpoListFilter,
   ): Promise<BackendIpo[]> {
+    const queryParams: Record<string, string | number> = {
+      limit: 100,
+      ...(filter as Record<string, string | number>),
+    };
     const res = await this.apiClient.get<
       BackendIpo[] | { items: BackendIpo[] }
-    >(ENDPOINTS.IPOS, filter as Record<string, string | number>);
+    >(ENDPOINTS.IPOS, queryParams);
 
     if (!res.data) {
       return [];

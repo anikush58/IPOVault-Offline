@@ -104,6 +104,36 @@ export async function runAllotmentCheckerSelectorTestSuite() {
       marketSegment: 'MAINBOARD',
     },
     {
+      id: 'b5c6d7e8-0000-4000-8000-000000000005',
+      symbol: 'SBIFUNDS',
+      company: {
+        id: 'comp-sbi',
+        displayName: 'SBI Funds Management Limited',
+      },
+      status: 'ALLOTMENT_COMPLETED',
+      marketSegment: 'MAINBOARD',
+    },
+    {
+      id: 'c6d7e8f9-0000-4000-8000-000000000006',
+      symbol: 'PENDINGCO',
+      company: {
+        id: 'comp-pending',
+        displayName: 'Allotment Pending Co Ltd',
+      },
+      status: 'ALLOTMENT_PENDING',
+      marketSegment: 'MAINBOARD',
+    },
+    {
+      id: 'd7e8f9a0-0000-4000-8000-000000000007',
+      symbol: 'LISTINGSOON',
+      company: {
+        id: 'comp-listingsoon',
+        displayName: 'Listing Soon Co Ltd',
+      },
+      status: 'LISTING_PENDING',
+      marketSegment: 'MAINBOARD',
+    },
+    {
       id: 'd1a2f3c4-0000-4000-8000-000000000001',
       symbol: 'DRAFTCO',
       company: {
@@ -148,16 +178,16 @@ export async function runAllotmentCheckerSelectorTestSuite() {
   ];
 
   // =========================================================================
-  // 1. Backend published IPO appears in standalone Allotment Checker
+  // 1. Backend published IPO (ALLOTMENT OUT / ALLOTMENT_COMPLETED) appears
   // =========================================================================
   const eligibleIpos = publishedIpos.filter(isBackendIpoAllotmentEligible);
   const selectableItems = eligibleIpos.map(normalizeBackendIpoForChecker);
 
-  const dhootItem = selectableItems.find((i) => i.symbol === 'DHOOT');
+  const sbiItem = selectableItems.find((i) => i.symbol === 'SBIFUNDS');
   assert(
-    Boolean(dhootItem && dhootItem.ipo_name === 'Dhoot Transmission Ltd'),
+    Boolean(sbiItem && sbiItem.ipo_name === 'SBI Funds Management Limited'),
     'Test 1',
-    'Backend published IPO (Dhoot Transmission) appears in standalone Allotment Checker selectable list'
+    'Backend published IPO with ALLOTMENT_COMPLETED (SBI Funds) appears in standalone Allotment Checker selectable list'
   );
 
   // =========================================================================
@@ -184,29 +214,32 @@ export async function runAllotmentCheckerSelectorTestSuite() {
   );
 
   // =========================================================================
-  // 2c. Only Closed, Allotment Out, and Listed IPOs are included
+  // 2c. Only Allotment Out (including ALLOTMENT_COMPLETED) and Listed IPOs are included
   // =========================================================================
   const includedSymbols = selectableItems.map((i) => i.symbol);
   assert(
-    includedSymbols.includes('DHOOT') &&
-      includedSymbols.includes('TECHSOL') &&
+    includedSymbols.includes('TECHSOL') &&
       includedSymbols.includes('LISTEDCO') &&
-      includedSymbols.includes('ALLOTOUT'),
+      includedSymbols.includes('ALLOTOUT') &&
+      includedSymbols.includes('SBIFUNDS'),
     'Test 2c',
-    'Selectable items contain all Closed, Allotment Out, and Listed IPOs'
+    'Selectable items contain all Allotment Out (including ALLOTMENT_COMPLETED) and Listed IPOs'
   );
 
   // =========================================================================
-  // 2d. Upcoming, Open, Live, Draft, and Archived IPOs are excluded
+  // 2d. CLOSED, ALLOTMENT_PENDING, LISTING_PENDING, OPEN, UPCOMING, LIVE, DRAFT, and ARCHIVED are excluded
   // =========================================================================
   assert(
-    !includedSymbols.includes('OPENCO') &&
+    !includedSymbols.includes('DHOOT') &&
+      !includedSymbols.includes('PENDINGCO') &&
+      !includedSymbols.includes('LISTINGSOON') &&
+      !includedSymbols.includes('OPENCO') &&
       !includedSymbols.includes('UPCOMINGCO') &&
       !includedSymbols.includes('LIVECO') &&
       !includedSymbols.includes('DRAFTCO') &&
       !includedSymbols.includes('ARCHCO'),
     'Test 2d',
-    'Selectable items strictly exclude OPEN, UPCOMING, LIVE, DRAFT, and ARCHIVED IPOs'
+    'Selectable items strictly exclude CLOSED, ALLOTMENT_PENDING, LISTING_PENDING, OPEN, UPCOMING, LIVE, DRAFT, and ARCHIVED IPOs'
   );
 
   // =========================================================================
@@ -215,7 +248,7 @@ export async function runAllotmentCheckerSelectorTestSuite() {
   assert(
     selectableItems.length === 4,
     'Test 2e',
-    `Exactly 4 eligible IPOs selected out of 9 mixed-status items (received: ${selectableItems.length})`
+    `Exactly 4 eligible IPOs selected out of 12 mixed-status items (received: ${selectableItems.length})`
   );
 
   // =========================================================================
@@ -243,7 +276,7 @@ export async function runAllotmentCheckerSelectorTestSuite() {
   );
   assert(
     allRetainBackendUuid &&
-      selectableItems[0].id === '978939c3-4217-48f1-9c60-e8ea3c4ecdd7',
+      selectableItems[0].id === 'a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d',
     'Test 4',
     'Every selector item retains the canonical backend UUID without conversion to local ID'
   );
@@ -272,8 +305,8 @@ export async function runAllotmentCheckerSelectorTestSuite() {
   // =========================================================================
   // 6. Existing direct-from-IPO-detail flow still works
   // =========================================================================
-  // Detail screen navigates: router.push({ pathname: '/allotment-checker', params: { ipoId: '978939c3-4217-48f1-9c60-e8ea3c4ecdd7' } })
-  const routeParamIpoId = '978939c3-4217-48f1-9c60-e8ea3c4ecdd7';
+  // Detail screen navigates: router.push({ pathname: '/allotment-checker', params: { ipoId: 'a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d' } })
+  const routeParamIpoId = 'a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d';
   const directResolvedIpo = selectableItems.find((i) => i.id === routeParamIpoId);
   let directCheckSentId: string | null = null;
   if (directResolvedIpo) {
@@ -282,7 +315,7 @@ export async function runAllotmentCheckerSelectorTestSuite() {
   }
 
   assert(
-    directCheckSentId === '978939c3-4217-48f1-9c60-e8ea3c4ecdd7',
+    directCheckSentId === 'a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d',
     'Test 6',
     'Direct navigation from IPO detail with route param ipoId resolves and triggers check with backend UUID'
   );

@@ -12,6 +12,7 @@ export interface AllotmentCheckerIpoItem {
   issue_type: string;
   lot_size: number;
   buy_price: number;
+  logo_url?: string;
 }
 
 /**
@@ -33,19 +34,35 @@ export function isBackendIpoAllotmentEligible(b: BackendIpo): boolean {
 
   if (['DRAFT', 'ARCHIVED', 'DELETED', ''].includes(clean)) return false;
 
-  const normalized = normalizeLifecycleStatus(rawStatus);
+  // Ineligible statuses: UPCOMING, OPEN, CLOSED, ALLOTMENT_PENDING, LISTING_PENDING
+  if (
+    clean === 'CLOSED' ||
+    clean === 'ALLOTMENT_PENDING' ||
+    clean === 'ALLOTTED_PENDING' ||
+    clean === 'PENDING_ALLOTMENT' ||
+    clean === 'LISTING_PENDING' ||
+    clean === 'LISTING_UPCOMING' ||
+    clean === 'OPEN' ||
+    clean === 'UPCOMING' ||
+    clean === 'LIVE' ||
+    clean === 'ACTIVE'
+  ) {
+    return false;
+  }
 
-  // Status must strictly be one of: Closed, Allotment Out, or Listed
-  const isClosed = clean === 'CLOSED' || normalized === 'CLOSED';
+  // Eligible statuses: ALLOTMENT OUT (including ALLOTMENT_COMPLETED, ALLOTTED) and LISTED
   const isAllotmentOut =
+    clean === 'ALLOTMENT_COMPLETED' ||
     clean === 'ALLOTMENT_OUT' ||
     clean === 'ALLOTMENT' ||
     clean === 'ALLOTTED' ||
-    clean === 'ALLOTTED_AVAILABLE' ||
-    normalized === 'ALLOTTED_AVAILABLE';
-  const isListed = clean === 'LISTED' || normalized === 'LISTED';
+    clean === 'ALLOTTED_AVAILABLE';
+  const isListed = clean === 'LISTED';
 
-  return isClosed || isAllotmentOut || isListed;
+  if (isAllotmentOut || isListed) return true;
+
+  const normalized = normalizeLifecycleStatus(rawStatus);
+  return normalized === 'ALLOTTED_AVAILABLE' || normalized === 'LISTED';
 }
 
 /**
@@ -69,6 +86,12 @@ export function normalizeBackendIpoForChecker(b: BackendIpo): AllotmentCheckerIp
   const issueType = b.marketSegment === 'SME' ? 'SME' : 'Mainboard';
   const lotSize = b.lotSize || 0;
   const buyPrice = b.priceBandHigh ?? b.issuePriceInr ?? b.priceBandLow ?? 0;
+  const logoUrl =
+    b.company?.logoUrl ||
+    b.logoUrl ||
+    (b as any).logo_url ||
+    (b as any).companyLogo ||
+    '';
 
   return {
     id: b.id,
@@ -81,5 +104,6 @@ export function normalizeBackendIpoForChecker(b: BackendIpo): AllotmentCheckerIp
     issue_type: issueType,
     lot_size: lotSize,
     buy_price: buyPrice,
+    logo_url: logoUrl,
   };
 }

@@ -75,14 +75,23 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
   return null;
 }
 
-const heroBg = require('@/assets/images/dashboard-hero-bg.png');
-const graphicLeft = require('@/assets/images/dashboard-graphic-left.png');
-const graphicRight = require('@/assets/images/dashboard-graphic-right.png');
+const heroBgLight = require('@/assets/images/dashboard-hero-bg.png');
+const graphicLeftLight = require('@/assets/images/dashboard-graphic-left.png');
+const graphicRightLight = require('@/assets/images/dashboard-graphic-right.png');
+
+const heroBgDark = require('@/assets/images/dashboard-hero-bg-dark.png');
+const graphicLeftDark = require('@/assets/images/dashboard-graphic-left-dark.png');
+const graphicRightDark = require('@/assets/images/dashboard-graphic-right-dark.png');
 
 export default function DashboardScreen() {
   const colors = useColors();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+
+  const heroBg = isDark ? heroBgDark : heroBgLight;
+  const graphicLeft = isDark ? graphicLeftDark : graphicLeftLight;
+  const graphicRight = isDark ? graphicRightDark : graphicRightLight;
+
   const { applications, ipos, isLoading, refresh } = useDB();
   const insets = useSafeAreaInsets();
   const router = useRouter();

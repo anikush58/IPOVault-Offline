@@ -143,7 +143,7 @@ export default function NewIposScreen() {
   const horizontalScrollViewRef = useRef<ScrollView>(null);
 
   const [activeTab, setActiveTab] = useState<NewIpoTab>('live');
-  const [includeSme, setIncludeSme] = useState(false);
+  const [includeSme, setIncludeSme] = useState(true);
   const [sortBy, setSortBy] = useState<SortOption>('DEFAULT');
   const [showFilterModal, setShowFilterModal] = useState(false);
 
@@ -244,12 +244,15 @@ export default function NewIposScreen() {
   const closedList = useMemo(() => {
     return filteredRawIpos.filter((item) => {
       const st = (item.status || '').toUpperCase();
-      return st === 'CLOSED' || st.includes('ALLOT') || st.includes('AWAIT');
+      return st === 'CLOSED' || st.includes('ALLOT') || st.includes('AWAIT') || st === 'LISTING_PENDING';
     });
   }, [filteredRawIpos]);
 
   const listedList = useMemo(() => {
-    return filteredRawIpos.filter((item) => item.status === 'LISTED');
+    return filteredRawIpos.filter((item) => {
+      const st = (item.status || '').toUpperCase();
+      return st === 'LISTED' || st === 'LISTING_PENDING';
+    });
   }, [filteredRawIpos]);
 
   const getListForTab = useCallback((tab: NewIpoTab) => {
