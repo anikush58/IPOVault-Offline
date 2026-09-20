@@ -471,4 +471,19 @@ export async function initDB(db: SQLiteDatabase) {
   } catch (err) {
     console.error('[Schema Migration Error]', err);
   }
+
+  // One-time cleanup: clear locally-uploaded IPO logos (data: or file://) from ipo_listings.
+  // Preserves http:// and https:// backend/CDN URLs. Idempotent — no-op once all rows are cleared.
+  try {
+    await db.execAsync(`
+      UPDATE ipo_listings
+      SET logo_url = NULL
+      WHERE logo_url IS NOT NULL
+        AND logo_url != ''
+        AND logo_url NOT LIKE 'http://%'
+        AND logo_url NOT LIKE 'https://%'
+    `);
+  } catch {
+    // Ignore — table or column not present on this install
+  }
 }

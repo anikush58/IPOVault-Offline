@@ -1422,9 +1422,10 @@ export default function AllotmentCheckerScreen() {
         setActiveJob(null);
         addLog(`Initiating automated check for IPO ID ${targetIpoId}`, 'info');
 
-        // 1. Collect all local applicant PANs from user profiles and applications for sync
+        // 1. Collect all local applicant PANs from active (non-archived) user profiles for sync
         const userPanMap = new Map<string, { userId: string; pan: string; name: string }>();
         users.forEach((usr) => {
+          if (usr.archived === 1) return; // skip archived users
           const p = (usr.pan_number || '').trim().toUpperCase();
           if (p.length === 10) {
             userPanMap.set(p, {
@@ -1682,20 +1683,26 @@ export default function AllotmentCheckerScreen() {
   const uiApplicants = useMemo((): UIApplicantState[] => {
     if (!selectedIpo) return [];
 
-    // Use current applications if available, otherwise fallback to all saved user profiles with valid PAN
+    // Use current applications if available, otherwise fallback to all saved user profiles with valid PAN.
+    // In both paths, exclude archived users (archived === 1).
     const applicantProfiles = currentApplications.length > 0
-      ? currentApplications.map((app) => {
-          const usr = users.find((u) => u.id === app.user_id);
-          return {
-            applicationId: app.id,
-            userId: app.user_id,
-            userName: usr?.name || 'Applicant',
-            pan: usr?.pan_number || '',
-            avatarUrl: usr?.avatar_url || (usr as any)?.avatar || undefined,
-          };
-        })
+      ? currentApplications
+          .filter((app) => {
+            const usr = users.find((u) => u.id === app.user_id);
+            return !usr || usr.archived !== 1; // keep if user not found (safe) or active
+          })
+          .map((app) => {
+            const usr = users.find((u) => u.id === app.user_id);
+            return {
+              applicationId: app.id,
+              userId: app.user_id,
+              userName: usr?.name || 'Applicant',
+              pan: usr?.pan_number || '',
+              avatarUrl: usr?.avatar_url || (usr as any)?.avatar || undefined,
+            };
+          })
       : users
-          .filter((u) => u.pan_number && u.pan_number.trim().length === 10)
+          .filter((u) => u.archived !== 1 && u.pan_number && u.pan_number.trim().length === 10)
           .map((u) => ({
             applicationId: `saved_${u.id}`,
             userId: u.id,

@@ -96,11 +96,6 @@ export default function RootLayout() {
 
   const ready = fontsLoaded || !!fontsError;
 
-  useEffect(() => {
-    if (ready) {
-      SplashScreen.hideAsync();
-    }
-  }, [ready]);
 
   // Safety timeout: hide splash after 4s regardless of font state
   useEffect(() => {
