@@ -73,24 +73,68 @@ export default function IPODetailsScreen() {
 
   const { width: screenWidth } = useWindowDimensions();
 
-  const horizontalScrollViewRef = useRef<ScrollView>(null);
+  const mainScrollViewRef = useRef<ScrollView>(null);
   const tabScrollViewRef = useRef<ScrollView>(null);
+  const DETAIL_TABS: DetailTab[] = ['IPO', 'Subscription', 'Company Info', 'Docs'];
+
+  const sectionOffsets = useRef<Record<DetailTab, number>>({
+    'IPO': 0,
+    'Subscription': 0,
+    'Company Info': 0,
+    'Docs': 0,
+  });
+  const isManualScrolling = useRef(false);
+  const manualScrollTimer = useRef<any>(null);
 
   const handleTabPress = (tabKey: DetailTab) => {
     setActiveDetailTab(tabKey);
     try { Haptics.selectionAsync(); } catch {}
-    const index = (['IPO', 'Subscription', 'Company Info', 'Docs'] as const).indexOf(tabKey);
-    if (index !== -1) {
-      horizontalScrollViewRef.current?.scrollTo({ x: index * screenWidth, animated: true });
+
+    const idx = DETAIL_TABS.indexOf(tabKey);
+    if (idx !== -1) {
+      tabScrollViewRef.current?.scrollTo({ x: Math.max(0, idx * 90 - 30), animated: true });
     }
+
+    const targetY = sectionOffsets.current[tabKey] ?? 0;
+    isManualScrolling.current = true;
+    if (manualScrollTimer.current) clearTimeout(manualScrollTimer.current);
+
+    mainScrollViewRef.current?.scrollTo({
+      y: Math.max(0, targetY - 6),
+      animated: true,
+    });
+
+    manualScrollTimer.current = setTimeout(() => {
+      isManualScrolling.current = false;
+    }, 600);
   };
 
-  const handleHorizontalScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const contentOffsetX = event.nativeEvent.contentOffset.x;
-    const index = Math.round(contentOffsetX / screenWidth);
-    const tabs = ['IPO', 'Subscription', 'Company Info', 'Docs'] as const;
-    if (tabs[index] && tabs[index] !== activeDetailTab) {
-      setActiveDetailTab(tabs[index]);
+  const handleVerticalScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (isManualScrolling.current) return;
+    const scrollY = e.nativeEvent.contentOffset.y;
+    const offset = scrollY + 50;
+
+    const docsY = sectionOffsets.current['Docs'];
+    const compY = sectionOffsets.current['Company Info'];
+    const subY = sectionOffsets.current['Subscription'];
+
+    let newTab: DetailTab = 'IPO';
+    if (docsY > 0 && offset >= docsY) {
+      newTab = 'Docs';
+    } else if (compY > 0 && offset >= compY) {
+      newTab = 'Company Info';
+    } else if (subY > 0 && offset >= subY) {
+      newTab = 'Subscription';
+    } else {
+      newTab = 'IPO';
+    }
+
+    if (newTab !== activeDetailTab) {
+      setActiveDetailTab(newTab);
+      const tabIdx = DETAIL_TABS.indexOf(newTab);
+      if (tabIdx >= 0) {
+        tabScrollViewRef.current?.scrollTo({ x: Math.max(0, tabIdx * 90 - 30), animated: true });
+      }
     }
   };
 
@@ -389,30 +433,28 @@ export default function IPODetailsScreen() {
       </View>
 
       <ScrollView
-        ref={horizontalScrollViewRef}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={handleHorizontalScroll}
+        ref={mainScrollViewRef}
+        showsVerticalScrollIndicator={false}
+        onScroll={handleVerticalScroll}
         scrollEventThrottle={16}
-        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: 12,
+          paddingBottom: insets.bottom + 100,
+        }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+          />
+        }
       >
-        {/* ── TAB 1: IPO OVERVIEW ── */}
-        <ScrollView
-          style={{ width: screenWidth }}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 12,
-            paddingBottom: insets.bottom + 100,
+        {/* ── SECTION 1: IPO OVERVIEW ── */}
+        <View
+          onLayout={(e) => {
+            sectionOffsets.current['IPO'] = e.nativeEvent.layout.y;
           }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              tintColor={colors.primary}
-            />
-          }
         >
           {/* Banner if local manual IPO has official match */}
           {officialMatch && (
@@ -426,13 +468,36 @@ export default function IPODetailsScreen() {
           {/* HERO CARD (Redesigned with logo avatar & 2-column stats box) */}
           <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 }}>
-              <View style={{ width: 54, height: 54, borderRadius: 14, overflow: 'hidden', backgroundColor: colors.cardAlt, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
-                {ipo.logo_url && !logoError ? (
-                  <Image source={{ uri: ipo.logo_url }} style={{ width: 44, height: 44 }} resizeMode="contain" onError={() => setLogoError(true)} />
-                ) : (
+              {ipo.logo_url && !logoError ? (
+                <Image
+                  source={{ uri: ipo.logo_url }}
+                  style={{
+                    width: 54,
+                    height: 54,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.cardAlt,
+                  }}
+                  resizeMode="cover"
+                  onError={() => setLogoError(true)}
+                />
+              ) : (
+                <View
+                  style={{
+                    width: 54,
+                    height: 54,
+                    borderRadius: 14,
+                    backgroundColor: colors.cardAlt,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
                   <Text style={{ fontSize: 18, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary }}>{initials}</Text>
-                )}
-              </View>
+                </View>
+              )}
 
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', color: colors.foreground, marginBottom: 4 }}>
@@ -894,24 +959,14 @@ export default function IPODetailsScreen() {
               IPOVault specializes in innovative investment solutions and personalized financial planning, ensuring sustainable growth for clients. With a focus on transparency and excellence, it empowers individuals and businesses to achieve their financial goals.
             </Text>
           </View>
-        </ScrollView>
+        </View>
 
-        {/* ── TAB 2: SUBSCRIPTION ── */}
-        <ScrollView
-          style={{ width: screenWidth }}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 12,
-            paddingBottom: insets.bottom + 100,
+        {/* ── SECTION 2: SUBSCRIPTION ── */}
+        <View
+          onLayout={(e) => {
+            sectionOffsets.current['Subscription'] = e.nativeEvent.layout.y;
           }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              tintColor={colors.primary}
-            />
-          }
+          style={{ marginTop: 20 }}
         >
           <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>Subscription Figure</Text>
@@ -945,24 +1000,14 @@ export default function IPODetailsScreen() {
               </View>
             )}
           </View>
-        </ScrollView>
+        </View>
 
-        {/* ── TAB 3: COMPANY INFO ── */}
-        <ScrollView
-          style={{ width: screenWidth }}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 12,
-            paddingBottom: insets.bottom + 100,
+        {/* ── SECTION 3: COMPANY INFO ── */}
+        <View
+          onLayout={(e) => {
+            sectionOffsets.current['Company Info'] = e.nativeEvent.layout.y;
           }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              tintColor={colors.primary}
-            />
-          }
+          style={{ marginTop: 20 }}
         >
           {/* ABOUT COMPANY */}
           <View style={[styles.snapshotGridCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -1141,24 +1186,14 @@ export default function IPODetailsScreen() {
               </View>
             </View>
           </View>
-        </ScrollView>
+        </View>
 
-        {/* ── TAB 4: DOCS & ANCHOR LIST ── */}
-        <ScrollView
-          style={{ width: screenWidth }}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 12,
-            paddingBottom: insets.bottom + 100,
+        {/* ── SECTION 4: DOCS & ANCHOR LIST ── */}
+        <View
+          onLayout={(e) => {
+            sectionOffsets.current['Docs'] = e.nativeEvent.layout.y;
           }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              tintColor={colors.primary}
-            />
-          }
+          style={{ marginTop: 20 }}
         >
           {/* Document Filings Card */}
           {(() => {
@@ -1298,7 +1333,7 @@ export default function IPODetailsScreen() {
           <Text style={[styles.footerDisclaimer, { color: colors.mutedForeground, marginTop: 16 }]}>
             Disclaimer: Investment in securities market are subject to market risks. Read all prospectus documents carefully before investing.
           </Text>
-        </ScrollView>
+        </View>
       </ScrollView>
 
       {/* ── Sticky Bottom Apply Action Bar ── */}
@@ -1341,7 +1376,7 @@ export default function IPODetailsScreen() {
                 } as any)
               }
             >
-              <Text style={styles.fullWidthApplyBtnText}>Apply Now</Text>
+              <Text style={[styles.fullWidthApplyBtnText, { color: colors.primaryForeground }]}>Apply Now</Text>
             </TouchableOpacity>
           </View>
         );
@@ -1403,7 +1438,7 @@ export default function IPODetailsScreen() {
               style={{ backgroundColor: colors.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' }}
               activeOpacity={0.85}
             >
-              <Text style={{ color: '#FFFFFF', fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold' }}>
+              <Text style={{ color: colors.primaryForeground, fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold' }}>
                 Save GMP Update
               </Text>
             </TouchableOpacity>

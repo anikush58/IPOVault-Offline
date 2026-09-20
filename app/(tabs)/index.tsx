@@ -33,6 +33,7 @@ import { calculateNormalizedIPOStatus } from '@/services/ipo/statusNormalizer';
 import { IPORepository } from '@/services/ipo/ipoRepository';
 import { triggerCentralizedIPOSync } from '@/services/ipo/centralizedSync';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
+import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 
 const AVATAR_PALETTES: [string, string][] = [
   ['#8B5CF6', '#6D28D9'], // Purple
@@ -108,7 +109,7 @@ export default function DashboardScreen() {
       // Fetch live backend IPO list (only backend-published IPOs)
       let backendItems: any[] = [];
       try {
-        backendItems = await backendIpoApiService.listBackendIpos({ limit: 20 });
+        backendItems = await backendIpoApiService.listBackendIpos();
       } catch (err) {
         if (__DEV__) console.warn('[Dashboard] Failed to fetch backend IPO list', err);
       }
@@ -160,8 +161,31 @@ export default function DashboardScreen() {
     loadIpoHubData();
   }, [loadIpoHubData]);
 
+  // Re-fetch open IPOs whenever applications are applied (backendSyncEmitter fires after each apply)
+  useEffect(() => {
+    const unsub = backendSyncEmitter.subscribe(() => {
+      loadIpoHubData().catch(() => {});
+    });
+    return unsub;
+  }, [loadIpoHubData]);
+
   const openIpoList = useMemo(() => {
-    const sourceList = ipoHubItems.length > 0 ? ipoHubItems : ipos;
+    // Merge ipoHubItems (live API) + ipos (local DB, enriched from ipo_master) into one source.
+    // Previously used either/or which meant SS Retail (or any IPO) could vanish if it wasn't
+    // in the first N API results or wasn't in the local DB yet. Now both sources contribute:
+    // ipoHubItems entries take precedence (fresher API data), deduped by ID.
+    const mergedMap = new Map<string, any>();
+
+    // First add ipos (local DB, lower priority)
+    for (const i of ipos) {
+      if (i.id) mergedMap.set(i.id, i);
+    }
+    // Then overlay ipoHubItems (live API, higher priority — overrides local for same ID)
+    for (const i of ipoHubItems) {
+      if (i.id) mergedMap.set(i.id, i);
+    }
+
+    const sourceList = Array.from(mergedMap.values());
     const active = sourceList.filter((i) => i.archived !== 1 && (i as any).archived !== true);
     
     // Filter for strictly OPEN IPOs matching IPO Hub status calculation
@@ -394,14 +418,8 @@ export default function DashboardScreen() {
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Dashboard</Text>
         </View>
 
-        {/* Actions (IPO Management & Filter) */}
+        {/* Actions (Filter) */}
         <View style={styles.headerActions}>
-          <IconButton
-            name="grid"
-            variant="surface"
-            size="md"
-            onPress={() => router.push('/ipo-management')}
-          />
           <IconButton
             name="sliders"
             variant={hasFilter ? 'primary' : 'surface'}
@@ -962,24 +980,37 @@ export default function DashboardScreen() {
                           {lotVal ? formatCurrency(lotVal) : '—'}
                         </Text>
 
-                        {!isClosedOrListed ? (
-                          <TouchableOpacity
-                            activeOpacity={0.85}
-                            onPress={(e) => {
-                              e.stopPropagation();
-                              router.push({ pathname: '/apply-ipo', params: { ipoId: ipo.id } } as any);
-                            }}
-                            style={[styles.openIpoCtaButton, { backgroundColor: colors.primary }]}
-                          >
-                            <Text style={styles.openIpoCtaText}>Apply Now</Text>
-                            <Feather name="arrow-right" size={12} color="#FFFFFF" />
-                          </TouchableOpacity>
-                        ) : (
-                          <View style={[styles.openIpoCtaButton, { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.border }]}>
-                            <Text style={[styles.openIpoCtaText, { color: colors.mutedForeground }]}>View Details</Text>
-                            <Feather name="chevron-right" size={12} color={colors.mutedForeground} />
-                          </View>
-                        )}
+                        <TouchableOpacity
+                          activeOpacity={0.85}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            const priceMin = item.price_band_min ?? item.priceBandLow;
+                            const priceMax = item.price_band_max ?? item.priceBandHigh ?? item.buy_price ?? ipo.buy_price;
+                            const lotSizeNum = item.lot_size || item.lotSize || item.quantity || ipo.quantity || 1;
+                            router.push({
+                              pathname: '/apply-ipo',
+                              params: {
+                                ipoId: ipo.id || item.id,
+                                item: JSON.stringify(item),
+                                name: companyName,
+                                company_name: companyName,
+                                symbol: item.symbol || ipo.symbol,
+                                priceBandLow: priceMin != null ? String(priceMin) : undefined,
+                                priceBandHigh: priceMax != null ? String(priceMax) : undefined,
+                                buy_price: String(priceMax || priceMin || ipo.buy_price || 0),
+                                lotSize: String(lotSizeNum),
+                                closeDate: item.close_date || item.closeDate || ipo.close_date || undefined,
+                                openDate: item.open_date || item.openDate || ipo.open_date || undefined,
+                                logoUrl: resolvedLogo || (ipo as any).logo_url || item.logo_url || item.logoUrl || undefined,
+                                issueType: ipo.issue_type || item.issue_type || (item.marketSegment === 'SME' ? 'SME' : 'Mainboard'),
+                              },
+                            } as any);
+                          }}
+                          style={[styles.openIpoCtaButton, { backgroundColor: colors.primary }]}
+                        >
+                          <Text style={[styles.openIpoCtaText, { color: colors.primaryForeground }]}>Apply Now</Text>
+                          <Feather name="arrow-right" size={12} color={colors.primaryForeground} />
+                        </TouchableOpacity>
                       </View>
                     </TouchableOpacity>
                   </Animated.View>

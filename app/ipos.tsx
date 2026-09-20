@@ -26,7 +26,6 @@ import { IPOSkeletonList } from '@/components/ipo/IPOSkeleton';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 
 import { FloatingCompareBar } from '@/components/compare/FloatingCompareBar';
-import { ManualAddIPOFlowModal } from '@/components/ipo/ManualAddIPOFlowModal';
 import { IPOOverviewTab } from '@/components/ipo/IPOOverviewTab';
 import { IPORadarTab } from '@/components/ipo/IPORadarTab';
 import { IPODiscoverTab } from '@/components/ipo/IPODiscoverTab';
@@ -323,15 +322,6 @@ export default function IPOHubScreen() {
               router.push('/watchlist' as any);
             }}
           />
-
-          <IconButton
-            name="plus"
-            variant="surface"
-            size="md"
-            onPress={() => {
-              router.push('/add-ipo-manual' as any);
-            }}
-          />
         </View>
       </View>
 
@@ -390,18 +380,6 @@ export default function IPOHubScreen() {
           onFilterPress={() => setShowFilterSheet(true)}
         />
       )}
-
-      {/* Manual Add IPO Search-Before-Create Modal */}
-      <ManualAddIPOFlowModal
-        visible={showManualAddFlow}
-        onClose={() => setShowManualAddFlow(false)}
-        onOpenCreateForm={(prefillCompanyName) => {
-          router.push({
-            pathname: '/add-ipo-manual' as any,
-            params: { initialName: prefillCompanyName },
-          });
-        }}
-      />
 
       {/* Filter Sheet */}
       <IPOFilterSheet

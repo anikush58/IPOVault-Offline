@@ -1062,10 +1062,10 @@ export default function BidsScreen() {
                       showError('Error', 'Failed to update application status.');
                     }
                   }}
-                  style={styles.confirmActionBtn}
+                  style={[styles.confirmActionBtn, { backgroundColor: colors.primary }]}
                   activeOpacity={0.85}
                 >
-                  <Text style={styles.confirmActionBtnText}>
+                  <Text style={[styles.confirmActionBtnText, { color: colors.primaryForeground }]}>
                     {confirmTarget.status === 'Allotted' ? 'Allotted' : 'Not Allotted'}
                   </Text>
                 </TouchableOpacity>

@@ -112,8 +112,6 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
         // In Allotted, Sold, Holding, Not Allotted -> Open Bulk Application Creator
         onOpenApply();
       }
-    } else if (currentRouteName === 'ipos') {
-      router.push('/add-ipo');
     } else {
       onOpenApply();
     }

@@ -25,10 +25,11 @@ import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { IPORepository } from '@/services/ipo/ipoRepository';
 import { IPOMasterRecord } from '@/services/ipo/types';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, formatDate } from '@/utils/formatters';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { BackendIpo } from '@/types/backend-ipo';
 import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
+import { getEffectiveAvatarUrl } from '@/utils/avatarUtils';
 
 const AVATAR_PALETTES: [string, string][] = [
   ['#8B5CF6', '#6D28D9'], // Purple
@@ -59,7 +60,23 @@ export default function ApplyIPOScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const db = useSQLiteContext();
-  const params = useLocalSearchParams<{ ipoId?: string; id?: string; name?: string; ipo_name?: string; company_name?: string }>();
+  const params = useLocalSearchParams<{
+    ipoId?: string;
+    id?: string;
+    name?: string;
+    ipo_name?: string;
+    company_name?: string;
+    symbol?: string;
+    item?: string;
+    priceBandLow?: string;
+    priceBandHigh?: string;
+    buy_price?: string;
+    lotSize?: string;
+    closeDate?: string;
+    openDate?: string;
+    logoUrl?: string;
+    issueType?: string;
+  }>();
   const { showSuccess, showError } = useDialog();
   const { users, ipos, applications, bankAccounts, addBulkApplications } = useDB();
 
@@ -68,17 +85,43 @@ export default function ApplyIPOScreen() {
   const targetParamId = params.ipoId || params.id || params.name || params.ipo_name || params.company_name || null;
   const [selectedIpoId, setSelectedIpoId] = useState<string | null>(targetParamId);
   const [masterRecord, setMasterRecord] = useState<IPOMasterRecord | null>(null);
-  const [backendIpoRecord, setBackendIpoRecord] = useState<BackendIpo | null>(null);
+
+  const parsedItem: BackendIpo | null = useMemo(() => {
+    if (params.item) {
+      try {
+        return typeof params.item === 'string' ? JSON.parse(params.item) : (params.item as any);
+      } catch (e) {
+        if (__DEV__) console.warn('[ApplyIPO] Failed to parse params.item', e);
+      }
+    }
+    return null;
+  }, [params.item]);
+
+  const [backendIpoRecord, setBackendIpoRecord] = useState<BackendIpo | null>(parsedItem);
   const [userLotQuantities, setUserLotQuantities] = useState<Record<string, number>>({});
   const [userSelectedBank, setUserSelectedBank] = useState<Record<string, string>>({});
   const [userSelectedUPI, setUserSelectedUPI] = useState<Record<string, string>>({});
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+  const [failedAvatars, setFailedAvatars] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (parsedItem) {
+      setBackendIpoRecord(parsedItem);
+    }
+  }, [parsedItem]);
 
   // Pickers State
   const [showIPOPicker, setShowIPOPicker] = useState(false);
   const [activeLotPickerUserId, setActiveLotPickerUserId] = useState<string | null>(null);
   const [activeBankPickerUserId, setActiveBankPickerUserId] = useState<string | null>(null);
+
+  // Success Modal State
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [submittedCount, setSubmittedCount] = useState(0);
+  const [submittedIpoName, setSubmittedIpoName] = useState('');
+  const [submittedLots, setSubmittedLots] = useState(0);
+  const [submittedAmount, setSubmittedAmount] = useState(0);
 
   const repo = useMemo(() => new IPORepository(db), [db]);
   const activeUsers = useMemo(() => users.filter((u) => u.archived !== 1), [users]);
@@ -100,17 +143,14 @@ export default function ApplyIPOScreen() {
         const found = await repo.getById(selectedIpoId);
         if (found) {
           setMasterRecord(found);
-          setBackendIpoRecord(null);
         } else {
           const searchResults = await repo.search(selectedIpoId);
           if (searchResults && searchResults.length > 0) {
             setMasterRecord(searchResults[0]);
-            setBackendIpoRecord(null);
-          } else {
+          } else if (!backendIpoRecord && !parsedItem) {
             const bIpo = await backendIpoApiService.getBackendIpoDetail(selectedIpoId);
             if (bIpo) {
               setBackendIpoRecord(bIpo);
-              setMasterRecord(null);
             }
           }
         }
@@ -119,14 +159,59 @@ export default function ApplyIPOScreen() {
       }
     }
     resolveMaster();
-  }, [selectedIpoId, repo]);
+  }, [selectedIpoId, repo, backendIpoRecord, parsedItem]);
 
   // Match selected IPO by id, company_name, or ipo_name from master or local listings
   const selectedIPO = useMemo(() => {
     if (!selectedIpoId) return undefined;
     const target = selectedIpoId.toLowerCase().trim();
 
-    // Check master record fetched from ipo_master
+    // 1. Check backend IPO record (from passed params or API fetch)
+    const bIpo = backendIpoRecord || parsedItem;
+    if (
+      bIpo &&
+      (bIpo.id?.toLowerCase() === target ||
+        bIpo.symbol?.toLowerCase() === target ||
+        (bIpo.company?.displayName || bIpo.companyName)?.toLowerCase().trim() === target ||
+        target === params.ipoId?.toLowerCase() ||
+        target === params.id?.toLowerCase())
+    ) {
+      const priceHigh =
+        bIpo.priceBandHigh != null
+          ? Number(bIpo.priceBandHigh)
+          : (bIpo as any).price_band_max != null
+          ? Number((bIpo as any).price_band_max)
+          : null;
+      const priceLow =
+        bIpo.priceBandLow != null
+          ? Number(bIpo.priceBandLow)
+          : (bIpo as any).price_band_min != null
+          ? Number((bIpo as any).price_band_min)
+          : null;
+      const price =
+        priceHigh ||
+        priceLow ||
+        (bIpo.issuePriceInr != null
+          ? Number(bIpo.issuePriceInr)
+          : (bIpo as any).buy_price != null
+          ? Number((bIpo as any).buy_price)
+          : (params.buy_price ? parseFloat(params.buy_price) : 0));
+      const compName =
+        bIpo.company?.displayName || bIpo.companyName || bIpo.symbol || params.name || params.company_name || 'IPO';
+      return {
+        id: bIpo.id || selectedIpoId,
+        company_name: compName,
+        ipo_name: compName,
+        buy_price: typeof price === 'string' ? parseFloat(price) : (price || 0),
+        quantity: bIpo.lotSize || (params.lotSize ? parseInt(params.lotSize, 10) : 1),
+        issue_type: (bIpo.marketSegment === 'SME' || params.issueType === 'SME') ? 'SME' : 'Mainboard',
+        exchange: bIpo.exchange || 'NSE, BSE',
+        close_date: bIpo.closeDate || params.closeDate || '',
+        open_date: bIpo.openDate || params.openDate || '',
+      };
+    }
+
+    // 2. Check master record fetched from ipo_master
     if (masterRecord) {
       const price = masterRecord.price_band_max || masterRecord.price_band_min || 0;
       return {
@@ -142,24 +227,30 @@ export default function ApplyIPOScreen() {
       };
     }
 
-    // Check backend IPO record fetched from backend API
-    if (backendIpoRecord) {
-      const price = backendIpoRecord.priceBandHigh || backendIpoRecord.priceBandLow || 0;
-      const compName = backendIpoRecord.company?.displayName || backendIpoRecord.companyName || backendIpoRecord.symbol;
+    // 3. Fallback to passed params
+    if (params.name || params.company_name || params.ipo_name) {
+      const compName = params.company_name || params.ipo_name || params.name || 'IPO';
+      const p = params.buy_price
+        ? parseFloat(params.buy_price)
+        : params.priceBandHigh
+        ? parseFloat(params.priceBandHigh)
+        : params.priceBandLow
+        ? parseFloat(params.priceBandLow)
+        : 0;
       return {
-        id: backendIpoRecord.id,
+        id: selectedIpoId,
         company_name: compName,
         ipo_name: compName,
-        buy_price: typeof price === 'string' ? parseFloat(price) : price,
-        quantity: backendIpoRecord.lotSize || 1,
-        issue_type: backendIpoRecord.marketSegment === 'SME' ? 'SME' : 'Mainboard',
-        exchange: backendIpoRecord.exchange || 'NSE, BSE',
-        close_date: backendIpoRecord.closeDate || '',
-        open_date: backendIpoRecord.openDate || '',
+        buy_price: p,
+        quantity: params.lotSize ? parseInt(params.lotSize, 10) : 1,
+        issue_type: params.issueType || 'Mainboard',
+        exchange: 'NSE, BSE',
+        close_date: params.closeDate || '',
+        open_date: params.openDate || '',
       };
     }
 
-    // Check local ipo_listings from useDB()
+    // 4. Check local ipo_listings from useDB()
     const fromListings = ipos.find(
       (i) =>
         i.id?.toLowerCase() === target ||
@@ -181,7 +272,7 @@ export default function ApplyIPOScreen() {
     }
 
     return undefined;
-  }, [ipos, selectedIpoId, masterRecord, backendIpoRecord]);
+  }, [ipos, selectedIpoId, masterRecord, backendIpoRecord, parsedItem, params]);
 
   React.useEffect(() => {
     if (params.ipoId) {
@@ -198,7 +289,9 @@ export default function ApplyIPOScreen() {
     const defaultLots: Record<string, number> = {};
     const defaultSelected = new Set<string>();
 
-    users.forEach((u) => {
+    // Use activeUsers (non-archived) only — using all `users` would include archived users
+    // and cause extra applications to be submitted silently.
+    activeUsers.forEach((u) => {
       const isAlreadyApplied = applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === u.id && a.status !== 'Cancelled');
       if (!isAlreadyApplied) {
         defaultLots[u.id] = 1; // Default lot = 1
@@ -208,7 +301,7 @@ export default function ApplyIPOScreen() {
 
     setUserLotQuantities(defaultLots);
     setSelectedUserIds(defaultSelected);
-  }, [selectedIpoId, users, applications]);
+  }, [selectedIpoId, activeUsers, applications]);
 
   // Aggregate Order Summary Calculation
   const orderSummary = useMemo(() => {
@@ -260,6 +353,33 @@ export default function ApplyIPOScreen() {
     Haptics.selectionAsync();
   };
 
+  const handleSelectAllApplicants = () => {
+    const eligibleUsers = activeUsers.filter(
+      (u) => !applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === u.id && a.status !== 'Cancelled')
+    );
+    const allSelected = eligibleUsers.every((u) => selectedUserIds.has(u.id));
+    if (allSelected) {
+      // Deselect all
+      setSelectedUserIds(new Set());
+      setUserLotQuantities((prev) => {
+        const next = { ...prev };
+        eligibleUsers.forEach((u) => { next[u.id] = 0; });
+        return next;
+      });
+    } else {
+      // Select all eligible
+      const next = new Set(selectedUserIds);
+      const nextLots = { ...userLotQuantities };
+      eligibleUsers.forEach((u) => {
+        next.add(u.id);
+        if (!nextLots[u.id] || nextLots[u.id] === 0) nextLots[u.id] = 1;
+      });
+      setSelectedUserIds(next);
+      setUserLotQuantities(nextLots);
+    }
+    Haptics.selectionAsync();
+  };
+
   const handleBulkSubmit = async () => {
     if (!selectedIpoId) {
       showError('', 'Please select an IPO first.');
@@ -281,15 +401,76 @@ export default function ApplyIPOScreen() {
         if (selectedUPI) upiAppMap[uid] = selectedUPI;
       });
 
+      const count = selectedUserIds.size;
+      const targetIpoName =
+        selectedIPO?.company_name ||
+        selectedIPO?.ipo_name ||
+        masterRecord?.company_name ||
+        backendIpoRecord?.company?.displayName ||
+        backendIpoRecord?.companyName ||
+        params.name ||
+        params.company_name ||
+        'IPO';
+      const lotsCount = orderSummary.totalLots;
+      const amountVal = orderSummary.totalAmount;
+
+      // Ensure local SQLite listing has the complete enriched record before adding applications
+      const now = new Date().toISOString();
+      const bIpo = backendIpoRecord || parsedItem;
+      const unitPrice =
+        selectedIPO?.buy_price ||
+        (bIpo?.priceBandHigh ? Number(bIpo.priceBandHigh) : (bIpo?.priceBandLow ? Number(bIpo.priceBandLow) : 100));
+      const lotQty = selectedIPO?.quantity || bIpo?.lotSize || 1;
+      const cDate = selectedIPO?.close_date || bIpo?.closeDate || params.closeDate || '';
+      const oDate = selectedIPO?.open_date || bIpo?.openDate || params.openDate || '';
+      const sym = bIpo?.symbol || params.symbol || '';
+      const logo = bIpo?.company?.logoUrl || bIpo?.logoUrl || params.logoUrl || '';
+
+      await db.runAsync(
+        `INSERT OR IGNORE INTO ipo_listings (
+          id, ipo_name, company_name, symbol, buy_price, quantity, open_date, close_date, listing_date, allotment_date,
+          registrar, exchange, issue_type, archived, is_favorite, logo_url, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', '', 'NSE, BSE', 'Mainboard', 0, 0, ?, ?, ?)`,
+        [selectedIpoId, targetIpoName, targetIpoName, sym, unitPrice, lotQty, oDate, cDate, logo, now, now]
+      );
+      await db.runAsync(
+        `UPDATE ipo_listings SET
+          ipo_name = COALESCE(NULLIF(?, ''), ipo_name),
+          company_name = COALESCE(NULLIF(?, ''), company_name),
+          symbol = COALESCE(NULLIF(?, ''), symbol),
+          buy_price = CASE WHEN ? > 0 THEN ? ELSE buy_price END,
+          quantity = CASE WHEN ? > 0 THEN ? ELSE quantity END,
+          open_date = COALESCE(NULLIF(?, ''), open_date),
+          close_date = COALESCE(NULLIF(?, ''), close_date),
+          logo_url = COALESCE(NULLIF(?, ''), logo_url),
+          updated_at = ?
+        WHERE id = ?`,
+        [targetIpoName, targetIpoName, sym, unitPrice, unitPrice, lotQty, lotQty, oDate, cDate, logo, now, selectedIpoId]
+      );
+
       await addBulkApplications(selectedIpoId, Array.from(selectedUserIds), bankNameMap, upiAppMap);
       backendSyncEmitter.notifyChange();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.replace('/(tabs)/bids');
+
+      setSubmittedCount(count);
+      setSubmittedIpoName(targetIpoName);
+      setSubmittedLots(lotsCount);
+      setSubmittedAmount(amountVal);
+      setShowSuccessModal(true);
     } catch (err: any) {
       if (__DEV__) console.error('[ApplyIPO] Bulk application submission error:', err);
       showError('Submission Error', 'Failed to submit IPO applications. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSuccessDone = () => {
+    setShowSuccessModal(false);
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)/ipos');
     }
   };
 
@@ -372,12 +553,62 @@ export default function ApplyIPOScreen() {
           style={[styles.ipoShowcaseCard, { backgroundColor: colors.card, borderColor: colors.border }]}
         >
           <View style={styles.ipoShowcaseTop}>
-            <View style={{ flex: 1, paddingRight: 8 }}>
+            {/* Logo / Avatar */}
+            {(() => {
+              const bIpo = backendIpoRecord || parsedItem;
+              const logoUrl =
+                bIpo?.company?.logoUrl ||
+                bIpo?.logoUrl ||
+                (bIpo as any)?.logo_url ||
+                masterRecord?.logo_url ||
+                params.logoUrl;
+              const ipoName =
+                selectedIPO?.company_name ||
+                selectedIPO?.ipo_name ||
+                bIpo?.company?.displayName ||
+                bIpo?.companyName ||
+                bIpo?.symbol ||
+                masterRecord?.company_name ||
+                params.name ||
+                params.company_name ||
+                '';
+              const initials = ipoName
+                .replace(/[^a-zA-Z0-9\s]/g, '')
+                .split(' ')
+                .slice(0, 2)
+                .map((w: string) => w[0])
+                .join('')
+                .toUpperCase();
+              return logoUrl ? (
+                <Image source={{ uri: logoUrl }} style={styles.showcaseLogo} resizeMode="contain" />
+              ) : ipoName ? (
+                <LinearGradient
+                  colors={getAvatarGradient(ipoName)}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.showcaseAvatar}
+                >
+                  <Text style={styles.showcaseAvatarText}>{initials || '?'}</Text>
+                </LinearGradient>
+              ) : null;
+            })()}
+
+            <View style={{ flex: 1, paddingLeft: 10, paddingRight: 8 }}>
               <Text style={[styles.ipoShowcaseTitle, { color: colors.foreground }]} numberOfLines={1}>
-                {selectedIPO ? (selectedIPO.company_name || selectedIPO.ipo_name) : 'No IPO Selected'}
+                {selectedIPO?.company_name ||
+                  selectedIPO?.ipo_name ||
+                  backendIpoRecord?.company?.displayName ||
+                  backendIpoRecord?.companyName ||
+                  masterRecord?.company_name ||
+                  params.name ||
+                  params.company_name ||
+                  'No IPO Selected'}
               </Text>
               <Text style={[styles.ipoShowcaseSub, { color: colors.mutedForeground }]}>
-                {selectedIPO?.issue_type || 'Mainboard'} · {selectedIPO?.exchange || 'NSE, BSE'}
+                {selectedIPO?.issue_type ||
+                  (backendIpoRecord?.marketSegment === 'SME' ? 'SME' : 'Mainboard') ||
+                  'Mainboard'}{' '}
+                · {selectedIPO?.exchange || backendIpoRecord?.exchange || 'NSE, BSE'}
               </Text>
             </View>
 
@@ -386,40 +617,82 @@ export default function ApplyIPOScreen() {
             </View>
           </View>
 
-          {selectedIPO ? (
-            <View style={[styles.metricsBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={styles.metricCell}>
-                <Text style={[styles.metricKey, { color: colors.mutedForeground }]}>PRICE BAND</Text>
-                <Text style={[styles.metricVal, { color: colors.foreground }]}>
-                  {masterRecord?.price_band_max
-                    ? masterRecord.price_band_min === masterRecord.price_band_max
-                      ? `₹${masterRecord.price_band_max}`
-                      : `₹${masterRecord.price_band_min} - ₹${masterRecord.price_band_max}`
-                    : selectedIPO.buy_price
-                    ? `₹${selectedIPO.buy_price}`
-                    : 'TBA'}
-                </Text>
-              </View>
+          <View style={[styles.metricsBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.metricCell}>
+              <Text style={[styles.metricKey, { color: colors.mutedForeground }]}>PRICE BAND</Text>
+              <Text style={[styles.metricVal, { color: colors.foreground }]}>
+                {(() => {
+                  const bIpo = backendIpoRecord || parsedItem;
+                  const high =
+                    bIpo?.priceBandHigh != null
+                      ? Number(bIpo.priceBandHigh)
+                      : (bIpo as any)?.price_band_max != null
+                      ? Number((bIpo as any).price_band_max)
+                      : masterRecord?.price_band_max != null
+                      ? Number(masterRecord.price_band_max)
+                      : params.priceBandHigh
+                      ? Number(params.priceBandHigh)
+                      : null;
+                  const low =
+                    bIpo?.priceBandLow != null
+                      ? Number(bIpo.priceBandLow)
+                      : (bIpo as any)?.price_band_min != null
+                      ? Number((bIpo as any).price_band_min)
+                      : masterRecord?.price_band_min != null
+                      ? Number(masterRecord.price_band_min)
+                      : params.priceBandLow
+                      ? Number(params.priceBandLow)
+                      : null;
 
-              <View style={[styles.metricDivider, { backgroundColor: colors.border }]} />
-
-              <View style={styles.metricCell}>
-                <Text style={[styles.metricKey, { color: colors.mutedForeground }]}>LOT SIZE</Text>
-                <Text style={[styles.metricVal, { color: colors.foreground }]}>
-                  {selectedIPO.quantity ? `${selectedIPO.quantity} Shares` : masterRecord?.lot_size ? `${masterRecord.lot_size} Shares` : '1 Lot'}
-                </Text>
-              </View>
-
-              <View style={[styles.metricDivider, { backgroundColor: colors.border }]} />
-
-              <View style={styles.metricCell}>
-                <Text style={[styles.metricKey, { color: colors.mutedForeground }]}>CLOSING DATE</Text>
-                <Text style={[styles.metricVal, { color: isDark ? '#F87171' : '#DC2626' }]}>
-                  {selectedIPO.close_date || masterRecord?.close_date || 'Open'}
-                </Text>
-              </View>
+                  if (low && high) {
+                    return low === high ? `₹${high}` : `₹${low} - ₹${high}`;
+                  }
+                  if (high) return `₹${high}`;
+                  if (low) return `₹${low}`;
+                  if (selectedIPO?.buy_price) return `₹${selectedIPO.buy_price}`;
+                  return 'TBA';
+                })()}
+              </Text>
             </View>
-          ) : null}
+
+            <View style={[styles.metricDivider, { backgroundColor: colors.border }]} />
+
+            <View style={styles.metricCell}>
+              <Text style={[styles.metricKey, { color: colors.mutedForeground }]}>LOT SIZE</Text>
+              <Text style={[styles.metricVal, { color: colors.foreground }]}>
+                {(() => {
+                  const bIpo = backendIpoRecord || parsedItem;
+                  const lot =
+                    selectedIPO?.quantity ||
+                    bIpo?.lotSize ||
+                    masterRecord?.lot_size ||
+                    (params.lotSize ? parseInt(params.lotSize, 10) : null);
+                  return lot ? `${lot} Shares` : '1 Lot';
+                })()}
+              </Text>
+            </View>
+
+            <View style={[styles.metricDivider, { backgroundColor: colors.border }]} />
+
+            <View style={styles.metricCell}>
+              <Text style={[styles.metricKey, { color: colors.mutedForeground }]}>CLOSING DATE</Text>
+              <Text style={[styles.metricVal, { color: isDark ? '#F87171' : '#DC2626' }]}>
+                {(() => {
+                  const bIpo = backendIpoRecord || parsedItem;
+                  const cDate =
+                    selectedIPO?.close_date ||
+                    bIpo?.closeDate ||
+                    masterRecord?.close_date ||
+                    params.closeDate;
+                  if (cDate && cDate.trim() && cDate.toLowerCase() !== 'open') {
+                    const formatted = formatDate(cDate);
+                    return formatted !== 'N/A' ? formatted : cDate;
+                  }
+                  return 'Closing Soon';
+                })()}
+              </Text>
+            </View>
+          </View>
         </View>
 
         {/* ── Applicants List ── */}
@@ -427,9 +700,19 @@ export default function ApplyIPOScreen() {
           <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
             APPLICANTS ({selectedUserIds.size} SELECTED)
           </Text>
-          <TouchableOpacity onPress={() => router.push('/users')}>
-            <Text style={[styles.changeIpoText, { color: colors.primary }]}>+ Add Applicant</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            {activeUsers.length > 0 && (
+              <TouchableOpacity onPress={handleSelectAllApplicants}>
+                <Text style={[styles.changeIpoText, { color: colors.primary }]}>
+                  {activeUsers
+                    .filter((u) => !applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === u.id && a.status !== 'Cancelled'))
+                    .every((u) => selectedUserIds.has(u.id)) && selectedUserIds.size > 0
+                    ? 'Deselect All'
+                    : 'Select All'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {activeUsers.length === 0 ? (
@@ -471,24 +754,29 @@ export default function ApplyIPOScreen() {
                 {/* Applicant Header */}
                 <View style={styles.applicantHeader}>
                   <View style={styles.applicantAvatarRow}>
-                    {u.avatar_url ? (
-                      <Image
-                        source={{ uri: u.avatar_url }}
-                        style={styles.avatarImage}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <LinearGradient
-                        colors={getAvatarGradient(u.name || 'User')}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.avatarCircle}
-                      >
-                        <Text style={[styles.avatarText, { color: '#FFFFFF' }]}>
-                          {u.name.slice(0, 1).toUpperCase()}
-                        </Text>
-                      </LinearGradient>
-                    )}
+                    {(() => {
+                      const avatarUri = (u.avatar_url || u.avatarUrl || (u as any).avatar || '').trim() || getEffectiveAvatarUrl(u);
+                      const isFailed = failedAvatars[u.id];
+                      return avatarUri && !isFailed ? (
+                        <Image
+                          source={{ uri: avatarUri }}
+                          style={[styles.avatarImage, { backgroundColor: colors.surface }]}
+                          resizeMode="cover"
+                          onError={() => setFailedAvatars((prev) => ({ ...prev, [u.id]: true }))}
+                        />
+                      ) : (
+                        <LinearGradient
+                          colors={getAvatarGradient(u.name || 'User')}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={styles.avatarCircle}
+                        >
+                          <Text style={[styles.avatarText, { color: '#FFFFFF' }]}>
+                            {u.name ? u.name.slice(0, 1).toUpperCase() : 'U'}
+                          </Text>
+                        </LinearGradient>
+                      );
+                    })()}
                     <View>
                       <Text style={[styles.applicantName, { color: colors.foreground }]}>{u.name}</Text>
                       <Text style={[styles.applicantMeta, { color: colors.mutedForeground }]}>
@@ -756,6 +1044,64 @@ export default function ApplyIPOScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* ── Submission Success Modal ── */}
+      <Modal
+        visible={showSuccessModal}
+        transparent
+        animationType="fade"
+        onRequestClose={handleSuccessDone}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.successCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {/* Success Icon Halo */}
+            <View style={[styles.successIconHalo, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.16)' : '#DCFCE7' }]}>
+              <View style={styles.successIconCircle}>
+                <Feather name="check" size={28} color="#FFFFFF" />
+              </View>
+            </View>
+
+            {/* Title & Subtitle */}
+            <Text style={[styles.successTitle, { color: colors.foreground }]}>
+              Applications Created!
+            </Text>
+            <Text style={[styles.successSubtitle, { color: colors.mutedForeground }]}>
+              Successfully placed <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_700Bold' }}>{submittedCount}</Text> {submittedCount === 1 ? 'application' : 'applications'} for
+            </Text>
+            <Text style={[styles.successIpoName, { color: colors.primary }]} numberOfLines={2}>
+              {submittedIpoName}
+            </Text>
+
+            {/* Quick Stat Summary Badge */}
+            <View style={[styles.successStatsBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={styles.successStatItem}>
+                <Text style={[styles.successStatVal, { color: colors.foreground }]}>{submittedCount}</Text>
+                <Text style={[styles.successStatLabel, { color: colors.mutedForeground }]}>Applicants</Text>
+              </View>
+              <View style={[styles.successStatDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.successStatItem}>
+                <Text style={[styles.successStatVal, { color: colors.foreground }]}>{submittedLots}</Text>
+                <Text style={[styles.successStatLabel, { color: colors.mutedForeground }]}>Total Lots</Text>
+              </View>
+              <View style={[styles.successStatDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.successStatItem}>
+                <Text style={[styles.successStatVal, { color: colors.foreground }]}>{formatCurrency(submittedAmount)}</Text>
+                <Text style={[styles.successStatLabel, { color: colors.mutedForeground }]}>Total Value</Text>
+              </View>
+            </View>
+
+            {/* Return to IPO Hub CTA */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={handleSuccessDone}
+              style={[styles.successDoneBtn, { backgroundColor: colors.primary }]}
+            >
+              <Text style={styles.successDoneBtnText}>Back to IPO Hub</Text>
+              <Feather name="arrow-right" size={16} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -907,6 +1253,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'GoogleSansFlex_400Regular',
     marginTop: 2,
+  },
+  showcaseLogo: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: 'transparent',
+  },
+  showcaseAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  showcaseAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   statusBadgeLive: {
     flexDirection: 'row',
@@ -1209,5 +1573,103 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'GoogleSansFlex_500Medium',
   },
+
+  // Success Modal
+  successCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  successIconHalo: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  successIconCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  successTitle: {
+    fontSize: 20,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  successSubtitle: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  successIpoName: {
+    fontSize: 15,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    textAlign: 'center',
+    marginTop: 2,
+    marginBottom: 18,
+  },
+  successStatsBox: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    marginBottom: 20,
+  },
+  successStatItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  successStatVal: {
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  successStatLabel: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_500Medium',
+    marginTop: 2,
+  },
+  successStatDivider: {
+    width: 1,
+    height: 24,
+  },
+  successDoneBtn: {
+    width: '100%',
+    height: 48,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  successDoneBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
 });
+
 

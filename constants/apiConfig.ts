@@ -68,3 +68,9 @@ function getApiBaseUrl(): string {
 }
 
 export const API_BASE_URL = getApiBaseUrl();
+
+// Cloudinary Configuration
+export const CLOUDINARY_CLOUD_NAME =
+  process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || 'dsqpoqmel';
+export const CLOUDINARY_AVATAR_PRESET =
+  process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'ipovault_avatars';

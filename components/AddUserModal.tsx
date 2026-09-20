@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -19,8 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useDialog } from '@/context/DialogContext';
 import { useDB, type User } from '@/context/DBContext';
-
-import { ensureBase64DataUrl, saveBase64ToLocalImage } from '@/utils/imageUtils';
+import { uploadImageToCloudinary } from '@/services/media/cloudinaryService';
 
 const BROKERS = ['Dhan', 'Upstox', 'Groww', 'Angel One', 'Fyers', 'Zerodha', 'Paytm Money', 'Millions', 'Sahi'];
 
@@ -85,6 +85,7 @@ export function AddUserModal({ visible, user, onClose }: Props) {
   const [tpin, setTpin] = useState('');
   const [broker, setBroker] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -96,6 +97,7 @@ export function AddUserModal({ visible, user, onClose }: Props) {
       setTpin(user?.tpin ?? '');
       setBroker(user?.broker ?? '');
       setAvatarUrl(user?.avatar_url ?? '');
+      setIsUploadingAvatar(false);
     }
   }, [user, visible]);
 
@@ -109,23 +111,26 @@ export function AddUserModal({ visible, user, onClose }: Props) {
       });
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
-        if (Platform.OS === 'web' && asset.file) {
-          const reader = new FileReader();
-          reader.onload = () => {
-            if (typeof reader.result === 'string') {
-              setAvatarUrl(reader.result);
-              try { Haptics.selectionAsync(); } catch {}
-            }
-          };
-          reader.readAsDataURL(asset.file);
-        } else {
-          let imageUri = asset.uri;
-          try {
-            const savedPath = await saveBase64ToLocalImage(asset.uri, 'avatar', user?.id || 'temp');
-            if (savedPath) imageUri = savedPath;
-          } catch {}
-          setAvatarUrl(imageUri);
+        setIsUploadingAvatar(true);
+        try {
+          let uriToUpload = asset.uri;
+          if (Platform.OS === 'web' && asset.file) {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(asset.file as File);
+            });
+            uriToUpload = dataUrl;
+          }
+          const uploadRes = await uploadImageToCloudinary(uriToUpload);
+          setAvatarUrl(uploadRes.secureUrl);
           try { Haptics.selectionAsync(); } catch {}
+        } catch (uploadErr: any) {
+          if (__DEV__) console.warn('[AddUserModal] Cloudinary avatar upload error:', uploadErr);
+          showError('Upload Failed', uploadErr?.message || 'Failed to upload avatar to Cloudinary. Please try again.');
+        } finally {
+          setIsUploadingAvatar(false);
         }
       }
     } catch (err) {
@@ -242,16 +247,32 @@ export function AddUserModal({ visible, user, onClose }: Props) {
 
                   <TouchableOpacity
                     onPress={pickAvatarImage}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }}
+                    disabled={isUploadingAvatar}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      backgroundColor: colors.surface,
+                      opacity: isUploadingAvatar ? 0.7 : 1,
+                    }}
                     activeOpacity={0.8}
                   >
-                    <Feather name="upload" size={13} color={colors.primary} />
+                    {isUploadingAvatar ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Feather name="upload" size={13} color={colors.primary} />
+                    )}
                     <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold', color: colors.foreground }}>
-                      {avatarUrl ? 'Change Avatar' : 'Upload Avatar'}
+                      {isUploadingAvatar ? 'Uploading...' : (avatarUrl ? 'Change Avatar' : 'Upload Avatar')}
                     </Text>
                   </TouchableOpacity>
 
-                  {avatarUrl ? (
+                  {avatarUrl && !isUploadingAvatar ? (
                     <TouchableOpacity
                       onPress={() => setAvatarUrl('')}
                       style={{ paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, backgroundColor: colors.destructiveBg }}
@@ -263,8 +284,15 @@ export function AddUserModal({ visible, user, onClose }: Props) {
                 </View>
               </View>
 
-              <TouchableOpacity onPress={handleSave} style={[styles.goldBtn, { backgroundColor: colors.primary }]} activeOpacity={0.8} disabled={saving}>
-                <Text style={[styles.goldBtnText, { color: colors.primaryForeground }]}>{saving ? 'Saving...' : (isEditing ? 'Save Changes' : 'Add User')}</Text>
+              <TouchableOpacity
+                onPress={handleSave}
+                style={[styles.goldBtn, { backgroundColor: colors.primary, opacity: saving || isUploadingAvatar ? 0.7 : 1 }]}
+                activeOpacity={0.8}
+                disabled={saving || isUploadingAvatar}
+              >
+                <Text style={[styles.goldBtnText, { color: colors.primaryForeground }]}>
+                  {saving ? 'Saving...' : (isEditing ? 'Save Changes' : 'Add User')}
+                </Text>
               </TouchableOpacity>
             </View>
           </Pressable>

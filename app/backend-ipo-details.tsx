@@ -59,10 +59,18 @@ export default function BackendIpoDetailsScreen() {
 
   type DetailTab = 'IPO' | 'Subscription' | 'Company Info' | 'Docs';
 
-  const { width: screenWidth } = useWindowDimensions();
-  const horizontalScrollViewRef = useRef<ScrollView>(null);
+  const mainScrollViewRef = useRef<ScrollView>(null);
   const tabScrollViewRef = useRef<ScrollView>(null);
   const DETAIL_TABS: DetailTab[] = ['IPO', 'Subscription', 'Company Info', 'Docs'];
+
+  const sectionOffsets = useRef<Record<DetailTab, number>>({
+    'IPO': 0,
+    'Subscription': 0,
+    'Company Info': 0,
+    'Docs': 0,
+  });
+  const isManualScrolling = useRef(false);
+  const manualScrollTimer = useRef<any>(null);
 
   const [ipo, setIpo] = useState<BackendIpo | null>(() => {
     if (params.item) {
@@ -103,15 +111,49 @@ export default function BackendIpoDetailsScreen() {
     const tabKey = DETAIL_TABS[idx];
     setActiveDetailTab(tabKey);
     try { Haptics.selectionAsync(); } catch {}
-    horizontalScrollViewRef.current?.scrollTo({ x: idx * screenWidth, animated: true });
+
+    tabScrollViewRef.current?.scrollTo({ x: Math.max(0, idx * 90 - 30), animated: true });
+
+    const targetY = sectionOffsets.current[tabKey] ?? 0;
+    isManualScrolling.current = true;
+    if (manualScrollTimer.current) clearTimeout(manualScrollTimer.current);
+
+    mainScrollViewRef.current?.scrollTo({
+      y: Math.max(0, targetY - 6),
+      animated: true,
+    });
+
+    manualScrollTimer.current = setTimeout(() => {
+      isManualScrolling.current = false;
+    }, 600);
   };
 
-  const handleHorizontalScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const x = e.nativeEvent.contentOffset.x;
-    const idx = Math.round(x / screenWidth);
-    if (idx >= 0 && idx < DETAIL_TABS.length && DETAIL_TABS[idx] !== activeDetailTab) {
-      setActiveDetailTab(DETAIL_TABS[idx]);
-      try { Haptics.selectionAsync(); } catch {}
+  const handleVerticalScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (isManualScrolling.current) return;
+    const scrollY = e.nativeEvent.contentOffset.y;
+    const offset = scrollY + 50;
+
+    const docsY = sectionOffsets.current['Docs'];
+    const compY = sectionOffsets.current['Company Info'];
+    const subY = sectionOffsets.current['Subscription'];
+
+    let newTab: DetailTab = 'IPO';
+    if (docsY > 0 && offset >= docsY) {
+      newTab = 'Docs';
+    } else if (compY > 0 && offset >= compY) {
+      newTab = 'Company Info';
+    } else if (subY > 0 && offset >= subY) {
+      newTab = 'Subscription';
+    } else {
+      newTab = 'IPO';
+    }
+
+    if (newTab !== activeDetailTab) {
+      setActiveDetailTab(newTab);
+      const tabIdx = DETAIL_TABS.indexOf(newTab);
+      if (tabIdx >= 0) {
+        tabScrollViewRef.current?.scrollTo({ x: Math.max(0, tabIdx * 90 - 30), animated: true });
+      }
     }
   };
 
@@ -299,43 +341,63 @@ export default function BackendIpoDetailsScreen() {
       </View>
 
       <ScrollView
-        ref={horizontalScrollViewRef}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={handleHorizontalScroll}
+        ref={mainScrollViewRef}
+        showsVerticalScrollIndicator={false}
+        onScroll={handleVerticalScroll}
         scrollEventThrottle={16}
-        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: 12,
+          paddingBottom: insets.bottom + 100,
+        }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+          />
+        }
       >
-        {/* ── TAB 1: IPO OVERVIEW ── */}
-        <ScrollView
-          style={{ width: screenWidth }}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 12,
-            paddingBottom: insets.bottom + 100,
+        {/* ── SECTION 1: IPO OVERVIEW ── */}
+        <View
+          onLayout={(e) => {
+            sectionOffsets.current['IPO'] = e.nativeEvent.layout.y;
           }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              tintColor={colors.primary}
-            />
-          }
         >
           {/* HERO CARD (Redesigned with logo avatar & 2-column stats box) */}
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 16, borderRadius: 18 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 }}>
-              <View style={{ width: 54, height: 54, borderRadius: 14, overflow: 'hidden', backgroundColor: colors.cardAlt, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }}>
-                {ipo.company?.logoUrl ? (
-                  <Image source={{ uri: ipo.company.logoUrl }} style={{ width: 44, height: 44 }} resizeMode="contain" />
-                ) : (
+              {ipo.company?.logoUrl ? (
+                <Image
+                  source={{ uri: ipo.company.logoUrl }}
+                  style={{
+                    width: 54,
+                    height: 54,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.cardAlt,
+                  }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View
+                  style={{
+                    width: 54,
+                    height: 54,
+                    borderRadius: 14,
+                    backgroundColor: colors.cardAlt,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
                   <Text style={{ fontSize: 18, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primary }}>
                     {companyName.slice(0, 2).toUpperCase()}
                   </Text>
-                )}
-              </View>
+                </View>
+              )}
 
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', color: colors.foreground, marginBottom: 4 }}>
@@ -345,11 +407,22 @@ export default function BackendIpoDetailsScreen() {
                   <Text style={{ fontSize: 12, fontFamily: 'GoogleSansFlex_500Medium', color: colors.mutedForeground }}>
                     {ipo.marketSegment === 'SME' ? 'SME' : 'Mainboard'}
                   </Text>
-                  <View style={{ backgroundColor: '#D1FAE5', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
-                    <Text style={{ fontSize: 11, fontFamily: 'GoogleSansFlex_700Bold', color: '#059669' }}>
-                      {ipo.status}
-                    </Text>
-                  </View>
+                  {(() => {
+                    const st = (ipo.status || '').toUpperCase().trim();
+                    const isAllotmentOut = st === 'ALLOTMENT_OUT' || st === 'ALLOTTED' || st === 'ALLOTMENT' || st === 'ALLOTMENT_COMPLETED' || st === 'ALLOTTED_AVAILABLE' || st.includes('ALLOT');
+                    const isClosed = st === 'CLOSED' || st === 'ALLOTMENT_PENDING' || st === 'ALLOTTED_PENDING';
+                    const isListed = st === 'LISTED';
+                    const bg = isAllotmentOut ? 'rgba(16, 185, 129, 0.12)' : isClosed ? '#F1F5F9' : isListed ? '#E0E7FF' : '#D1FAE5';
+                    const fg = isAllotmentOut ? '#10B981' : isClosed ? '#64748B' : isListed ? '#4338CA' : '#059669';
+                    const label = isAllotmentOut ? 'Allotment Out' : isClosed ? 'Closed' : isListed ? 'Listed' : ipo.status;
+                    return (
+                      <View style={{ backgroundColor: bg, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                        <Text style={{ fontSize: 11, fontFamily: 'GoogleSansFlex_700Bold', color: fg }}>
+                          {label}
+                        </Text>
+                      </View>
+                    );
+                  })()}
                 </View>
               </View>
             </View>
@@ -586,17 +659,14 @@ export default function BackendIpoDetailsScreen() {
               );
             })()}
           </View>
-        </ScrollView>
+        </View>
 
-        {/* ── TAB 2: SUBSCRIPTION ── */}
-        <ScrollView
-          style={{ width: screenWidth }}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 12,
-            paddingBottom: insets.bottom + 100,
+        {/* ── SECTION 2: SUBSCRIPTION ── */}
+        <View
+          onLayout={(e) => {
+            sectionOffsets.current['Subscription'] = e.nativeEvent.layout.y;
           }}
+          style={{ marginTop: 20 }}
         >
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.sectionTitleOrange, { color: colors.primary, marginTop: 0 }]}>Subscription Figure</Text>
@@ -798,17 +868,14 @@ export default function BackendIpoDetailsScreen() {
               </View>
             );
           })()}
-        </ScrollView>
+        </View>
 
-        {/* ── TAB 3: COMPANY INFO ── */}
-        <ScrollView
-          style={{ width: screenWidth }}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 12,
-            paddingBottom: insets.bottom + 100,
+        {/* ── SECTION 3: COMPANY INFO ── */}
+        <View
+          onLayout={(e) => {
+            sectionOffsets.current['Company Info'] = e.nativeEvent.layout.y;
           }}
+          style={{ marginTop: 20 }}
         >
           {/* ABOUT COMPANY */}
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -974,17 +1041,14 @@ export default function BackendIpoDetailsScreen() {
               )}
             </View>
           </View>
-        </ScrollView>
+        </View>
 
-        {/* ── TAB 4: DOCS & PARTIES ── */}
-        <ScrollView
-          style={{ width: screenWidth }}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 12,
-            paddingBottom: insets.bottom + 100,
+        {/* ── SECTION 4: DOCS & PARTIES ── */}
+        <View
+          onLayout={(e) => {
+            sectionOffsets.current['Docs'] = e.nativeEvent.layout.y;
           }}
+          style={{ marginTop: 20 }}
         >
           {/* Document Filings Card */}
           {(() => {
@@ -1139,7 +1203,7 @@ export default function BackendIpoDetailsScreen() {
               Disclaimer: IPOVault provides data and tracking information for educational and reference purposes only. We are not a SEBI-registered advisor and do not provide financial or investment advice. All IPO details, GMP estimates, subscription data, and allotment tracking are gathered from public market sources and subject to market risks. Please consult a qualified financial advisor before making any investment decisions.
             </Text>
           </View>
-        </ScrollView>
+        </View>
       </ScrollView>
 
       {/* Bottom Sticky Action Bar */}
@@ -1188,13 +1252,13 @@ export default function BackendIpoDetailsScreen() {
                 <Feather
                   name="check-circle"
                   size={18}
-                  color={isClosedOrPast ? '#ffffff' : colors.primary}
+                  color={isClosedOrPast ? colors.primaryForeground : colors.primary}
                   style={{ marginRight: 6 }}
                 />
                 <Text
                   style={[
                     styles.applyBtnText,
-                    { color: isClosedOrPast ? '#ffffff' : colors.primary },
+                    { color: isClosedOrPast ? colors.primaryForeground : colors.primary },
                   ]}
                 >
                   Check Allotment
@@ -1209,11 +1273,25 @@ export default function BackendIpoDetailsScreen() {
                 onPress={() =>
                   router.push({
                     pathname: '/apply-ipo',
-                    params: { ipoId: ipo.id },
+                    params: {
+                      ipoId: ipo.id,
+                      item: JSON.stringify(ipo),
+                      name: ipo.company?.displayName || ipo.companyName || ipo.symbol,
+                      company_name: ipo.company?.displayName || ipo.companyName || ipo.symbol,
+                      symbol: ipo.symbol,
+                      priceBandLow: ipo.priceBandLow != null ? String(ipo.priceBandLow) : undefined,
+                      priceBandHigh: ipo.priceBandHigh != null ? String(ipo.priceBandHigh) : undefined,
+                      buy_price: String(ipo.priceBandHigh || ipo.priceBandLow || ipo.issuePriceInr || 0),
+                      lotSize: ipo.lotSize != null ? String(ipo.lotSize) : undefined,
+                      closeDate: ipo.closeDate || undefined,
+                      openDate: ipo.openDate || undefined,
+                      logoUrl: ipo.company?.logoUrl || ipo.logoUrl || undefined,
+                      issueType: ipo.marketSegment === 'SME' ? 'SME' : 'Mainboard',
+                    },
                   } as any)
                 }
               >
-                <Text style={styles.applyBtnText}>Apply Now</Text>
+                <Text style={[styles.applyBtnText, { color: colors.primaryForeground }]}>Apply Now</Text>
               </TouchableOpacity>
             )}
           </View>

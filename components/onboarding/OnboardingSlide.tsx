@@ -47,14 +47,13 @@ export function OnboardingSlide({
 
   return (
     <View style={styles.slideContainer}>
-      {/* 1. Prominent Logo & App Title Section */}
+      {/* 1. Prominent Logo Section */}
       <View style={styles.brandingHeader}>
         <Image
           source={require('@/assets/images/icon.png')}
           style={styles.logoImage}
           resizeMode="cover"
         />
-        <Text style={styles.appName}>IPOVault</Text>
       </View>
 
       {/* 2. Illustration (Contain mode, shifted lower) */}
@@ -94,20 +93,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
-    marginBottom: 32,
+    marginBottom: 24,
   },
   logoImage: {
-    width: 88,
-    height: 88,
-    borderRadius: 22,
-  },
-  appName: {
-    fontSize: 32,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    color: '#C39B27',
-    letterSpacing: -0.5,
-    marginTop: 12,
-    textAlign: 'center',
+    width: 132,
+    height: 132,
+    borderRadius: 30,
   },
   illustrationContainer: {
     width: '100%',

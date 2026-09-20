@@ -58,6 +58,9 @@ export type IPOListing = {
   lot_size?: number;
   total_sub?: number;
   qib_sub?: number;
+  // Enriched from ipo_master when available (so applied backend IPOs retain OPEN status on dashboard)
+  status?: string;
+  lifecycle_status?: string;
 };
 
 export type ApplicationStatus = 'Applied' | 'Mandate Approved' | 'Allotted' | 'Partially Allotted' | 'Holding' | 'Not Allotted' | 'Sold' | 'Cancelled';
@@ -67,6 +70,7 @@ export type ApplicationWithDetails = {
   user_id: string;
   ipo_id: string;
   status: ApplicationStatus;
+  shares_count?: number | null;
   sell_price: number | null;
   sale_date: string | null;
   tax: number;
@@ -303,11 +307,21 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     );
 
     let masterRows: IPOListing[] = [];
+    // Build a master-by-id map for enriching ipo_listings rows that came from backend IPOs.
+    // Previously we only appended master entries NOT in ipo_listings, which meant once a backend
+    // IPO (e.g., SS Retail) was applied (inserted into ipo_listings), it lost its status/price-band
+    // data and disappeared from the dashboard's Open IPOs section.
+    let masterById: Map<string, any> = new Map();
     try {
       const masterIPOs = await db.getAllAsync<any>(
         `SELECT *, price_band_max AS buy_price, lot_size AS quantity FROM ipo_master WHERE deleted_at IS NULL AND (status = 'OPEN' OR status = 'UPCOMING' OR is_favorite = 1)`
       );
       const existingIds = new Set(ipoRows.map((r) => r.id));
+
+      for (const m of masterIPOs) {
+        if (m && m.id) masterById.set(m.id, m);
+      }
+
       masterRows = masterIPOs
         .filter((m) => m && m.id && !existingIds.has(m.id))
         .map((m) => ({
@@ -338,11 +352,40 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       // master table optional
     }
 
-    setIPOs([...ipoRows, ...masterRows]);
+    // Enrich ipo_listings rows that have a corresponding ipo_master record.
+    // This carries over status, lifecycle_status, price band, lot size, gmp data etc.
+    // so that applied backend IPOs continue to appear correctly on the dashboard.
+    const enrichedIpoRows = ipoRows.map((row) => {
+      const master = masterById.get(row.id);
+      if (!master) return row;
+      return {
+        ...row,
+        // Carry over rich metadata from master — prefer existing ipo_listings values where non-empty
+        status: row.status || master.status || '',
+        lifecycle_status: row.lifecycle_status || master.lifecycle_status || '',
+        company_name: row.company_name || master.company_name || master.ipo_name || row.ipo_name,
+        ipo_name: row.ipo_name || master.ipo_name || master.company_name || '',
+        logo_url: row.logo_url || master.logo_url || '',
+        open_date: row.open_date || master.open_date || '',
+        close_date: row.close_date || master.close_date || '',
+        listing_date: row.listing_date || master.listing_date || '',
+        allotment_date: row.allotment_date || master.allotment_date || '',
+        price_band_min: row.price_band_min ?? master.price_band_min ?? null,
+        price_band_max: row.price_band_max ?? master.price_band_max ?? null,
+        lot_size: row.lot_size ?? master.lot_size ?? null,
+        gmp_amount: row.gmp_amount ?? master.gmp_amount ?? null,
+        gmp_percent: row.gmp_percent ?? master.gmp_percent ?? null,
+        total_sub: row.total_sub ?? master.total_sub ?? null,
+        buy_price: row.buy_price > 0 ? row.buy_price : (master.price_band_max || master.price_band_min || row.buy_price),
+        quantity: row.quantity > 0 ? row.quantity : (master.lot_size || row.quantity),
+      };
+    });
+
+    setIPOs([...enrichedIpoRows, ...masterRows]);
 
     const appRows = await db.getAllAsync<ApplicationWithDetails>(`
       SELECT a.id, a.user_id, a.ipo_id, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
-             a.is_favorite, a.created_at,
+             a.shares_count, a.is_favorite, a.created_at, a.updated_at,
              u.name        AS user_name,
              u.broker      AS user_broker,
              u.client_id   AS user_client_id,
@@ -1001,6 +1044,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           user_id: a.user_id,
           ipo_id: a.ipo_id,
           status: a.status,
+          shares_count: (a as any).shares_count ?? a.quantity ?? null,
+          quantity: a.quantity ?? (a as any).shares_count ?? null,
           sell_price: a.sell_price,
           sale_date: a.sale_date,
           tax: a.tax,
@@ -1009,6 +1054,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           bank_name: (a as any).bank_name ?? (a as any).user_bank_name ?? '',
           upi_app: (a as any).upi_app ?? (a as any).user_upi_app ?? '',
           created_at: (a as any).created_at,
+          updated_at: (a as any).updated_at,
         })),
         allotments: (rawAllotments || []).map((alt) => ({
           id: alt.id,
@@ -1045,23 +1091,51 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       ipos?: IPOListing[];
       master_ipos?: any[];
       applications?: Array<{
-        id: string; user_id: string; ipo_id: string; status: ApplicationStatus;
-        sell_price: number | null; sale_date: string | null; tax: number; user_cut: number;
-        is_favorite?: number; bank_name?: string; upi_app?: string; created_at?: string;
+        id: string;
+        user_id: string;
+        ipo_id: string;
+        status: ApplicationStatus;
+        shares_count?: number | null;
+        quantity?: number | null;
+        sell_price: number | null;
+        sale_date: string | null;
+        tax: number;
+        user_cut: number;
+        is_favorite?: number;
+        bank_name?: string;
+        upi_app?: string;
+        created_at?: string;
+        updated_at?: string;
       }>;
       allotments?: Array<{
-        id: string; application_id: string; user_id: string; ipo_id: string;
-        allotment_status: string; allotted_lots: number; allotted_shares: number;
-        allotment_price: number; application_amount: number; refund_amount: number;
-        registrar?: string; verification_method?: string; checked_at?: string; error_code?: string;
-        created_at?: string; updated_at?: string;
+        id: string;
+        application_id: string;
+        user_id: string;
+        ipo_id: string;
+        allotment_status: string;
+        allotted_lots: number;
+        allotted_shares: number;
+        allotment_price: number;
+        application_amount: number;
+        refund_amount: number;
+        registrar?: string;
+        verification_method?: string;
+        checked_at?: string;
+        error_code?: string;
+        created_at?: string;
+        updated_at?: string;
       }>;
     };
 
-    let bankImported = 0; let userCount = 0; let ipoCount = 0; let appCount = 0; let allotmentCount = 0;
+    let bankImported = 0;
+    let userCount = 0;
+    let ipoCount = 0;
+    let appCount = 0;
+    let allotmentCount = 0;
     const userIdMap = new Map<string, string>();
     const ipoIdMap = new Map<string, string>();
     const appIdMap = new Map<string, string>();
+    const usedAppIds = new Set<string>();
     const now = new Date().toISOString();
     const suppressSync = options?.suppressLegacySync ?? false;
 
@@ -1072,11 +1146,21 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         // 1. Process Banks
         for (const bank of data.banks ?? []) {
           if (!bank || !bank.bank_name) continue;
-          const existing = await safeGetFirstAsync(db, 'SELECT id FROM bank_accounts WHERE bank_name=?', [bank.bank_name], 'DBContext.importJSON.bank');
+          const existing = await safeGetFirstAsync(
+            db,
+            'SELECT id FROM bank_accounts WHERE bank_name=?',
+            [bank.bank_name],
+            'DBContext.importJSON.bank'
+          );
           if (!existing) {
             const id = Crypto.randomUUID();
             const balance = bank.balance ?? 0;
-            await safeRunAsync(db, 'INSERT INTO bank_accounts (id, bank_name, balance, created_at, updated_at) VALUES (?,?,?,?,?)', [id, bank.bank_name, balance, now, now], 'DBContext.importJSON.insertBank');
+            await safeRunAsync(
+              db,
+              'INSERT INTO bank_accounts (id, bank_name, balance, created_at, updated_at) VALUES (?,?,?,?,?)',
+              [id, bank.bank_name, balance, now, now],
+              'DBContext.importJSON.insertBank'
+            );
             bankImported++;
             if (!suppressSync) {
               await uploadService.enqueue(db, 'bank_accounts', id);
@@ -1111,7 +1195,10 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           const restoredAvatarUrl = getEffectiveAvatarUrl({
             id: uId,
             name: name,
-            avatar_url: u.avatar_url || (u as any).avatarUrl || (typeof (u as any).avatar === 'string' ? (u as any).avatar : null),
+            avatar_url:
+              u.avatar_url ||
+              (u as any).avatarUrl ||
+              (typeof (u as any).avatar === 'string' ? (u as any).avatar : null),
           });
 
           const archivedVal = u.archived ? 1 : 0;
@@ -1166,9 +1253,13 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           }
 
           let restoredLogoUrl = '';
-          const logoInput = (ipo as any).companyLogo || (ipo as any).logo || (ipo as any).logo_data || ipo.logo_url;
+          const logoInput =
+            (ipo as any).companyLogo || (ipo as any).logo || (ipo as any).logo_data || ipo.logo_url;
           if (logoInput) {
-            if (typeof logoInput === 'string' && (logoInput.startsWith('http://') || logoInput.startsWith('https://'))) {
+            if (
+              typeof logoInput === 'string' &&
+              (logoInput.startsWith('http://') || logoInput.startsWith('https://'))
+            ) {
               restoredLogoUrl = logoInput;
             } else {
               try {
@@ -1176,7 +1267,9 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
                 if (savedPath) {
                   restoredLogoUrl = savedPath;
                 } else if (typeof logoInput === 'string' && logoInput.startsWith('file://')) {
-                  const fileCheck = await FileSystem.getInfoAsync(logoInput).catch(() => ({ exists: false }));
+                  const fileCheck = await FileSystem.getInfoAsync(logoInput).catch(() => ({
+                    exists: false,
+                  }));
                   if (fileCheck.exists) {
                     restoredLogoUrl = logoInput;
                   }
@@ -1214,24 +1307,37 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
                 logo_url = CASE WHEN ? != '' THEN ? ELSE logo_url END
               WHERE id = ?`,
               [
-                ipo.buy_price || 0, ipo.buy_price || 0,
-                ipo.quantity || 0, ipo.quantity || 0,
+                ipo.buy_price || 0,
+                ipo.buy_price || 0,
+                ipo.quantity || 0,
+                ipo.quantity || 0,
                 ipo.gmp_percent ?? null,
                 ipo.gmp_value ?? null,
-                ipo.symbol || '', ipo.symbol || '',
-                ipo.company_name || '', ipo.company_name || '',
-                ipo.backend_ipo_id || '', ipo.backend_ipo_id || '',
-                ipo.open_date || '', ipo.open_date || '',
-                ipo.close_date || '', ipo.close_date || '',
-                ipo.listing_date || '', ipo.listing_date || '',
-                ipo.allotment_date || '', ipo.allotment_date || '',
-                ipo.registrar || '', ipo.registrar || '',
-                ipo.exchange || '', ipo.exchange || '',
-                ipo.issue_type || '', ipo.issue_type || '',
+                ipo.symbol || '',
+                ipo.symbol || '',
+                ipo.company_name || '',
+                ipo.company_name || '',
+                ipo.backend_ipo_id || '',
+                ipo.backend_ipo_id || '',
+                ipo.open_date || '',
+                ipo.open_date || '',
+                ipo.close_date || '',
+                ipo.close_date || '',
+                ipo.listing_date || '',
+                ipo.listing_date || '',
+                ipo.allotment_date || '',
+                ipo.allotment_date || '',
+                ipo.registrar || '',
+                ipo.registrar || '',
+                ipo.exchange || '',
+                ipo.exchange || '',
+                ipo.issue_type || '',
+                ipo.issue_type || '',
                 ipo.archived !== undefined ? archivedVal : null,
                 ipo.is_favorite !== undefined ? isFavVal : null,
-                restoredLogoUrl, restoredLogoUrl,
-                existing.id
+                restoredLogoUrl,
+                restoredLogoUrl,
+                existing.id,
               ],
               'DBContext.importJSON.updateIPO'
             );
@@ -1240,7 +1346,29 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
             await safeRunAsync(
               db,
               'INSERT INTO ipo_listings (id, backend_ipo_id, symbol, company_name, ipo_name, buy_price, quantity, open_date, close_date, listing_date, logo_url, archived, is_favorite, registrar, exchange, issue_type, allotment_date, gmp_percent, gmp_value, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-              [newId, ipo.backend_ipo_id || null, ipo.symbol || '', ipo.company_name || ipoName, ipoName, ipo.buy_price || 0, ipo.quantity || 0, ipo.open_date || '', ipo.close_date || '', ipo.listing_date || '', restoredLogoUrl, archivedVal, isFavVal, ipo.registrar || '', ipo.exchange || '', ipo.issue_type || '', ipo.allotment_date || '', ipo.gmp_percent || 0, ipo.gmp_value || 0, now, now],
+              [
+                newId,
+                ipo.backend_ipo_id || null,
+                ipo.symbol || '',
+                ipo.company_name || ipoName,
+                ipoName,
+                ipo.buy_price || 0,
+                ipo.quantity || 0,
+                ipo.open_date || '',
+                ipo.close_date || '',
+                ipo.listing_date || '',
+                restoredLogoUrl,
+                archivedVal,
+                isFavVal,
+                ipo.registrar || '',
+                ipo.exchange || '',
+                ipo.issue_type || '',
+                ipo.allotment_date || '',
+                ipo.gmp_percent || 0,
+                ipo.gmp_value || 0,
+                now,
+                now,
+              ],
               'DBContext.importJSON.insertIPO'
             );
             ipoIdMap.set(ipoId, newId);
@@ -1295,17 +1423,59 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
               is_favorite=COALESCE(excluded.is_favorite, ipo_master.is_favorite),
               updated_at=excluded.updated_at`,
             [
-              m.id, m.company_name || '', m.ipo_name || '', m.symbol || '', m.exchange || '', m.issue_type || '',
-              m.price_band_min ?? null, m.price_band_max ?? null, m.lot_size ?? null, m.issue_size ?? null,
-              m.listing_date || '', m.open_date || '', m.close_date || '', m.allotment_date || '', m.refund_date || '', m.demat_credit_date || '',
-              m.registrar || '', m.lead_manager || '', m.status || 'Unknown', m.lifecycle_status || 'Unknown', m.lifecycle_confidence || 'Low',
-              m.lifecycle_source || '', m.lifecycle_last_verified_at || null, m.logo_url || '', m.sector || '', m.description || '',
-              m.website || '', m.prospectus_url || '', m.retail_sub ?? null, m.qib_sub ?? null, m.nii_sub ?? null, m.employee_sub ?? null,
-              m.shareholder_sub ?? null, m.anchor_sub ?? null, m.total_sub ?? null, m.subscription_timestamp || null, m.registrar_website || '',
-              m.allotment_link || '', m.listing_price ?? null, m.listing_gain_percent ?? null, m.current_price ?? null,
-              m.current_price_updated_at || null, m.gmp_amount ?? null, m.gmp_percent ?? null, m.profit_per_lot ?? null,
-              m.gmp_updated_at || null, m.is_favorite ?? 0, m.source_type || 'SERVER', m.sync_version ?? 0, m.sync_status || 'SYNCED',
-              m.last_synced_at || now, m.created_at || now, m.updated_at || now
+              m.id,
+              m.company_name || '',
+              m.ipo_name || '',
+              m.symbol || '',
+              m.exchange || '',
+              m.issue_type || '',
+              m.price_band_min ?? null,
+              m.price_band_max ?? null,
+              m.lot_size ?? null,
+              m.issue_size ?? null,
+              m.listing_date || '',
+              m.open_date || '',
+              m.close_date || '',
+              m.allotment_date || '',
+              m.refund_date || '',
+              m.demat_credit_date || '',
+              m.registrar || '',
+              m.lead_manager || '',
+              m.status || 'Unknown',
+              m.lifecycle_status || 'Unknown',
+              m.lifecycle_confidence || 'Low',
+              m.lifecycle_source || '',
+              m.lifecycle_last_verified_at || null,
+              m.logo_url || '',
+              m.sector || '',
+              m.description || '',
+              m.website || '',
+              m.prospectus_url || '',
+              m.retail_sub ?? null,
+              m.qib_sub ?? null,
+              m.nii_sub ?? null,
+              m.employee_sub ?? null,
+              m.shareholder_sub ?? null,
+              m.anchor_sub ?? null,
+              m.total_sub ?? null,
+              m.subscription_timestamp || null,
+              m.registrar_website || '',
+              m.allotment_link || '',
+              m.listing_price ?? null,
+              m.listing_gain_percent ?? null,
+              m.current_price ?? null,
+              m.current_price_updated_at || null,
+              m.gmp_amount ?? null,
+              m.gmp_percent ?? null,
+              m.profit_per_lot ?? null,
+              m.gmp_updated_at || null,
+              m.is_favorite ?? 0,
+              m.source_type || 'SERVER',
+              m.sync_version ?? 0,
+              m.sync_status || 'SYNCED',
+              m.last_synced_at || now,
+              m.created_at || now,
+              m.updated_at || now,
             ],
             'DBContext.importJSON.masterIpo'
           );
@@ -1333,50 +1503,102 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           );
 
           if (!userExists || !ipoExists) {
-            console.warn(`[DBContext.importJSON] Skipping application because user (${targetUserId}) or IPO (${targetIpoId}) does not exist.`);
+            console.warn(
+              `[DBContext.importJSON] Skipping application because user (${targetUserId}) or IPO (${targetIpoId}) does not exist.`
+            );
             continue;
           }
 
           const isFavVal = app.is_favorite ? 1 : 0;
-          const dup = await safeGetFirstAsync<{ id: string }>(
-            db,
-            'SELECT id FROM ipo_applications WHERE user_id = ? AND ipo_id = ? AND deleted_at IS NULL',
-            [targetUserId, targetIpoId],
-            'DBContext.importJSON.app'
-          );
-          if (dup) {
-            appIdMap.set(app.id, dup.id);
+          const targetSharesCount = app.shares_count ?? app.quantity ?? null;
+
+          // 1. Check if application matches by exact ID
+          let existing: { id: string } | null = null;
+          if (app.id && !usedAppIds.has(app.id)) {
+            existing = await safeGetFirstAsync<{ id: string }>(
+              db,
+              'SELECT id FROM ipo_applications WHERE id = ?',
+              [app.id],
+              'DBContext.importJSON.appById'
+            );
+          }
+
+          // 2. If not matched by ID, check if an unmapped existing application exists with matching user, ipo, and status
+          if (!existing) {
+            const candidates = await safeGetAllAsync<{ id: string; status: string }>(
+              db,
+              'SELECT id, status FROM ipo_applications WHERE user_id = ? AND ipo_id = ? AND deleted_at IS NULL',
+              [targetUserId, targetIpoId],
+              'DBContext.importJSON.appCandidates'
+            );
+            const statusMatch = candidates.find((c) => !usedAppIds.has(c.id) && c.status === app.status);
+            if (statusMatch) {
+              existing = statusMatch;
+            }
+          }
+
+          if (existing) {
+            usedAppIds.add(existing.id);
+            appIdMap.set(app.id, existing.id);
             await safeRunAsync(
               db,
               `UPDATE ipo_applications SET
                 status = COALESCE(?, status),
+                shares_count = CASE WHEN ? IS NOT NULL THEN ? ELSE shares_count END,
                 sell_price = CASE WHEN ? IS NOT NULL THEN ? ELSE sell_price END,
                 sale_date = CASE WHEN ? IS NOT NULL AND ? != "" THEN ? ELSE sale_date END,
                 tax = COALESCE(?, tax),
                 user_cut = COALESCE(?, user_cut),
                 is_favorite = COALESCE(?, is_favorite),
                 bank_name = CASE WHEN ? IS NOT NULL AND ? != "" THEN ? ELSE bank_name END,
-                upi_app = CASE WHEN ? IS NOT NULL AND ? != "" THEN ? ELSE upi_app END
+                upi_app = CASE WHEN ? IS NOT NULL AND ? != "" THEN ? ELSE upi_app END,
+                updated_at = ?
               WHERE id = ?`,
               [
                 app.status || null,
-                app.sell_price !== undefined ? app.sell_price : null, app.sell_price ?? null,
-                app.sale_date || null, app.sale_date || '', app.sale_date || null,
+                targetSharesCount,
+                targetSharesCount,
+                app.sell_price !== undefined ? app.sell_price : null,
+                app.sell_price ?? null,
+                app.sale_date || null,
+                app.sale_date || '',
+                app.sale_date || null,
                 app.tax !== undefined ? app.tax : null,
                 app.user_cut !== undefined ? app.user_cut : null,
                 app.is_favorite !== undefined ? isFavVal : null,
-                app.bank_name || null, app.bank_name || '', app.bank_name || null,
-                app.upi_app || null, app.upi_app || '', app.upi_app || null,
-                dup.id
+                app.bank_name || null,
+                app.bank_name || '',
+                app.bank_name || null,
+                app.upi_app || null,
+                app.upi_app || '',
+                app.upi_app || null,
+                app.updated_at || now,
+                existing.id,
               ],
               'DBContext.importJSON.updateApp'
             );
           } else {
             const id = app.id || Crypto.randomUUID();
+            usedAppIds.add(id);
             await safeRunAsync(
               db,
-              'INSERT INTO ipo_applications (id, user_id, ipo_id, status, sell_price, sale_date, tax, user_cut, is_favorite, bank_name, upi_app, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
-              [id, targetUserId, targetIpoId, app.status || 'Applied', app.sell_price ?? null, app.sale_date ?? null, app.tax ?? 0, app.user_cut ?? 0, isFavVal, app.bank_name || '', app.upi_app || '', app.created_at || now, now],
+              'INSERT INTO ipo_applications (id, user_id, ipo_id, status, shares_count, sell_price, sale_date, tax, user_cut, is_favorite, bank_name, upi_app, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+              [
+                id,
+                targetUserId,
+                targetIpoId,
+                app.status || 'Applied',
+                targetSharesCount,
+                app.sell_price ?? null,
+                app.sale_date ?? null,
+                app.tax ?? 0,
+                app.user_cut ?? 0,
+                isFavVal,
+                app.bank_name || '',
+                app.upi_app || '',
+                app.created_at || now,
+                app.updated_at || now,
+              ],
               'DBContext.importJSON.insertApp'
             );
             appIdMap.set(app.id, id);
@@ -1499,7 +1721,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         `"${avatarBase64 || ''}"`,
         `"${app.ipo_name || ''}"`,
         app.buy_price ?? 0,
-        app.quantity ?? 0,
+        app.quantity ?? (app as any).shares_count ?? 0,
         `"${ipo?.open_date ?? ''}"`,
         `"${ipo?.close_date ?? ''}"`,
         `"${ipo?.listing_date ?? ''}"`,
@@ -1545,6 +1767,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       return -1;
     };
 
+    const idxId = getIdx(['id', 'app_id', 'application_id', 'application id']);
     const idxPan = getIdx(['pan', 'pan_number', 'pan number']);
     const idxName = getIdx(['name', 'user', 'user_name', 'user name']);
     const idxAvatar = getIdx(['avatar_url', 'avatar url', 'avatar', 'user image']);
@@ -1556,7 +1779,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     const idxIpoName = getIdx(['ipo_name', 'ipo name', 'ipo']);
     const idxLogo = getIdx(['logo_url', 'logo url', 'logo', 'company logo']);
     const idxBuyPrice = getIdx(['buy_price', 'buy price']);
-    const idxQty = getIdx(['qty', 'quantity']);
+    const idxQty = getIdx(['qty', 'quantity', 'shares_count', 'shares']);
     const idxIpoOpen = getIdx(['ipo open', 'open_date', 'open date']);
     const idxIpoClose = getIdx(['ipo close', 'close_date', 'close date']);
     const idxIpoListing = getIdx(['ipo listing', 'listing_date', 'listing date']);
@@ -1573,8 +1796,18 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     const bankSet = new Set<string>();
 
     type PendingApp = {
-      pan: string; name: string; ipoName: string; status: ApplicationStatus;
-      sellPrice: number | null; saleDate: string | null; tax: number; userCut: number;
+      id?: string;
+      pan: string;
+      name: string;
+      ipoName: string;
+      status: ApplicationStatus;
+      qty: number;
+      sellPrice: number | null;
+      saleDate: string | null;
+      tax: number;
+      userCut: number;
+      bank?: string;
+      upiApp?: string;
     };
     const pendingApps: PendingApp[] = [];
 
@@ -1582,6 +1815,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       if (row.length === 0 || (row.length === 1 && !row[0].trim())) continue;
       const getVal = (i: number) => (i >= 0 && i < row.length ? row[i].trim() : '');
 
+      const appId = getVal(idxId);
       const name = getVal(idxName);
       const pan = getVal(idxPan);
       const avatarUrl = getVal(idxAvatar);
@@ -1629,7 +1863,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         ipoMap.set(ipoName, {
           ipo_name: ipoName,
           buy_price: parseFloat(buyPriceStr) || 0,
-          quantity: parseInt(qtyStr) || 0,
+          quantity: parseInt(qtyStr, 10) || 0,
           open_date: ipoOpen,
           close_date: ipoClose,
           listing_date: ipoListing,
@@ -1646,14 +1880,18 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
       if (userKey && ipoName && status) {
         pendingApps.push({
+          id: appId || undefined,
           pan,
           name,
           ipoName,
           status: status as ApplicationStatus,
+          qty: parseInt(qtyStr, 10) || 0,
           sellPrice: sellPriceStr ? parseFloat(sellPriceStr) : null,
           saleDate: saleDate || null,
           tax: parseFloat(taxStr) || 0,
           userCut: parseFloat(userCutStr) || 0,
+          bank,
+          upiApp,
         });
       }
     }
@@ -1734,25 +1972,104 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Insert applications (skip duplicates)
+    // Insert applications (preserving separate cards / split applications)
     let appCount = 0;
+    const usedCsvAppIds = new Set<string>();
+
     for (const app of pendingApps) {
       const userId = userToId.get(app.pan) || userToId.get(app.name);
       const ipoId  = ipoNameToId.get(app.ipoName);
       if (!userId || !ipoId) continue;
-      const dup = await safeGetFirstAsync(db, 'SELECT id FROM ipo_applications WHERE user_id=? AND ipo_id=? AND deleted_at IS NULL', [userId, ipoId], 'DBContext.importCSV.app');
-      if (dup) {
+
+      let existing: { id: string } | null = null;
+      if (app.id && !usedCsvAppIds.has(app.id)) {
+        existing = await safeGetFirstAsync<{ id: string }>(
+          db,
+          'SELECT id FROM ipo_applications WHERE id = ? AND deleted_at IS NULL',
+          [app.id],
+          'DBContext.importCSV.appById'
+        );
+      }
+
+      if (!existing) {
+        const candidates = await safeGetAllAsync<{ id: string; status: string }>(
+          db,
+          'SELECT id, status FROM ipo_applications WHERE user_id = ? AND ipo_id = ? AND deleted_at IS NULL',
+          [userId, ipoId],
+          'DBContext.importCSV.appCandidates'
+        );
+        const statusMatch = candidates.find((c) => !usedCsvAppIds.has(c.id) && c.status === app.status);
+        if (statusMatch) {
+          existing = statusMatch;
+        } else if (
+          candidates.length === 1 &&
+          !usedCsvAppIds.has(candidates[0].id) &&
+          pendingApps.filter((p) => (userToId.get(p.pan) || userToId.get(p.name)) === userId && ipoNameToId.get(p.ipoName) === ipoId).length === 1
+        ) {
+          existing = candidates[0];
+        }
+      }
+
+      const targetQty = app.qty > 0 ? app.qty : null;
+
+      if (existing) {
+        usedCsvAppIds.add(existing.id);
         await safeRunAsync(
           db,
-          'UPDATE ipo_applications SET status = COALESCE(?, status), sell_price = CASE WHEN ? IS NOT NULL THEN ? ELSE sell_price END, sale_date = CASE WHEN ? IS NOT NULL AND ? != "" THEN ? ELSE sale_date END, tax = COALESCE(?, tax), user_cut = COALESCE(?, user_cut) WHERE id = ?',
-          [app.status || null, app.sellPrice ?? null, app.sellPrice ?? null, app.saleDate || null, app.saleDate || '', app.saleDate || null, app.tax ?? null, app.userCut ?? null, (dup as any).id],
+          `UPDATE ipo_applications SET
+            status = COALESCE(?, status),
+            shares_count = CASE WHEN ? IS NOT NULL THEN ? ELSE shares_count END,
+            sell_price = CASE WHEN ? IS NOT NULL THEN ? ELSE sell_price END,
+            sale_date = CASE WHEN ? IS NOT NULL AND ? != "" THEN ? ELSE sale_date END,
+            tax = COALESCE(?, tax),
+            user_cut = COALESCE(?, user_cut),
+            bank_name = CASE WHEN ? IS NOT NULL AND ? != "" THEN ? ELSE bank_name END,
+            upi_app = CASE WHEN ? IS NOT NULL AND ? != "" THEN ? ELSE upi_app END,
+            updated_at = ?
+          WHERE id = ?`,
+          [
+            app.status || null,
+            targetQty,
+            targetQty,
+            app.sellPrice !== undefined ? app.sellPrice : null,
+            app.sellPrice ?? null,
+            app.saleDate || null,
+            app.saleDate || '',
+            app.saleDate || null,
+            app.tax !== undefined ? app.tax : null,
+            app.userCut !== undefined ? app.userCut : null,
+            app.bank || null,
+            app.bank || '',
+            app.bank || null,
+            app.upiApp || null,
+            app.upiApp || '',
+            app.upiApp || null,
+            now,
+            existing.id,
+          ],
           'DBContext.importCSV.updateApp'
         );
       } else {
+        const newId = app.id || Crypto.randomUUID();
+        usedCsvAppIds.add(newId);
         await safeRunAsync(
           db,
-          'INSERT INTO ipo_applications (id, user_id, ipo_id, status, sell_price, sale_date, tax, user_cut, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-          [Crypto.randomUUID(), userId, ipoId, app.status || 'Applied', app.sellPrice ?? null, app.saleDate ?? null, app.tax ?? 0, app.userCut ?? 0, now, now],
+          'INSERT INTO ipo_applications (id, user_id, ipo_id, status, shares_count, sell_price, sale_date, tax, user_cut, bank_name, upi_app, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          [
+            newId,
+            userId,
+            ipoId,
+            app.status || 'Applied',
+            targetQty,
+            app.sellPrice ?? null,
+            app.saleDate ?? null,
+            app.tax ?? 0,
+            app.userCut ?? 0,
+            app.bank || '',
+            app.upiApp || '',
+            now,
+            now,
+          ],
           'DBContext.importCSV.insertApp'
         );
         appCount++;

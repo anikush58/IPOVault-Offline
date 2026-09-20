@@ -289,9 +289,9 @@ export function getLifecycleStatusLabel(status: NormalizedIPOStatus): string {
     case 'CLOSED':
       return 'Closed';
     case 'ALLOTTED_PENDING':
-      return 'Allotment Pending';
+      return 'Closed';
     case 'ALLOTTED_AVAILABLE':
-      return 'Allotment Available';
+      return 'Allotment Out';
     case 'LISTING_UPCOMING':
       return 'Listing Soon';
     case 'LISTED':

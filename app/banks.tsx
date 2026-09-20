@@ -205,8 +205,8 @@ function BankModal({
                 </View>
               )}
 
-              <TouchableOpacity onPress={handleSave} style={ms.goldBtn} activeOpacity={0.8}>
-                <Text style={ms.goldBtnText}>{isAdd ? 'Add Bank Account' : 'Save Details'}</Text>
+              <TouchableOpacity onPress={handleSave} style={[ms.goldBtn, { backgroundColor: colors.primary }]} activeOpacity={0.8}>
+                <Text style={[ms.goldBtnText, { color: colors.primaryForeground }]}>{isAdd ? 'Add Bank Account' : 'Save Details'}</Text>
               </TouchableOpacity>
             </ScrollView>
           </Pressable>

@@ -209,8 +209,8 @@ export default function AuthScreen() {
                 onPress={signInWithGoogle}
                 activeOpacity={0.8}
               >
-                <Feather name="globe" size={20} color="#FFFFFF" style={styles.googleIcon} />
-                <Text style={styles.googleButtonText}>Continue with Google</Text>
+                <Feather name="globe" size={20} color={colors.primaryForeground} style={styles.googleIcon} />
+                <Text style={[styles.googleButtonText, { color: colors.primaryForeground }]}>Continue with Google</Text>
               </TouchableOpacity>
 
               <Text style={[styles.disclaimerText, { color: colors.mutedForeground }]}>

@@ -74,6 +74,7 @@ export async function initDB(db: SQLiteDatabase) {
       sale_date TEXT,
       tax REAL DEFAULT 0,
       user_cut REAL DEFAULT 0,
+      shares_count INTEGER DEFAULT NULL,
       is_favorite INTEGER DEFAULT 0,
       bank_name TEXT DEFAULT '',
       upi_app TEXT DEFAULT '',

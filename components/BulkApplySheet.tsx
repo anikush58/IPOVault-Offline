@@ -224,13 +224,16 @@ export function BulkApplySheet({ visible, onClose }: Props) {
 
     setBulkLoading(true);
     try {
-      // Sync selected IPO details into ipo_listings table to ensure complete metadata
+      // Sync selected IPO details into ipo_listings table to ensure complete metadata.
+      // IMPORTANT: Use INSERT OR IGNORE + UPDATE (not INSERT OR REPLACE) to avoid
+      // cascade-deleting existing ipo_applications (ipo_id FK ON DELETE CASCADE).
       const now = new Date().toISOString();
       await db.runAsync(
-        `INSERT OR REPLACE INTO ipo_listings (
+        `INSERT OR IGNORE INTO ipo_listings (
           id, ipo_name, company_name, symbol, buy_price, quantity, open_date, close_date, listing_date, allotment_date,
-          registrar, exchange, issue_type, archived, is_favorite, logo_url, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)`,
+          registrar, exchange, issue_type, archived, is_favorite, logo_url, created_at, updated_at,
+          sync_version, sync_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, 0, 'PENDING')`,
         [
           selectedIPO.id,
           selectedIPO.ipo_name,
@@ -248,6 +251,31 @@ export function BulkApplySheet({ visible, onClose }: Props) {
           selectedIPO.logo_url || '',
           now,
           now,
+        ]
+      );
+      // Update only metadata fields — never delete the row (which would cascade-delete applications)
+      await db.runAsync(
+        `UPDATE ipo_listings SET
+          ipo_name = ?, company_name = ?, symbol = ?, buy_price = ?, quantity = ?,
+          open_date = ?, close_date = ?, listing_date = ?, allotment_date = ?,
+          registrar = ?, exchange = ?, issue_type = ?, logo_url = ?, updated_at = ?
+         WHERE id = ?`,
+        [
+          selectedIPO.ipo_name,
+          selectedIPO.company_name,
+          selectedIPO.symbol || '',
+          selectedIPO.buy_price,
+          selectedIPO.quantity,
+          selectedIPO.open_date || '',
+          selectedIPO.close_date || '',
+          selectedIPO.listing_date || '',
+          selectedIPO.allotment_date || '',
+          selectedIPO.registrar || '',
+          'NSE, BSE',
+          selectedIPO.issue_type || 'Mainboard',
+          selectedIPO.logo_url || '',
+          now,
+          selectedIPO.id,
         ]
       );
 

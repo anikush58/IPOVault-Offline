@@ -324,14 +324,24 @@ export default function NewIposScreen() {
   }, [sortBy]);
 
 function getStatusBadge(status?: string, openDate?: string | null) {
-  const norm = (status || '').toUpperCase();
-  if (norm === 'OPEN' || norm === 'ACTIVE') {
+  const norm = (status || '').toUpperCase().trim();
+  if (norm === 'OPEN' || norm === 'ACTIVE' || norm === 'LIVE') {
     return { text: 'Live Now', bg: '#DCFCE7', color: '#15803D', icon: 'activity' };
   }
   if (norm === 'LISTED') {
     return { text: 'Listed', bg: '#E0E7FF', color: '#4338CA', icon: 'check-circle' };
   }
-  if (norm === 'CLOSED') {
+  if (
+    norm === 'ALLOTMENT_OUT' ||
+    norm === 'ALLOTTED' ||
+    norm === 'ALLOTMENT' ||
+    norm === 'ALLOTMENT_COMPLETED' ||
+    norm === 'ALLOTTED_AVAILABLE' ||
+    norm.includes('ALLOT')
+  ) {
+    return { text: 'Allotment Out', bg: 'rgba(16, 185, 129, 0.12)', color: '#10B981', icon: 'check-circle' };
+  }
+  if (norm === 'CLOSED' || norm === 'ALLOTMENT_PENDING' || norm === 'ALLOTTED_PENDING' || norm.includes('CLOSED')) {
     return { text: 'Closed', bg: '#F1F5F9', color: '#64748B', icon: 'lock' };
   }
   const formattedOpen = openDate ? formatApplyDates(openDate, null) : 'Soon';
@@ -385,7 +395,9 @@ function getStatusBadge(status?: string, openDate?: string | null) {
       normStatus === 'CLOSED' ||
       normStatus === 'LISTED' ||
       normStatus === 'ALLOTTED' ||
+      normStatus === 'ALLOTMENT_OUT' ||
       normStatus.includes('CLOSED') ||
+      normStatus.includes('ALLOT') ||
       normStatus.includes('LIST');
     const isUpcoming = normStatus === 'UPCOMING' || activeTab === 'upcoming';
     const isOpen =
@@ -408,6 +420,8 @@ function getStatusBadge(status?: string, openDate?: string | null) {
     const totalAppsCount = matchingApps.length;
     const appliedCount = matchingApps.filter((a) => a.status === 'Applied' || a.status === 'Mandate Approved').length;
     const allottedCount = matchingApps.filter((a) => a.status === 'Allotted' || a.status === 'Partially Allotted' || a.status === 'Holding' || a.status === 'Sold').length;
+
+    const showAllottedCount = activeTab === 'closed' || activeTab === 'listed' || (!isOpen && isClosedOrListed);
 
     return (
       <TouchableOpacity
@@ -551,11 +565,13 @@ function getStatusBadge(status?: string, openDate?: string | null) {
                 </Text>
               </View>
 
-              <View style={[styles.countPill, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7' }]}>
-                <Text style={[styles.countPillText, { color: isDark ? '#34D399' : '#15803D' }]}>
-                  {allottedCount} allotted
-                </Text>
-              </View>
+              {showAllottedCount && (
+                <View style={[styles.countPill, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7' }]}>
+                  <Text style={[styles.countPillText, { color: isDark ? '#34D399' : '#15803D' }]}>
+                    {allottedCount} allotted
+                  </Text>
+                </View>
+              )}
             </View>
 
             {isOpen ? (
@@ -564,13 +580,27 @@ function getStatusBadge(status?: string, openDate?: string | null) {
                 onPress={() =>
                   router.push({
                     pathname: '/apply-ipo',
-                    params: { ipoId: item.id },
+                    params: {
+                      ipoId: item.id,
+                      item: JSON.stringify(item),
+                      name: item.company?.displayName || item.companyName || item.symbol,
+                      company_name: item.company?.displayName || item.companyName || item.symbol,
+                      symbol: item.symbol,
+                      priceBandLow: item.priceBandLow != null ? String(item.priceBandLow) : undefined,
+                      priceBandHigh: item.priceBandHigh != null ? String(item.priceBandHigh) : undefined,
+                      buy_price: String(item.priceBandHigh || item.priceBandLow || item.issuePriceInr || 0),
+                      lotSize: item.lotSize != null ? String(item.lotSize) : undefined,
+                      closeDate: item.closeDate || undefined,
+                      openDate: item.openDate || undefined,
+                      logoUrl: item.company?.logoUrl || item.logoUrl || undefined,
+                      issueType: item.marketSegment === 'SME' ? 'SME' : 'Mainboard',
+                    },
                   } as any)
                 }
                 style={[styles.applyCtaBtn, { backgroundColor: colors.primary }]}
               >
-                <Text style={styles.applyCtaText}>Apply Now</Text>
-                <Feather name="arrow-right" size={12} color="#FFFFFF" />
+                <Text style={[styles.applyCtaText, { color: colors.primaryForeground }]}>Apply Now</Text>
+                <Feather name="arrow-right" size={12} color={colors.primaryForeground} />
               </TouchableOpacity>
             ) : (
               <TouchableOpacity

@@ -49,7 +49,14 @@ export function IPOStatusChip({ status }: { status: IPOStatusType }) {
         dot: '#F59E0B',
       };
     }
-    if (s === 'allotted' || s === 'allotment out' || s === 'allotment') {
+    if (
+      s === 'allotted' ||
+      s === 'allotment out' ||
+      s === 'allotment_out' ||
+      s === 'allotment' ||
+      s === 'allotted_available' ||
+      s === 'allotment_completed'
+    ) {
       return {
         bg: 'rgba(16, 185, 129, 0.10)',
         border: 'rgba(16, 185, 129, 0.22)',
@@ -81,12 +88,30 @@ export function IPOStatusChip({ status }: { status: IPOStatusType }) {
     };
   };
 
+  const getDisplayText = (st: string) => {
+    const s = (st || '').toLowerCase().trim();
+    if (
+      s === 'allotted' ||
+      s === 'allotment out' ||
+      s === 'allotment_out' ||
+      s === 'allotment' ||
+      s === 'allotted_available' ||
+      s === 'allotment_completed'
+    ) {
+      return 'Allotment Out';
+    }
+    if (s === 'closed' || s === 'allotment_pending' || s === 'awaiting allotment') {
+      return 'Closed';
+    }
+    return status || 'Unknown';
+  };
+
   const styleConfig = getStyle(status);
 
   return (
     <View style={[styles.chip, { backgroundColor: styleConfig.bg, borderColor: styleConfig.border }]}>
       <Text style={[styles.text, { color: styleConfig.text }]}>
-        {status || 'Unknown'}
+        {getDisplayText(status)}
       </Text>
     </View>
   );

@@ -26,10 +26,12 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { API_BASE_URL } from '@/constants/apiConfig';
 import { AllotmentStatusBadge } from '@/components/allotment/AllotmentStatusBadge';
 import { IconButton } from '@/components/ui/IconButton';
+import { UpdateApplicationModal } from '@/components/UpdateApplicationModal';
 import { useAuth } from '@/context/AuthContext';
-import { useDB } from '@/context/DBContext';
+import { useDB, type ApplicationStatus, type ApplicationWithDetails } from '@/context/DBContext';
 import { useTheme } from '@/context/ThemeContext';
 import { useColors } from '@/hooks/useColors';
+import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 import {
   allotmentApiService,
   BackendJobItem,
@@ -980,8 +982,9 @@ export default function AllotmentCheckerScreen() {
   const params = useLocalSearchParams<{ ipoId?: string }>();
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
-  const { ipos, applications, users } = useDB();
+  const { ipos, applications, users, updateApplication } = useDB();
   const { user } = useAuth();
+  const [selectedAppForUpdate, setSelectedAppForUpdate] = useState<ApplicationWithDetails | null>(null);
 
   // Active user ID for backend scoping
   const activeUserId = useMemo(() => {
@@ -1259,6 +1262,69 @@ export default function AllotmentCheckerScreen() {
     };
   }, [addLog, stopPolling]);
 
+  // Auto-update application status in database from allotment check results
+  const syncApplicationStatusesFromJob = useCallback(
+    async (jobItems: BackendJobItem[]) => {
+      if (!jobItems || jobItems.length === 0 || !selectedIpo) return;
+
+      let hasChanges = false;
+      for (const item of jobItems) {
+        const backendStatus = (item.status || '').toUpperCase();
+        // Only update if definitive outcome: ALLOTTED or NOT_ALLOTTED.
+        // For NO_RECORD, APPLICATION_NOT_FOUND, PENDING, NOT_YET_AVAILABLE, etc., keep applications in active (Applied).
+        if (
+          backendStatus !== 'ALLOTTED' &&
+          backendStatus !== 'PARTIALLY_ALLOTTED' &&
+          backendStatus !== 'NOT_ALLOTTED'
+        ) {
+          continue;
+        }
+
+        const targetAppStatus: ApplicationStatus =
+          backendStatus === 'ALLOTTED' || backendStatus === 'PARTIALLY_ALLOTTED'
+            ? 'Allotted'
+            : 'Not Allotted';
+
+        const backendMask = (item.maskedId || '').trim().toUpperCase();
+        const matchingUsers = users.filter((u) => {
+          const p = (u.pan_number || '').trim().toUpperCase();
+          return p.length === 10 && getBackendMaskedPan(p) === backendMask;
+        });
+
+        for (const usr of matchingUsers) {
+          const appsToUpdate = applications.filter((app) => {
+            const isSameIpo =
+              app.ipo_id === selectedIpo.id ||
+              app.ipo_id?.toLowerCase() === selectedIpo.id?.toLowerCase() ||
+              (app.ipo_name &&
+                selectedIpo.ipo_name &&
+                app.ipo_name.toLowerCase().trim() === selectedIpo.ipo_name.toLowerCase().trim());
+            const isSameUser = app.user_id === usr.id;
+            return isSameIpo && isSameUser && app.status === 'Applied';
+          });
+
+          for (const app of appsToUpdate) {
+            try {
+              await updateApplication(app.id, targetAppStatus);
+              hasChanges = true;
+              addLog(
+                `Auto-updated application for ${usr.name} (${maskPan(usr.pan_number || '')}) ➔ ${targetAppStatus}`,
+                'success',
+              );
+            } catch (err) {
+              console.warn('[AllotmentChecker] Error auto-updating application:', err);
+            }
+          }
+        }
+      }
+
+      if (hasChanges) {
+        backendSyncEmitter.notifyChange();
+      }
+    },
+    [selectedIpo, users, applications, updateApplication, addLog],
+  );
+
   // Poll active backend job
   const startPollingJob = useCallback(
     (jobId: string) => {
@@ -1277,6 +1343,10 @@ export default function AllotmentCheckerScreen() {
             activeUserId,
           );
           setActiveJob(updatedJob);
+
+          if (updatedJob.items && updatedJob.items.length > 0) {
+            void syncApplicationStatusesFromJob(updatedJob.items);
+          }
 
           setPollingDiag({
             attemptCount: pollCount,
@@ -1299,6 +1369,9 @@ export default function AllotmentCheckerScreen() {
             setPollingDiag((prev) => ({ ...prev, active: false }));
             addLog(`Job completed with status ${updatedJob.status}`, 'success');
             stopPolling();
+            if (updatedJob.items && updatedJob.items.length > 0) {
+              void syncApplicationStatusesFromJob(updatedJob.items);
+            }
           } else if (
             updatedJob.status === 'FAILED' ||
             updatedJob.status === 'CANCELLED'
@@ -1928,66 +2001,6 @@ export default function AllotmentCheckerScreen() {
             <Text style={[styles.emptyHeroSubtitle, { color: colors.mutedForeground }]}>
               Check allotment status across multiple PAN applications simultaneously with direct registrar verification.
             </Text>
-
-            {/* Feature Pill Cards */}
-            <View style={styles.featuresList}>
-              <View
-                style={[
-                  styles.featureRow,
-                  { backgroundColor: colors.card, borderColor: colors.border },
-                ]}
-              >
-                <View style={[styles.featureIconBadge, { backgroundColor: '#3B82F620' }]}>
-                  <Feather name="check-circle" size={16} color="#3B82F6" />
-                </View>
-                <View style={styles.featureTextWrapper}>
-                  <Text style={[styles.featureHeading, { color: colors.foreground }]}>
-                    Automated Registrar Query
-                  </Text>
-                  <Text style={[styles.featureSubtext, { color: colors.mutedForeground }]}>
-                    Direct discovery for KFin Technologies & MUFG Intime
-                  </Text>
-                </View>
-              </View>
-
-              <View
-                style={[
-                  styles.featureRow,
-                  { backgroundColor: colors.card, borderColor: colors.border },
-                ]}
-              >
-                <View style={[styles.featureIconBadge, { backgroundColor: '#10B98120' }]}>
-                  <Feather name="users" size={16} color="#10B981" />
-                </View>
-                <View style={styles.featureTextWrapper}>
-                  <Text style={[styles.featureHeading, { color: colors.foreground }]}>
-                    Batch Multi-Applicant Check
-                  </Text>
-                  <Text style={[styles.featureSubtext, { color: colors.mutedForeground }]}>
-                    Verify all saved family and applicant PANs in one single run
-                  </Text>
-                </View>
-              </View>
-
-              <View
-                style={[
-                  styles.featureRow,
-                  { backgroundColor: colors.card, borderColor: colors.border },
-                ]}
-              >
-                <View style={[styles.featureIconBadge, { backgroundColor: '#F59E0B20' }]}>
-                  <Feather name="zap" size={16} color="#F59E0B" />
-                </View>
-                <View style={styles.featureTextWrapper}>
-                  <Text style={[styles.featureHeading, { color: colors.foreground }]}>
-                    Live Status Summary
-                  </Text>
-                  <Text style={[styles.featureSubtext, { color: colors.mutedForeground }]}>
-                    Categorized Allotted, Not Allotted, and No Record counts
-                  </Text>
-                </View>
-              </View>
-            </View>
           </View>
         )}
 
@@ -2445,10 +2458,26 @@ export default function AllotmentCheckerScreen() {
               {visibleApplicants.map((applicant) => {
                 const avatarGradient = getAvatarGradient(applicant.userName || 'User');
                 const initial = (applicant.userName || 'U').trim().charAt(0).toUpperCase();
+                const matchingApp =
+                  applications.find((a) => a.id === applicant.applicationId) ||
+                  applications.find(
+                    (a) =>
+                      a.user_id === applicant.userId &&
+                      ((selectedIpo?.id && a.ipo_id === selectedIpo.id) ||
+                        (selectedIpo?.ipo_name &&
+                          a.ipo_name?.toLowerCase().trim() ===
+                            selectedIpo.ipo_name.toLowerCase().trim())),
+                  );
 
                 return (
-                  <View
+                  <TouchableOpacity
                     key={applicant.applicationId}
+                    activeOpacity={matchingApp ? 0.7 : 1}
+                    onPress={() => {
+                      if (matchingApp) {
+                        setSelectedAppForUpdate(matchingApp);
+                      }
+                    }}
                     style={[
                       styles.applicantCard,
                       { backgroundColor: colors.card, borderColor: colors.border },
@@ -2476,11 +2505,16 @@ export default function AllotmentCheckerScreen() {
                     </View>
 
                     {/* Right Side: Status Badge */}
-                    <AllotmentStatusBadge
-                      status={applicant.status as any}
-                      sharesAllotted={applicant.sharesAllotted}
-                    />
-                  </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <AllotmentStatusBadge
+                        status={applicant.status as any}
+                        sharesAllotted={applicant.sharesAllotted}
+                      />
+                      {Boolean(matchingApp) && (
+                        <Feather name="edit-2" size={14} color={colors.mutedForeground} style={{ opacity: 0.7, marginLeft: 2 }} />
+                      )}
+                    </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>
@@ -2693,6 +2727,12 @@ export default function AllotmentCheckerScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Manual Application Status Update Modal */}
+      <UpdateApplicationModal
+        application={selectedAppForUpdate}
+        onClose={() => setSelectedAppForUpdate(null)}
+      />
     </View>
   );
 }
@@ -3295,7 +3335,8 @@ const styles = StyleSheet.create({
   },
   emptyHeroContainer: {
     alignItems: 'center',
-    paddingVertical: 16,
+    paddingTop: 66,
+    paddingBottom: 24,
     paddingHorizontal: 8,
     gap: 12,
   },
@@ -3320,39 +3361,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 19,
     maxWidth: 320,
-  },
-  featuresList: {
-    width: '100%',
-    gap: 10,
-    marginTop: 12,
-  },
-  featureRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 12,
-  },
-  featureIconBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  featureTextWrapper: {
-    flex: 1,
-    gap: 2,
-  },
-  featureHeading: {
-    fontSize: 13,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
-  },
-  featureSubtext: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    lineHeight: 15,
   },
   celebrationModalOverlay: {
     flex: 1,
