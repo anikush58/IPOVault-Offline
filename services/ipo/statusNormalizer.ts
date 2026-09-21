@@ -3,6 +3,7 @@ import { SmartIPOLifecycleStatus } from '@/lib/smartIpo/types/smartIpo';
 export type NormalizedIPOStatus =
   | 'UPCOMING'
   | 'OPEN'
+  | 'CLOSING_TODAY'
   | 'CLOSED'
   | 'ALLOTTED_PENDING'
   | 'ALLOTTED_AVAILABLE'
@@ -162,6 +163,14 @@ export function evaluateLifecycle(
 
   // 7. Fallbacks based on raw status strings
   const rawStatus = (record.status || '').trim().toUpperCase();
+  if (rawStatus === 'CLOSING_TODAY' || rawStatus === 'CLOSING TODAY' || rawStatus === 'CLOSES TODAY') {
+    return {
+      lifecycle_status: 'CLOSING_TODAY',
+      lifecycle_confidence: 'High',
+      lifecycle_source: 'Authoritative Backend Status',
+      lifecycle_last_verified_at: nowIso,
+    };
+  }
   if (rawStatus.includes('LISTED')) {
     return {
       lifecycle_status: 'LISTED',
@@ -244,6 +253,12 @@ export function normalizeLifecycleStatus(value: string | null | undefined): Norm
     case 'BIDDING':
       return 'OPEN';
 
+    case 'CLOSING_TODAY':
+    case 'CLOSING TODAY':
+    case 'CLOSES TODAY':
+    case 'CLOSING':
+      return 'CLOSING_TODAY';
+
     case 'CLOSED':
       return 'CLOSED';
 
@@ -267,6 +282,7 @@ export function normalizeLifecycleStatus(value: string | null | undefined): Norm
       return 'LISTED';
 
     default:
+      if (clean.includes('CLOSING') || clean.includes('CLOSES TODAY')) return 'CLOSING_TODAY';
       if (clean.includes('LISTING')) return 'LISTING_UPCOMING';
       if (clean.includes('LISTED')) return 'LISTED';
       if (clean.includes('ALLOT')) return 'ALLOTTED_AVAILABLE';
@@ -285,11 +301,13 @@ export function getLifecycleStatusLabel(status: NormalizedIPOStatus): string {
     case 'UPCOMING':
       return 'Upcoming';
     case 'OPEN':
-      return 'Open';
+      return 'Live Now';
+    case 'CLOSING_TODAY':
+      return 'Closing Today';
     case 'CLOSED':
       return 'Closed';
     case 'ALLOTTED_PENDING':
-      return 'Closed';
+      return 'Allotment Pending';
     case 'ALLOTTED_AVAILABLE':
       return 'Allotment Out';
     case 'LISTING_UPCOMING':

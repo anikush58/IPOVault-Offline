@@ -4,7 +4,7 @@ import { LiveIPOProvider } from './providers/LiveIPOProvider';
 import { ipoDiagnosticsStore } from './ipoUpdater';
 import { syncStore } from '@/services/sync/syncStatus';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
-import { runWithTransaction, safeExecAsync } from '@/utils/sqliteDebug';
+import { runWithTransaction, safeExecAsync, safeRunAsync } from '@/utils/sqliteDebug';
 
 import { API_BASE_URL } from '@/constants/apiConfig';
 
@@ -110,9 +110,11 @@ export async function triggerCentralizedIPOSync(
             const activeIds = result.data.map((r) => r.id).filter(Boolean);
             if (activeIds.length > 0) {
               const placeholders = activeIds.map(() => '?').join(',');
-              await db.runAsync(
+              await safeRunAsync(
+                db,
                 `DELETE FROM ipo_master WHERE (source_type = 'SERVER' OR source_type IS NULL OR source_type = '') AND id NOT IN (${placeholders})`,
-                activeIds as any
+                activeIds as any,
+                'centralizedSync.reconcileUnpublished'
               );
             }
           } else {
@@ -145,32 +147,39 @@ export async function triggerCentralizedIPOSync(
         const { evaluateIPORadarScore } = require('./radarScoringEngine');
         const { persistRadarSnapshotIfChanged, markFinalPreListingSnapshot } = require('./radarSnapshotService');
         const { recordIPOOutcome } = require('./radarOutcomeService');
+        const { IPOParser } = require('./ipoParser');
 
-        for (const ipoData of result.data || []) {
-          if (!ipoData.id) continue;
-          const fullIpo = await repo.getById(ipoData.id);
-          if (!fullIpo) continue;
+        await runWithTransaction(
+          db,
+          async () => {
+            for (const rawData of result.data || []) {
+              if (!rawData || !rawData.id) continue;
+              const fullIpo = IPOParser.parse(rawData);
+              if (!fullIpo || !fullIpo.id) continue;
 
-          const radar = evaluateIPORadarScore(fullIpo, null, []);
-          await persistRadarSnapshotIfChanged(db, fullIpo, radar);
+              const radar = evaluateIPORadarScore(fullIpo, null, []);
+              await persistRadarSnapshotIfChanged(db, fullIpo, radar);
 
-          const statusLower = (fullIpo.status || '').toLowerCase();
-          if (statusLower === 'closed' || statusLower === 'listed') {
-            await markFinalPreListingSnapshot(db, fullIpo.id);
-          }
+              const statusLower = (fullIpo.status || '').toLowerCase();
+              if (statusLower === 'closed' || statusLower === 'listed') {
+                await markFinalPreListingSnapshot(db, fullIpo.id);
+              }
 
-          if (statusLower === 'listed' && (fullIpo.listing_price != null || fullIpo.listing_gain_percent != null)) {
-            await recordIPOOutcome(db, {
-              ipo_id: fullIpo.id,
-              company_name: fullIpo.company_name,
-              issue_price: fullIpo.price_band_max || fullIpo.price_band_min || 0,
-              listing_date: fullIpo.listing_date || new Date().toISOString(),
-              listing_price: fullIpo.listing_price,
-              listing_gain_percent: fullIpo.listing_gain_percent,
-              outcome_recorded_at: new Date().toISOString(),
-            });
-          }
-        }
+              if (statusLower === 'listed' && (fullIpo.listing_price != null || fullIpo.listing_gain_percent != null)) {
+                await recordIPOOutcome(db, {
+                  ipo_id: fullIpo.id,
+                  company_name: fullIpo.company_name,
+                  issue_price: fullIpo.price_band_max || fullIpo.price_band_min || 0,
+                  listing_date: fullIpo.listing_date || new Date().toISOString(),
+                  listing_price: fullIpo.listing_price,
+                  listing_gain_percent: fullIpo.listing_gain_percent,
+                  outcome_recorded_at: new Date().toISOString(),
+                });
+              }
+            }
+          },
+          'centralizedSync.radarSnapshotBatch'
+        );
       } catch (radarErr) {
         if (__DEV__) console.warn('[IPOVault Sync] Radar sync processing error:', radarErr);
       }
@@ -240,7 +249,23 @@ export async function triggerCentralizedIPOSync(
       };
     }
   } catch (err: any) {
-    const errorMsg = err.message || 'Unexpected sync failure';
+    const errorMsg = err?.message || String(err) || 'Unexpected sync failure';
+    const isClosed = errorMsg.toLowerCase().includes('closed resource') || errorMsg.toLowerCase().includes('access to closed resource');
+
+    if (isClosed) {
+      if (__DEV__) console.log(`[CentralizedSync] Database handle closed during reload (Source: ${source}). Skipping.`);
+      syncStore.update({
+        state: 'Idle',
+        error: null,
+      });
+      return {
+        success: false,
+        recordsDownloaded: 0,
+        recordsUpdated: 0,
+        error: 'Database handle closed during reload',
+      };
+    }
+
     console.error(`[CentralizedSync] Unexpected sync error (Source: ${source}):`, err);
 
     syncStore.update({

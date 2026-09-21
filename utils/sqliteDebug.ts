@@ -88,14 +88,18 @@ export function validateSqlInsertCounts(sql: string, params: any[], callerInfo: 
 /**
  * Helper to retry SQLite operations if the database is locked.
  */
-async function retryOnLock<T>(fn: () => Promise<T>, retries = 4, baseDelayMs = 150): Promise<T> {
+async function retryOnLock<T>(fn: () => Promise<T>, retries = 6, baseDelayMs = 150): Promise<T> {
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       return await fn();
     } catch (err: any) {
-      const isLocked = err?.message?.toLowerCase().includes('locked') || String(err).toLowerCase().includes('locked');
+      const errMsg = (err?.message || String(err)).toLowerCase();
+      if (errMsg.includes('closed resource') || errMsg.includes('access to closed resource')) {
+        throw err;
+      }
+      const isLocked = errMsg.includes('locked') || errMsg.includes('busy') || errMsg.includes('cannot start a transaction');
       if (isLocked && attempt < retries - 1) {
-        const delay = baseDelayMs * (attempt + 1);
+        const delay = baseDelayMs * (attempt + 1) + Math.floor(Math.random() * 50);
         if (__DEV__) {
           console.warn(`[SQL LOCK RETRY] Database locked. Retrying attempt ${attempt + 1}/${retries} in ${delay}ms...`);
         }
@@ -106,6 +110,18 @@ async function retryOnLock<T>(fn: () => Promise<T>, retries = 4, baseDelayMs = 1
     }
   }
   return fn();
+}
+
+let writeMutex: Promise<any> = Promise.resolve();
+let isInsideTransaction = false;
+
+function queueWrite<T>(op: () => Promise<T>): Promise<T> {
+  if (isInsideTransaction) {
+    return op();
+  }
+  const next = writeMutex.then(op, op);
+  writeMutex = next.catch(() => {});
+  return next;
 }
 
 export async function safeRunAsync(
@@ -125,7 +141,7 @@ export async function safeRunAsync(
     return p;
   });
 
-  return retryOnLock(() => db.runAsync(sql, sanitizedParams));
+  return queueWrite(() => retryOnLock(() => db.runAsync(sql, sanitizedParams)));
 }
 
 export async function safeGetFirstAsync<T>(
@@ -171,11 +187,13 @@ export async function safeExecAsync(
   sql: string,
   callerInfo: string = 'Unknown'
 ): Promise<void> {
-  return retryOnLock(() => db.execAsync(sql));
+  return queueWrite(() => retryOnLock(() => db.execAsync(sql)));
 }
 
 /**
  * Executes an async action within a single, explicit SQLite transaction.
+ * Serializes concurrent transaction requests via a promise mutex.
+ * Supports reentrancy (nested calls execute within the outer transaction).
  * Preserves and reports the ORIGINAL action error, preventing secondary rollback rejections from masking it.
  * Retries on lock contention.
  */
@@ -184,33 +202,53 @@ export async function runWithTransaction<T>(
   action: () => Promise<T>,
   callerInfo: string = 'Unknown'
 ): Promise<T> {
-  if (typeof (db as any).withTransactionAsync === 'function') {
-    return retryOnLock(() => (db as any).withTransactionAsync(action));
+  // If we are already executing inside an active transaction, execute action directly without nesting BEGIN
+  if (isInsideTransaction) {
+    return action();
   }
 
-  return retryOnLock(async () => {
-    let inTransaction = false;
-    try {
-      await db.execAsync('BEGIN IMMEDIATE TRANSACTION;');
-      inTransaction = true;
-      const result = await action();
-      await db.execAsync('COMMIT;');
-      inTransaction = false;
-      return result;
-    } catch (originalError: any) {
-      if (__DEV__) {
-        console.error(`[SQL TRANSACTION ERROR] ${callerInfo} -> Original failure:`, originalError);
-      }
-      if (inTransaction) {
-        try {
-          await db.execAsync('ROLLBACK;');
-        } catch (rollbackError: any) {
-          if (__DEV__) {
-            console.warn(`[SQL TRANSACTION ERROR] ${callerInfo} -> Rollback ignored:`, rollbackError?.message || rollbackError);
-          }
-        }
-      }
-      throw originalError;
+  const execute = async (): Promise<T> => {
+    if (isInsideTransaction) {
+      return action();
     }
-  });
+
+    isInsideTransaction = true;
+    try {
+      if (typeof (db as any).withTransactionAsync === 'function') {
+        return await retryOnLock(() => (db as any).withTransactionAsync(action));
+      }
+
+      return await retryOnLock(async () => {
+        let inTransaction = false;
+        try {
+          await db.execAsync('BEGIN IMMEDIATE TRANSACTION;');
+          inTransaction = true;
+          const result = await action();
+          await db.execAsync('COMMIT;');
+          inTransaction = false;
+          return result;
+        } catch (originalError: any) {
+          if (__DEV__) {
+            console.error(`[SQL TRANSACTION ERROR] ${callerInfo} -> Original failure:`, originalError);
+          }
+          if (inTransaction) {
+            try {
+              await db.execAsync('ROLLBACK;');
+            } catch (rollbackError: any) {
+              if (__DEV__) {
+                console.warn(`[SQL TRANSACTION ERROR] ${callerInfo} -> Rollback ignored:`, rollbackError?.message || rollbackError);
+              }
+            }
+          }
+          throw originalError;
+        }
+      });
+    } finally {
+      isInsideTransaction = false;
+    }
+  };
+
+  const nextMutex = writeMutex.then(execute, execute);
+  writeMutex = nextMutex.catch(() => {});
+  return nextMutex;
 }

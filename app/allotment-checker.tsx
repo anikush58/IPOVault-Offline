@@ -1679,37 +1679,69 @@ export default function AllotmentCheckerScreen() {
     }
   }, [params.ipoId, selectedIpoId, isCreatingJob, isPolling, handleSelectIpo]);
 
-  // Compute live applicant UI states by combining local user profiles with backend job items
+  // Compute live applicant UI states by combining all active users from Manage Users with backend job items
   const uiApplicants = useMemo((): UIApplicantState[] => {
     if (!selectedIpo) return [];
 
-    // Use current applications if available, otherwise fallback to all saved user profiles with valid PAN.
-    // In both paths, exclude archived users (archived === 1).
-    const applicantProfiles = currentApplications.length > 0
-      ? currentApplications
-          .filter((app) => {
-            const usr = users.find((u) => u.id === app.user_id);
-            return !usr || usr.archived !== 1; // keep if user not found (safe) or active
-          })
-          .map((app) => {
-            const usr = users.find((u) => u.id === app.user_id);
-            return {
+    // All active (non-archived) users from Manage Users with valid 10-char PAN
+    const activeUsers = users.filter(
+      (u) => u.archived !== 1 && u.pan_number && u.pan_number.trim().length === 10,
+    );
+
+    const activeUserIds = new Set(activeUsers.map((u) => u.id));
+
+    const applicantProfiles: Array<{
+      applicationId: string;
+      userId: string;
+      userName: string;
+      pan: string;
+      avatarUrl?: string;
+      appliedQuantity: number;
+      price: number;
+    }> = [];
+
+    // 1. Add all active users from Manage Users
+    for (const usr of activeUsers) {
+      const app = currentApplications.find((a) => a.user_id === usr.id);
+      applicantProfiles.push({
+        applicationId: app?.id || `saved_${usr.id}`,
+        userId: usr.id,
+        userName: usr.name || 'Applicant',
+        pan: usr.pan_number.trim().toUpperCase(),
+        avatarUrl: usr.avatar_url || (usr as any)?.avatar || undefined,
+        appliedQuantity:
+          app?.quantity ||
+          (app?.shares_count ?? undefined) ||
+          selectedIpo?.lot_size ||
+          0,
+        price: app?.buy_price || selectedIpo?.buy_price || 0,
+      });
+    }
+
+    // 2. Include any applications whose user is not yet in activeUsers
+    for (const app of currentApplications) {
+      if (!activeUserIds.has(app.user_id)) {
+        const usr = users.find((u) => u.id === app.user_id);
+        if (!usr || usr.archived !== 1) {
+          const pan = (usr?.pan_number || '').trim().toUpperCase();
+          if (pan.length === 10) {
+            applicantProfiles.push({
               applicationId: app.id,
               userId: app.user_id,
               userName: usr?.name || 'Applicant',
-              pan: usr?.pan_number || '',
+              pan,
               avatarUrl: usr?.avatar_url || (usr as any)?.avatar || undefined,
-            };
-          })
-      : users
-          .filter((u) => u.archived !== 1 && u.pan_number && u.pan_number.trim().length === 10)
-          .map((u) => ({
-            applicationId: `saved_${u.id}`,
-            userId: u.id,
-            userName: u.name || 'Applicant',
-            pan: u.pan_number,
-            avatarUrl: u.avatar_url || (u as any)?.avatar || undefined,
-          }));
+              appliedQuantity:
+                app.quantity ||
+                (app.shares_count ?? undefined) ||
+                selectedIpo?.lot_size ||
+                0,
+              price: app.buy_price || selectedIpo?.buy_price || 0,
+            });
+          }
+        }
+      }
+    }
 
     if (applicantProfiles.length === 0) return [];
 
@@ -1804,8 +1836,8 @@ export default function AllotmentCheckerScreen() {
         userName: profile.userName,
         pan,
         avatarUrl: profile.avatarUrl,
-        appliedQuantity: selectedIpo?.lot_size || 0,
-        price: selectedIpo?.buy_price || 0,
+        appliedQuantity: profile.appliedQuantity || selectedIpo?.lot_size || 0,
+        price: profile.price || selectedIpo?.buy_price || 0,
         status,
         sharesAllotted,
         errorMessage,

@@ -1,6 +1,7 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { IPOMasterRecord } from './types';
 import { evaluateIPORadarScore, RadarScoreBreakdown, RadarCategory } from './radarScoringEngine';
+import { safeRunAsync, safeGetAllAsync, safeGetFirstAsync } from '@/utils/sqliteDebug';
 
 export interface RadarSnapshotRecord {
   id: string;
@@ -116,9 +117,11 @@ export async function getIPORadarSnapshots(
   limit: number = 10
 ): Promise<RadarSnapshotRecord[]> {
   try {
-    const rows = await db.getAllAsync<RadarSnapshotRecord>(
+    const rows = await safeGetAllAsync<RadarSnapshotRecord>(
+      db,
       'SELECT * FROM radar_snapshots WHERE ipo_id = ? ORDER BY created_at DESC LIMIT ?',
-      [ipoId, limit]
+      [ipoId, limit],
+      'RadarSnapshot.getIPORadarSnapshots'
     );
     return rows || [];
   } catch (err) {
@@ -135,11 +138,13 @@ export async function getLatestRadarSnapshot(
   ipoId: string
 ): Promise<RadarSnapshotRecord | null> {
   try {
-    const rows = await db.getAllAsync<RadarSnapshotRecord>(
+    const row = await safeGetFirstAsync<RadarSnapshotRecord>(
+      db,
       'SELECT * FROM radar_snapshots WHERE ipo_id = ? ORDER BY created_at DESC LIMIT 1',
-      [ipoId]
+      [ipoId],
+      'RadarSnapshot.getLatestRadarSnapshot'
     );
-    return rows.length > 0 ? rows[0] : null;
+    return row || null;
   } catch (err) {
     console.error('[RadarSnapshot] Error fetching latest snapshot:', err);
     return null;
@@ -175,7 +180,8 @@ export async function persistRadarSnapshotIfChanged(
     const createdAt = new Date().toISOString();
     const isClosed = (ipo.status || '').toLowerCase() === 'closed';
 
-    await db.runAsync(
+    await safeRunAsync(
+      db,
       `INSERT INTO radar_snapshots (
         id, ipo_id, category, score, confidence, gmp_amount, gmp_percent,
         total_subscription, retail_subscription, qib_subscription, nii_subscription,
@@ -197,7 +203,8 @@ export async function persistRadarSnapshotIfChanged(
         radar.signals?.riskPenalty != null ? Number(radar.signals.riskPenalty) : null,
         isClosed ? 1 : 0,
         createdAt,
-      ]
+      ],
+      'RadarSnapshot.persistRadarSnapshotIfChanged'
     );
 
     return true;
@@ -218,9 +225,11 @@ export async function markFinalPreListingSnapshot(
     const latest = await getLatestRadarSnapshot(db, ipoId);
     if (!latest) return false;
 
-    await db.runAsync(
+    await safeRunAsync(
+      db,
       'UPDATE radar_snapshots SET is_final_pre_listing = 1 WHERE id = ?',
-      [latest.id]
+      [latest.id],
+      'RadarSnapshot.markFinalPreListingSnapshot'
     );
     return true;
   } catch (err) {
@@ -237,9 +246,11 @@ export async function getFinalPreListingSnapshot(
   ipoId: string
 ): Promise<RadarSnapshotRecord | null> {
   try {
-    const row = await db.getFirstAsync<RadarSnapshotRecord>(
+    const row = await safeGetFirstAsync<RadarSnapshotRecord>(
+      db,
       'SELECT * FROM radar_snapshots WHERE ipo_id = ? AND is_final_pre_listing = 1 ORDER BY created_at DESC LIMIT 1',
-      [ipoId]
+      [ipoId],
+      'RadarSnapshot.getFinalPreListingSnapshot'
     );
     return row || null;
   } catch (err) {

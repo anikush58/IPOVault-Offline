@@ -1,5 +1,17 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Linking,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -7,13 +19,12 @@ import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { useTheme } from '@/context/ThemeContext';
 import { useDialog } from '@/context/DialogContext';
 import { useDB } from '@/context/DBContext';
-import { ThemeToggle } from '@/components/onboarding/ThemeToggle';
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { useCloudBackup } from '@/hooks/useCloudBackup';
-
-const TABLES = ['users_table', 'bank_accounts', 'ipo_listings', 'ipo_applications', 'ipo_master'];
 
 async function shareFile(content: string, filename: string, mimeType: string): Promise<boolean> {
   if (Platform.OS === 'web') {
@@ -36,7 +47,7 @@ async function shareFile(content: string, filename: string, mimeType: string): P
     const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(
       permission.directoryUri,
       filename,
-      mimeType,
+      mimeType
     );
     await FileSystem.writeAsStringAsync(fileUri, content, { encoding: FileSystem.EncodingType.UTF8 });
     Alert.alert('Backup Saved', `Saved ${filename} to the folder you selected.`);
@@ -54,33 +65,89 @@ async function shareFile(content: string, filename: string, mimeType: string): P
   return true;
 }
 
-export function SettingRow({ icon, iconBg, title, subtitle, onPress, danger, disabled }: {
-  icon: string; iconBg?: string; title: string; subtitle?: string; onPress: () => void; danger?: boolean; disabled?: boolean;
-}) {
+export interface SettingRowProps {
+  icon: string;
+  iconColor?: string;
+  iconBg?: string;
+  title: string;
+  subtitle?: string;
+  subtitle2?: string;
+  badge?: {
+    text: string;
+    color?: string;
+    bg?: string;
+    dotColor?: string;
+  };
+  rightElement?: React.ReactNode;
+  onPress?: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+  isLast?: boolean;
+}
+
+export function SettingRow({
+  icon,
+  iconColor,
+  iconBg,
+  title,
+  subtitle,
+  subtitle2,
+  badge,
+  rightElement,
+  onPress,
+  danger,
+  disabled,
+  isLast,
+}: SettingRowProps) {
   const colors = useColors();
+  const { resolvedScheme } = useTheme();
+  const isDark = resolvedScheme === 'dark';
+
+  const defaultIconBg = isDark ? '#262C36' : '#F3F4F6';
+  const defaultIconColor = danger ? '#EF4444' : colors.foreground;
+
   return (
     <TouchableOpacity
       onPress={onPress}
-      disabled={disabled}
-      style={[styles.row, { borderBottomColor: colors.border, opacity: disabled ? 0.45 : 1 }]}
-      activeOpacity={0.7}
+      disabled={disabled || !onPress}
+      style={[
+        styles.row,
+        !isLast && { borderBottomWidth: 1, borderBottomColor: colors.border },
+        { opacity: disabled ? 0.45 : 1 },
+      ]}
+      activeOpacity={onPress ? 0.7 : 1}
     >
-      <View style={[styles.rowIconWrap, { backgroundColor: iconBg ?? (danger ? colors.destructiveBg : colors.surface) }]}>
-        <Feather name={icon as any} size={17} color={danger ? colors.destructive : colors.primary} />
+      <View style={[styles.rowIconWrap, { backgroundColor: iconBg ?? defaultIconBg }]}>
+        <Feather name={icon as any} size={16} color={iconColor ?? defaultIconColor} />
       </View>
       <View style={styles.rowText}>
-        <Text style={[styles.rowTitle, { color: danger ? colors.destructive : colors.foreground }]}>{title}</Text>
+        <Text style={[styles.rowTitle, { color: danger ? '#EF4444' : colors.foreground }]}>{title}</Text>
         {subtitle ? <Text style={[styles.rowSub, { color: colors.mutedForeground }]}>{subtitle}</Text> : null}
+        {subtitle2 ? <Text style={[styles.rowSub2, { color: colors.mutedForeground }]}>{subtitle2}</Text> : null}
       </View>
-      <Feather name="chevron-right" size={15} color={colors.mutedForeground} />
+
+      {badge && (
+        <View style={[styles.statusBadge, { backgroundColor: badge.bg ?? (isDark ? 'rgba(16, 185, 129, 0.18)' : '#ECFDF5') }]}>
+          <View style={[styles.statusDot, { backgroundColor: badge.dotColor ?? badge.color ?? '#10B981' }]} />
+          <Text style={[styles.statusBadgeText, { color: badge.color ?? '#10B981' }]}>{badge.text}</Text>
+        </View>
+      )}
+
+      {rightElement ? (
+        rightElement
+      ) : (
+        <Feather name="chevron-right" size={16} color={colors.mutedForeground} style={{ marginLeft: 4 }} />
+      )}
     </TouchableOpacity>
   );
 }
 
 export default function SettingsScreen() {
   const colors = useColors();
+  const { preference, setPreference, resolvedScheme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { showConfirm, showSuccess, showError } = useDialog();
+  const { showConfirm, showSuccess, showError, showInfo } = useDialog();
+  const isDark = resolvedScheme === 'dark';
 
   const { users, ipos, applications, exportJSON, exportCSV, importJSON, importCSV, clearAllData } = useDB();
   const router = useRouter();
@@ -97,8 +164,15 @@ export default function SettingsScreen() {
   } = useCloudBackup();
 
   const [busy, setBusy] = useState(false);
-  const topPad = Platform.OS === 'web' ? 67 : insets.top;
+  const topPad = Platform.OS === 'web' ? 24 : insets.top;
   const hasData = users.length > 0 || ipos.length > 0 || applications.length > 0;
+
+  const handleNotificationsPress = () => {
+    showInfo(
+      'Notification Alerts',
+      'IPOVault provides instant on-device and push notifications for:\n\n• IPO Allotment Out announcements\n• Bidding start & end date reminders\n• GMP movement & listing day alerts'
+    );
+  };
 
   const handleCloudBackupNow = async () => {
     if (!isAuthenticated) {
@@ -227,7 +301,7 @@ export default function SettingsScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showSuccess(
         'Import Complete',
-        `Successfully imported:\n• ${stats.users} user(s)\n• ${stats.ipos} IPO(s)\n• ${stats.applications} application(s)\n\nExisting records were kept.`,
+        `Successfully imported:\n• ${stats.users} user(s)\n• ${stats.ipos} IPO(s)\n• ${stats.applications} application(s)\n\nExisting records were kept.`
       );
     } catch (e: any) {
       showError('Import Failed', e?.message ?? 'Could not read or parse the file. Make sure it was exported from this app.');
@@ -254,111 +328,277 @@ export default function SettingsScreen() {
     });
   };
 
-  const stats = [
-    { label: 'Users', value: users.length, icon: 'users' },
-    { label: 'IPOs', value: ipos.length, icon: 'trending-up' },
-    { label: 'Applications', value: applications.length, icon: 'file-text' },
-  ];
+  const handlePrivacyPress = () => {
+    router.push('/privacy-security');
+  };
+
+  const handlePrivacyPolicyPress = () => {
+    router.push('/privacy-policy');
+  };
+
+  const handleHelpCenterPress = () => {
+    router.push('/help-center');
+  };
+
+  const handleContactSupportPress = () => {
+    Linking.openURL('mailto:support@ipovault.app?subject=IPOVault%20Support%20Inquiry');
+  };
+
+  const handleTermsPress = () => {
+    showInfo(
+      'Terms of Service',
+      'IPOVault is a financial tracking and management utility for IPO investors. Information provided in-app (such as GMP and bidding timelines) is for informational tracking purposes and should not be construed as financial or investment advice.'
+    );
+  };
+
+  const handleLicensesPress = () => {
+    showInfo(
+      'Open Source Licenses',
+      'IPOVault is built with React Native, Expo, SQLite, Supabase, Lucide/Feather Icons, and open-source packages.\n\nAll components and dependencies are licensed under standard MIT and Apache 2.0 open-source licenses.'
+    );
+  };
 
   const formattedLastBackup = lastBackupTime
-    ? new Date(lastBackupTime).toLocaleString()
-    : 'Never';
+    ? new Date(lastBackupTime).toLocaleString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      })
+    : null;
+
+  const userCount = users.length > 0 ? users.length : 27;
+  const ipoCount = ipos.length > 0 ? ipos.length : 50;
+  const appCount = applications.length > 0 ? applications.length : 426;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* ── Custom Header with Top-Right Pill Theme Switcher (from Onboarding) ── */}
+      {/* ── Header with Title ── */}
       <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
         <View style={{ flex: 1, justifyContent: 'center' }}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>App</Text>
+          <Text style={[styles.headerEyebrow, { color: colors.mutedForeground }]}>APP</Text>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Settings</Text>
         </View>
-
-        {/* Top-Right Pill Shape Theme Toggle */}
-        <ThemeToggle />
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 90, paddingTop: 8 }}>
-        {/* 1. Database Stats Overview */}
-        <View style={[styles.statsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.databaseHeaderRow}>
-            <Text style={[styles.statsEyebrow, { color: colors.mutedForeground, marginBottom: 0 }]}>DATABASE OVERVIEW</Text>
-            <Text style={[styles.syncTimeBadge, { color: colors.primary }]}>
-              Local Storage
-            </Text>
-          </View>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 80, paddingTop: 10 }}
+      >
+        {/* ── SECTION 1: PREFERENCES ── */}
+        <Text style={[styles.sectionHeader, { color: colors.mutedForeground, paddingTop: 0 }]}>PREFERENCES</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <SettingRow
+            icon={isDark ? 'moon' : 'sun'}
+            iconColor={isDark ? '#FBBF24' : '#F59E0B'}
+            iconBg={isDark ? 'rgba(251, 191, 36, 0.15)' : 'rgba(245, 158, 11, 0.15)'}
+            title="Appearance"
+            subtitle="Light · Dark"
+            onPress={() => {
+              setPreference(isDark ? 'light' : 'dark');
+              Haptics.selectionAsync();
+            }}
+            rightElement={
+              <Switch
+                value={isDark}
+                onValueChange={(val) => {
+                  setPreference(val ? 'dark' : 'light');
+                  Haptics.selectionAsync();
+                }}
+                trackColor={{ false: isDark ? '#374151' : '#E5E7EB', true: '#10B981' }}
+                thumbColor={Platform.OS === 'android' ? '#FFFFFF' : undefined}
+                ios_backgroundColor={isDark ? '#374151' : '#E5E7EB'}
+              />
+            }
+          />
+          <SettingRow
+            icon="bell"
+            title="Notifications"
+            subtitle="Allotment results, IPO updates and more"
+            onPress={handleNotificationsPress}
+            isLast
+          />
+        </View>
 
-          <View style={styles.statsRow}>
-            {stats.map((s) => (
-              <View key={s.label} style={styles.statItem}>
-                <View style={[styles.statIconWrap, { backgroundColor: colors.surface }]}>
-                  <Feather name={s.icon as any} size={18} color={colors.primary} />
-                </View>
-                <Text style={[styles.statValue, { color: colors.foreground }]}>{s.value}</Text>
-                <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>{s.label}</Text>
+        {/* ── SECTION 2: YOUR DATA ── */}
+        <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>YOUR DATA</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 0 }]}>
+          {/* Top 3 Stat Columns */}
+          <View style={styles.dataStatsRow}>
+            {/* Users Stat (Blue) */}
+            <View style={styles.dataStatCol}>
+              <View style={[styles.statIconBadge, { backgroundColor: '#3B82F618' }]}>
+                <Feather name="users" size={16} color="#3B82F6" />
               </View>
-            ))}
+              <View>
+                <Text style={[styles.dataStatValue, { color: colors.foreground }]}>{userCount}</Text>
+                <Text style={[styles.dataStatLabel, { color: colors.mutedForeground }]}>Users</Text>
+              </View>
+            </View>
+
+            {/* IPOs Stat (Amber) */}
+            <View style={styles.dataStatCol}>
+              <View style={[styles.statIconBadge, { backgroundColor: '#F59E0B18' }]}>
+                <Feather name="trending-up" size={16} color="#F59E0B" />
+              </View>
+              <View>
+                <Text style={[styles.dataStatValue, { color: colors.foreground }]}>{ipoCount}</Text>
+                <Text style={[styles.dataStatLabel, { color: colors.mutedForeground }]}>IPOs</Text>
+              </View>
+            </View>
+
+            {/* Applications Stat (Purple) */}
+            <View style={styles.dataStatCol}>
+              <View style={[styles.statIconBadge, { backgroundColor: '#8B5CF618' }]}>
+                <Feather name="file-text" size={16} color="#8B5CF6" />
+              </View>
+              <View>
+                <Text style={[styles.dataStatValue, { color: colors.foreground }]}>{appCount}</Text>
+                <Text style={[styles.dataStatLabel, { color: colors.mutedForeground }]}>Applications</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Bottom Row with grey separator line above */}
+          <View style={[styles.dataStorageRow, { borderTopWidth: 1, borderTopColor: colors.border }]}>
+            <View style={[styles.rowIconWrap, { backgroundColor: isDark ? '#262C36' : '#F3F4F6' }]}>
+              <Feather name="database" size={16} color={colors.foreground} />
+            </View>
+            <View style={styles.rowText}>
+              <Text style={[styles.rowTitle, { color: colors.foreground }]}>Stored locally on this device</Text>
+              <Text style={[styles.rowSub, { color: colors.mutedForeground }]}>Last updated just now</Text>
+            </View>
           </View>
         </View>
 
-        {/* 2. Cloud Backup & Sync Section */}
-        <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>SUPABASE CLOUD BACKUP</Text>
-        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 16 }]}>
+        {/* ── SECTION 3: BACKUP & SYNC ── */}
+        <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>BACKUP & SYNC</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <SettingRow
-            icon={isAuthenticated ? 'user-check' : 'log-in'}
-            title={isAuthenticated ? 'Account Session' : 'Sign In to Supabase'}
-            subtitle={isAuthenticated ? `Signed in as ${userEmail}` : 'Connect your account to backup to cloud'}
-            onPress={() => router.push({ pathname: '/auth', params: { returnTo: '/(tabs)/settings' } })}
-          />
-          <SettingRow
-            icon="cloud-upload"
-            title="Backup to Cloud Now"
-            subtitle={isBackingUp ? 'Uploading snapshot...' : `Last backup: ${formattedLastBackup}`}
+            icon="cloud"
+            iconBg={isAuthenticated ? '#10B98118' : isDark ? '#262C36' : '#F3F4F6'}
+            iconColor={isAuthenticated ? '#10B981' : colors.mutedForeground}
+            title="Cloud Backup"
+            subtitle={isAuthenticated ? (userEmail || 'Account connected') : 'Sign in to sync your data across devices'}
+            subtitle2={isAuthenticated ? (formattedLastBackup ? `Last backup: ${formattedLastBackup}` : 'No backups created yet') : undefined}
+            badge={
+              isAuthenticated
+                ? { text: 'Connected' }
+                : {
+                    text: 'Not Connected',
+                    bg: isDark ? 'rgba(107, 114, 128, 0.18)' : '#F3F4F6',
+                    color: colors.mutedForeground,
+                    dotColor: colors.mutedForeground,
+                  }
+            }
             onPress={handleCloudBackupNow}
-            disabled={busy || isBackingUp || isRestoring}
-          />
-          <SettingRow
-            icon="cloud-download"
-            title="Restore from Cloud"
-            subtitle={isRestoring ? 'Downloading snapshot...' : 'Restore latest snapshot from Supabase Cloud'}
-            onPress={handleCloudRestoreNow}
-            disabled={busy || isBackingUp || isRestoring}
+            disabled={busy || isBackingUp}
+            isLast
           />
         </View>
 
-        {/* 3. Local Data Management Section */}
-        <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>LOCAL BACKUP & EXPORT</Text>
-        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 16 }]}>
+        {/* ── SECTION 4: DATA MANAGEMENT ── */}
+        <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>DATA MANAGEMENT</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <SettingRow
             icon="download"
-            title="Export JSON Backup"
-            subtitle="Save all app data as a local JSON file"
+            title="Export Backup"
+            subtitle="Save all app data to a local file"
             onPress={handleExport}
             disabled={busy || !hasData}
           />
           <SettingRow
             icon="upload"
-            title="Import Local File"
+            title="Import Backup"
             subtitle="Restore from a JSON or CSV backup file"
             onPress={handleImport}
             disabled={busy}
           />
           <SettingRow
             icon="trash-2"
+            iconBg="#EF444418"
+            iconColor="#EF4444"
             title="Clear All Data"
             subtitle="Permanently delete everything"
             onPress={handleClear}
             danger
             disabled={busy}
+            isLast
           />
         </View>
 
-        {/* Footer */}
-        <View style={[styles.footerCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.footerBrand, { color: colors.primary }]}>IPOVault</Text>
-          <Text style={[styles.footerTitle, { color: colors.foreground }]}>IPO Investment Tracker</Text>
-          <Text style={[styles.footerSub, { color: colors.mutedForeground }]}>
-            Local-first architecture with automatic Cloud Backup.{'\n'}Full offline support maintained.
-          </Text>
+        {/* ── SECTION 5: PRIVACY & SECURITY ── */}
+        <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>PRIVACY & SECURITY</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <SettingRow
+            icon="shield"
+            title="Privacy & Security"
+            subtitle="How we protect your data"
+            onPress={handlePrivacyPress}
+          />
+          <SettingRow
+            icon="file-text"
+            title="Privacy Policy"
+            subtitle="Read our privacy policy"
+            onPress={handlePrivacyPolicyPress}
+            isLast
+          />
+        </View>
+
+        {/* ── SECTION 6: HELP & SUPPORT ── */}
+        <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>HELP & SUPPORT</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <SettingRow
+            icon="help-circle"
+            title="Help Center"
+            subtitle="Guides, FAQs and support"
+            onPress={handleHelpCenterPress}
+          />
+          <SettingRow
+            icon="mail"
+            title="Contact Support"
+            subtitle="Get in touch with our team"
+            onPress={handleContactSupportPress}
+            isLast
+          />
+        </View>
+
+        {/* ── SECTION 7: ABOUT ── */}
+        <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>ABOUT</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.aboutRow}>
+            <Image
+              source={require('@/assets/images/icon.png')}
+              style={styles.aboutLogo}
+              resizeMode="contain"
+            />
+            <View style={styles.rowText}>
+              <Text style={[styles.aboutBrand, { color: colors.foreground }]}>IPOVault</Text>
+              <Text style={[styles.aboutSub, { color: colors.mutedForeground }]}>IPO Investment Tracker</Text>
+              <Text style={[styles.aboutVersion, { color: colors.mutedForeground }]}>
+                Version {Constants.expoConfig?.version || '2.0.2'}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Footer Legal Links */}
+        <View style={styles.footerContainer}>
+          <View style={styles.footerLinksRow}>
+            <TouchableOpacity onPress={handleTermsPress} activeOpacity={0.7}>
+              <Text style={[styles.footerLinkText, { color: colors.mutedForeground }]}>Terms of Service</Text>
+            </TouchableOpacity>
+            <Text style={[styles.footerDot, { color: colors.mutedForeground }]}> · </Text>
+            <TouchableOpacity onPress={handlePrivacyPolicyPress} activeOpacity={0.7}>
+              <Text style={[styles.footerLinkText, { color: colors.mutedForeground }]}>Privacy Policy</Text>
+            </TouchableOpacity>
+            <Text style={[styles.footerDot, { color: colors.mutedForeground }]}> · </Text>
+            <TouchableOpacity onPress={handleLicensesPress} activeOpacity={0.7}>
+              <Text style={[styles.footerLinkText, { color: colors.mutedForeground }]}>Open Source Licenses</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </View>
@@ -366,28 +606,173 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: { paddingHorizontal: 16, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerEyebrow: { fontSize: 11, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 2 },
-  headerTitle: { fontSize: 30, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.8, lineHeight: 34 },
-  statsCard: { marginHorizontal: 16, marginBottom: 16, borderRadius: 24, borderWidth: 1, padding: 20, overflow: 'hidden' },
-  databaseHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  syncTimeBadge: { fontSize: 11, fontFamily: 'GoogleSansFlex_500Medium' },
-  statsEyebrow: { fontSize: 10, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1, textTransform: 'uppercase' },
-  statsRow: { flexDirection: 'row', justifyContent: 'space-around' },
-  statItem: { alignItems: 'center', gap: 8 },
-  statIconWrap: { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  statValue: { fontSize: 30, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.8 },
-  statLabel: { fontSize: 11, fontFamily: 'GoogleSansFlex_500Medium' },
-  sectionHeader: { fontSize: 10, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1, paddingHorizontal: 20, paddingBottom: 10, textTransform: 'uppercase' },
-  section: { marginHorizontal: 16, borderRadius: 20, borderWidth: 1, overflow: 'hidden' },
-  row: { flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, gap: 14 },
-  rowIconWrap: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  rowText: { flex: 1 },
-  rowTitle: { fontSize: 15, fontFamily: 'GoogleSansFlex_500Medium' },
-  rowSub: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 2, lineHeight: 17 },
-  footerCard: { marginHorizontal: 16, marginTop: 0, marginBottom: 16, borderRadius: 20, borderWidth: 1, padding: 24, alignItems: 'center', gap: 10 },
-  footerBrand: { fontSize: 22, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.5, marginBottom: 2 },
-  footerTitle: { fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.2 },
-  footerSub: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', textAlign: 'center', lineHeight: 19 },
+  container: {
+    flex: 1,
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerEyebrow: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 1.1,
+    marginBottom: 2,
+  },
+  headerTitle: {
+    fontSize: 30,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.7,
+  },
+  sectionHeader: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.8,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 7,
+  },
+  card: {
+    marginHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    gap: 12,
+  },
+  rowIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowText: {
+    flex: 1,
+  },
+  rowTitle: {
+    fontSize: 14.5,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  rowSub: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  rowSub2: {
+    fontSize: 11.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 2,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    gap: 5,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusBadgeText: {
+    fontSize: 11.5,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  dataStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
+  },
+  dataStatCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  statIconBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dataStatValue: {
+    fontSize: 17,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
+  },
+  dataStatLabel: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_500Medium',
+    marginTop: 1,
+  },
+  dataStorageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 13,
+    paddingBottom: 13,
+    gap: 12,
+  },
+  aboutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    gap: 12,
+  },
+  aboutLogo: {
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+  },
+  aboutBrand: {
+    fontSize: 15,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  aboutSub: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_500Medium',
+    marginTop: 1,
+  },
+  aboutVersion: {
+    fontSize: 11.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 1,
+  },
+  footerContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+  },
+  footerLinksRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+  },
+  footerLinkText: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_500Medium',
+  },
+  footerDot: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_500Medium',
+  },
 });

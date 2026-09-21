@@ -1,17 +1,19 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 
+export const CURRENT_SCHEMA_VERSION = 3;
+
 export async function initDB(db: SQLiteDatabase) {
-  await db.execAsync('PRAGMA journal_mode = WAL');
-  await db.execAsync('PRAGMA foreign_keys = ON');
-  await db.execAsync('PRAGMA busy_timeout = 5000');
+  await db.execAsync(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA foreign_keys = ON;
+    PRAGMA busy_timeout = 15000;
+  `);
 
-  // Fresh schema for V1 offline-first architecture.
-  // Tables use TEXT PRIMARY KEY (UUIDs) and include sync metadata.
-
+  // 1. Fresh schema for offline-first architecture (creates all tables and columns atomically)
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS users_table (
       id TEXT PRIMARY KEY,
-      owner_id TEXT, -- Supabase auth user_id
+      owner_id TEXT,
       name TEXT NOT NULL DEFAULT '',
       pan_number TEXT DEFAULT '',
       client_id TEXT DEFAULT '',
@@ -26,19 +28,17 @@ export async function initDB(db: SQLiteDatabase) {
       sync_version INTEGER DEFAULT 0,
       sync_status TEXT NOT NULL DEFAULT 'SYNCED',
       last_synced_at TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT '',
       deleted_at TEXT
-    )
-  `);
+    );
 
-  await db.execAsync(`
     CREATE TABLE IF NOT EXISTS ipo_listings (
       id TEXT PRIMARY KEY,
       backend_ipo_id TEXT DEFAULT NULL,
       symbol TEXT DEFAULT '',
       company_name TEXT DEFAULT '',
-      owner_id TEXT, -- Supabase auth user_id
+      owner_id TEXT,
       ipo_name TEXT NOT NULL DEFAULT '',
       buy_price REAL NOT NULL DEFAULT 0,
       quantity INTEGER NOT NULL DEFAULT 0,
@@ -57,16 +57,14 @@ export async function initDB(db: SQLiteDatabase) {
       sync_version INTEGER DEFAULT 0,
       sync_status TEXT NOT NULL DEFAULT 'SYNCED',
       last_synced_at TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT '',
       deleted_at TEXT
-    )
-  `);
+    );
 
-  await db.execAsync(`
     CREATE TABLE IF NOT EXISTS ipo_applications (
       id TEXT PRIMARY KEY,
-      owner_id TEXT, -- Supabase auth user_id
+      owner_id TEXT,
       user_id TEXT NOT NULL,
       ipo_id TEXT NOT NULL,
       status TEXT DEFAULT 'Applied',
@@ -81,44 +79,38 @@ export async function initDB(db: SQLiteDatabase) {
       sync_version INTEGER DEFAULT 0,
       sync_status TEXT NOT NULL DEFAULT 'SYNCED',
       last_synced_at TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT '',
       deleted_at TEXT,
       FOREIGN KEY (user_id) REFERENCES users_table(id) ON DELETE CASCADE,
       FOREIGN KEY (ipo_id) REFERENCES ipo_listings(id) ON DELETE CASCADE
-    )
-  `);
+    );
 
-  await db.execAsync(`
     CREATE TABLE IF NOT EXISTS bank_accounts (
       id TEXT PRIMARY KEY,
-      owner_id TEXT, -- Supabase auth user_id
+      owner_id TEXT,
       bank_name TEXT NOT NULL,
       balance REAL DEFAULT 0,
       upi_app TEXT DEFAULT '',
       sync_version INTEGER DEFAULT 0,
       sync_status TEXT NOT NULL DEFAULT 'SYNCED',
       last_synced_at TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT '',
       deleted_at TEXT
-    )
-  `);
+    );
 
-  await db.execAsync(`
     CREATE TABLE IF NOT EXISTS sync_queue (
       id TEXT PRIMARY KEY,
       table_name TEXT NOT NULL,
       record_id TEXT NOT NULL,
-      action TEXT NOT NULL, -- INSERT, UPDATE, DELETE
+      action TEXT NOT NULL,
       payload TEXT NOT NULL,
       retry_count INTEGER DEFAULT 0,
       next_retry_at TEXT,
       created_at TEXT NOT NULL
-    )
-  `);
+    );
 
-  await db.execAsync(`
     CREATE TABLE IF NOT EXISTS ipo_allotments (
       id TEXT PRIMARY KEY,
       application_id TEXT NOT NULL UNIQUE,
@@ -137,10 +129,8 @@ export async function initDB(db: SQLiteDatabase) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (application_id) REFERENCES ipo_applications(id) ON DELETE CASCADE
-    )
-  `);
+    );
 
-  await db.execAsync(`
     CREATE TABLE IF NOT EXISTS notifications (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL,
@@ -152,20 +142,16 @@ export async function initDB(db: SQLiteDatabase) {
       read_at TEXT,
       delivered_at TEXT,
       dedupe_key TEXT NOT NULL UNIQUE
-    )
-  `);
+    );
 
-  await db.execAsync(`
     CREATE TABLE IF NOT EXISTS notification_tracker (
       ipo_id TEXT PRIMARY KEY,
       last_notified_gmp REAL,
       last_notified_radar_category TEXT,
       last_notified_status TEXT,
       updated_at TEXT NOT NULL
-    )
-  `);
+    );
 
-  await db.execAsync(`
     CREATE TABLE IF NOT EXISTS radar_snapshots (
       id TEXT PRIMARY KEY,
       ipo_id TEXT NOT NULL,
@@ -183,10 +169,7 @@ export async function initDB(db: SQLiteDatabase) {
       is_final_pre_listing INTEGER DEFAULT 0,
       created_at TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_radar_snapshots_ipo ON radar_snapshots(ipo_id, created_at DESC);
-  `);
 
-  await db.execAsync(`
     CREATE TABLE IF NOT EXISTS ipo_outcomes (
       ipo_id TEXT PRIMARY KEY,
       company_name TEXT NOT NULL,
@@ -200,9 +183,7 @@ export async function initDB(db: SQLiteDatabase) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
-  `);
 
-  await db.execAsync(`
     CREATE TABLE IF NOT EXISTS ipo_master (
       id TEXT PRIMARY KEY,
       company_name TEXT NOT NULL DEFAULT '',
@@ -232,7 +213,6 @@ export async function initDB(db: SQLiteDatabase) {
       description TEXT DEFAULT '',
       website TEXT DEFAULT '',
       prospectus_url TEXT DEFAULT '',
-      
       retail_sub REAL,
       qib_sub REAL,
       nii_sub REAL,
@@ -241,15 +221,12 @@ export async function initDB(db: SQLiteDatabase) {
       anchor_sub REAL,
       total_sub REAL,
       subscription_timestamp TEXT,
-      
       registrar_website TEXT DEFAULT '',
       allotment_link TEXT DEFAULT '',
-      
       listing_price REAL,
       listing_gain_percent REAL,
       current_price REAL,
       current_price_updated_at TEXT,
-      
       gmp_amount REAL DEFAULT NULL,
       gmp_percent REAL DEFAULT NULL,
       profit_per_lot REAL DEFAULT NULL,
@@ -263,7 +240,6 @@ export async function initDB(db: SQLiteDatabase) {
       pre_ipo_market_cap REAL DEFAULT NULL,
       post_ipo_market_cap REAL DEFAULT NULL,
       market_cap REAL DEFAULT NULL,
-
       is_favorite INTEGER DEFAULT 0,
       source_type TEXT DEFAULT 'SERVER',
       sync_version INTEGER DEFAULT 0,
@@ -272,218 +248,147 @@ export async function initDB(db: SQLiteDatabase) {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       deleted_at TEXT
-    )
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_radar_snapshots_ipo ON radar_snapshots(ipo_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ipo_listings_backend_id ON ipo_listings(backend_ipo_id);
+    CREATE INDEX IF NOT EXISTS idx_ipo_master_status ON ipo_master(status);
+    CREATE INDEX IF NOT EXISTS idx_ipo_master_symbol ON ipo_master(symbol);
+    CREATE INDEX IF NOT EXISTS idx_ipo_master_dates ON ipo_master(open_date, close_date, listing_date);
+    CREATE INDEX IF NOT EXISTS idx_ipo_master_favorite ON ipo_master(is_favorite);
+    CREATE INDEX IF NOT EXISTS idx_ipo_allotments_app ON ipo_allotments(application_id);
   `);
 
-  // ── Schema Migrations for Existing Databases ────────────────────────────────
-  const migrations = [
-    // users_table migrations
-    'ALTER TABLE users_table ADD COLUMN owner_id TEXT',
-    'ALTER TABLE users_table ADD COLUMN client_id TEXT DEFAULT ""',
-    'ALTER TABLE users_table ADD COLUMN upi_id TEXT DEFAULT ""',
-    'ALTER TABLE users_table ADD COLUMN archived INTEGER DEFAULT 0',
-    'ALTER TABLE users_table ADD COLUMN sync_version INTEGER DEFAULT 0',
-    'ALTER TABLE users_table ADD COLUMN sync_status TEXT DEFAULT "SYNCED"',
-    'ALTER TABLE users_table ADD COLUMN last_synced_at TEXT',
-    'ALTER TABLE users_table ADD COLUMN created_at TEXT NOT NULL DEFAULT ""',
-    'ALTER TABLE users_table ADD COLUMN updated_at TEXT NOT NULL DEFAULT ""',
-    'ALTER TABLE users_table ADD COLUMN deleted_at TEXT',
-    'ALTER TABLE users_table ADD COLUMN avatar_url TEXT DEFAULT ""',
-
-    // ipo_listings migrations
-    'ALTER TABLE ipo_listings ADD COLUMN owner_id TEXT',
-    'ALTER TABLE ipo_listings ADD COLUMN backend_ipo_id TEXT DEFAULT NULL',
-    'ALTER TABLE ipo_listings ADD COLUMN symbol TEXT DEFAULT ""',
-    'ALTER TABLE ipo_listings ADD COLUMN company_name TEXT DEFAULT ""',
-    'ALTER TABLE ipo_listings ADD COLUMN archived INTEGER DEFAULT 0',
-    'ALTER TABLE ipo_listings ADD COLUMN registrar TEXT DEFAULT ""',
-    'ALTER TABLE ipo_listings ADD COLUMN exchange TEXT DEFAULT ""',
-    'ALTER TABLE ipo_listings ADD COLUMN issue_type TEXT DEFAULT ""',
-    'ALTER TABLE ipo_listings ADD COLUMN allotment_date TEXT DEFAULT ""',
-    'ALTER TABLE ipo_listings ADD COLUMN logo_url TEXT DEFAULT ""',
-    'ALTER TABLE ipo_listings ADD COLUMN is_favorite INTEGER DEFAULT 0',
-    'ALTER TABLE ipo_listings ADD COLUMN sync_version INTEGER DEFAULT 0',
-    'ALTER TABLE ipo_listings ADD COLUMN sync_status TEXT DEFAULT "SYNCED"',
-    'ALTER TABLE ipo_listings ADD COLUMN last_synced_at TEXT',
-    'ALTER TABLE ipo_listings ADD COLUMN created_at TEXT NOT NULL DEFAULT ""',
-    'ALTER TABLE ipo_listings ADD COLUMN updated_at TEXT NOT NULL DEFAULT ""',
-    'ALTER TABLE ipo_listings ADD COLUMN deleted_at TEXT',
-    'ALTER TABLE ipo_listings ADD COLUMN gmp_percent REAL DEFAULT 0',
-    'ALTER TABLE ipo_listings ADD COLUMN gmp_value REAL DEFAULT 0',
-
-    // ipo_applications migrations
-    'ALTER TABLE ipo_applications ADD COLUMN owner_id TEXT',
-    'ALTER TABLE ipo_applications ADD COLUMN is_favorite INTEGER DEFAULT 0',
-    'ALTER TABLE ipo_applications ADD COLUMN bank_name TEXT DEFAULT ""',
-    'ALTER TABLE ipo_applications ADD COLUMN upi_app TEXT DEFAULT ""',
-    'ALTER TABLE ipo_applications ADD COLUMN sync_version INTEGER DEFAULT 0',
-    'ALTER TABLE ipo_applications ADD COLUMN sync_status TEXT DEFAULT "SYNCED"',
-    'ALTER TABLE ipo_applications ADD COLUMN last_synced_at TEXT',
-    'ALTER TABLE ipo_applications ADD COLUMN created_at TEXT NOT NULL DEFAULT ""',
-    'ALTER TABLE ipo_applications ADD COLUMN updated_at TEXT NOT NULL DEFAULT ""',
-    'ALTER TABLE ipo_applications ADD COLUMN deleted_at TEXT',
-    'ALTER TABLE ipo_applications ADD COLUMN shares_count INTEGER DEFAULT NULL',
-
-    // bank_accounts migrations
-    'ALTER TABLE bank_accounts ADD COLUMN owner_id TEXT',
-    'ALTER TABLE bank_accounts ADD COLUMN upi_app TEXT DEFAULT ""',
-    'ALTER TABLE bank_accounts ADD COLUMN sync_version INTEGER DEFAULT 0',
-    'ALTER TABLE bank_accounts ADD COLUMN sync_status TEXT DEFAULT "SYNCED"',
-    'ALTER TABLE bank_accounts ADD COLUMN last_synced_at TEXT',
-    'ALTER TABLE bank_accounts ADD COLUMN created_at TEXT NOT NULL DEFAULT ""',
-    'ALTER TABLE bank_accounts ADD COLUMN updated_at TEXT NOT NULL DEFAULT ""',
-    'ALTER TABLE bank_accounts ADD COLUMN deleted_at TEXT',
-
-    // radar_snapshots migrations
-    'ALTER TABLE radar_snapshots ADD COLUMN is_final_pre_listing INTEGER DEFAULT 0',
-
-    // ipo_master migrations
-    'ALTER TABLE ipo_master ADD COLUMN is_favorite INTEGER DEFAULT 0',
-    'ALTER TABLE ipo_master ADD COLUMN source_type TEXT DEFAULT "SERVER"',
-    'ALTER TABLE ipo_master ADD COLUMN sync_status TEXT DEFAULT "SYNCED"',
-    'ALTER TABLE ipo_master ADD COLUMN last_synced_at TEXT',
-    'ALTER TABLE ipo_master ADD COLUMN gmp_amount REAL DEFAULT NULL',
-    'ALTER TABLE ipo_master ADD COLUMN gmp_percent REAL DEFAULT NULL',
-    'ALTER TABLE ipo_master ADD COLUMN profit_per_lot REAL DEFAULT NULL',
-    'ALTER TABLE ipo_master ADD COLUMN gmp_updated_at TEXT DEFAULT NULL',
-    'ALTER TABLE ipo_master ADD COLUMN lifecycle_status TEXT DEFAULT "Unknown"',
-    'ALTER TABLE ipo_master ADD COLUMN lifecycle_confidence TEXT DEFAULT "Low"',
-    'ALTER TABLE ipo_master ADD COLUMN lifecycle_source TEXT DEFAULT ""',
-    'ALTER TABLE ipo_master ADD COLUMN lifecycle_last_verified_at TEXT DEFAULT NULL',
-    'ALTER TABLE ipo_master ADD COLUMN pre_ipo_eps REAL DEFAULT NULL',
-    'ALTER TABLE ipo_master ADD COLUMN post_ipo_eps REAL DEFAULT NULL',
-    'ALTER TABLE ipo_master ADD COLUMN pre_ipo_pe REAL DEFAULT NULL',
-    'ALTER TABLE ipo_master ADD COLUMN post_ipo_pe REAL DEFAULT NULL',
-    'ALTER TABLE ipo_master ADD COLUMN pre_ipo_promoter_holding REAL DEFAULT NULL',
-    'ALTER TABLE ipo_master ADD COLUMN post_ipo_promoter_holding REAL DEFAULT NULL',
-    'ALTER TABLE ipo_master ADD COLUMN pre_ipo_market_cap REAL DEFAULT NULL',
-    'ALTER TABLE ipo_master ADD COLUMN post_ipo_market_cap REAL DEFAULT NULL',
-    'ALTER TABLE ipo_master ADD COLUMN market_cap REAL DEFAULT NULL',
-
-    // sync_queue migrations
-    'ALTER TABLE sync_queue ADD COLUMN retry_count INTEGER DEFAULT 0',
-    'ALTER TABLE sync_queue ADD COLUMN next_retry_at TEXT',
-  ];
-
-  for (const statement of migrations) {
-    try {
-      await db.execAsync(statement);
-    } catch {
-      // Column already exists or table structure is compliant
-    }
-  }
-
-  // Create performance indexes for ipo_master and ipo_listings tables
+  // 2. Check schema version to only run incremental migrations once
   try {
-    await db.execAsync(`
-      CREATE INDEX IF NOT EXISTS idx_ipo_listings_backend_id ON ipo_listings(backend_ipo_id);
-      CREATE INDEX IF NOT EXISTS idx_ipo_master_status ON ipo_master(status);
-      CREATE INDEX IF NOT EXISTS idx_ipo_master_symbol ON ipo_master(symbol);
-      CREATE INDEX IF NOT EXISTS idx_ipo_master_dates ON ipo_master(open_date, close_date, listing_date);
-      CREATE INDEX IF NOT EXISTS idx_ipo_master_favorite ON ipo_master(is_favorite);
-      CREATE INDEX IF NOT EXISTS idx_ipo_allotments_app ON ipo_allotments(application_id);
-    `);
-  } catch {
-    // Indexes exist
-  }
+    const versionRow = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
+    const currentVersion = versionRow?.user_version ?? 0;
 
-  // Backfill allotment_date & canonical backend_ipo_id for existing seed/manual IPO listings
-  try {
-    await db.execAsync(`
-      UPDATE ipo_listings SET backend_ipo_id = '11111111-2222-4333-a444-555555555555', company_name = 'Ashutosh Fibre Limited', symbol = 'ASHUTOSH', registrar = 'KFINTECH', exchange = 'NSE', issue_type = 'MAINBOARD' WHERE (ipo_name LIKE '%Ashutosh%' OR company_name LIKE '%Ashutosh%');
-      UPDATE ipo_listings SET backend_ipo_id = '22222222-3333-4444-b555-666666666666', company_name = 'Dhoot Transmission Limited', symbol = 'DHOOT', registrar = 'KFINTECH', exchange = 'NSE', issue_type = 'MAINBOARD' WHERE (ipo_name LIKE '%Dhoot%' OR company_name LIKE '%Dhoot%');
-      UPDATE ipo_listings SET company_name = ipo_name WHERE company_name IS NULL OR company_name = '';
-      UPDATE ipo_listings SET registrar = 'KFINTECH' WHERE LOWER(registrar) LIKE '%kfin%' OR LOWER(registrar) LIKE '%karvy%';
-      UPDATE ipo_listings SET registrar = 'LINK_INTIME' WHERE LOWER(registrar) LIKE '%link%' AND LOWER(registrar) NOT LIKE '%mufg%';
-      UPDATE ipo_listings SET registrar = 'MUFG_INTIME' WHERE LOWER(registrar) LIKE '%mufg%';
-      UPDATE ipo_listings SET registrar = 'BIGSHARE' WHERE LOWER(registrar) LIKE '%bigshare%';
-      UPDATE ipo_listings SET registrar = 'KFINTECH' WHERE LOWER(registrar) LIKE '%juniper%' OR registrar = 'Juniper';
-      UPDATE ipo_listings SET registrar = 'OTHER' WHERE registrar IS NULL OR registrar = '';
-      UPDATE ipo_listings SET exchange = 'NSE' WHERE exchange IS NULL OR exchange = '';
-      UPDATE ipo_listings SET issue_type = 'MAINBOARD' WHERE issue_type IS NULL OR issue_type = '';
-    `);
-  } catch {
-    // Ignore if backfill fails
-  }
+    if (currentVersion < CURRENT_SCHEMA_VERSION) {
+      // Helper function to safely add missing columns without failing
+      const addColumnIfNotExists = async (table: string, columnDef: string) => {
+        try {
+          await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${columnDef}`);
+        } catch {
+          // Column already exists
+        }
+      };
 
-  // Purge any legacy hardcoded seed IPO records & temporary physical test records
-  try {
-    await db.execAsync(`
-      DELETE FROM ipo_master WHERE id IN (
-        'ipo-leap-india', 'ipo-technocraft', 'ipo-lapl-auto', 'ipo-molbio-diag',
-        'ipo-dhoot-trans', 'ipo-shiprocket', 'ipo-lalithaa-jewellery', 'ipo-ola-electric',
-        'ipo-swiggy', 'ipo-hyundai-motor'
-      ) OR id LIKE 'ipo-%' OR LOWER(company_name) LIKE '%test%' OR LOWER(ipo_name) LIKE '%test%' OR id LIKE '%test%' OR LOWER(TRIM(ipo_name)) = 'ipo';
+      // Ensure incremental columns exist on legacy databases
+      await addColumnIfNotExists('users_table', 'owner_id TEXT');
+      await addColumnIfNotExists('users_table', 'client_id TEXT DEFAULT ""');
+      await addColumnIfNotExists('users_table', 'upi_id TEXT DEFAULT ""');
+      await addColumnIfNotExists('users_table', 'avatar_url TEXT DEFAULT ""');
+      await addColumnIfNotExists('users_table', 'archived INTEGER DEFAULT 0');
+      await addColumnIfNotExists('users_table', 'sync_version INTEGER DEFAULT 0');
+      await addColumnIfNotExists('users_table', 'sync_status TEXT DEFAULT "SYNCED"');
+      await addColumnIfNotExists('users_table', 'last_synced_at TEXT');
+      await addColumnIfNotExists('users_table', 'created_at TEXT NOT NULL DEFAULT ""');
+      await addColumnIfNotExists('users_table', 'updated_at TEXT NOT NULL DEFAULT ""');
+      await addColumnIfNotExists('users_table', 'deleted_at TEXT');
 
-      DELETE FROM ipo_listings WHERE symbol = 'TESTENT' OR LOWER(company_name) LIKE '%test enterprise%' OR LOWER(ipo_name) LIKE '%test enterprise%' OR LOWER(TRIM(ipo_name)) = 'ipo' OR (TRIM(ipo_name) = '' AND TRIM(company_name) = '');
-    `);
-  } catch {
-    // Purge ignored
-  }
+      await addColumnIfNotExists('ipo_listings', 'owner_id TEXT');
+      await addColumnIfNotExists('ipo_listings', 'backend_ipo_id TEXT DEFAULT NULL');
+      await addColumnIfNotExists('ipo_listings', 'symbol TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_listings', 'company_name TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_listings', 'archived INTEGER DEFAULT 0');
+      await addColumnIfNotExists('ipo_listings', 'registrar TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_listings', 'exchange TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_listings', 'issue_type TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_listings', 'allotment_date TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_listings', 'logo_url TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_listings', 'is_favorite INTEGER DEFAULT 0');
+      await addColumnIfNotExists('ipo_listings', 'gmp_percent REAL DEFAULT 0');
+      await addColumnIfNotExists('ipo_listings', 'gmp_value REAL DEFAULT 0');
+      await addColumnIfNotExists('ipo_listings', 'sync_version INTEGER DEFAULT 0');
+      await addColumnIfNotExists('ipo_listings', 'sync_status TEXT DEFAULT "SYNCED"');
+      await addColumnIfNotExists('ipo_listings', 'last_synced_at TEXT');
+      await addColumnIfNotExists('ipo_listings', 'created_at TEXT NOT NULL DEFAULT ""');
+      await addColumnIfNotExists('ipo_listings', 'updated_at TEXT NOT NULL DEFAULT ""');
+      await addColumnIfNotExists('ipo_listings', 'deleted_at TEXT');
 
-  // Migration routine for sync_status & last_synced_at
-  try {
-    const validTables = ['users_table', 'ipo_listings', 'ipo_applications', 'bank_accounts', 'ipo_master'];
-    const now = new Date().toISOString();
+      await addColumnIfNotExists('ipo_applications', 'owner_id TEXT');
+      await addColumnIfNotExists('ipo_applications', 'is_favorite INTEGER DEFAULT 0');
+      await addColumnIfNotExists('ipo_applications', 'bank_name TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_applications', 'upi_app TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_applications', 'shares_count INTEGER DEFAULT NULL');
+      await addColumnIfNotExists('ipo_applications', 'sync_version INTEGER DEFAULT 0');
+      await addColumnIfNotExists('ipo_applications', 'sync_status TEXT DEFAULT "SYNCED"');
+      await addColumnIfNotExists('ipo_applications', 'last_synced_at TEXT');
+      await addColumnIfNotExists('ipo_applications', 'created_at TEXT NOT NULL DEFAULT ""');
+      await addColumnIfNotExists('ipo_applications', 'updated_at TEXT NOT NULL DEFAULT ""');
+      await addColumnIfNotExists('ipo_applications', 'deleted_at TEXT');
 
-    let queuedItems: { table_name: string; record_id: string }[] = [];
-    try {
-      queuedItems = await db.getAllAsync<{ table_name: string; record_id: string }>(
-        'SELECT table_name, record_id FROM sync_queue'
-      );
-    } catch {
-      // sync_queue table might not exist
-    }
+      await addColumnIfNotExists('bank_accounts', 'owner_id TEXT');
+      await addColumnIfNotExists('bank_accounts', 'upi_app TEXT DEFAULT ""');
+      await addColumnIfNotExists('bank_accounts', 'sync_version INTEGER DEFAULT 0');
+      await addColumnIfNotExists('bank_accounts', 'sync_status TEXT DEFAULT "SYNCED"');
+      await addColumnIfNotExists('bank_accounts', 'last_synced_at TEXT');
+      await addColumnIfNotExists('bank_accounts', 'created_at TEXT NOT NULL DEFAULT ""');
+      await addColumnIfNotExists('bank_accounts', 'updated_at TEXT NOT NULL DEFAULT ""');
+      await addColumnIfNotExists('bank_accounts', 'deleted_at TEXT');
 
-    const pendingMap = new Map<string, Set<string>>();
-    for (const table of validTables) {
-      pendingMap.set(table, new Set());
-    }
-    for (const item of queuedItems) {
-      if (pendingMap.has(item.table_name)) {
-        pendingMap.get(item.table_name)!.add(item.record_id);
-      }
-    }
+      await addColumnIfNotExists('radar_snapshots', 'is_final_pre_listing INTEGER DEFAULT 0');
 
-    for (const table of validTables) {
-      const pendingIds = Array.from(pendingMap.get(table) || []);
-      if (pendingIds.length > 0) {
-        const placeholders = pendingIds.map(() => '?').join(',');
-        await db.runAsync(
-          `UPDATE ${table} SET sync_status = 'PENDING' WHERE id IN (${placeholders})`,
-          pendingIds
-        );
-        await db.runAsync(
-          `UPDATE ${table} SET sync_status = 'SYNCED' WHERE id NOT IN (${placeholders}) AND (sync_status IS NULL OR sync_status = '')`,
-          pendingIds
-        );
-      } else {
-        await db.runAsync(
-          `UPDATE ${table} SET sync_status = 'SYNCED' WHERE sync_status IS NULL OR sync_status = ''`
-        );
-      }
+      await addColumnIfNotExists('ipo_master', 'is_favorite INTEGER DEFAULT 0');
+      await addColumnIfNotExists('ipo_master', 'source_type TEXT DEFAULT "SERVER"');
+      await addColumnIfNotExists('ipo_master', 'sync_status TEXT DEFAULT "SYNCED"');
+      await addColumnIfNotExists('ipo_master', 'last_synced_at TEXT');
+      await addColumnIfNotExists('ipo_master', 'gmp_amount REAL DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'gmp_percent REAL DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'profit_per_lot REAL DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'gmp_updated_at TEXT DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'lifecycle_status TEXT DEFAULT "Unknown"');
+      await addColumnIfNotExists('ipo_master', 'lifecycle_confidence TEXT DEFAULT "Low"');
+      await addColumnIfNotExists('ipo_master', 'lifecycle_source TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_master', 'lifecycle_last_verified_at TEXT DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'pre_ipo_eps REAL DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'post_ipo_eps REAL DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'pre_ipo_pe REAL DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'post_ipo_pe REAL DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'pre_ipo_promoter_holding REAL DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'post_ipo_promoter_holding REAL DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'pre_ipo_market_cap REAL DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'post_ipo_market_cap REAL DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'market_cap REAL DEFAULT NULL');
 
-      await db.runAsync(
-        `UPDATE ${table} SET last_synced_at = COALESCE(NULLIF(updated_at, ''), NULLIF(created_at, ''), ?) WHERE sync_status = 'SYNCED' AND (last_synced_at IS NULL OR last_synced_at = '')`,
-        [now]
-      );
+      await addColumnIfNotExists('sync_queue', 'retry_count INTEGER DEFAULT 0');
+      await addColumnIfNotExists('sync_queue', 'next_retry_at TEXT');
+
+      // Purge legacy seed records & test records
+      try {
+        await db.execAsync(`
+          DELETE FROM ipo_master WHERE id IN (
+            'ipo-leap-india', 'ipo-technocraft', 'ipo-lapl-auto', 'ipo-molbio-diag',
+            'ipo-dhoot-trans', 'ipo-shiprocket', 'ipo-lalithaa-jewellery', 'ipo-ola-electric',
+            'ipo-swiggy', 'ipo-hyundai-motor'
+          ) OR id LIKE 'ipo-%' OR LOWER(company_name) LIKE '%test%' OR LOWER(ipo_name) LIKE '%test%' OR id LIKE '%test%' OR LOWER(TRIM(ipo_name)) = 'ipo';
+
+          DELETE FROM ipo_listings WHERE symbol = 'TESTENT' OR LOWER(company_name) LIKE '%test enterprise%' OR LOWER(ipo_name) LIKE '%test enterprise%' OR LOWER(TRIM(ipo_name)) = 'ipo' OR (TRIM(ipo_name) = '' AND TRIM(company_name) = '');
+        `);
+      } catch {}
+
+      // Backfill sync_status & last_synced_at
+      try {
+        await db.execAsync(`
+          UPDATE users_table SET sync_status = 'SYNCED' WHERE sync_status IS NULL OR sync_status = '';
+          UPDATE ipo_listings SET sync_status = 'SYNCED' WHERE sync_status IS NULL OR sync_status = '';
+          UPDATE ipo_applications SET sync_status = 'SYNCED' WHERE sync_status IS NULL OR sync_status = '';
+          UPDATE bank_accounts SET sync_status = 'SYNCED' WHERE sync_status IS NULL OR sync_status = '';
+          UPDATE ipo_master SET sync_status = 'SYNCED' WHERE sync_status IS NULL OR sync_status = '';
+
+          UPDATE users_table SET last_synced_at = COALESCE(NULLIF(updated_at, ''), NULLIF(created_at, ''), CURRENT_TIMESTAMP) WHERE sync_status = 'SYNCED' AND (last_synced_at IS NULL OR last_synced_at = '');
+          UPDATE ipo_listings SET last_synced_at = COALESCE(NULLIF(updated_at, ''), NULLIF(created_at, ''), CURRENT_TIMESTAMP) WHERE sync_status = 'SYNCED' AND (last_synced_at IS NULL OR last_synced_at = '');
+          UPDATE ipo_applications SET last_synced_at = COALESCE(NULLIF(updated_at, ''), NULLIF(created_at, ''), CURRENT_TIMESTAMP) WHERE sync_status = 'SYNCED' AND (last_synced_at IS NULL OR last_synced_at = '');
+          UPDATE bank_accounts SET last_synced_at = COALESCE(NULLIF(updated_at, ''), NULLIF(created_at, ''), CURRENT_TIMESTAMP) WHERE sync_status = 'SYNCED' AND (last_synced_at IS NULL OR last_synced_at = '');
+          UPDATE ipo_master SET last_synced_at = COALESCE(NULLIF(updated_at, ''), NULLIF(created_at, ''), CURRENT_TIMESTAMP) WHERE sync_status = 'SYNCED' AND (last_synced_at IS NULL OR last_synced_at = '');
+        `);
+      } catch {}
+
+      // Mark user_version as fully migrated
+      await db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
     }
   } catch (err) {
-    console.error('[Schema Migration Error]', err);
-  }
-
-  // One-time cleanup: clear locally-uploaded IPO logos (data: or file://) from ipo_listings.
-  // Preserves http:// and https:// backend/CDN URLs. Idempotent — no-op once all rows are cleared.
-  try {
-    await db.execAsync(`
-      UPDATE ipo_listings
-      SET logo_url = NULL
-      WHERE logo_url IS NOT NULL
-        AND logo_url != ''
-        AND logo_url NOT LIKE 'http://%'
-        AND logo_url NOT LIKE 'https://%'
-    `);
-  } catch {
-    // Ignore — table or column not present on this install
+    if (__DEV__) console.warn('[Schema Migration Notice]', err);
   }
 }

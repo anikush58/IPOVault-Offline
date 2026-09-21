@@ -245,7 +245,10 @@ export default function NewIposScreen() {
   }, [rawIpos, includeSme, searchQuery]);
 
   const liveList = useMemo(() => {
-    return filteredRawIpos.filter((item) => item.status === 'OPEN' || item.status === 'ACTIVE');
+    return filteredRawIpos.filter((item) => {
+      const st = (item.status || '').toUpperCase().trim();
+      return st === 'OPEN' || st === 'ACTIVE' || st === 'LIVE' || st === 'CLOSING_TODAY';
+    });
   }, [filteredRawIpos]);
 
   const upcomingList = useMemo(() => {
@@ -255,7 +258,10 @@ export default function NewIposScreen() {
   const closedList = useMemo(() => {
     return filteredRawIpos.filter((item) => {
       const st = (item.status || '').toUpperCase();
-      return st === 'CLOSED' || st.includes('ALLOT') || st.includes('AWAIT') || st === 'LISTING_PENDING';
+      return (
+        (st === 'CLOSED' || st.includes('ALLOT') || st.includes('AWAIT') || st === 'LISTING_PENDING') &&
+        st !== 'CLOSING_TODAY'
+      );
     });
   }, [filteredRawIpos]);
 
@@ -325,6 +331,9 @@ export default function NewIposScreen() {
 
 function getStatusBadge(status?: string, openDate?: string | null) {
   const norm = (status || '').toUpperCase().trim();
+  if (norm === 'CLOSING_TODAY' || norm === 'CLOSING TODAY' || norm === 'CLOSES TODAY') {
+    return { text: 'Closing Today', bg: '#FEF3C7', color: '#D97706', icon: 'alert-circle' };
+  }
   if (norm === 'OPEN' || norm === 'ACTIVE' || norm === 'LIVE') {
     return { text: 'Live Now', bg: '#DCFCE7', color: '#15803D', icon: 'activity' };
   }
@@ -341,7 +350,7 @@ function getStatusBadge(status?: string, openDate?: string | null) {
   ) {
     return { text: 'Allotment Out', bg: 'rgba(16, 185, 129, 0.12)', color: '#10B981', icon: 'check-circle' };
   }
-  if (norm === 'CLOSED' || norm === 'ALLOTMENT_PENDING' || norm === 'ALLOTTED_PENDING' || norm.includes('CLOSED')) {
+  if (norm === 'CLOSED' || norm === 'ALLOTMENT_PENDING' || norm === 'ALLOTTED_PENDING' || (norm.includes('CLOSED') && norm !== 'CLOSING_TODAY')) {
     return { text: 'Closed', bg: '#F1F5F9', color: '#64748B', icon: 'lock' };
   }
   const formattedOpen = openDate ? formatApplyDates(openDate, null) : 'Soon';
@@ -390,18 +399,20 @@ function getStatusBadge(status?: string, openDate?: string | null) {
     const isSme = item.marketSegment === 'SME';
     const statusBadge = getStatusBadge(item.status, item.openDate);
 
-    const normStatus = (item.status || '').toUpperCase();
+    const normStatus = (item.status || '').toUpperCase().trim();
     const isClosedOrListed =
       normStatus === 'CLOSED' ||
       normStatus === 'LISTED' ||
       normStatus === 'ALLOTTED' ||
       normStatus === 'ALLOTMENT_OUT' ||
-      normStatus.includes('CLOSED') ||
+      normStatus === 'ALLOTMENT_COMPLETED' ||
+      (normStatus.includes('CLOSED') && normStatus !== 'CLOSING_TODAY') ||
       normStatus.includes('ALLOT') ||
       normStatus.includes('LIST');
     const isUpcoming = normStatus === 'UPCOMING' || activeTab === 'upcoming';
     const isOpen =
       (normStatus === 'OPEN' ||
+        normStatus === 'CLOSING_TODAY' ||
         normStatus === 'LIVE' ||
         normStatus === 'BIDDING' ||
         normStatus === 'ACTIVE' ||
@@ -474,8 +485,12 @@ function getStatusBadge(status?: string, openDate?: string | null) {
                 styles.segmentBadge,
                 {
                   backgroundColor: isSme
-                    ? (isDark ? 'rgba(217, 119, 6, 0.15)' : '#FEF3C7')
-                    : (isDark ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF'),
+                    ? (isDark ? 'rgba(236, 72, 153, 0.15)' : '#FCE7F3')
+                    : (isDark ? 'rgba(139, 92, 246, 0.15)' : '#F3E8FF'),
+                  borderColor: isSme
+                    ? (isDark ? 'rgba(236, 72, 153, 0.3)' : 'rgba(236, 72, 153, 0.25)')
+                    : (isDark ? 'rgba(139, 92, 246, 0.3)' : 'rgba(139, 92, 246, 0.25)'),
+                  borderWidth: 1,
                 },
               ]}
             >
@@ -484,8 +499,8 @@ function getStatusBadge(status?: string, openDate?: string | null) {
                   styles.segmentBadgeText,
                   {
                     color: isSme
-                      ? (isDark ? '#F59E0B' : '#D97706')
-                      : (isDark ? '#818CF8' : '#4F46E5'),
+                      ? (isDark ? '#F472B6' : '#DB2777')
+                      : (isDark ? '#A78BFA' : '#7C3AED'),
                   },
                 ]}
               >

@@ -171,8 +171,8 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
   const issuePrice = ipo.price_band_max || ipo.price_band_min || 0;
   const listingPrice = ipo.listing_price;
   const listingGainPct = ipo.listing_gain_percent ?? (listingPrice && issuePrice > 0 ? ((listingPrice - issuePrice) / issuePrice) * 100 : null);
-  const profitAmt = ipo.profit_amount ?? (listingPrice && issuePrice > 0 && ipo.lot_size ? (listingPrice - issuePrice) * ipo.lot_size : null);
-  const profitPct = ipo.profit_percent ?? listingGainPct;
+  const profitAmt = (ipo as any).profit_amount ?? (listingPrice && issuePrice > 0 && ipo.lot_size ? (listingPrice - issuePrice) * ipo.lot_size : null);
+  const profitPct = (ipo as any).profit_percent ?? listingGainPct;
 
   const listingGainText = listingGainPct != null ? `${listingGainPct > 0 ? '+' : ''}${listingGainPct.toFixed(2)}%` : '—';
   const profitAmtText = profitAmt != null ? `₹${profitAmt > 0 ? '+' : ''}${Math.round(profitAmt).toLocaleString('en-IN')}` : '—';

@@ -1,4 +1,4 @@
-import { RadarCategory, CATEGORY_RANK } from './radarScoringEngine';
+import { RadarCategory, CATEGORY_RANK } from './radarTypes';
 import { RadarSnapshotRecord } from './radarSnapshotService';
 
 export type RadarTrajectoryState =

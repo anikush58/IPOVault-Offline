@@ -1,5 +1,6 @@
 import { IPOMasterRecord } from './types';
-import { RadarScoreBreakdown, RadarCategory, CATEGORY_RANK } from './radarScoringEngine';
+import type { RadarScoreBreakdown } from './radarScoringEngine';
+import { RadarCategory, CATEGORY_RANK } from './radarTypes';
 import { TrajectoryAnalysisResult } from './radarTrajectoryEngine';
 
 export type ReadinessLevel = 'DECISION_READY' | 'STRONG_EVIDENCE' | 'PARTIAL_EVIDENCE' | 'INSUFFICIENT_EVIDENCE';

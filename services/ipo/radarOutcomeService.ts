@@ -222,6 +222,8 @@ export function calculateHighGmpReversalRate(pairs: IPOOutcomePair[]): {
   };
 }
 
+import { safeRunAsync, safeGetFirstAsync } from '@/utils/sqliteDebug';
+
 /**
  * Persist or update an authoritative IPO outcome record in SQLite.
  */
@@ -231,7 +233,8 @@ export async function recordIPOOutcome(
 ): Promise<boolean> {
   try {
     const now = new Date().toISOString();
-    await db.runAsync(
+    await safeRunAsync(
+      db,
       `INSERT INTO ipo_outcomes (
         ipo_id, company_name, issue_price, listing_price, listing_gain_percent,
         listing_date, day_30_price, day_30_gain_percent, outcome_recorded_at, created_at, updated_at
@@ -254,7 +257,8 @@ export async function recordIPOOutcome(
         outcome.outcome_recorded_at || now,
         outcome.created_at || now,
         now,
-      ]
+      ],
+      'RadarOutcome.recordIPOOutcome'
     );
     return true;
   } catch (err) {
@@ -271,9 +275,11 @@ export async function getIPOOutcome(
   ipoId: string
 ): Promise<IPOOutcomeRecord | null> {
   try {
-    const row = await db.getFirstAsync<IPOOutcomeRecord>(
+    const row = await safeGetFirstAsync<IPOOutcomeRecord>(
+      db,
       'SELECT * FROM ipo_outcomes WHERE ipo_id = ?',
-      [ipoId]
+      [ipoId],
+      'RadarOutcome.getIPOOutcome'
     );
     return row || null;
   } catch (err) {

@@ -148,36 +148,70 @@ export class LiveIPOProvider implements IPOProvider {
   private normalizeRecord(raw: any): Partial<IPOMasterRecord> {
     const id = String(raw.id || raw.ipo_id || raw.symbol || `ipo-${Date.now()}`);
     const now = new Date().toISOString();
+    const companyDisplayName = raw.company?.displayName || raw.companyName || raw.company_name || raw.name || raw.symbol || '';
+
+    const registrarName =
+      raw.registrar ||
+      raw.registrar_name ||
+      raw.participants?.find((p: any) => p.role === 'REGISTRAR')?.name ||
+      '';
+
+    const leadMgr =
+      raw.lead_manager ||
+      raw.leadManager ||
+      raw.participants?.find((p: any) => p.role === 'BRLM' || p.role === 'CO_BRLM')?.name ||
+      '';
+
+    const gmpAmt =
+      raw.currentGmp?.gmpAmount != null
+        ? Number(raw.currentGmp.gmpAmount)
+        : raw.gmp_amount !== undefined
+        ? raw.gmp_amount
+        : raw.gmp !== undefined && raw.gmp !== null
+        ? Number(raw.gmp)
+        : null;
+
+    const gmpPct =
+      raw.currentGmp?.gmpPercentage != null
+        ? Number(raw.currentGmp.gmpPercentage)
+        : raw.gmp_percent ?? null;
+
+    const profitPerLot =
+      raw.currentGmp?.estProfitPerLot != null
+        ? Number(raw.currentGmp.estProfitPerLot)
+        : raw.profit_per_lot ?? null;
+
+    const gmpUpdated = raw.currentGmp?.observedAt || raw.gmp_updated_at || null;
 
     return {
       id,
-      company_name: String(raw.company_name || raw.companyName || raw.name || '').trim(),
-      ipo_name: String(raw.ipo_name || raw.ipoName || raw.name || raw.company_name || '').trim(),
+      company_name: String(companyDisplayName).trim(),
+      ipo_name: String(companyDisplayName).trim(),
       symbol: String(raw.symbol || raw.ticker || '').trim(),
       exchange: String(raw.exchange || raw.board || 'NSE').trim(),
-      issue_type: String(raw.issue_type || raw.issueType || raw.category || 'Mainboard').trim(),
-      price_band_min: raw.price_band_min ?? raw.minPrice ?? null,
-      price_band_max: raw.price_band_max ?? raw.maxPrice ?? null,
-      lot_size: raw.lot_size ?? raw.lotSize ?? null,
-      issue_size: raw.issue_size_cr ?? raw.issue_size ?? raw.issueSize ?? null,
-      open_date: raw.open_date || raw.openDate || null,
-      close_date: raw.close_date || raw.closeDate || null,
-      allotment_date: raw.allotment_date || raw.allotmentDate || null,
-      listing_date: raw.listing_date || raw.listingDate || null,
-      refund_date: raw.refund_date || raw.refundDate || null,
-      demat_credit_date: raw.demat_credit_date || raw.dematCreditDate || null,
-      registrar: String(raw.registrar || raw.registrar_name || '').trim(),
-      lead_manager: String(raw.lead_manager || raw.leadManager || '').trim(),
+      issue_type: raw.marketSegment === 'SME' ? 'SME' : String(raw.issue_type || raw.issueType || raw.category || 'Mainboard').trim(),
+      price_band_min: raw.priceBandLow ?? raw.price_band_min ?? raw.minPrice ?? raw.issuePriceInr ?? null,
+      price_band_max: raw.priceBandHigh ?? raw.price_band_max ?? raw.maxPrice ?? raw.issuePriceInr ?? null,
+      lot_size: raw.lotSize ?? raw.lot_size ?? null,
+      issue_size: raw.issueSize ?? raw.issue_size_cr ?? raw.issue_size ?? null,
+      open_date: raw.openDate || raw.open_date || raw.lifecycle?.openDate || null,
+      close_date: raw.closeDate || raw.close_date || raw.lifecycle?.closeDate || null,
+      allotment_date: raw.allotmentDate || raw.allotment_date || raw.lifecycle?.basisOfAllotmentDate || null,
+      listing_date: raw.listingDate || raw.listing_date || raw.lifecycle?.listingDate || null,
+      refund_date: raw.refundDate || raw.refund_date || raw.lifecycle?.refundInitiationDate || null,
+      demat_credit_date: raw.dematCreditDate || raw.demat_credit_date || raw.lifecycle?.dematCreditDate || null,
+      registrar: String(registrarName).trim(),
+      lead_manager: String(leadMgr).trim(),
       status: String(raw.status || 'Upcoming').trim(),
-      logo_url: String(raw.logo_url || raw.logoUrl || '').trim(),
-      sector: String(raw.sector || '').trim(),
-      description: String(raw.description || '').trim(),
-      website: String(raw.website || raw.company_website || '').trim(),
-      prospectus_url: String(raw.prospectus_url || raw.rhp_url || '').trim(),
-      gmp_amount: raw.gmp_amount !== undefined ? (raw.gmp_amount ?? null) : ((raw.gmp !== undefined && raw.gmp !== null) ? Number(raw.gmp) : null),
-      gmp_percent: raw.gmp_percent ?? null,
-      profit_per_lot: raw.profit_per_lot ?? null,
-      gmp_updated_at: raw.gmp_updated_at || null,
+      logo_url: String(raw.company?.logoUrl || raw.logoUrl || raw.logo_url || '').trim(),
+      sector: String(raw.company?.sector || raw.sector || '').trim(),
+      description: String(raw.company?.aboutDescription || raw.description || '').trim(),
+      website: String(raw.company?.website || raw.company_website || raw.website || '').trim(),
+      prospectus_url: String(raw.rhpUrl || raw.prospectusUrl || raw.prospectus_url || raw.rhp_url || '').trim(),
+      gmp_amount: gmpAmt,
+      gmp_percent: gmpPct,
+      profit_per_lot: profitPerLot,
+      gmp_updated_at: gmpUpdated,
       sync_version: raw.sync_version ?? 1,
       updated_at: raw.updated_at || raw.updatedAt || now,
     };

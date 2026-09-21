@@ -43,6 +43,7 @@ export function isBackendIpoAllotmentEligible(b: BackendIpo): boolean {
     clean === 'LISTING_PENDING' ||
     clean === 'LISTING_UPCOMING' ||
     clean === 'OPEN' ||
+    clean === 'CLOSING_TODAY' ||
     clean === 'UPCOMING' ||
     clean === 'LIVE' ||
     clean === 'ACTIVE'

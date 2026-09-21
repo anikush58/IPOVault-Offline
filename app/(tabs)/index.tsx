@@ -15,7 +15,7 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useColors } from '@/hooks/useColors';
@@ -104,7 +104,9 @@ export default function DashboardScreen() {
   const loadIpoHubData = useCallback(async () => {
     try {
       // Trigger background sync with live API
-      triggerCentralizedIPOSync(db, { source: 'Dashboard' }).catch(() => {});
+      if (db) {
+        triggerCentralizedIPOSync(db, { source: 'Dashboard' }).catch(() => {});
+      }
 
       // Fetch live backend IPO list (only backend-published IPOs)
       let backendItems: any[] = [];
@@ -136,22 +138,20 @@ export default function DashboardScreen() {
           price_band_max: priceMax,
           lot_size: lotSize,
           issue_type: b.marketSegment === 'SME' ? 'SME' : 'Mainboard',
-          open_date: b.openDate || '',
-          close_date: b.closeDate || '',
-          listing_date: b.listingDate || '',
+          open_date: b.openDate || b.lifecycle?.openDate || '',
+          close_date: b.closeDate || b.lifecycle?.closeDate || '',
+          listing_date: b.listingDate || b.lifecycle?.listingDate || '',
           gmp_amount: gmpAmt,
           gmp_percent: gmpPct,
           total_sub: totalSub,
-          logo_url: b.company?.logoUrl || '',
+          logo_url: b.company?.logoUrl || (b as any).logoUrl || '',
           status: (b.status || 'OPEN').toUpperCase(),
           lifecycle_status: (b.status || 'OPEN').toUpperCase(),
         });
       }
 
       const allItems = Array.from(map.values());
-      if (allItems.length > 0) {
-        setIpoHubItems(allItems);
-      }
+      setIpoHubItems(allItems);
     } catch (err) {
       if (__DEV__) console.warn('[DashboardScreen] Failed to load IPO Hub data', err);
     }
@@ -159,6 +159,24 @@ export default function DashboardScreen() {
 
   useEffect(() => {
     loadIpoHubData();
+  }, [loadIpoHubData]);
+
+  // Screen Focus Auto-Refresh (instantly update dashboard when tab is selected)
+  useFocusEffect(
+    useCallback(() => {
+      loadIpoHubData();
+    }, [loadIpoHubData])
+  );
+
+  // 10-Second Periodic Polling for real-time live synchronization with backend
+  useEffect(() => {
+    const timer = setInterval(() => {
+      loadIpoHubData();
+    }, 10000);
+
+    return () => {
+      clearInterval(timer);
+    };
   }, [loadIpoHubData]);
 
   // Re-fetch open IPOs whenever applications are applied (backendSyncEmitter fires after each apply)
@@ -169,11 +187,23 @@ export default function DashboardScreen() {
     return unsub;
   }, [loadIpoHubData]);
 
+  const handleDashboardRefresh = useCallback(async () => {
+    try {
+      setRefreshingIpoHub(true);
+      await Promise.all([
+        refresh(),
+        loadIpoHubData(),
+        db ? triggerCentralizedIPOSync(db, { force: true, source: 'Dashboard Pull-to-Refresh' }) : Promise.resolve(),
+      ]);
+    } catch (err) {
+      if (__DEV__) console.warn('[Dashboard] Refresh error', err);
+    } finally {
+      setRefreshingIpoHub(false);
+    }
+  }, [refresh, loadIpoHubData, db]);
+
   const openIpoList = useMemo(() => {
     // Merge ipoHubItems (live API) + ipos (local DB, enriched from ipo_master) into one source.
-    // Previously used either/or which meant SS Retail (or any IPO) could vanish if it wasn't
-    // in the first N API results or wasn't in the local DB yet. Now both sources contribute:
-    // ipoHubItems entries take precedence (fresher API data), deduped by ID.
     const mergedMap = new Map<string, any>();
 
     // First add ipos (local DB, lower priority)
@@ -188,22 +218,22 @@ export default function DashboardScreen() {
     const sourceList = Array.from(mergedMap.values());
     const active = sourceList.filter((i) => i.archived !== 1 && (i as any).archived !== true);
     
-    // Filter for strictly OPEN IPOs matching IPO Hub status calculation
+    // Filter for strictly OPEN and CLOSING_TODAY IPOs matching IPO Hub status calculation
     const openOnly = active.filter((i) => {
-      const st = (i.status || i.lifecycle_status || calculateNormalizedIPOStatus(i) || '').toUpperCase();
-      return st === 'OPEN' || st === 'ACTIVE' || st === 'LIVE';
+      const st = (i.status || i.lifecycle_status || calculateNormalizedIPOStatus(i) || '').toUpperCase().trim();
+      return st === 'OPEN' || st === 'ACTIVE' || st === 'LIVE' || st === 'CLOSING_TODAY' || st === 'CLOSING TODAY';
     });
     
     let targetList = openOnly;
     if (targetList.length === 0) {
       targetList = active.filter((i) => {
-        const st = (i.status || i.lifecycle_status || calculateNormalizedIPOStatus(i) || '').toUpperCase();
-        return st === 'OPEN' || st === 'UPCOMING' || st === 'ACTIVE' || st === 'LIVE';
+        const st = (i.status || i.lifecycle_status || calculateNormalizedIPOStatus(i) || '').toUpperCase().trim();
+        return st === 'OPEN' || st === 'UPCOMING' || st === 'ACTIVE' || st === 'LIVE' || st === 'CLOSING_TODAY' || st === 'CLOSING TODAY';
       });
     }
     if (targetList.length === 0) {
       targetList = active.filter((i) => {
-        const st = (i.status || i.lifecycle_status || calculateNormalizedIPOStatus(i) || '').toUpperCase();
+        const st = (i.status || i.lifecycle_status || calculateNormalizedIPOStatus(i) || '').toUpperCase().trim();
         return st !== 'CLOSED' && st !== 'LISTED';
       });
     }
@@ -218,7 +248,6 @@ export default function DashboardScreen() {
         return 0;
       });
     }
-
     return [];
   }, [ipoHubItems, ipos]);
 
@@ -393,14 +422,6 @@ export default function DashboardScreen() {
     outputRange: [0, 0, 1],
   });
 
-  const handleDashboardRefresh = useCallback(async () => {
-    setRefreshingIpoHub(true);
-    await Promise.all([
-      refresh().catch(() => {}),
-      loadIpoHubData().catch(() => {}),
-    ]);
-    setRefreshingIpoHub(false);
-  }, [refresh, loadIpoHubData]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

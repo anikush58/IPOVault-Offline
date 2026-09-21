@@ -73,6 +73,9 @@ function RootLayoutNav() {
         <Stack.Screen name="new-ipos" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="backend-ipo-details" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="analytics-dashboard" options={{ headerShown: false, animation: 'fade' }} />
+        <Stack.Screen name="privacy-security" options={{ headerShown: false, animation: 'fade' }} />
+        <Stack.Screen name="privacy-policy" options={{ headerShown: false, animation: 'fade' }} />
+        <Stack.Screen name="help-center" options={{ headerShown: false, animation: 'fade' }} />
       </Stack>
 
     </>

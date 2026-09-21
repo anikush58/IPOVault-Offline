@@ -103,7 +103,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
         const st = (b.status || '').toUpperCase();
         const compName = (b.company?.displayName || b.companyName || b.symbol || '').trim();
         if (!compName || compName.toUpperCase() === 'IPO') return false;
-        return st === 'OPEN' || st === 'ACTIVE' || st === 'LIVE';
+        return st === 'OPEN' || st === 'ACTIVE' || st === 'LIVE' || st === 'CLOSING_TODAY';
       })
       .map((b): BulkIPOOption => {
         const price = b.priceBandHigh || b.priceBandLow || 100;
@@ -135,12 +135,12 @@ export function BulkApplySheet({ visible, onClose }: Props) {
         const name = (i.ipo_name || i.company_name || '').trim();
         if (!name || name.toUpperCase() === 'IPO' || name.toLowerCase().includes('test')) return false;
         const st = (i.status || i.lifecycle_status || '').toUpperCase();
-        return st === 'OPEN' || st === 'ACTIVE' || st === 'LIVE';
+        return st === 'OPEN' || st === 'ACTIVE' || st === 'LIVE' || st === 'CLOSING_TODAY';
       })
       .map((i): BulkIPOOption => ({
         id: i.id,
-        ipo_name: i.ipo_name,
-        company_name: i.company_name,
+        ipo_name: i.ipo_name || i.company_name || 'IPO',
+        company_name: i.company_name || i.ipo_name || 'IPO',
         buy_price: i.buy_price,
         quantity: i.quantity,
         open_date: i.open_date,

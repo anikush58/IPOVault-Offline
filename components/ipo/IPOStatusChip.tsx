@@ -8,21 +8,21 @@ export function IPOStatusChip({ status }: { status: IPOStatusType }) {
   const colors = useColors();
 
   const getStyle = (st: string) => {
-    const s = (st || '').toLowerCase();
-    if (s === 'closing soon' || s === 'closes today' || s === 'closing') {
+    const s = (st || '').toLowerCase().trim();
+    if (s === 'closing_today' || s === 'closing today' || s === 'closes today' || s === 'closing soon' || s === 'closing') {
       return {
-        bg: 'rgba(239, 68, 68, 0.10)',
-        border: 'rgba(239, 68, 68, 0.22)',
-        text: '#EF4444',
-        dot: '#EF4444',
+        bg: '#FEF3C7',
+        border: 'rgba(217, 119, 6, 0.3)',
+        text: '#D97706',
+        dot: '#D97706',
       };
     }
-    if (s === 'open' || s === 'live bid' || s === 'live') {
+    if (s === 'open' || s === 'live bid' || s === 'live' || s === 'live now') {
       return {
-        bg: 'transparent',
-        border: '#10B981',
-        text: '#10B981',
-        dot: '#10B981',
+        bg: '#DCFCE7',
+        border: 'rgba(21, 128, 61, 0.3)',
+        text: '#15803D',
+        dot: '#15803D',
       };
     }
     if (s === 'pre-apply' || s === 'pre_apply' || s === 'preapply') {
@@ -90,6 +90,12 @@ export function IPOStatusChip({ status }: { status: IPOStatusType }) {
 
   const getDisplayText = (st: string) => {
     const s = (st || '').toLowerCase().trim();
+    if (s === 'closing_today' || s === 'closing today' || s === 'closes today') {
+      return 'Closing Today';
+    }
+    if (s === 'open' || s === 'live' || s === 'live bid' || s === 'live now') {
+      return 'Live Now';
+    }
     if (
       s === 'allotted' ||
       s === 'allotment out' ||
@@ -102,6 +108,12 @@ export function IPOStatusChip({ status }: { status: IPOStatusType }) {
     }
     if (s === 'closed' || s === 'allotment_pending' || s === 'awaiting allotment') {
       return 'Closed';
+    }
+    if (s === 'upcoming') {
+      return 'Upcoming';
+    }
+    if (s === 'listed') {
+      return 'Listed';
     }
     return status || 'Unknown';
   };
@@ -121,13 +133,14 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    justifyContent: 'center',
+    height: 22,
+    paddingHorizontal: 8,
     borderRadius: 6,
     borderWidth: 1,
   },
   text: {
-    fontSize: 8,
+    fontSize: 9.5,
     fontFamily: 'GoogleSansFlex_700Bold',
     textTransform: 'uppercase',
     letterSpacing: 0.3,

@@ -6,6 +6,7 @@
 export type SmartIPOLifecycleStatus =
   | 'UPCOMING'
   | 'OPEN'
+  | 'CLOSING_TODAY'
   | 'CLOSED'
   | 'ALLOTTED_PENDING'
   | 'ALLOTTED_AVAILABLE'
