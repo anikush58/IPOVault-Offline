@@ -85,9 +85,9 @@ async function runPhase1B1TestSuite() {
   assert(!uploadResult?.storagePath.includes('http://') && !uploadResult?.storagePath.includes('https://'), 'TEST 1', 'Storage path does NOT contain public HTTP/HTTPS URL');
 
   // ---------------------------------------------------------------------------
-  // TEST 2: file:// URI is never stored as cloud image reference
+  // TEST 2: file:// URI is never stored as cloud image reference & IPO logo is cleared
   // ---------------------------------------------------------------------------
-  console.log('\n--- TEST 2: file:// Exclusion ---');
+  console.log('\n--- TEST 2: file:// Exclusion & Local IPO Logo Clearing ---');
   const mockExportPayloadWithFileUri = {
     version: 1,
     users: [{ id: 'user-001', name: 'John Doe', avatar_url: TEST_DATA_URI }],
@@ -142,7 +142,7 @@ async function runPhase1B1TestSuite() {
   assert(backupRes.success, 'TEST 2', 'Cloud backup executed successfully');
   assert(insertedSnapshotPayload !== null, 'TEST 2', 'Snapshot payload was inserted into user_backups');
   assert(insertedSnapshotPayload.users[0].avatar_url === TEST_DATA_URI || insertedSnapshotPayload.users[0].avatarUrl === TEST_DATA_URI, 'TEST 2', 'User avatar_url preserved as avatarUrl string');
-  assert(insertedSnapshotPayload.ipos[0].logo_url === `${MOCK_AUTH_UID}/images/logo_ipo-101.png`, 'TEST 2', 'IPO logo_url file:// URI replaced with Storage Object Path');
+  assert(insertedSnapshotPayload.ipos[0].logo_url === null, 'TEST 2', 'Local IPO logo_url was cleared to null without uploading to Supabase Storage');
 
   // ---------------------------------------------------------------------------
   // TEST 3: Authenticated Storage download uses object path
@@ -352,39 +352,48 @@ async function runPhase1B1TestSuite() {
   assert(restoreRes8.error !== undefined, 'TEST 8', 'Error message returned for malformed payload');
 
   // ---------------------------------------------------------------------------
-  // TEST 9: Image upload failure causes complete backup failure
+  // TEST 9: Local IPO logo does NOT cause backup failure
   // ---------------------------------------------------------------------------
-  console.log('\n--- TEST 9: Image Upload Failure Atomicity ---');
-  supabase.storage.from = () => ({
-    upload: async () => {
-      return { data: null, error: { message: 'Storage quota exceeded / Upload failed' } };
-    },
-  }) as any;
-
-  const mockPayloadToFailImage = {
-    version: 1,
-    users: [],
-    ipos: [{ id: 'ipo-fail', ipo_name: 'IPO Fail', logo_url: TEST_DATA_URI }],
-  };
-
-  const backupRes9 = await createCloudBackup(async () => JSON.stringify(mockPayloadToFailImage));
-  assert(!backupRes9.success, 'TEST 9', 'Backup failed when image upload failed');
-  assert(backupRes9.error?.includes('Failed to upload required image') || backupRes9.error?.includes('Logo upload failed') || false, 'TEST 9', 'Clear error message indicating image failure');
-
-  // ---------------------------------------------------------------------------
-  // TEST 10: Snapshot is not inserted when required image upload fails
-  // ---------------------------------------------------------------------------
-  console.log('\n--- TEST 10: No Snapshot Insert On Image Failure ---');
-  let insertAttemptedOnFail = false;
+  console.log('\n--- TEST 9: Local IPO Logo Non-Failure ---');
+  let insertAttemptedInTest9 = false;
   (supabase as any).from = (table: string) => ({
-    insert: () => {
-      insertAttemptedOnFail = true;
-      return { select: () => ({ single: async () => ({ data: {}, error: null }) }) };
+    insert: (data: any) => {
+      insertAttemptedInTest9 = true;
+      return { select: () => ({ single: async () => ({ data: { id: 'snap-9', created_at: new Date().toISOString() }, error: null }) }) };
     },
   });
 
-  await createCloudBackup(async () => JSON.stringify(mockPayloadToFailImage));
-  assert(!insertAttemptedOnFail, 'TEST 10', 'Snapshot DB row insertion was NOT attempted when image upload failed');
+  const mockPayloadWithLocalLogo = {
+    version: 1,
+    users: [],
+    ipos: [{ id: 'ipo-local', ipo_name: 'IPO Local', logo_url: 'file:///data/user/0/cache/local_logo.png' }],
+  };
+
+  const backupRes9 = await createCloudBackup(async () => JSON.stringify(mockPayloadWithLocalLogo));
+  assert(backupRes9.success, 'TEST 9', 'Backup succeeded even when IPO contains local file:// logo');
+  assert(insertAttemptedInTest9, 'TEST 9', 'Snapshot DB row insertion proceeded successfully without failure');
+
+  // ---------------------------------------------------------------------------
+  // TEST 10: Remote HTTPS IPO logo is preserved in snapshot payload
+  // ---------------------------------------------------------------------------
+  console.log('\n--- TEST 10: Remote HTTPS IPO Logo Preserved ---');
+  let insertedPayloadInTest10: any = null;
+  (supabase as any).from = (table: string) => ({
+    insert: (data: any) => {
+      insertedPayloadInTest10 = data.payload;
+      return { select: () => ({ single: async () => ({ data: { id: 'snap-10', created_at: new Date().toISOString() }, error: null }) }) };
+    },
+  });
+
+  const mockPayloadWithHttpsLogo = {
+    version: 1,
+    users: [],
+    ipos: [{ id: 'ipo-https', ipo_name: 'IPO HTTPS', logo_url: 'https://assets.groww.in/ipo_logos/rentomojo.png' }],
+  };
+
+  const backupRes10 = await createCloudBackup(async () => JSON.stringify(mockPayloadWithHttpsLogo));
+  assert(backupRes10.success, 'TEST 10', 'Backup succeeded with remote HTTPS logo');
+  assert(insertedPayloadInTest10?.ipos[0]?.logo_url === 'https://assets.groww.in/ipo_logos/rentomojo.png', 'TEST 10', 'Remote HTTPS logo_url was preserved unchanged in backup snapshot');
 
   // ---------------------------------------------------------------------------
   // TEST 11: Restore database operations rollback when a restore operation fails
@@ -514,13 +523,14 @@ async function runPhase1B1TestSuite() {
   assert(latestMeta?.allotmentCount === 1, 'TEST 16', 'Allotment count present in metadata');
 
   // ---------------------------------------------------------------------------
-  // TEST 17: Backup → restore round-trip preserves all entities & images
+  // TEST 17: Backup → restore round-trip preserves all entities & remote images
   // ---------------------------------------------------------------------------
   console.log('\n--- TEST 17: Full End-to-End Backup -> Restore Round-Trip ---');
+  const REMOTE_HTTPS_LOGO = 'https://assets.groww.in/ipo_logos/rentomojo.png';
   const fullEntitiesPayload = {
     version: 1,
     users: [{ id: 'u-rt', name: 'User RT', avatar_url: TEST_DATA_URI }],
-    ipos: [{ id: 'i-rt', ipo_name: 'IPO RT', logo_url: TEST_DATA_URI }],
+    ipos: [{ id: 'i-rt', ipo_name: 'IPO RT', logo_url: REMOTE_HTTPS_LOGO }],
     applications: [{ id: 'app-rt', user_id: 'u-rt', ipo_id: 'i-rt' }],
     banks: [{ id: 'b-rt', bank_name: 'Bank RT', balance: 10000 }],
     allotments: [{ id: 'allot-rt', application_id: 'app-rt', allotment_status: 'ALLOTTED' }],
@@ -593,7 +603,7 @@ async function runPhase1B1TestSuite() {
   assert(roundTripImportedPayload.banks.length === 1, 'TEST 17', 'Banks preserved');
   assert(roundTripImportedPayload.allotments.length === 1, 'TEST 17', 'Allotments preserved');
   assert(roundTripImportedPayload.users[0].avatar_url === TEST_DATA_URI || roundTripImportedPayload.users[0].avatarUrl === TEST_DATA_URI, 'TEST 17', 'User avatar preserved as avatarUrl string');
-  assert(roundTripImportedPayload.ipos[0].logo_url.startsWith('file://'), 'TEST 17', 'IPO logo restored as local file:// URI');
+  assert(roundTripImportedPayload.ipos[0].logo_url === REMOTE_HTTPS_LOGO, 'TEST 17', 'Remote HTTPS IPO logo preserved directly without storage download');
 
   // ---------------------------------------------------------------------------
   // TEST 18: Avatar Validation & Upload - (a) Valid Avatar Upload

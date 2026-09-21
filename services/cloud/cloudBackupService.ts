@@ -490,28 +490,42 @@ export async function createCloudBackup(
       }
     }
 
+    // 3. Process IPO Logos (URL/Storage Path only, NO Supabase Storage uploads)
     if (backupObj.ipos && Array.isArray(backupObj.ipos)) {
       for (const ipo of backupObj.ipos) {
-        const logoUri = ipo.logo_url || ipo.companyLogo?.data || '';
-        if (logoUri && typeof logoUri === 'string' && !logoUri.includes('/user-backups/')) {
-          const ipoName = ipo.ipo_name || ipo.company_name || ipo.id || 'IPO';
-          const uploadRes = await validateAndUploadImageAsset(authUid, logoUri, 'logo', ipo.id || 'ipo', ipoName);
-          if (!uploadRes.success || !uploadRes.storagePath) {
-            // ATOMIC FAILURE: Image upload failed, abort backup completely!
-            console.error(`[cloudBackupService] Backup failed: Logo upload failed for IPO ${ipoName} (${ipo.id})`);
-            isBackupPending = true;
-            return {
-              success: false,
-              imagesUploaded,
-              error: uploadRes.errorMessage || `Backup failed: Failed to upload required logo image for IPO ${ipoName}. Database snapshot not inserted.`,
-            };
-          }
-          // Store canonical Storage Object Path ONLY
-          ipo.logo_url = uploadRes.storagePath;
-          ipo.storage_path = uploadRes.storagePath;
-          delete ipo.companyLogo; // Strip embedded Base64 payload
-          imagesUploaded++;
+        const rawLogo = ipo.logo_url || (typeof ipo.companyLogo === 'string' ? ipo.companyLogo : ipo.companyLogo?.data) || '';
+        const logoUri = typeof rawLogo === 'string' ? rawLogo.trim() : '';
+        const ipoName = ipo.ipo_name || ipo.company_name || ipo.id || 'IPO';
+
+        if (!logoUri) {
+          ipo.logo_url = null;
+          delete ipo.storage_path;
+          delete ipo.companyLogo;
+          continue;
         }
+
+        // Case 1: Remote HTTP/HTTPS URL -> preserve unchanged, do not upload
+        if (/^https?:\/\//i.test(logoUri)) {
+          ipo.logo_url = logoUri;
+          delete ipo.storage_path;
+          delete ipo.companyLogo;
+          continue;
+        }
+
+        // Case 2: Supabase Storage path from older backup -> preserve only if clearly a user-backups/... path
+        if (logoUri.startsWith('user-backups/') || logoUri.includes('/user-backups/')) {
+          ipo.logo_url = logoUri;
+          ipo.storage_path = logoUri;
+          delete ipo.companyLogo;
+          continue;
+        }
+
+        // Case 3: Local / Data URI (file://, content://, data:image/..., etc.) or any other non-portable reference
+        // Intentionally skip and clear to prevent RLS failures; do NOT upload, do NOT fail backup
+        console.log(`[cloudBackupService] Intentionally skipped local IPO logo for ${ipoName} (id=${ipo.id}): ${logoUri.slice(0, 50)}...`);
+        ipo.logo_url = null;
+        delete ipo.storage_path;
+        delete ipo.companyLogo;
       }
     }
 
@@ -733,11 +747,17 @@ export async function restoreCloudBackup(
     if (payload.ipos && Array.isArray(payload.ipos)) {
       for (const ipo of payload.ipos) {
         const path = ipo.storage_path || ipo.logo_url;
-        if (path && typeof path === 'string' && (path.includes('/') || path.includes('logo_'))) {
-          const restoredLocalPath = await downloadStorageImageToLocal(path, 'logo', ipo.id || 'ipo');
-          if (restoredLocalPath) {
-            ipo.logo_url = restoredLocalPath;
-            imagesRestored++;
+        if (path && typeof path === 'string') {
+          if (/^https?:\/\//i.test(path)) {
+            ipo.logo_url = path;
+            continue;
+          }
+          if (path.includes('/user-backups/') || path.startsWith('user-backups/')) {
+            const restoredLocalPath = await downloadStorageImageToLocal(path, 'logo', ipo.id || 'ipo');
+            if (restoredLocalPath) {
+              ipo.logo_url = restoredLocalPath;
+              imagesRestored++;
+            }
           }
         }
       }
