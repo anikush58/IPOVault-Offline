@@ -50,6 +50,7 @@ import {
   AllotmentCheckerIpoItem,
   isBackendIpoAllotmentEligible,
   normalizeBackendIpoForChecker,
+  sortCheckerIposByAllotmentRecency,
 } from '@/services/allotment/allotmentCheckerIpoSource';
 
 export const APP_DEBUG_BUILD = 'AC-DIAG-20260907-1640';
@@ -1146,11 +1147,11 @@ export default function AllotmentCheckerScreen() {
   // Polling ref for cleanup
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Published backend IPOs filtered for allotment checking eligibility
+  // Published backend IPOs filtered for allotment checking eligibility and sorted by allotment recency (newest at top)
   const selectableIpos = useMemo((): AllotmentCheckerIpoItem[] => {
-    return backendIpos
-      .filter(isBackendIpoAllotmentEligible)
-      .map(normalizeBackendIpoForChecker);
+    const eligible = backendIpos.filter(isBackendIpoAllotmentEligible);
+    const sorted = sortCheckerIposByAllotmentRecency(eligible);
+    return sorted.map(normalizeBackendIpoForChecker);
   }, [backendIpos]);
 
   // Selected IPO object (strictly derived from selectedIpoId, NO fallback auto-selection)
@@ -1211,8 +1212,39 @@ export default function AllotmentCheckerScreen() {
   // Current IPO applications & local user mapping
   const currentApplications = useMemo(() => {
     if (!selectedIpo) return [];
-    return applications.filter((app) => app.ipo_id === selectedIpo.id);
-  }, [applications, selectedIpo]);
+    return applications.filter((app) => {
+      if (app.ipo_id === selectedIpo.id || app.ipo_id?.toLowerCase() === selectedIpo.id?.toLowerCase()) {
+        return true;
+      }
+      const localListing = ipos.find((i) => i.id === app.ipo_id);
+      if (localListing && (localListing as any).backend_ipo_id === selectedIpo.id) {
+        return true;
+      }
+      if (
+        app.ipo_name &&
+        selectedIpo.ipo_name &&
+        app.ipo_name.toLowerCase().trim() === selectedIpo.ipo_name.toLowerCase().trim()
+      ) {
+        return true;
+      }
+      if (
+        app.ipo_name &&
+        selectedIpo.company_name &&
+        app.ipo_name.toLowerCase().trim() === selectedIpo.company_name.toLowerCase().trim()
+      ) {
+        return true;
+      }
+      const localSymbol = localListing?.symbol;
+      if (
+        localSymbol &&
+        selectedIpo.symbol &&
+        localSymbol.toLowerCase().trim() === selectedIpo.symbol.toLowerCase().trim()
+      ) {
+        return true;
+      }
+      return false;
+    });
+  }, [applications, selectedIpo, ipos]);
 
   // Cleanup polling interval helper
   const stopPolling = useCallback(() => {
@@ -1249,12 +1281,9 @@ export default function AllotmentCheckerScreen() {
       const statusText = trace.aborted
         ? 'ABORTED'
         : trace.status
-        ? `HTTP ${trace.status}`
-        : 'NET_ERR';
-      addLog(
-        `API ${trace.method} ${trace.path} ➔ ${statusText} (${trace.durationMs}ms)`,
-        trace.success ? 'success' : trace.aborted ? 'error' : 'warn',
-      );
+        ? String(trace.status)
+        : 'PENDING';
+      addLog(`[HTTP] ${trace.method} ${trace.fullUrl || trace.path} [${statusText}] (${trace.durationMs}ms)`, 'info');
     });
     return () => {
       unsubscribe();
@@ -1264,13 +1293,14 @@ export default function AllotmentCheckerScreen() {
 
   // Auto-update application status in database from allotment check results
   const syncApplicationStatusesFromJob = useCallback(
-    async (jobItems: BackendJobItem[]) => {
-      if (!jobItems || jobItems.length === 0 || !selectedIpo) return;
+    async (jobItems: BackendJobItem[], overrideIpo?: AllotmentCheckerIpoItem | null) => {
+      const currentIpo = overrideIpo || selectedIpo;
+      if (!jobItems || jobItems.length === 0 || !currentIpo) return;
 
       let hasChanges = false;
       for (const item of jobItems) {
         const backendStatus = (item.status || '').toUpperCase();
-        // Only update if definitive outcome: ALLOTTED or NOT_ALLOTTED.
+        // Only update if definitive outcome: ALLOTTED, PARTIALLY_ALLOTTED, or NOT_ALLOTTED.
         // For NO_RECORD, APPLICATION_NOT_FOUND, PENDING, NOT_YET_AVAILABLE, etc., keep applications in active (Applied).
         if (
           backendStatus !== 'ALLOTTED' &&
@@ -1293,14 +1323,23 @@ export default function AllotmentCheckerScreen() {
 
         for (const usr of matchingUsers) {
           const appsToUpdate = applications.filter((app) => {
+            const appIpo = ipos.find((i) => i.id === app.ipo_id);
             const isSameIpo =
-              app.ipo_id === selectedIpo.id ||
-              app.ipo_id?.toLowerCase() === selectedIpo.id?.toLowerCase() ||
+              app.ipo_id === currentIpo.id ||
+              app.ipo_id?.toLowerCase() === currentIpo.id?.toLowerCase() ||
+              appIpo?.backend_ipo_id === currentIpo.id ||
               (app.ipo_name &&
-                selectedIpo.ipo_name &&
-                app.ipo_name.toLowerCase().trim() === selectedIpo.ipo_name.toLowerCase().trim());
+                currentIpo.ipo_name &&
+                app.ipo_name.toLowerCase().trim() === currentIpo.ipo_name.toLowerCase().trim()) ||
+              (app.ipo_name &&
+                currentIpo.company_name &&
+                app.ipo_name.toLowerCase().trim() === currentIpo.company_name.toLowerCase().trim()) ||
+              (appIpo?.symbol &&
+                currentIpo.symbol &&
+                appIpo.symbol.toLowerCase().trim() === currentIpo.symbol.toLowerCase().trim());
             const isSameUser = app.user_id === usr.id;
-            return isSameIpo && isSameUser && app.status === 'Applied';
+            // Only update active/applied applications on first check (once marked Allotted/Not Allotted, leave intact)
+            return isSameIpo && isSameUser && (app.status === 'Applied' || app.status === 'Mandate Approved');
           });
 
           for (const app of appsToUpdate) {
@@ -1322,12 +1361,12 @@ export default function AllotmentCheckerScreen() {
         backendSyncEmitter.notifyChange();
       }
     },
-    [selectedIpo, users, applications, updateApplication, addLog],
+    [selectedIpo, users, applications, ipos, updateApplication, addLog],
   );
 
   // Poll active backend job
   const startPollingJob = useCallback(
-    (jobId: string) => {
+    (jobId: string, preResolvedIpo?: AllotmentCheckerIpoItem | null) => {
       stopPolling();
       setIsPolling(true);
 
@@ -1345,7 +1384,7 @@ export default function AllotmentCheckerScreen() {
           setActiveJob(updatedJob);
 
           if (updatedJob.items && updatedJob.items.length > 0) {
-            void syncApplicationStatusesFromJob(updatedJob.items);
+            void syncApplicationStatusesFromJob(updatedJob.items, preResolvedIpo || selectedIpo);
           }
 
           setPollingDiag({
@@ -1370,7 +1409,7 @@ export default function AllotmentCheckerScreen() {
             addLog(`Job completed with status ${updatedJob.status}`, 'success');
             stopPolling();
             if (updatedJob.items && updatedJob.items.length > 0) {
-              void syncApplicationStatusesFromJob(updatedJob.items);
+              void syncApplicationStatusesFromJob(updatedJob.items, preResolvedIpo || selectedIpo);
             }
           } else if (
             updatedJob.status === 'FAILED' ||
@@ -1406,7 +1445,7 @@ export default function AllotmentCheckerScreen() {
       // Recurring 2s polling interval
       pollIntervalRef.current = setInterval(poll, 2000);
     },
-    [activeUserId, stopPolling, addLog, setDiagnosticJobError],
+    [activeUserId, stopPolling, addLog, setDiagnosticJobError, syncApplicationStatusesFromJob, selectedIpo],
   );
 
   // Trigger job creation (ONLY called upon explicit user IPO selection)
@@ -1538,6 +1577,9 @@ export default function AllotmentCheckerScreen() {
         });
 
         setActiveJob(job);
+        if (job.items && job.items.length > 0) {
+          void syncApplicationStatusesFromJob(job.items, selectedObj);
+        }
         setJobCreationState({
           status: 'SUCCESS',
           httpStatus: 201,
@@ -1547,7 +1589,7 @@ export default function AllotmentCheckerScreen() {
         addLog(`Backend job created in ${durationMs}ms: ${job.id} (Status: ${job.status})`, 'success');
 
         // 4. Start polling job status
-        startPollingJob(job.id);
+        startPollingJob(job.id, selectedObj);
       } catch (err: unknown) {
         const createEndMs = Date.now();
         const endStr =
@@ -2549,9 +2591,6 @@ export default function AllotmentCheckerScreen() {
                         status={applicant.status as any}
                         sharesAllotted={applicant.sharesAllotted}
                       />
-                      {Boolean(matchingApp) && (
-                        <Feather name="edit-2" size={14} color={colors.mutedForeground} style={{ opacity: 0.7, marginLeft: 2 }} />
-                      )}
                     </View>
                   </TouchableOpacity>
                 );

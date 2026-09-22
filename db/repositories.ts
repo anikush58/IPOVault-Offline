@@ -36,7 +36,13 @@ export interface IIPORepository {
 
 export interface IApplicationRepository {
   getAll(): Promise<ApplicationWithDetails[]>;
-  addBulk(ipoId: string, userIds: string[], bankName?: string, upiApp?: string): Promise<void>;
+  addBulk(
+    ipoId: string,
+    userIds: string[],
+    bankName?: string | Record<string, string>,
+    upiApp?: string | Record<string, string>,
+    lotCounts?: Record<string, number> | number
+  ): Promise<void>;
   update(
     id: string,
     status: ApplicationStatus,
@@ -237,7 +243,8 @@ export class ApplicationRepository implements IApplicationRepository {
     ipoId: string,
     userIds: string[],
     bankName?: string | Record<string, string>,
-    upiApp?: string | Record<string, string>
+    upiApp?: string | Record<string, string>,
+    lotCounts?: Record<string, number> | number
   ): Promise<void> {
     if (!ipoId) {
       if (__DEV__) console.warn('[ApplicationRepository.addBulk] Called with empty ipoId');
@@ -253,6 +260,13 @@ export class ApplicationRepository implements IApplicationRepository {
       [ipoId]
     );
     const existingSet = new Set(existing.map((e) => e.user_id));
+
+    const ipoRow = await this.db.getFirstAsync<{ quantity: number; issue_type: string }>(
+      'SELECT quantity, issue_type FROM ipo_listings WHERE id = ?',
+      [ipoId]
+    );
+    const lotSize = ipoRow?.quantity || 1;
+    const isSme = (ipoRow?.issue_type || '').toUpperCase() === 'SME';
 
     const uidsToFetch = userIds.filter((uid) => uid && !existingSet.has(uid));
     let userMap = new Map<string, { bank_name: string; upi_app: string }>();
@@ -284,6 +298,16 @@ export class ApplicationRepository implements IApplicationRepository {
         const resolvedBank = rawBank && rawBank.trim() !== '' ? rawBank.trim() : (userObj?.bank_name || '');
         const resolvedUpi = rawUpi && rawUpi.trim() !== '' ? rawUpi.trim() : (userObj?.upi_app || '');
 
+        const userLots =
+          typeof lotCounts === 'object' && lotCounts !== null
+            ? (lotCounts[uid] ?? (isSme ? 2 : 1))
+            : typeof lotCounts === 'number'
+            ? lotCounts
+            : isSme
+            ? 2
+            : 1;
+        const calculatedShares = userLots > 0 ? userLots * lotSize : (isSme ? 2 * lotSize : lotSize);
+
         const appRow: any = {
           id,
           user_id: uid,
@@ -291,6 +315,7 @@ export class ApplicationRepository implements IApplicationRepository {
           status: 'Applied',
           bank_name: resolvedBank,
           upi_app: resolvedUpi,
+          shares_count: calculatedShares,
           tax: 0,
           user_cut: 0,
           is_favorite: 0,

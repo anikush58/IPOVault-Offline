@@ -34,6 +34,12 @@ import { IPORepository } from '@/services/ipo/ipoRepository';
 import { triggerCentralizedIPOSync } from '@/services/ipo/centralizedSync';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
+import { useAuth } from '@/context/AuthContext';
+import {
+  BrokerAccountItem,
+  brokerApiService,
+  DashboardIpoHoldingItem,
+} from '@/services/broker/BrokerApiService';
 
 const AVATAR_PALETTES: [string, string][] = [
   ['#8B5CF6', '#6D28D9'], // Purple
@@ -93,13 +99,166 @@ export default function DashboardScreen() {
   const graphicLeft = isDark ? graphicLeftDark : graphicLeftLight;
   const graphicRight = isDark ? graphicRightDark : graphicRightLight;
 
-  const { applications, ipos, isLoading, refresh } = useDB();
+  const { applications, ipos, users, isLoading, refresh } = useDB();
+  const { user: authUser } = useAuth();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+
+  const [brokerAccounts, setBrokerAccounts] = useState<BrokerAccountItem[]>([]);
+  const [brokerHoldings, setBrokerHoldings] = useState<
+    DashboardIpoHoldingItem[]
+  >([]);
+  const [loadingHoldings, setLoadingHoldings] = useState<boolean>(false);
+
+  const activeUserId = useMemo(() => {
+    const firstUser = users?.[0] as
+      | { owner_id?: string; id?: string }
+      | undefined;
+    return (
+      authUser?.id || firstUser?.owner_id || firstUser?.id || 'default-user'
+    );
+  }, [authUser, users]);
+
+  const isBrokerConnected = useMemo(() => {
+    return brokerAccounts.some(
+      (acc) => acc.connection?.status === 'CONNECTED' && acc.isActive,
+    );
+  }, [brokerAccounts]);
 
   const db = useSQLiteContext();
   const [ipoHubItems, setIpoHubItems] = useState<any[]>([]);
   const [refreshingIpoHub, setRefreshingIpoHub] = useState(false);
+
+  const loadBrokerHoldingsData = useCallback(async () => {
+    if (!activeUserId) return;
+    try {
+      setLoadingHoldings(true);
+      const accounts = await brokerApiService.getAccounts(activeUserId);
+      setBrokerAccounts(accounts);
+
+      const connectedAccounts = accounts.filter(
+        (acc) => acc.connection?.status === 'CONNECTED' && acc.isActive,
+      );
+
+      if (connectedAccounts.length === 0) {
+        setBrokerHoldings([]);
+        return;
+      }
+
+      // Map to aggregate holdings across connected accounts by ISIN or ipoId
+      const aggregatedMap = new Map<
+        string,
+        {
+          ipoId: string;
+          companyName: string;
+          symbol: string;
+          quantityHeld: number;
+          totalCost: number;
+          lastPrice: number;
+          currentValue: number;
+          dayPnl: number;
+        }
+      >();
+
+      await Promise.all(
+        connectedAccounts.map(async (acc) => {
+          const userApps = applications.filter(
+            (a) => a.user_id === acc.profileId && a.ipo_id,
+          );
+
+          for (const app of userApps) {
+            try {
+              const summary = await brokerApiService.getInvestmentSummary(
+                activeUserId,
+                acc.id,
+                app.ipo_id,
+              );
+
+              // Mandatory rule:
+              // - If an IPO holding has been fully sold, do NOT show that IPO holding's price/P&L row in the dashboard.
+              // - Determine sold status from the existing broker trade/holding data; do not add a new sold flag or database field.
+              // - Only currently held IPO shares should appear in the dashboard holding section.
+              // - Partial holdings must continue to be shown with the remaining quantity.
+              if (
+                !summary ||
+                summary.status === 'FULLY_SOLD' ||
+                summary.remainingQuantity <= 0
+              ) {
+                continue;
+              }
+
+              const key = summary.isin || summary.ipoId || app.ipo_id;
+              const name =
+                app.ipo_name || summary.ipoName || summary.symbol || 'IPO';
+              const sym = summary.symbol || (app as any).symbol || '';
+              const qty = summary.remainingQuantity;
+              const cost = (summary.allotmentPrice || 0) * qty;
+              const price =
+                summary.holding?.lastPrice || summary.allotmentPrice || 0;
+              const val =
+                summary.holding?.currentValue != null
+                  ? summary.holding.currentValue
+                  : price * qty;
+              const pnl =
+                summary.holding?.unrealizedPnl != null
+                  ? summary.holding.unrealizedPnl
+                  : (price - (summary.allotmentPrice || 0)) * qty;
+
+              const existing = aggregatedMap.get(key);
+              if (existing) {
+                existing.quantityHeld += qty;
+                existing.totalCost += cost;
+                existing.currentValue += val;
+                existing.dayPnl += pnl;
+                if (price > 0) existing.lastPrice = price;
+              } else {
+                aggregatedMap.set(key, {
+                  ipoId: summary.ipoId || app.ipo_id,
+                  companyName: name,
+                  symbol: sym,
+                  quantityHeld: qty,
+                  totalCost: cost,
+                  lastPrice: price,
+                  currentValue: val,
+                  dayPnl: pnl,
+                });
+              }
+            } catch (err) {
+              console.warn(
+                `[Dashboard] Failed to fetch investment summary for app ${app.id}:`,
+                err,
+              );
+            }
+          }
+        }),
+      );
+
+      const holdingsList: DashboardIpoHoldingItem[] = Array.from(
+        aggregatedMap.values(),
+      ).map((h) => {
+        const pnlPct =
+          h.totalCost > 0
+            ? ((h.currentValue - h.totalCost) / h.totalCost) * 100
+            : 0;
+        return {
+          ipoId: h.ipoId,
+          companyName: h.companyName,
+          symbol: h.symbol,
+          quantityHeld: h.quantityHeld,
+          currentPrice: h.lastPrice,
+          currentHoldingValue: h.currentValue,
+          dayPnl: h.dayPnl,
+          dayPnlPercent: pnlPct,
+        };
+      });
+
+      setBrokerHoldings(holdingsList);
+    } catch (err) {
+      console.warn('[Dashboard] Failed to load broker holdings data:', err);
+    } finally {
+      setLoadingHoldings(false);
+    }
+  }, [activeUserId, applications]);
 
   const loadIpoHubData = useCallback(async () => {
     try {
@@ -159,33 +318,37 @@ export default function DashboardScreen() {
 
   useEffect(() => {
     loadIpoHubData();
-  }, [loadIpoHubData]);
+    loadBrokerHoldingsData();
+  }, [loadIpoHubData, loadBrokerHoldingsData]);
 
   // Screen Focus Auto-Refresh (instantly update dashboard when tab is selected)
   useFocusEffect(
     useCallback(() => {
       loadIpoHubData();
-    }, [loadIpoHubData])
+      loadBrokerHoldingsData();
+    }, [loadIpoHubData, loadBrokerHoldingsData])
   );
 
   // 10-Second Periodic Polling for real-time live synchronization with backend
   useEffect(() => {
     const timer = setInterval(() => {
       loadIpoHubData();
+      loadBrokerHoldingsData();
     }, 10000);
 
     return () => {
       clearInterval(timer);
     };
-  }, [loadIpoHubData]);
+  }, [loadIpoHubData, loadBrokerHoldingsData]);
 
   // Re-fetch open IPOs whenever applications are applied (backendSyncEmitter fires after each apply)
   useEffect(() => {
     const unsub = backendSyncEmitter.subscribe(() => {
       loadIpoHubData().catch(() => {});
+      loadBrokerHoldingsData().catch(() => {});
     });
     return unsub;
-  }, [loadIpoHubData]);
+  }, [loadIpoHubData, loadBrokerHoldingsData]);
 
   const handleDashboardRefresh = useCallback(async () => {
     try {
@@ -193,6 +356,7 @@ export default function DashboardScreen() {
       await Promise.all([
         refresh(),
         loadIpoHubData(),
+        loadBrokerHoldingsData(),
         db ? triggerCentralizedIPOSync(db, { force: true, source: 'Dashboard Pull-to-Refresh' }) : Promise.resolve(),
       ]);
     } catch (err) {
@@ -669,6 +833,137 @@ export default function DashboardScreen() {
                 </Text>
               </View>
             </View>
+
+            {/* ── Connected Broker IPO Holdings Section (Only when broker is connected) ── */}
+            {isBrokerConnected && (
+              <View style={[styles.dashboardHoldingsSection, { borderTopColor: colors.border }]}>
+                {/* Holdings Header */}
+                <View style={styles.dashboardHoldingsHeader}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Feather name="layers" size={13} color={colors.mutedForeground} />
+                    <Text style={[styles.dashboardHoldingsTitle, { color: colors.mutedForeground }]}>
+                      IPO HOLDINGS ({brokerHoldings.length})
+                    </Text>
+                  </View>
+                  {brokerHoldings.length > 0 && (
+                    <Text style={[styles.dashboardHoldingsTotalVal, { color: colors.foreground }]}>
+                      Total: {formatCurrency(brokerHoldings.reduce((sum, h) => sum + h.currentHoldingValue, 0))}
+                    </Text>
+                  )}
+                </View>
+
+                {/* Holdings Rows */}
+                {loadingHoldings && brokerHoldings.length === 0 ? (
+                  <View style={{ paddingVertical: 12, alignItems: 'center' }}>
+                    <Text style={[styles.dashboardHoldingsEmptyText, { color: colors.mutedForeground }]}>
+                      Updating live broker holdings…
+                    </Text>
+                  </View>
+                ) : brokerHoldings.length === 0 ? (
+                  <View style={{ paddingVertical: 8, alignItems: 'center' }}>
+                    <Text style={[styles.dashboardHoldingsEmptyText, { color: colors.mutedForeground }]}>
+                      No active IPO shares currently held.
+                    </Text>
+                  </View>
+                ) : (
+                  brokerHoldings.map((holding, idx) => {
+                    const isPos = holding.dayPnl >= 0;
+                    const pnlColor = isPos
+                      ? isDark
+                        ? '#34D399'
+                        : '#10B981'
+                      : isDark
+                      ? '#F87171'
+                      : '#EF4444';
+                    const hasBorder = idx < brokerHoldings.length - 1;
+
+                    return (
+                      <View
+                        key={`${holding.ipoId}-${idx}`}
+                        style={[
+                          styles.dashboardHoldingRow,
+                          hasBorder && {
+                            borderBottomColor: isDark
+                              ? 'rgba(255,255,255,0.06)'
+                              : 'rgba(0,0,0,0.05)',
+                            borderBottomWidth: 1,
+                          },
+                        ]}
+                      >
+                        {/* Left: IPO Name & Qty */}
+                        <View style={styles.dashboardHoldingLeft}>
+                          <Text
+                            style={[
+                              styles.dashboardHoldingName,
+                              { color: colors.foreground },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {holding.companyName}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.dashboardHoldingQty,
+                              { color: colors.mutedForeground },
+                            ]}
+                          >
+                            Qty:{' '}
+                            <Text
+                              style={{
+                                fontFamily: 'SpaceMono_700Bold',
+                                color: colors.foreground,
+                              }}
+                            >
+                              {holding.quantityHeld}
+                            </Text>
+                            {holding.currentPrice > 0
+                              ? `  •  LTP: ₹${holding.currentPrice.toFixed(2)}`
+                              : ''}
+                          </Text>
+                        </View>
+
+                        {/* Right: Holding Value & Day P&L */}
+                        <View style={styles.dashboardHoldingRight}>
+                          <Text
+                            style={[
+                              styles.dashboardHoldingValue,
+                              { color: colors.foreground },
+                            ]}
+                          >
+                            {formatCurrency(holding.currentHoldingValue)}
+                          </Text>
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 3,
+                              marginTop: 2,
+                            }}
+                          >
+                            <Feather
+                              name={isPos ? 'arrow-up-right' : 'arrow-down-right'}
+                              size={11}
+                              color={pnlColor}
+                            />
+                            <Text
+                              style={[
+                                styles.dashboardHoldingPnl,
+                                { color: pnlColor },
+                              ]}
+                            >
+                              {isPos ? '+' : ''}
+                              {formatCurrency(holding.dayPnl)} (
+                              {isPos ? '+' : ''}
+                              {holding.dayPnlPercent.toFixed(1)}%)
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
+              </View>
+            )}
           </BlurView>
         </Animated.View>
 
@@ -1537,5 +1832,62 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: 'GoogleSansFlex_400Regular',
     marginTop: 2,
+  },
+  dashboardHoldingsSection: {
+    borderTopWidth: 1,
+    marginTop: 14,
+    paddingTop: 12,
+  },
+  dashboardHoldingsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingHorizontal: 2,
+  },
+  dashboardHoldingsTitle: {
+    fontSize: 10.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.5,
+  },
+  dashboardHoldingsTotalVal: {
+    fontSize: 11,
+    fontFamily: 'SpaceMono_700Bold',
+  },
+  dashboardHoldingsEmptyText: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    textAlign: 'center',
+  },
+  dashboardHoldingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 9,
+    paddingHorizontal: 2,
+  },
+  dashboardHoldingLeft: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  dashboardHoldingName: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+    marginBottom: 2,
+  },
+  dashboardHoldingQty: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_400Regular',
+  },
+  dashboardHoldingRight: {
+    alignItems: 'flex-end',
+  },
+  dashboardHoldingValue: {
+    fontSize: 13,
+    fontFamily: 'SpaceMono_700Bold',
+  },
+  dashboardHoldingPnl: {
+    fontSize: 10.5,
+    fontFamily: 'SpaceMono_700Bold',
   },
 });

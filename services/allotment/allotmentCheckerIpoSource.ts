@@ -108,3 +108,60 @@ export function normalizeBackendIpoForChecker(b: BackendIpo): AllotmentCheckerIp
     logo_url: logoUrl,
   };
 }
+
+/**
+ * Extracts a numeric timestamp from candidate date fields for sorting allotment IPOs.
+ * Checks allotment date fields first, then close date, then update/creation timestamps.
+ */
+export function parseAllotmentSortTimestamp(b: BackendIpo): number {
+  if (!b) return 0;
+  const dateCandidates = [
+    b.allotmentDate,
+    b.lifecycle?.basisOfAllotmentDate,
+    b.allotmentConfig?.expectedDate,
+    b.allotment?.expectedDate,
+    b.closeDate,
+    b.lifecycle?.closeDate,
+    b.updatedAt,
+    b.createdAt,
+  ];
+
+  for (const d of dateCandidates) {
+    if (d && typeof d === 'string') {
+      const trimmed = d.trim();
+      if (trimmed !== '' && trimmed.toUpperCase() !== 'TBD') {
+        const parsed = Date.parse(trimmed);
+        if (!isNaN(parsed) && parsed > 0) {
+          return parsed;
+        }
+      }
+    }
+  }
+  return 0;
+}
+
+/**
+ * Sorts backend IPOs so that newly allotment out IPOs appear at the top
+ * and older IPOs appear at the bottom.
+ */
+export function sortCheckerIposByAllotmentRecency(ipos: BackendIpo[]): BackendIpo[] {
+  return [...ipos].sort((a, b) => {
+    const timeA = parseAllotmentSortTimestamp(a);
+    const timeB = parseAllotmentSortTimestamp(b);
+
+    if (timeA !== timeB) {
+      return timeB - timeA; // Descending: newest date first
+    }
+
+    // Secondary priority: Allotment Out status before Listed
+    const isOutA = (a.status || '').toUpperCase().includes('ALLOT');
+    const isOutB = (b.status || '').toUpperCase().includes('ALLOT');
+    if (isOutA && !isOutB) return -1;
+    if (!isOutA && isOutB) return 1;
+
+    // Tertiary: alphabetical by company name / symbol
+    const nameA = a.company?.displayName || a.companyName || a.symbol || '';
+    const nameB = b.company?.displayName || b.companyName || b.symbol || '';
+    return nameA.localeCompare(nameB);
+  });
+}

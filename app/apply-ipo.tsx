@@ -204,7 +204,7 @@ export default function ApplyIPOScreen() {
         ipo_name: compName,
         buy_price: typeof price === 'string' ? parseFloat(price) : (price || 0),
         quantity: bIpo.lotSize || (params.lotSize ? parseInt(params.lotSize, 10) : 1),
-        issue_type: (bIpo.marketSegment === 'SME' || params.issueType === 'SME') ? 'SME' : 'Mainboard',
+        issue_type: (bIpo.marketSegment === 'SME' || (bIpo as any).issue_type === 'SME' || (bIpo as any).issueType === 'SME' || params.issueType === 'SME') ? 'SME' : 'Mainboard',
         exchange: bIpo.exchange || 'NSE, BSE',
         close_date: bIpo.closeDate || params.closeDate || '',
         open_date: bIpo.openDate || params.openDate || '',
@@ -274,6 +274,20 @@ export default function ApplyIPOScreen() {
     return undefined;
   }, [ipos, selectedIpoId, masterRecord, backendIpoRecord, parsedItem, params]);
 
+  const isSme = useMemo(() => {
+    const bIpo = backendIpoRecord || parsedItem;
+    const it = (
+      selectedIPO?.issue_type ||
+      bIpo?.marketSegment ||
+      (bIpo as any)?.issue_type ||
+      (bIpo as any)?.issueType ||
+      masterRecord?.issue_type ||
+      params.issueType ||
+      ''
+    ).toUpperCase();
+    return it === 'SME';
+  }, [selectedIPO?.issue_type, backendIpoRecord, parsedItem, masterRecord?.issue_type, params.issueType]);
+
   React.useEffect(() => {
     if (params.ipoId) {
       setSelectedIpoId(params.ipoId);
@@ -282,26 +296,28 @@ export default function ApplyIPOScreen() {
     }
   }, [params.ipoId, activeIPOs]);
 
-  // Set default lot = 1 and pre-select all eligible users whenever target IPO changes
+  // Reset selections when target IPO changes
   React.useEffect(() => {
-    if (!selectedIpoId) return;
+    setSelectedUserIds(new Set());
+    setUserLotQuantities({});
+  }, [selectedIpoId]);
 
-    const defaultLots: Record<string, number> = {};
-    const defaultSelected = new Set<string>();
-
-    // Use activeUsers (non-archived) only — using all `users` would include archived users
-    // and cause extra applications to be submitted silently.
-    activeUsers.forEach((u) => {
-      const isAlreadyApplied = applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === u.id && a.status !== 'Cancelled');
-      if (!isAlreadyApplied) {
-        defaultLots[u.id] = 1; // Default lot = 1
-        defaultSelected.add(u.id); // Auto select user
-      }
-    });
-
-    setUserLotQuantities(defaultLots);
-    setSelectedUserIds(defaultSelected);
-  }, [selectedIpoId, activeUsers, applications]);
+  // If market segment resolves to SME after async details load, ensure already-selected users meet the 2-lot minimum
+  React.useEffect(() => {
+    if (isSme) {
+      setUserLotQuantities((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        selectedUserIds.forEach((uid) => {
+          if (next[uid] === 1) {
+            next[uid] = 2;
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }
+  }, [isSme, selectedUserIds]);
 
   // Aggregate Order Summary Calculation
   const orderSummary = useMemo(() => {
@@ -310,9 +326,10 @@ export default function ApplyIPOScreen() {
     let totalAmount = 0;
     const lotSize = selectedIPO?.quantity || 1;
     const unitPrice = selectedIPO?.buy_price || 0;
+    const defaultLotCount = isSme ? 2 : 1;
 
     selectedUserIds.forEach((uid) => {
-      const lots = userLotQuantities[uid] || 0;
+      const lots = userLotQuantities[uid] || defaultLotCount;
       totalLots += lots;
       totalShares += lots * lotSize;
       totalAmount += lots * lotSize * unitPrice;
@@ -324,16 +341,16 @@ export default function ApplyIPOScreen() {
       totalShares,
       totalAmount,
     };
-  }, [selectedUserIds, userLotQuantities, selectedIPO]);
+  }, [selectedUserIds, userLotQuantities, selectedIPO, isSme]);
 
   const toggleApplicantSelection = (userId: string) => {
     const isAlreadyApplied = Boolean(
-      selectedIpoId && applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === userId)
+      selectedIpoId && applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === userId && a.status !== 'Cancelled')
     );
     if (isAlreadyApplied) return;
 
-    const currentLots = userLotQuantities[userId] || 0;
-    const isSelected = currentLots > 0 || selectedUserIds.has(userId);
+    const isSelected = selectedUserIds.has(userId);
+    const defaultLotCount = isSme ? 2 : 1;
 
     if (isSelected) {
       setUserLotQuantities((prev) => ({ ...prev, [userId]: 0 }));
@@ -343,7 +360,10 @@ export default function ApplyIPOScreen() {
         return next;
       });
     } else {
-      setUserLotQuantities((prev) => ({ ...prev, [userId]: 1 }));
+      setUserLotQuantities((prev) => ({
+        ...prev,
+        [userId]: prev[userId] && prev[userId] >= defaultLotCount ? prev[userId] : defaultLotCount,
+      }));
       setSelectedUserIds((prev) => {
         const next = new Set(prev);
         next.add(userId);
@@ -357,7 +377,9 @@ export default function ApplyIPOScreen() {
     const eligibleUsers = activeUsers.filter(
       (u) => !applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === u.id && a.status !== 'Cancelled')
     );
-    const allSelected = eligibleUsers.every((u) => selectedUserIds.has(u.id));
+    const allSelected = eligibleUsers.length > 0 && eligibleUsers.every((u) => selectedUserIds.has(u.id));
+    const defaultLotCount = isSme ? 2 : 1;
+
     if (allSelected) {
       // Deselect all
       setSelectedUserIds(new Set());
@@ -372,7 +394,9 @@ export default function ApplyIPOScreen() {
       const nextLots = { ...userLotQuantities };
       eligibleUsers.forEach((u) => {
         next.add(u.id);
-        if (!nextLots[u.id] || nextLots[u.id] === 0) nextLots[u.id] = 1;
+        if (!nextLots[u.id] || nextLots[u.id] < defaultLotCount) {
+          nextLots[u.id] = defaultLotCount;
+        }
       });
       setSelectedUserIds(next);
       setUserLotQuantities(nextLots);
@@ -448,7 +472,7 @@ export default function ApplyIPOScreen() {
         [targetIpoName, targetIpoName, sym, unitPrice, unitPrice, lotQty, lotQty, oDate, cDate, logo, now, selectedIpoId]
       );
 
-      await addBulkApplications(selectedIpoId, Array.from(selectedUserIds), bankNameMap, upiAppMap);
+      await addBulkApplications(selectedIpoId, Array.from(selectedUserIds), bankNameMap, upiAppMap, userLotQuantities);
       backendSyncEmitter.notifyChange();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
@@ -724,9 +748,9 @@ export default function ApplyIPOScreen() {
           </View>
         ) : (
           activeUsers.map((u) => {
-            const currentLots = userLotQuantities[u.id] || 0;
             const isAppliedForThisIpo = Boolean(selectedIpoId && applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === u.id && a.status !== 'Cancelled'));
-            const isCardSelected = (currentLots > 0 || selectedUserIds.has(u.id)) && !isAppliedForThisIpo;
+            const isCardSelected = selectedUserIds.has(u.id) && !isAppliedForThisIpo;
+            const currentLots = isCardSelected ? (userLotQuantities[u.id] || (isSme ? 2 : 1)) : 0;
             const lotSize = selectedIPO?.quantity || 1;
             const unitPrice = selectedIPO?.buy_price || 0;
             const totalShares = currentLots * lotSize;
@@ -966,7 +990,10 @@ export default function ApplyIPOScreen() {
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setActiveLotPickerUserId(null)}>
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, maxHeight: 420, padding: 0 }]}>
             <ScrollView keyboardShouldPersistTaps="handled">
-              {Array.from({ length: 20 }, (_, i) => i).map((lotCount) => {
+              {(isSme
+                ? [0, ...Array.from({ length: 19 }, (_, i) => i + 2)]
+                : Array.from({ length: 20 }, (_, i) => i)
+              ).map((lotCount) => {
                 const lotSize = selectedIPO?.quantity || 1;
                 const unitPrice = selectedIPO?.buy_price || 0;
                 const totalShares = lotCount * lotSize;
@@ -1001,7 +1028,7 @@ export default function ApplyIPOScreen() {
                         isSelected && { fontFamily: 'GoogleSansFlex_700Bold' },
                       ]}
                     >
-                      {lotCount === 0 ? '0 Lots (Remove)' : `${lotCount} Lot (${totalShares} Shares) · ${formatCurrency(totalCost)}`}
+                      {lotCount === 0 ? '0 Lots (Remove)' : `${lotCount} Lot${lotCount > 1 ? 's' : ''} (${totalShares} Shares) · ${formatCurrency(totalCost)}`}
                     </Text>
                   </TouchableOpacity>
                 );

@@ -329,64 +329,86 @@ export const AnchorInvestorAllocation: React.FC<AnchorInvestorAllocationProps> =
             </ScrollView>
           )}
 
-          {/* Allocation Table (Scrollable horizontally) */}
+          {/* Allocation Table (Scrollable horizontally to show rest of data) */}
           <View style={{ borderTopWidth: 1, borderTopColor: colors.border }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingHorizontal: 14,
+                paddingVertical: 6,
+                backgroundColor: colors.cardAlt,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.border,
+              }}
+            >
+              <Text style={{ fontSize: 11, fontFamily: 'GoogleSansFlex_500Medium', color: colors.mutedForeground }}>
+                Allotment Breakdown
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Feather name="arrow-right" size={11} color="#8B5CF6" />
+                <Text style={{ fontSize: 11, fontFamily: 'GoogleSansFlex_600SemiBold', color: '#8B5CF6' }}>
+                  Scroll horizontally to view all
+                </Text>
+              </View>
+            </View>
+
             <ScrollView
               horizontal
               nestedScrollEnabled={true}
-              directionalLockEnabled={true}
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ minWidth: '100%' }}
+              showsHorizontalScrollIndicator={true}
+              bounces={true}
+              overScrollMode="always"
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ flexGrow: 1 }}
             >
               {(() => {
-                const hasAmountCr = displayInvestors.some((r) => r.amtCr != null && r.amtCr > 0);
-                const hasPct = displayInvestors.some((r) => (r.pctAllocated != null && r.pctAllocated > 0) || (r.pctOfIssue != null && r.pctOfIssue > 0));
-                const calcTotalAmtCr = displayInvestors.reduce((acc, row) => acc + (row.amtCr || 0), 0);
-                const tableWidth = Math.max((hasAmountCr ? 110 : 0) + (hasPct ? 90 : 0) + 410, 460);
+                const ipoPrice = anchorDetails?.price;
                 const visibleInvestors = showAllInvestors ? displayInvestors : displayInvestors.slice(0, 10);
+                const tableWidth = 660;
+
+                // Total calculations
+                const computedTotalAmt = totalAmt > 0
+                  ? totalAmt
+                  : (ipoPrice && calcTotalShares > 0 ? (calcTotalShares * ipoPrice) / 10000000 : 0);
 
                 return (
-                  <View style={{ minWidth: '100%', width: tableWidth }}>
+                  <View style={{ width: tableWidth, minWidth: tableWidth }}>
                     {/* Table Header */}
-                    <View style={[styles.tableHeaderRow, { backgroundColor: colors.cardAlt, width: '100%' }]}>
-                      <Text style={[styles.tableHeaderCell, { width: 36, textAlign: 'center', color: colors.mutedForeground }]}>#</Text>
-                      <Text style={[styles.tableHeaderCell, { width: 230, color: colors.mutedForeground, paddingLeft: 6 }]}>Anchor Investor</Text>
-                      <Text style={[styles.tableHeaderCell, { width: 120, textAlign: 'right', color: colors.mutedForeground }]}>Shares Allotted</Text>
-                      {hasAmountCr && (
-                        <Text style={[styles.tableHeaderCell, { width: 110, textAlign: 'right', color: colors.mutedForeground }]}>Amount (₹ Cr)</Text>
-                      )}
-                      {hasPct && (
-                        <Text style={[styles.tableHeaderCell, { width: 90, textAlign: 'right', paddingRight: 14, color: colors.mutedForeground }]}>Portion %</Text>
-                      )}
+                    <View style={[styles.tableHeaderRow, { backgroundColor: colors.cardAlt, width: tableWidth }]}>
+                      <Text style={[styles.tableHeaderCell, { width: 38, textAlign: 'center', color: colors.mutedForeground }]}>#</Text>
+                      <Text style={[styles.tableHeaderCell, { width: 250, color: colors.mutedForeground, paddingLeft: 6 }]}>Anchor Investor</Text>
+                      <Text style={[styles.tableHeaderCell, { width: 130, textAlign: 'right', color: colors.mutedForeground }]}>Shares Allotted</Text>
+                      <Text style={[styles.tableHeaderCell, { width: 120, textAlign: 'right', color: colors.mutedForeground }]}>Amount (₹ Cr)</Text>
+                      <Text style={[styles.tableHeaderCell, { width: 98, textAlign: 'right', paddingRight: 14, color: colors.mutedForeground }]}>Portion %</Text>
                     </View>
 
                     {/* Table Body Rows */}
                     {visibleInvestors.map((row, idx) => {
-                      const rowPct = row.pctAllocated ?? row.pctOfIssue;
+                      const rowPct = row.pctAllocated ?? row.pctOfIssue ?? (calcTotalShares > 0 && row.sharesAllotted ? (row.sharesAllotted / calcTotalShares) * 100 : null);
+                      const rowAmt = row.amtCr ?? (ipoPrice && row.sharesAllotted ? (row.sharesAllotted * ipoPrice) / 10000000 : null);
+
                       return (
                         <View
                           key={row.id || `${row.anchorName}-${idx}`}
-                          style={[styles.tableBodyRow, { width: '100%' }]}
+                          style={[styles.tableBodyRow, { width: tableWidth }]}
                         >
-                          <Text style={[styles.tableCellVal, { width: 36, textAlign: 'center', color: colors.mutedForeground }]}>
+                          <Text style={[styles.tableCellVal, { width: 38, textAlign: 'center', color: colors.mutedForeground }]}>
                             {idx + 1}
                           </Text>
-                          <Text style={[styles.tableCellLabel, { width: 230, color: colors.foreground, paddingLeft: 6 }]} numberOfLines={2}>
+                          <Text style={[styles.tableCellLabel, { width: 250, color: colors.foreground, paddingLeft: 6 }]} numberOfLines={2}>
                             {row.anchorName}
                           </Text>
-                          <Text style={[styles.tableCellVal, { width: 120, textAlign: 'right', color: colors.foreground }]}>
+                          <Text style={[styles.tableCellVal, { width: 130, textAlign: 'right', color: colors.foreground }]}>
                             {formatShares(row.sharesAllotted)}
                           </Text>
-                          {hasAmountCr && (
-                            <Text style={[styles.tableCellVal, { width: 110, textAlign: 'right', color: colors.foreground }]}>
-                              {row.amtCr != null ? `₹${row.amtCr.toFixed(2)}` : '—'}
-                            </Text>
-                          )}
-                          {hasPct && (
-                            <Text style={[styles.tableCellVal, { width: 90, textAlign: 'right', paddingRight: 14, color: colors.foreground }]}>
-                              {rowPct != null ? `${Number(rowPct).toFixed(2)}%` : '—'}
-                            </Text>
-                          )}
+                          <Text style={[styles.tableCellVal, { width: 120, textAlign: 'right', color: colors.foreground }]}>
+                            {formatAmt(rowAmt)}
+                          </Text>
+                          <Text style={[styles.tableCellVal, { width: 98, textAlign: 'right', paddingRight: 14, color: colors.foreground }]}>
+                            {formatPct(rowPct)}
+                          </Text>
                         </View>
                       );
                     })}
@@ -397,14 +419,14 @@ export const AnchorInvestorAllocation: React.FC<AnchorInvestorAllocationProps> =
                         onPress={() => setShowAllInvestors((prev) => !prev)}
                         activeOpacity={0.7}
                         style={{
-                          paddingVertical: 9,
+                          paddingVertical: 10,
                           paddingHorizontal: 14,
                           borderBottomWidth: 1,
-                          borderBottomColor: '#ffffff0c',
+                          borderBottomColor: colors.border,
                           alignItems: 'center',
                           justifyContent: 'center',
                           backgroundColor: colors.cardAlt,
-                          width: '100%',
+                          width: tableWidth,
                         }}
                       >
                         <Text style={{ fontSize: 12, fontFamily: 'GoogleSansFlex_700Bold', color: '#2563EB' }}>
@@ -419,23 +441,21 @@ export const AnchorInvestorAllocation: React.FC<AnchorInvestorAllocationProps> =
                     <View
                       style={[
                         styles.tableFooterRow,
-                        { backgroundColor: colors.cardAlt, borderTopWidth: 1, borderTopColor: colors.border, width: '100%' },
+                        { backgroundColor: colors.cardAlt, borderTopWidth: 1, borderTopColor: colors.border, width: tableWidth },
                       ]}
                     >
-                      <Text style={[styles.totalCell, { width: 266, paddingLeft: 14, color: colors.foreground, fontFamily: 'GoogleSansFlex_700Bold' }]}>Total -</Text>
-                      <Text style={[styles.totalCell, { width: 120, textAlign: 'right', color: colors.foreground, fontFamily: 'GoogleSansFlex_700Bold' }]}>
+                      <Text style={[styles.totalCell, { width: 288, paddingLeft: 14, color: colors.foreground, fontFamily: 'GoogleSansFlex_700Bold' }]}>
+                        Total
+                      </Text>
+                      <Text style={[styles.totalCell, { width: 130, textAlign: 'right', color: colors.foreground, fontFamily: 'GoogleSansFlex_700Bold' }]}>
                         {formatShares(calcTotalShares)}
                       </Text>
-                      {hasAmountCr && (
-                        <Text style={[styles.totalCell, { width: 110, textAlign: 'right', color: colors.foreground, fontFamily: 'GoogleSansFlex_700Bold' }]}>
-                          {calcTotalAmtCr > 0 ? `₹${calcTotalAmtCr.toFixed(2)}` : '—'}
-                        </Text>
-                      )}
-                      {hasPct && (
-                        <Text style={[styles.totalCell, { width: 90, textAlign: 'right', paddingRight: 14, color: colors.foreground, fontFamily: 'GoogleSansFlex_700Bold' }]}>
-                          100%
-                        </Text>
-                      )}
+                      <Text style={[styles.totalCell, { width: 120, textAlign: 'right', color: colors.foreground, fontFamily: 'GoogleSansFlex_700Bold' }]}>
+                        {computedTotalAmt > 0 ? `₹${computedTotalAmt.toFixed(2)}` : '—'}
+                      </Text>
+                      <Text style={[styles.totalCell, { width: 98, textAlign: 'right', paddingRight: 14, color: colors.foreground, fontFamily: 'GoogleSansFlex_700Bold' }]}>
+                        100.00%
+                      </Text>
                     </View>
                   </View>
                 );

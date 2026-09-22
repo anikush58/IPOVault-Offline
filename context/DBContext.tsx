@@ -160,7 +160,8 @@ type DBContextType = {
     ipoId: string,
     userIds: string[],
     bankName?: string | Record<string, string>,
-    upiApp?: string | Record<string, string>
+    upiApp?: string | Record<string, string>,
+    lotCounts?: Record<string, number> | number
   ) => Promise<void>;
   updateApplication: (
     id: string,
@@ -505,7 +506,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     ipoId: string,
     userIds: string[],
     bankName?: string | Record<string, string>,
-    upiApp?: string | Record<string, string>
+    upiApp?: string | Record<string, string>,
+    lotCounts?: Record<string, number> | number
   ) => {
     if (!ipoId) return;
     const now = new Date().toISOString();
@@ -567,7 +569,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     }
 
     const repo = new ApplicationRepository(db);
-    await repo.addBulk(resolvedId, userIds, bankName, upiApp);
+    await repo.addBulk(resolvedId, userIds, bankName, upiApp, lotCounts);
     await refresh();
   };
 

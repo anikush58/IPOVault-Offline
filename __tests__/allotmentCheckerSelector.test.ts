@@ -2,6 +2,7 @@ import { BackendIpo } from '../types/backend-ipo';
 import {
   isBackendIpoAllotmentEligible,
   normalizeBackendIpoForChecker,
+  sortCheckerIposByAllotmentRecency,
 } from '../services/allotment/allotmentCheckerIpoSource';
 
 function assert(condition: boolean, testName: string, detail: string) {
@@ -181,13 +182,25 @@ export async function runAllotmentCheckerSelectorTestSuite() {
   // 1. Backend published IPO (ALLOTMENT OUT / ALLOTMENT_COMPLETED) appears
   // =========================================================================
   const eligibleIpos = publishedIpos.filter(isBackendIpoAllotmentEligible);
-  const selectableItems = eligibleIpos.map(normalizeBackendIpoForChecker);
+  const sortedEligible = sortCheckerIposByAllotmentRecency(eligibleIpos);
+  const selectableItems = sortedEligible.map(normalizeBackendIpoForChecker);
 
   const sbiItem = selectableItems.find((i) => i.symbol === 'SBIFUNDS');
   assert(
     Boolean(sbiItem && sbiItem.ipo_name === 'SBI Funds Management Limited'),
     'Test 1',
     'Backend published IPO with ALLOTMENT_COMPLETED (SBI Funds) appears in standalone Allotment Checker selectable list'
+  );
+
+  // =========================================================================
+  // 1b. Newly allotment out IPOs are at the top and oldest in the bottom
+  // =========================================================================
+  const topIpo = selectableItems[0];
+  const bottomIpo = selectableItems[selectableItems.length - 1];
+  assert(
+    topIpo.symbol === 'TECHSOL' && bottomIpo.symbol === 'LISTEDCO',
+    'Test 1b',
+    `Newly allotment out IPO (TECHSOL, 2026-09-22) is at top (${topIpo.symbol}) and oldest (LISTEDCO) is at bottom (${bottomIpo.symbol})`
   );
 
   // =========================================================================

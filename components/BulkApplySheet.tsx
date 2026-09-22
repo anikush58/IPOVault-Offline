@@ -283,7 +283,8 @@ export function BulkApplySheet({ visible, onClose }: Props) {
         selectedIPO.id,
         Array.from(selectedUserIds),
         bulkBankName ?? undefined,
-        bulkUPIApp ?? undefined
+        bulkUPIApp ?? undefined,
+        selectedIPO.issue_type === 'SME' ? 2 : 1
       );
       backendSyncEmitter.notifyChange();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -332,7 +333,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
                   activeOpacity={0.8}
                 >
                   <Text style={[styles.pickerTriggerText, { color: selectedIPO ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
-                    {selectedIPO ? `${selectedIPO.ipo_name} — ${formatCurrency(selectedIPO.buy_price * selectedIPO.quantity)}` : 'Choose Active IPO…'}
+                    {selectedIPO ? `${selectedIPO.ipo_name} — ${formatCurrency(selectedIPO.buy_price * selectedIPO.quantity * (selectedIPO.issue_type === 'SME' ? 2 : 1))}` : 'Choose Active IPO…'}
                   </Text>
                   <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
                 </TouchableOpacity>
@@ -492,7 +493,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
                         )}
                       </View>
                       <Text style={{ fontSize: 12, color: colors.mutedForeground, marginTop: 2 }}>
-                        {formatCurrency(ipo.buy_price)} × {ipo.quantity} = {formatCurrency(ipo.buy_price * ipo.quantity)}
+                        {formatCurrency(ipo.buy_price)} × {ipo.quantity * (ipo.issue_type === 'SME' ? 2 : 1)} {ipo.issue_type === 'SME' ? '(2 Lots)' : '(1 Lot)'} = {formatCurrency(ipo.buy_price * ipo.quantity * (ipo.issue_type === 'SME' ? 2 : 1))}
                       </Text>
                     </View>
                     {bulkIPOId === ipo.id && <Feather name="check" size={16} color={colors.foreground} />}
