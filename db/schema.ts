@@ -1,16 +1,21 @@
 import { SQLiteDatabase } from 'expo-sqlite';
+import { retryOnLock } from '@/utils/sqliteDebug';
 
 export const CURRENT_SCHEMA_VERSION = 3;
 
 export async function initDB(db: SQLiteDatabase) {
-  await db.execAsync(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA foreign_keys = ON;
-    PRAGMA busy_timeout = 15000;
-  `);
+  // Set generous busy timeout first so any lock contention waits for up to 30s instead of throwing immediately
+  try {
+    await db.execAsync('PRAGMA busy_timeout = 30000;');
+    await db.execAsync('PRAGMA journal_mode = WAL;');
+    await db.execAsync('PRAGMA foreign_keys = ON;');
+    await db.execAsync('PRAGMA synchronous = NORMAL;');
+  } catch (pragmaErr) {
+    if (__DEV__) console.warn('[initDB Pragma Warning]', pragmaErr);
+  }
 
   // 1. Fresh schema for offline-first architecture (creates all tables and columns atomically)
-  await db.execAsync(`
+  await retryOnLock(() => db.execAsync(`
     CREATE TABLE IF NOT EXISTS users_table (
       id TEXT PRIMARY KEY,
       owner_id TEXT,
@@ -257,7 +262,7 @@ export async function initDB(db: SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS idx_ipo_master_dates ON ipo_master(open_date, close_date, listing_date);
     CREATE INDEX IF NOT EXISTS idx_ipo_master_favorite ON ipo_master(is_favorite);
     CREATE INDEX IF NOT EXISTS idx_ipo_allotments_app ON ipo_allotments(application_id);
-  `);
+  `));
 
   // 2. Check schema version to only run incremental migrations once
   try {
@@ -268,9 +273,9 @@ export async function initDB(db: SQLiteDatabase) {
       // Helper function to safely add missing columns without failing
       const addColumnIfNotExists = async (table: string, columnDef: string) => {
         try {
-          await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${columnDef}`);
+          await retryOnLock(() => db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${columnDef}`));
         } catch {
-          // Column already exists
+          // Column already exists or error handled
         }
       };
 
@@ -357,7 +362,7 @@ export async function initDB(db: SQLiteDatabase) {
 
       // Purge legacy seed records & test records
       try {
-        await db.execAsync(`
+        await retryOnLock(() => db.execAsync(`
           DELETE FROM ipo_master WHERE id IN (
             'ipo-leap-india', 'ipo-technocraft', 'ipo-lapl-auto', 'ipo-molbio-diag',
             'ipo-dhoot-trans', 'ipo-shiprocket', 'ipo-lalithaa-jewellery', 'ipo-ola-electric',
@@ -365,12 +370,12 @@ export async function initDB(db: SQLiteDatabase) {
           ) OR id LIKE 'ipo-%' OR LOWER(company_name) LIKE '%test%' OR LOWER(ipo_name) LIKE '%test%' OR id LIKE '%test%' OR LOWER(TRIM(ipo_name)) = 'ipo';
 
           DELETE FROM ipo_listings WHERE symbol = 'TESTENT' OR LOWER(company_name) LIKE '%test enterprise%' OR LOWER(ipo_name) LIKE '%test enterprise%' OR LOWER(TRIM(ipo_name)) = 'ipo' OR (TRIM(ipo_name) = '' AND TRIM(company_name) = '');
-        `);
+        `));
       } catch {}
 
       // Backfill sync_status & last_synced_at
       try {
-        await db.execAsync(`
+        await retryOnLock(() => db.execAsync(`
           UPDATE users_table SET sync_status = 'SYNCED' WHERE sync_status IS NULL OR sync_status = '';
           UPDATE ipo_listings SET sync_status = 'SYNCED' WHERE sync_status IS NULL OR sync_status = '';
           UPDATE ipo_applications SET sync_status = 'SYNCED' WHERE sync_status IS NULL OR sync_status = '';
@@ -382,11 +387,11 @@ export async function initDB(db: SQLiteDatabase) {
           UPDATE ipo_applications SET last_synced_at = COALESCE(NULLIF(updated_at, ''), NULLIF(created_at, ''), CURRENT_TIMESTAMP) WHERE sync_status = 'SYNCED' AND (last_synced_at IS NULL OR last_synced_at = '');
           UPDATE bank_accounts SET last_synced_at = COALESCE(NULLIF(updated_at, ''), NULLIF(created_at, ''), CURRENT_TIMESTAMP) WHERE sync_status = 'SYNCED' AND (last_synced_at IS NULL OR last_synced_at = '');
           UPDATE ipo_master SET last_synced_at = COALESCE(NULLIF(updated_at, ''), NULLIF(created_at, ''), CURRENT_TIMESTAMP) WHERE sync_status = 'SYNCED' AND (last_synced_at IS NULL OR last_synced_at = '');
-        `);
+        `));
       } catch {}
 
       // Mark user_version as fully migrated
-      await db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
+      await retryOnLock(() => db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`));
     }
   } catch (err) {
     if (__DEV__) console.warn('[Schema Migration Notice]', err);

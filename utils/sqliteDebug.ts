@@ -88,7 +88,7 @@ export function validateSqlInsertCounts(sql: string, params: any[], callerInfo: 
 /**
  * Helper to retry SQLite operations if the database is locked.
  */
-async function retryOnLock<T>(fn: () => Promise<T>, retries = 6, baseDelayMs = 150): Promise<T> {
+export async function retryOnLock<T>(fn: () => Promise<T>, retries = 10, baseDelayMs = 100): Promise<T> {
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       return await fn();
@@ -97,11 +97,11 @@ async function retryOnLock<T>(fn: () => Promise<T>, retries = 6, baseDelayMs = 1
       if (errMsg.includes('closed resource') || errMsg.includes('access to closed resource')) {
         throw err;
       }
-      const isLocked = errMsg.includes('locked') || errMsg.includes('busy') || errMsg.includes('cannot start a transaction');
+      const isLocked = errMsg.includes('locked') || errMsg.includes('busy') || errMsg.includes('cannot start a transaction') || errMsg.includes('database is locked');
       if (isLocked && attempt < retries - 1) {
-        const delay = baseDelayMs * (attempt + 1) + Math.floor(Math.random() * 50);
+        const delay = Math.min(2500, baseDelayMs * Math.pow(1.5, attempt)) + Math.floor(Math.random() * 75);
         if (__DEV__) {
-          console.warn(`[SQL LOCK RETRY] Database locked. Retrying attempt ${attempt + 1}/${retries} in ${delay}ms...`);
+          console.warn(`[SQL LOCK RETRY] Database locked. Retrying attempt ${attempt + 1}/${retries} in ${Math.round(delay)}ms...`);
         }
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
