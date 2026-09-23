@@ -25,6 +25,12 @@ import { AppStoreProvider } from '@/store/useAppStore';
 import { CompareProvider } from '@/context/CompareContext';
 import { NotificationProvider } from '@/context/NotificationContext';
 import { AnimatedSplashScreen } from '@/components/AnimatedSplashScreen';
+import {
+  registerDevicePushTokenAsync,
+  setupNotificationPresentation,
+  setupNotificationResponseListener,
+} from '@/services/notifications/notificationEngine';
+import { useAuth } from '@/context/AuthContext';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -32,6 +38,7 @@ const queryClient = new QueryClient();
 
 function RootLayoutNav() {
   const { resolvedScheme } = useTheme();
+  const { user } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -41,6 +48,22 @@ function RootLayoutNav() {
       }
     });
   }, []);
+
+  useEffect(() => {
+    setupNotificationPresentation();
+    const subscription = setupNotificationResponseListener(router);
+    return () => {
+      if (subscription && subscription.remove) {
+        subscription.remove();
+      }
+    };
+  }, [router]);
+
+  useEffect(() => {
+    if (user?.id) {
+      registerDevicePushTokenAsync(user.id).catch(() => {});
+    }
+  }, [user?.id]);
 
   return (
     <>

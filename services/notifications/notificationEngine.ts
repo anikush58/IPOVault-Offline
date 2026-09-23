@@ -365,3 +365,120 @@ export async function triggerAllotmentNotification(
     dedupe_key: dedupeKey,
   });
 }
+
+/**
+ * Configures foreground notification presentation options.
+ */
+export function setupNotificationPresentation() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Notifications = require('expo-notifications');
+    if (Notifications && Notifications.setNotificationHandler) {
+      Notifications.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldShowAlert: true,
+          shouldPlaySound: true,
+          shouldSetBadge: false,
+        }),
+      });
+    }
+  } catch {
+    // Optional fallback
+  }
+}
+
+/**
+ * Registers device's Expo push token with the backend API for the active user identity.
+ */
+export async function registerDevicePushTokenAsync(userId: string): Promise<string | null> {
+  if (!userId || userId.trim() === '') return null;
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Notifications = require('expo-notifications');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { Platform } = require('react-native');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { API_BASE_URL } = require('@/constants/apiConfig');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Constants = require('expo-constants').default || require('expo-constants');
+
+    if (!Notifications || !Notifications.getPermissionsAsync) {
+      return null;
+    }
+
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus !== 'granted') {
+      return null;
+    }
+
+    const projectId =
+      Constants?.expoConfig?.extra?.eas?.projectId ??
+      Constants?.easConfig?.projectId;
+
+    const tokenData = await Notifications.getExpoPushTokenAsync(
+      projectId ? { projectId } : undefined
+    );
+    const pushToken = tokenData?.data;
+
+    if (!pushToken) return null;
+
+    // Send token to backend API
+    const response = await fetch(`${API_BASE_URL}/api/v1/notifications/push-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': userId,
+      },
+      body: JSON.stringify({
+        token: pushToken,
+        platform: Platform.OS,
+      }),
+    });
+
+    if (__DEV__) {
+      console.log(`[Push] Registered push token with backend for user ${userId}: HTTP ${response.status}`);
+    }
+
+    return pushToken;
+  } catch (err) {
+    if (__DEV__) {
+      console.log('[Push] Registration error:', err);
+    }
+    return null;
+  }
+}
+
+/**
+ * Attaches notification response listener for deep linking on tap.
+ * When tapped, opens /allotment-checker with the relevant ipoId without auto-submitting PAN data.
+ */
+export function setupNotificationResponseListener(router: any) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const Notifications = require('expo-notifications');
+    if (Notifications && Notifications.addNotificationResponseReceivedListener) {
+      const subscription = Notifications.addNotificationResponseReceivedListener((response: any) => {
+        const data = response?.notification?.request?.content?.data;
+        if (data?.ipoId) {
+          router.push({
+            pathname: '/allotment-checker',
+            params: { ipoId: data.ipoId, symbol: data.symbol },
+          });
+        }
+      });
+      return subscription;
+    }
+  } catch {
+    // Optional fallback
+  }
+  return null;
+}
+
