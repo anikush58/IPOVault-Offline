@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   FlatList,
   Image,
@@ -30,7 +29,6 @@ import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconButton } from '@/components/ui/IconButton';
 import { Tabs } from '@/components/ui/Tabs';
-import { SegmentedTabControl } from '@/components/ui/SegmentedTabControl';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { BackendIpo } from '@/types/backend-ipo';
 import { useDB } from '@/context/DBContext';
@@ -61,31 +59,31 @@ function getAvatarGradient(name: string): [string, string] {
   return AVATAR_PALETTES[index];
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function parseDatePart(str?: string | null) {
+  if (!str) return null;
+  const clean = str.trim();
+  if (!clean) return null;
+  const parts = clean.split('-');
+  if (parts.length === 3) {
+    const day = parseInt(parts[2], 10);
+    const monthIdx = parseInt(parts[1], 10) - 1;
+    if (!isNaN(day) && monthIdx >= 0 && monthIdx < 12) {
+      return { day, month: MONTHS[monthIdx] };
+    }
+  }
+  const d = new Date(clean);
+  if (!isNaN(d.getTime())) {
+    return { day: d.getDate(), month: MONTHS[d.getMonth()] };
+  }
+  return null;
+}
+
 function formatApplyDates(openDate?: string | null, closeDate?: string | null): string {
   if (!openDate && !closeDate) return 'TBA';
-  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  
-  const parseD = (str?: string | null) => {
-    if (!str) return null;
-    const clean = str.trim();
-    if (!clean) return null;
-    const parts = clean.split('-');
-    if (parts.length === 3) {
-      const day = parseInt(parts[2], 10);
-      const monthIdx = parseInt(parts[1], 10) - 1;
-      if (!isNaN(day) && monthIdx >= 0 && monthIdx < 12) {
-        return { day, month: MONTHS[monthIdx] };
-      }
-    }
-    const d = new Date(clean);
-    if (!isNaN(d.getTime())) {
-      return { day: d.getDate(), month: MONTHS[d.getMonth()] };
-    }
-    return null;
-  };
-
-  const o = parseD(openDate);
-  const c = parseD(closeDate);
+  const o = parseDatePart(openDate);
+  const c = parseDatePart(closeDate);
 
   if (o && c) {
     if (o.month === c.month) {
@@ -97,6 +95,364 @@ function formatApplyDates(openDate?: string | null, closeDate?: string | null): 
   if (c) return `${c.day} ${c.month}`;
   return 'TBA';
 }
+
+function formatSingleDate(dateStr?: string | null): string {
+  if (!dateStr) return 'TBA';
+  const p = parseDatePart(dateStr);
+  if (p) {
+    return `${p.day} ${p.month}`;
+  }
+  return 'TBA';
+}
+
+function getStatusBadge(status?: string, openDate?: string | null) {
+  const norm = (status || '').toUpperCase().trim();
+  if (norm === 'CLOSING_TODAY' || norm === 'CLOSING TODAY' || norm === 'CLOSES TODAY') {
+    return { text: 'Closing Today', bg: '#FEF3C7', color: '#D97706', icon: 'alert-circle' };
+  }
+  if (norm === 'OPEN' || norm === 'ACTIVE' || norm === 'LIVE') {
+    return { text: 'Live Now', bg: '#DCFCE7', color: '#15803D', icon: 'activity' };
+  }
+  if (norm === 'LISTED') {
+    return { text: 'Listed', bg: '#E0E7FF', color: '#4338CA', icon: 'check-circle' };
+  }
+  if (
+    norm === 'ALLOTMENT_OUT' ||
+    norm === 'ALLOTTED' ||
+    norm === 'ALLOTMENT' ||
+    norm === 'ALLOTMENT_COMPLETED' ||
+    norm === 'ALLOTTED_AVAILABLE' ||
+    norm.includes('ALLOT')
+  ) {
+    return { text: 'Allotment Out', bg: 'rgba(16, 185, 129, 0.12)', color: '#10B981', icon: 'check-circle' };
+  }
+  if (norm === 'CLOSED' || norm === 'ALLOTMENT_PENDING' || norm === 'ALLOTTED_PENDING' || (norm.includes('CLOSED') && norm !== 'CLOSING_TODAY')) {
+    return { text: 'Closed', bg: '#F1F5F9', color: '#64748B', icon: 'lock' };
+  }
+  const formattedOpen = openDate ? formatApplyDates(openDate, null) : 'Soon';
+  return { text: `Opens ${formattedOpen}`, bg: '#E0F2FE', color: '#0369A1', icon: 'calendar' };
+}
+
+interface NewIpoCardItemProps {
+  item: BackendIpo;
+  tab: NewIpoTab;
+  colors: any;
+  isDark: boolean;
+  totalAppsCount: number;
+  appliedCount: number;
+  allottedCount: number;
+  onPress: (item: BackendIpo) => void;
+  onApplyPress: (item: BackendIpo) => void;
+}
+
+const NewIpoCardItem = React.memo(
+  function NewIpoCardItem({
+    item,
+    tab,
+    colors,
+    isDark,
+    totalAppsCount,
+    appliedCount,
+    allottedCount,
+    onPress,
+    onApplyPress,
+  }: NewIpoCardItemProps) {
+    const companyName = item.company?.displayName || item.companyName || item.symbol || 'IPO';
+    const priceBandText = item.priceBandLow && item.priceBandHigh
+      ? item.priceBandLow === item.priceBandHigh
+        ? `₹${item.priceBandHigh}`
+        : `₹${item.priceBandLow} to ₹${item.priceBandHigh}`
+      : item.priceBandHigh
+      ? `₹${item.priceBandHigh}`
+      : item.priceBandLow
+      ? `₹${item.priceBandLow}`
+      : 'TBA';
+
+    const isSme = item.marketSegment === 'SME' || ((item as any).issue_type || '').toUpperCase().includes('SME');
+    const upperPrice = item.priceBandHigh || item.priceBandLow || 0;
+    const lotQty = item.lotSize || 0;
+    const minInvestment = upperPrice && lotQty ? (isSme ? upperPrice * lotQty * 2 : upperPrice * lotQty) : null;
+
+    const subTotal = (item as any).total_sub ?? (item as any).total_subscription ?? (item.currentSubscription?.totalSubscriptionMultiple != null ? Number(item.currentSubscription.totalSubscriptionMultiple) : null);
+    const qibCat = item.currentSubscription?.categories?.find((c: any) => c.category === 'QIB');
+    const subQib = (item as any).qib_sub ?? (qibCat?.subscriptionMultiple != null ? Number(qibCat.subscriptionMultiple) : null);
+    const subDisplay = subTotal != null ? `${subTotal.toFixed(1)}x` : (subQib != null ? `${subQib.toFixed(1)}x` : '—');
+
+    const gmpAmt = item.currentGmp?.gmpAmount != null ? Number(item.currentGmp.gmpAmount) : null;
+    const gmpPct = item.currentGmp?.gmpPercentage != null ? Number(item.currentGmp.gmpPercentage) : null;
+    const hasGmp = gmpAmt != null || gmpPct != null;
+
+    const gmpDisplay = gmpAmt != null
+      ? `${gmpAmt > 0 ? '+' : ''}₹${gmpAmt}${gmpPct != null ? ` (${gmpPct > 0 ? '+' : ''}${gmpPct.toFixed(1)}%)` : ''}`
+      : gmpPct != null
+      ? `${gmpPct > 0 ? '+' : ''}${gmpPct.toFixed(1)}%`
+      : 'TBA';
+
+    const gmpColor = hasGmp ? ((gmpAmt || gmpPct || 0) >= 0 ? '#10B981' : '#EF4444') : colors.mutedForeground;
+
+    const normStatus = (item.status || '').toUpperCase().trim();
+    const isClosedOrListed =
+      normStatus === 'CLOSED' ||
+      normStatus === 'LISTED' ||
+      normStatus === 'ALLOTTED' ||
+      normStatus === 'ALLOTMENT_OUT' ||
+      normStatus === 'ALLOTMENT_COMPLETED' ||
+      (normStatus.includes('CLOSED') && normStatus !== 'CLOSING_TODAY') ||
+      normStatus.includes('ALLOT') ||
+      normStatus.includes('LIST');
+    const isListed = normStatus === 'LISTED' || tab === 'listed';
+    const isUpcoming = normStatus === 'UPCOMING' || tab === 'upcoming';
+    const isOpen =
+      (normStatus === 'OPEN' ||
+        normStatus === 'CLOSING_TODAY' ||
+        normStatus === 'LIVE' ||
+        normStatus === 'BIDDING' ||
+        normStatus === 'ACTIVE' ||
+        tab === 'live') &&
+      !isUpcoming &&
+      !isClosedOrListed;
+
+    const applyDateStr = formatApplyDates(item.openDate, item.closeDate);
+    const allotmentDateRaw =
+      item.allotmentDate ||
+      item.lifecycle?.basisOfAllotmentDate ||
+      item.allotment?.expectedDate ||
+      item.allotment?.expectedAllotmentDate ||
+      (item as any).allotment_date;
+    const allotmentDateStr = formatSingleDate(allotmentDateRaw);
+
+    const listingDateRaw =
+      item.listingDate ||
+      item.lifecycle?.listingDate ||
+      (item as any).listing_date;
+    const listingDateStr = formatSingleDate(listingDateRaw);
+
+    let dateLabel = 'Apply:';
+    let dateValueStr = applyDateStr;
+
+    if (isListed) {
+      dateLabel = 'Listing:';
+      dateValueStr = listingDateStr;
+    } else if (tab === 'closed' || isClosedOrListed) {
+      dateLabel = 'Allotment:';
+      dateValueStr = allotmentDateStr;
+    }
+
+    const logoUrl = item.company?.logoUrl || (item as any).logoUrl || (item as any).logo_url;
+    const initials = companyName
+      .replace(/[^a-zA-Z0-9\s]/g, '')
+      .split(' ')
+      .slice(0, 2)
+      .map((w) => w[0])
+      .join('')
+      .toUpperCase();
+
+    const statusBadge = getStatusBadge(item.status, item.openDate);
+
+    const issuePrice = upperPrice || 0;
+    const listingPrice = item.listingPrice != null ? Number(item.listingPrice) : null;
+    const listingGainPct = item.listingGainPct != null ? Number(item.listingGainPct) : (listingPrice && issuePrice > 0 ? ((listingPrice - issuePrice) / issuePrice) * 100 : null);
+    const profitAmt = item.profitAmount != null ? Number(item.profitAmount) : (listingPrice && issuePrice > 0 && lotQty ? (listingPrice - issuePrice) * lotQty : null);
+    const profitPct = item.profitPercentage != null ? Number(item.profitPercentage) : listingGainPct;
+
+    const profitDisplay = profitAmt != null
+      ? `${profitAmt > 0 ? '+' : ''}₹${Math.round(profitAmt).toLocaleString('en-IN')}${profitPct != null ? ` (${profitPct > 0 ? '+' : ''}${profitPct.toFixed(1)}%)` : ''}`
+      : profitPct != null
+      ? `${profitPct > 0 ? '+' : ''}${profitPct.toFixed(1)}%`
+      : 'TBA';
+    const profitColor = (profitAmt ?? profitPct ?? 0) >= 0 ? '#10B981' : '#EF4444';
+
+    const showAllottedCount = tab === 'closed' || tab === 'listed' || (!isOpen && isClosedOrListed);
+
+    return (
+      <TouchableOpacity
+        activeOpacity={0.88}
+        onPress={() => onPress(item)}
+        style={[
+          styles.itemCard,
+          {
+            backgroundColor: colors.card,
+            borderColor: isDark ? '#1E293B' : colors.border,
+          },
+        ]}
+      >
+        {/* Card Header Row: Logo/Avatar + Company Title & Price + Segment & Exchange Badge */}
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.headerLeftCol}>
+            <View style={styles.logoWrap}>
+              {logoUrl ? (
+                <Image source={{ uri: logoUrl }} style={styles.logoImage} resizeMode="contain" />
+              ) : (
+                <LinearGradient
+                  colors={getAvatarGradient(companyName)}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.avatar}
+                >
+                  <Text style={styles.avatarText}>{initials}</Text>
+                </LinearGradient>
+              )}
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.companyTitle, { color: colors.foreground }]} numberOfLines={1}>
+                {companyName}
+              </Text>
+              <Text style={[styles.bidPriceSubtitle, { color: colors.mutedForeground }]}>
+                {isListed && listingPrice != null ? 'Listing Price: ' : 'Bid Price: '}
+                <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>
+                  {isListed && listingPrice != null ? `₹${listingPrice}` : priceBandText}
+                </Text>
+              </Text>
+            </View>
+          </View>
+
+          <View style={{ alignItems: 'flex-end', gap: 4 }}>
+            <View
+              style={[
+                styles.segmentBadge,
+                {
+                  backgroundColor: isSme
+                    ? (isDark ? 'rgba(236, 72, 153, 0.15)' : '#FCE7F3')
+                    : (isDark ? 'rgba(139, 92, 246, 0.15)' : '#F3E8FF'),
+                  borderColor: isSme
+                    ? (isDark ? 'rgba(236, 72, 153, 0.3)' : 'rgba(236, 72, 153, 0.25)')
+                    : (isDark ? 'rgba(139, 92, 246, 0.3)' : 'rgba(139, 92, 246, 0.25)'),
+                  borderWidth: 1,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.segmentBadgeText,
+                  {
+                    color: isSme
+                      ? (isDark ? '#F472B6' : '#DB2777')
+                      : (isDark ? '#A78BFA' : '#7C3AED'),
+                  },
+                ]}
+              >
+                {isSme ? 'SME' : 'Mainboard'}
+              </Text>
+            </View>
+            <Text style={[styles.topExchangeTag, { color: colors.mutedForeground }]}>
+              NSE • BSE
+            </Text>
+          </View>
+        </View>
+
+        {/* Compact Surface Box (Matching IPO Management card style, 50% reduced opacity) */}
+        <View
+          style={[
+            styles.middleGridCard,
+            {
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(241, 243, 245, 0.4)',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)',
+            },
+          ]}
+        >
+          {/* Col 1: GMP / PROFIT & % */}
+          <View style={styles.gridCol}>
+            <Text style={[styles.gridLabel, { color: colors.mutedForeground }]}>
+              {isListed ? 'PROFIT' : 'GMP'}
+            </Text>
+            <Text style={[styles.gridVal, { color: isListed ? profitColor : gmpColor }]} numberOfLines={1}>
+              {isListed ? profitDisplay : gmpDisplay}
+            </Text>
+          </View>
+
+          <View style={[styles.gridDivider, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.border }]} />
+
+          {/* Col 2: OVERALL SUBSCRIPTION */}
+          <View style={[styles.gridCol, { alignItems: 'center' }]}>
+            <Text style={[styles.gridLabel, { color: colors.mutedForeground }]}>OVERALL SUB</Text>
+            <Text style={[styles.gridVal, { color: colors.foreground }]} numberOfLines={1}>
+              {subDisplay}
+            </Text>
+          </View>
+
+          <View style={[styles.gridDivider, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.border }]} />
+
+          {/* Col 3: MIN INVESTMENT */}
+          <View style={[styles.gridCol, { alignItems: 'flex-end' }]}>
+            <Text style={[styles.gridLabel, { color: colors.mutedForeground }]}>MIN INVESTMENT</Text>
+            <Text style={[styles.gridVal, { color: colors.foreground }]} numberOfLines={1}>
+              {minInvestment != null ? formatCurrency(minInvestment) : '—'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Timeline & Status Badge Row */}
+        <View style={[styles.dateAndStatusRow, isUpcoming && { marginBottom: 0 }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+            <Feather name="calendar" size={12} color={colors.mutedForeground} />
+            <Text style={[styles.dateRowText, { color: colors.mutedForeground }]} numberOfLines={1}>
+              {dateLabel}{' '}
+              <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>
+                {dateValueStr}
+              </Text>
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.statusPill,
+              { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : statusBadge.bg },
+            ]}
+          >
+            <Feather name={statusBadge.icon as any} size={11} color={isDark ? colors.foreground : statusBadge.color} />
+            <Text style={[styles.statusPillText, { color: isDark ? colors.foreground : statusBadge.color }]}>
+              {statusBadge.text}
+            </Text>
+          </View>
+        </View>
+
+        {/* Applications Stats Pill Row & Apply CTA Footer (Hidden for Upcoming tab/status) */}
+        {!isUpcoming && (
+          <View style={[styles.footerRow, { borderTopColor: colors.border }]}>
+            <View style={styles.appPillsContainer}>
+              <View style={[styles.countPill, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' }]}>
+                <Text style={[styles.countPillText, { color: isDark ? '#60A5FA' : '#2563EB' }]}>
+                  {totalAppsCount} applied
+                </Text>
+              </View>
+
+              {showAllottedCount && (
+                <View style={[styles.countPill, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7' }]}>
+                  <Text style={[styles.countPillText, { color: isDark ? '#34D399' : '#15803D' }]}>
+                    {allottedCount} allotted
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {isOpen ? (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => onApplyPress(item)}
+                style={[styles.applyCtaBtn, { backgroundColor: colors.primary }]}
+              >
+                <Text style={[styles.applyCtaText, { color: colors.primaryForeground }]}>Apply Now</Text>
+                <Feather name="arrow-right" size={12} color={colors.primaryForeground} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => onPress(item)}
+                style={[styles.viewDetailsCtaBtn, { borderColor: colors.border }]}
+              >
+                <Text style={[styles.viewDetailsText, { color: colors.mutedForeground }]}>View Details</Text>
+                <Feather name="chevron-right" size={12} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  }
+);
+
+const TABS: readonly NewIpoTab[] = ['live', 'upcoming', 'closed', 'listed'] as const;
 
 export default function NewIposScreen() {
   const colors = useColors();
@@ -116,7 +472,7 @@ export default function NewIposScreen() {
   const searchAnim = useRef(new Animated.Value(0)).current;
   const searchRef = useRef<TextInput>(null);
 
-  const toggleSearch = () => {
+  const toggleSearch = useCallback(() => {
     if (showSearch) {
       Animated.timing(searchAnim, { toValue: 0, duration: 180, useNativeDriver: false }).start();
       setShowSearch(false);
@@ -127,7 +483,7 @@ export default function NewIposScreen() {
         searchRef.current?.focus()
       );
     }
-  };
+  }, [showSearch, searchAnim]);
 
   const searchBarHeight = searchAnim.interpolate({
     inputRange: [0, 1],
@@ -137,8 +493,7 @@ export default function NewIposScreen() {
     inputRange: [0, 0.4, 1],
     outputRange: [0, 0, 1],
   });
-  
-  const TABS: NewIpoTab[] = ['live', 'upcoming', 'closed', 'listed'];
+
   const { width: screenWidth } = useWindowDimensions();
   const horizontalScrollViewRef = useRef<ScrollView>(null);
 
@@ -151,29 +506,29 @@ export default function NewIposScreen() {
 
   const hasActiveFilter = !includeSme || sortBy !== 'DEFAULT';
 
-  const openFilterModal = () => {
+  const openFilterModal = useCallback(() => {
     setTempIncludeSme(includeSme);
     setTempSortBy(sortBy);
     setShowFilterModal(true);
     try { Haptics.selectionAsync(); } catch {}
-  };
+  }, [includeSme, sortBy]);
 
-  const handleTabPress = (tab: NewIpoTab) => {
+  const handleTabPress = useCallback((tab: NewIpoTab) => {
     setActiveTab(tab);
     try { Haptics.selectionAsync(); } catch {}
     const index = TABS.indexOf(tab);
     if (index !== -1) {
       horizontalScrollViewRef.current?.scrollTo({ x: index * screenWidth, animated: true });
     }
-  };
+  }, [screenWidth]);
 
-  const handleHorizontalScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const handleHorizontalScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const contentOffsetX = event.nativeEvent.contentOffset.x;
     const index = Math.round(contentOffsetX / screenWidth);
     if (TABS[index] && TABS[index] !== activeTab) {
       setActiveTab(TABS[index]);
     }
-  };
+  }, [screenWidth, activeTab]);
 
   const db = useSQLiteContext();
 
@@ -229,6 +584,37 @@ export default function NewIposScreen() {
     }
   }, [fetchBackendIpos, db]);
 
+  // Memoized application statistics map (O(N) calculation run only when rawIpos or applications change)
+  const appStatsMap = useMemo(() => {
+    const map = new Map<string, { total: number; applied: number; allotted: number }>();
+    if (!rawIpos.length) return map;
+
+    for (const item of rawIpos) {
+      const companyName = (item.company?.displayName || item.companyName || item.symbol || '').toLowerCase().trim();
+      let total = 0;
+      let applied = 0;
+      let allotted = 0;
+
+      for (let i = 0; i < applications.length; i++) {
+        const a = applications[i];
+        let matched = a.ipo_id === item.id;
+        if (!matched && companyName) {
+          const aName = (a.ipo_name || '').toLowerCase().trim();
+          if (aName && (aName === companyName || aName.includes(companyName) || companyName.includes(aName))) {
+            matched = true;
+          }
+        }
+        if (matched) {
+          total++;
+          if (a.status === 'Applied' || a.status === 'Mandate Approved') applied++;
+          if (a.status === 'Allotted' || a.status === 'Partially Allotted' || a.status === 'Holding' || a.status === 'Sold') allotted++;
+        }
+      }
+      map.set(item.id, { total, applied, allotted });
+    }
+    return map;
+  }, [rawIpos, applications]);
+
   const filteredRawIpos = useMemo(() => {
     let list = rawIpos;
     if (!includeSme) {
@@ -272,371 +658,113 @@ export default function NewIposScreen() {
     });
   }, [filteredRawIpos]);
 
-  const getListForTab = useCallback((tab: NewIpoTab) => {
-    let list: BackendIpo[] = [];
-    switch (tab) {
-      case 'live':
-        list = [...liveList];
-        break;
-      case 'upcoming':
-        list = [...upcomingList];
-        break;
-      case 'closed':
-        list = [...closedList];
-        break;
-      case 'listed':
-        list = [...listedList];
-        break;
-    }
+  // Pre-sorted lists for all 4 tabs so tab switching never executes array sorts
+  const sortedTabLists = useMemo(() => {
+    const sortFn = (list: BackendIpo[]) => {
+      const arr = [...list];
+      switch (sortBy) {
+        case 'GMP':
+          return arr.sort((a, b) => {
+            const gmpA = Number(a.currentGmp?.gmpAmount || a.currentGmp?.gmpPercentage || 0);
+            const gmpB = Number(b.currentGmp?.gmpAmount || b.currentGmp?.gmpPercentage || 0);
+            return gmpB - gmpA;
+          });
+        case 'DATE':
+          return arr.sort((a, b) => (a.openDate || '').localeCompare(b.openDate || ''));
+        case 'MIN_INVEST':
+          return arr.sort((a, b) => {
+            const isSmeA = a.marketSegment === 'SME';
+            const isSmeB = b.marketSegment === 'SME';
+            const priceA = a.priceBandHigh || a.priceBandLow || 0;
+            const priceB = b.priceBandHigh || b.priceBandLow || 0;
+            const valA = priceA * (a.lotSize || 1) * (isSmeA ? 2 : 1);
+            const valB = priceB * (b.lotSize || 1) * (isSmeB ? 2 : 1);
+            return valA - valB;
+          });
+        case 'NAME':
+          return arr.sort((a, b) => {
+            const nameA = a.company?.displayName || a.companyName || a.symbol || '';
+            const nameB = b.company?.displayName || b.companyName || b.symbol || '';
+            return nameA.localeCompare(nameB);
+          });
+        default:
+          return arr;
+      }
+    };
 
-    switch (sortBy) {
-      case 'GMP':
-        list.sort((a, b) => {
-          const gmpA = Number(a.currentGmp?.gmpAmount || a.currentGmp?.gmpPercentage || 0);
-          const gmpB = Number(b.currentGmp?.gmpAmount || b.currentGmp?.gmpPercentage || 0);
-          return gmpB - gmpA;
-        });
-        break;
-      case 'DATE':
-        list.sort((a, b) => (a.openDate || '').localeCompare(b.openDate || ''));
-        break;
-      case 'MIN_INVEST':
-        list.sort((a, b) => {
-          const valA = (a.priceBandHigh || a.priceBandLow || 0) * (a.lotSize || 1);
-          const valB = (b.priceBandHigh || b.priceBandLow || 0) * (b.lotSize || 1);
-          return valA - valB;
-        });
-        break;
-      case 'NAME':
-        list.sort((a, b) => {
-          const nameA = a.company?.displayName || a.companyName || a.symbol;
-          const nameB = b.company?.displayName || b.companyName || b.symbol;
-          return nameA.localeCompare(nameB);
-        });
-        break;
-    }
-
-    return list;
+    return {
+      live: sortFn(liveList),
+      upcoming: sortFn(upcomingList),
+      closed: sortFn(closedList),
+      listed: sortFn(listedList),
+    };
   }, [liveList, upcomingList, closedList, listedList, sortBy]);
 
-  const sortLabel = useMemo(() => {
-    switch (sortBy) {
-      case 'GMP': return 'GMP';
-      case 'DATE': return 'Apply Date';
-      case 'MIN_INVEST': return 'Min Investment';
-      case 'NAME': return 'Name';
-      default: return 'Default';
-    }
-  }, [sortBy]);
+  const handleCardPress = useCallback(
+    (item: BackendIpo) => {
+      router.push({
+        pathname: '/backend-ipo-details',
+        params: { id: item.id, item: JSON.stringify(item) },
+      });
+    },
+    [router]
+  );
 
-function getStatusBadge(status?: string, openDate?: string | null) {
-  const norm = (status || '').toUpperCase().trim();
-  if (norm === 'CLOSING_TODAY' || norm === 'CLOSING TODAY' || norm === 'CLOSES TODAY') {
-    return { text: 'Closing Today', bg: '#FEF3C7', color: '#D97706', icon: 'alert-circle' };
-  }
-  if (norm === 'OPEN' || norm === 'ACTIVE' || norm === 'LIVE') {
-    return { text: 'Live Now', bg: '#DCFCE7', color: '#15803D', icon: 'activity' };
-  }
-  if (norm === 'LISTED') {
-    return { text: 'Listed', bg: '#E0E7FF', color: '#4338CA', icon: 'check-circle' };
-  }
-  if (
-    norm === 'ALLOTMENT_OUT' ||
-    norm === 'ALLOTTED' ||
-    norm === 'ALLOTMENT' ||
-    norm === 'ALLOTMENT_COMPLETED' ||
-    norm === 'ALLOTTED_AVAILABLE' ||
-    norm.includes('ALLOT')
-  ) {
-    return { text: 'Allotment Out', bg: 'rgba(16, 185, 129, 0.12)', color: '#10B981', icon: 'check-circle' };
-  }
-  if (norm === 'CLOSED' || norm === 'ALLOTMENT_PENDING' || norm === 'ALLOTTED_PENDING' || (norm.includes('CLOSED') && norm !== 'CLOSING_TODAY')) {
-    return { text: 'Closed', bg: '#F1F5F9', color: '#64748B', icon: 'lock' };
-  }
-  const formattedOpen = openDate ? formatApplyDates(openDate, null) : 'Soon';
-  return { text: `Opens ${formattedOpen}`, bg: '#E0F2FE', color: '#0369A1', icon: 'calendar' };
-}
+  const handleApplyPress = useCallback(
+    (item: BackendIpo) => {
+      router.push({
+        pathname: '/apply-ipo',
+        params: {
+          ipoId: item.id,
+          item: JSON.stringify(item),
+          name: item.company?.displayName || item.companyName || item.symbol,
+          company_name: item.company?.displayName || item.companyName || item.symbol,
+          symbol: item.symbol,
+          priceBandLow: item.priceBandLow != null ? String(item.priceBandLow) : undefined,
+          priceBandHigh: item.priceBandHigh != null ? String(item.priceBandHigh) : undefined,
+          buy_price: String(item.priceBandHigh || item.priceBandLow || item.issuePriceInr || 0),
+          lotSize: item.lotSize != null ? String(item.lotSize) : undefined,
+          closeDate: item.closeDate || undefined,
+          openDate: item.openDate || undefined,
+          logoUrl: item.company?.logoUrl || item.logoUrl || undefined,
+          issueType: item.marketSegment === 'SME' ? 'SME' : 'Mainboard',
+        },
+      } as any);
+    },
+    [router]
+  );
 
-  const renderItem = ({ item }: { item: BackendIpo }) => {
-    const companyName = item.company?.displayName || item.companyName || item.symbol || 'IPO';
-    const priceBandText = item.priceBandLow && item.priceBandHigh
-      ? item.priceBandLow === item.priceBandHigh
-        ? `₹${item.priceBandHigh}`
-        : `₹${item.priceBandLow} to ₹${item.priceBandHigh}`
-      : item.priceBandHigh
-      ? `₹${item.priceBandHigh}`
-      : item.priceBandLow
-      ? `₹${item.priceBandLow}`
-      : 'TBA';
+  const renderTabCard = useCallback(
+    (tab: NewIpoTab) =>
+      ({ item }: { item: BackendIpo }) => {
+        const stats = appStatsMap.get(item.id) || { total: 0, applied: 0, allotted: 0 };
+        return (
+          <NewIpoCardItem
+            key={item.id}
+            item={item}
+            tab={tab}
+            colors={colors}
+            isDark={isDark}
+            totalAppsCount={stats.total}
+            appliedCount={stats.applied}
+            allottedCount={stats.allotted}
+            onPress={handleCardPress}
+            onApplyPress={handleApplyPress}
+          />
+        );
+      },
+    [appStatsMap, colors, isDark, handleCardPress, handleApplyPress]
+  );
 
-    const minPrice = item.priceBandHigh || item.priceBandLow || 0;
-    const lotQty = item.lotSize || 0;
-    const lotValue = minPrice && lotQty ? minPrice * lotQty : null;
-
-    const gmpAmt = item.currentGmp?.gmpAmount != null ? Number(item.currentGmp.gmpAmount) : null;
-    const gmpPct = item.currentGmp?.gmpPercentage != null ? Number(item.currentGmp.gmpPercentage) : null;
-    const hasGmp = gmpAmt != null || gmpPct != null;
-
-    const gmpDisplay = gmpAmt != null
-      ? `${gmpAmt > 0 ? '+' : ''}₹${gmpAmt}${gmpPct != null ? ` (${gmpPct > 0 ? '+' : ''}${gmpPct.toFixed(1)}%)` : ''}`
-      : gmpPct != null
-      ? `${gmpPct > 0 ? '+' : ''}${gmpPct.toFixed(1)}%`
-      : 'TBA';
-
-    const gmpColor = hasGmp ? ((gmpAmt || gmpPct || 0) >= 0 ? '#10B981' : '#EF4444') : colors.mutedForeground;
-
-    const applyDateStr = formatApplyDates(item.openDate, item.closeDate);
-
-    const logoUrl = item.company?.logoUrl || (item as any).logoUrl || (item as any).logo_url;
-    const initials = companyName
-      .replace(/[^a-zA-Z0-9\s]/g, '')
-      .split(' ')
-      .slice(0, 2)
-      .map((w) => w[0])
-      .join('')
-      .toUpperCase();
-
-    const isSme = item.marketSegment === 'SME';
-    const statusBadge = getStatusBadge(item.status, item.openDate);
-
-    const normStatus = (item.status || '').toUpperCase().trim();
-    const isClosedOrListed =
-      normStatus === 'CLOSED' ||
-      normStatus === 'LISTED' ||
-      normStatus === 'ALLOTTED' ||
-      normStatus === 'ALLOTMENT_OUT' ||
-      normStatus === 'ALLOTMENT_COMPLETED' ||
-      (normStatus.includes('CLOSED') && normStatus !== 'CLOSING_TODAY') ||
-      normStatus.includes('ALLOT') ||
-      normStatus.includes('LIST');
-    const isUpcoming = normStatus === 'UPCOMING' || activeTab === 'upcoming';
-    const isOpen =
-      (normStatus === 'OPEN' ||
-        normStatus === 'CLOSING_TODAY' ||
-        normStatus === 'LIVE' ||
-        normStatus === 'BIDDING' ||
-        normStatus === 'ACTIVE' ||
-        activeTab === 'live') &&
-      !isUpcoming &&
-      !isClosedOrListed;
-
-    // Matching applications from SQLite
-    const matchingApps = applications.filter((a) => {
-      if (a.ipo_id === item.id) return true;
-      const aName = (a.ipo_name || '').toLowerCase().trim();
-      const iName = companyName.toLowerCase().trim();
-      return aName && iName && (aName === iName || aName.includes(iName) || iName.includes(aName));
-    });
-
-    const totalAppsCount = matchingApps.length;
-    const appliedCount = matchingApps.filter((a) => a.status === 'Applied' || a.status === 'Mandate Approved').length;
-    const allottedCount = matchingApps.filter((a) => a.status === 'Allotted' || a.status === 'Partially Allotted' || a.status === 'Holding' || a.status === 'Sold').length;
-
-    const showAllottedCount = activeTab === 'closed' || activeTab === 'listed' || (!isOpen && isClosedOrListed);
-
-    return (
-      <TouchableOpacity
-        activeOpacity={0.88}
-        onPress={() =>
-          router.push({
-            pathname: '/backend-ipo-details',
-            params: { id: item.id, item: JSON.stringify(item) },
-          })
-        }
-        style={[
-          styles.itemCard,
-          {
-            backgroundColor: colors.card,
-            borderColor: isDark ? '#1E293B' : colors.border,
-          },
-        ]}
-      >
-        {/* Card Header Row: Logo/Avatar + Company Title & Price + Segment & Exchange Badge */}
-        <View style={styles.cardHeaderRow}>
-          <View style={styles.headerLeftCol}>
-            <View style={styles.logoWrap}>
-              {logoUrl ? (
-                <Image source={{ uri: logoUrl }} style={styles.logoImage} resizeMode="contain" />
-              ) : (
-                <LinearGradient
-                  colors={getAvatarGradient(companyName)}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.avatar}
-                >
-                  <Text style={styles.avatarText}>{initials}</Text>
-                </LinearGradient>
-              )}
-            </View>
-
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.companyTitle, { color: colors.foreground }]} numberOfLines={1}>
-                {companyName}
-              </Text>
-              <Text style={[styles.bidPriceSubtitle, { color: colors.mutedForeground }]}>
-                Bid Price: <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>{priceBandText}</Text>
-              </Text>
-            </View>
-          </View>
-
-          <View style={{ alignItems: 'flex-end', gap: 4 }}>
-            <View
-              style={[
-                styles.segmentBadge,
-                {
-                  backgroundColor: isSme
-                    ? (isDark ? 'rgba(236, 72, 153, 0.15)' : '#FCE7F3')
-                    : (isDark ? 'rgba(139, 92, 246, 0.15)' : '#F3E8FF'),
-                  borderColor: isSme
-                    ? (isDark ? 'rgba(236, 72, 153, 0.3)' : 'rgba(236, 72, 153, 0.25)')
-                    : (isDark ? 'rgba(139, 92, 246, 0.3)' : 'rgba(139, 92, 246, 0.25)'),
-                  borderWidth: 1,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.segmentBadgeText,
-                  {
-                    color: isSme
-                      ? (isDark ? '#F472B6' : '#DB2777')
-                      : (isDark ? '#A78BFA' : '#7C3AED'),
-                  },
-                ]}
-              >
-                {isSme ? 'SME' : 'Mainboard'}
-              </Text>
-            </View>
-            <Text style={[styles.topExchangeTag, { color: colors.mutedForeground }]}>
-              NSE • BSE
-            </Text>
-          </View>
-        </View>
-
-        {/* Compact Surface Box (Matching IPO Management card style) */}
-        <View style={[styles.middleGridCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          {/* Col 1: EST. GMP & % */}
-          <View style={styles.gridCol}>
-            <Text style={[styles.gridLabel, { color: colors.mutedForeground }]}>EST. GMP</Text>
-            <Text style={[styles.gridVal, { color: gmpColor }]} numberOfLines={1}>
-              {gmpDisplay}
-            </Text>
-          </View>
-
-          <View style={[styles.gridDivider, { backgroundColor: colors.border }]} />
-
-          {/* Col 2: LOT QTY / SIZE */}
-          <View style={[styles.gridCol, { alignItems: 'center' }]}>
-            <Text style={[styles.gridLabel, { color: colors.mutedForeground }]}>LOT QTY</Text>
-            <Text style={[styles.gridVal, { color: colors.foreground }]} numberOfLines={1}>
-              {lotQty ? `${lotQty} shares` : '—'}
-            </Text>
-          </View>
-
-          <View style={[styles.gridDivider, { backgroundColor: colors.border }]} />
-
-          {/* Col 3: LOT VALUE / MIN INVEST */}
-          <View style={[styles.gridCol, { alignItems: 'flex-end' }]}>
-            <Text style={[styles.gridLabel, { color: colors.mutedForeground }]}>LOT VALUE</Text>
-            <Text style={[styles.gridVal, { color: colors.foreground }]} numberOfLines={1}>
-              {lotValue ? formatCurrency(lotValue) : '—'}
-            </Text>
-          </View>
-        </View>
-
-        {/* Timeline & Status Badge Row */}
-        <View style={[styles.dateAndStatusRow, isUpcoming && { marginBottom: 0 }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-            <Feather name="calendar" size={12} color={colors.mutedForeground} />
-            <Text style={[styles.dateRowText, { color: colors.mutedForeground }]} numberOfLines={1}>
-              Apply: <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>{applyDateStr}</Text>
-            </Text>
-          </View>
-
-          <View
-            style={[
-              styles.statusPill,
-              { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : statusBadge.bg },
-            ]}
-          >
-            <Feather name={statusBadge.icon as any} size={11} color={isDark ? colors.foreground : statusBadge.color} />
-            <Text style={[styles.statusPillText, { color: isDark ? colors.foreground : statusBadge.color }]}>
-              {statusBadge.text}
-            </Text>
-          </View>
-        </View>
-
-        {/* Applications Stats Pill Row & Apply CTA Footer (Hidden for Upcoming tab/status) */}
-        {!isUpcoming && (
-          <View style={[styles.footerRow, { borderTopColor: colors.border }]}>
-            <View style={styles.appPillsContainer}>
-              <Text style={[styles.totalAppsLabel, { color: colors.mutedForeground }]}>
-                Apps: <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_700Bold' }}>{totalAppsCount}</Text>
-              </Text>
-
-              <View style={[styles.countPill, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' }]}>
-                <Text style={[styles.countPillText, { color: isDark ? '#60A5FA' : '#2563EB' }]}>
-                  {appliedCount} applied
-                </Text>
-              </View>
-
-              {showAllottedCount && (
-                <View style={[styles.countPill, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7' }]}>
-                  <Text style={[styles.countPillText, { color: isDark ? '#34D399' : '#15803D' }]}>
-                    {allottedCount} allotted
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {isOpen ? (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() =>
-                  router.push({
-                    pathname: '/apply-ipo',
-                    params: {
-                      ipoId: item.id,
-                      item: JSON.stringify(item),
-                      name: item.company?.displayName || item.companyName || item.symbol,
-                      company_name: item.company?.displayName || item.companyName || item.symbol,
-                      symbol: item.symbol,
-                      priceBandLow: item.priceBandLow != null ? String(item.priceBandLow) : undefined,
-                      priceBandHigh: item.priceBandHigh != null ? String(item.priceBandHigh) : undefined,
-                      buy_price: String(item.priceBandHigh || item.priceBandLow || item.issuePriceInr || 0),
-                      lotSize: item.lotSize != null ? String(item.lotSize) : undefined,
-                      closeDate: item.closeDate || undefined,
-                      openDate: item.openDate || undefined,
-                      logoUrl: item.company?.logoUrl || item.logoUrl || undefined,
-                      issueType: item.marketSegment === 'SME' ? 'SME' : 'Mainboard',
-                    },
-                  } as any)
-                }
-                style={[styles.applyCtaBtn, { backgroundColor: colors.primary }]}
-              >
-                <Text style={[styles.applyCtaText, { color: colors.primaryForeground }]}>Apply Now</Text>
-                <Feather name="arrow-right" size={12} color={colors.primaryForeground} />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() =>
-                  router.push({
-                    pathname: '/backend-ipo-details',
-                    params: { id: item.id, item: JSON.stringify(item) },
-                  })
-                }
-                style={[styles.viewDetailsCtaBtn, { borderColor: colors.border }]}
-              >
-                <Text style={[styles.viewDetailsText, { color: colors.mutedForeground }]}>View Details</Text>
-                <Feather name="chevron-right" size={12} color={colors.mutedForeground} />
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-      </TouchableOpacity>
-    );
-  };
+  const tabsConfig = useMemo(
+    () => [
+      { key: 'live' as const, label: 'Live', count: liveList.length },
+      { key: 'upcoming' as const, label: 'Upcoming', count: upcomingList.length },
+      { key: 'closed' as const, label: 'Closed', count: closedList.length },
+      { key: 'listed' as const, label: 'Listed', count: listedList.length },
+    ],
+    [liveList.length, upcomingList.length, closedList.length, listedList.length]
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -718,12 +846,7 @@ function getStatusBadge(status?: string, openDate?: string | null) {
         <Tabs
           variant="pills"
           scrollable
-          tabs={[
-            { key: 'live', label: 'Live', count: liveList.length },
-            { key: 'upcoming', label: 'Upcoming', count: upcomingList.length },
-            { key: 'closed', label: 'Closed', count: closedList.length },
-            { key: 'listed', label: 'Listed', count: listedList.length },
-          ]}
+          tabs={tabsConfig}
           activeTab={activeTab}
           onChange={(newTab) => handleTabPress(newTab as NewIpoTab)}
           style={{ paddingHorizontal: 16 }}
@@ -765,7 +888,7 @@ function getStatusBadge(status?: string, openDate?: string | null) {
           style={{ flex: 1 }}
         >
           {TABS.map((tab) => {
-            const listData = getListForTab(tab);
+            const listData = sortedTabLists[tab];
             return (
               <View key={tab} style={{ width: screenWidth, flex: 1 }}>
                 {listData.length === 0 ? (
@@ -793,12 +916,16 @@ function getStatusBadge(status?: string, openDate?: string | null) {
                   <FlatList
                     data={listData}
                     keyExtractor={(item) => item.id}
-                    renderItem={renderItem}
+                    renderItem={renderTabCard(tab)}
                     contentContainerStyle={{
                       paddingTop: 12,
                       paddingBottom: Math.max(insets.bottom + 85, 100),
                     }}
                     showsVerticalScrollIndicator={false}
+                    initialNumToRender={6}
+                    maxToRenderPerBatch={6}
+                    windowSize={5}
+                    removeClippedSubviews={Platform.OS !== 'web'}
                     refreshControl={
                       <RefreshControl
                         refreshing={refreshing}

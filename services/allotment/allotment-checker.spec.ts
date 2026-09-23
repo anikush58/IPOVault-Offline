@@ -413,12 +413,16 @@ describe('Allotment Checker Frontend Integration Tests', () => {
     ).rejects.toThrow('Backend service unavailable');
   });
 
-  it('21. should correctly identify supported (KFintech & MUFG) vs unsupported registrars', () => {
+  it('21. should correctly identify supported (KFintech, MUFG, Maashitla, Skyline) vs unsupported registrars', () => {
     expect(isAutomatedCheckSupported('KFin Technologies Limited')).toBe(true);
     expect(isAutomatedCheckSupported(getRegistrarConfig('Ashutosh Fibre').name)).toBe(true);
     expect(isAutomatedCheckSupported(getRegistrarConfig('Dhoot Transmission').name)).toBe(true);
     expect(isAutomatedCheckSupported('MUFG Intime India (formerly Link Intime)')).toBe(true);
     expect(isAutomatedCheckSupported('Link Intime India Private Ltd')).toBe(true);
+    expect(isAutomatedCheckSupported('Maashitla Securities Private Limited')).toBe(true);
+    expect(isAutomatedCheckSupported('Maashitla Securities')).toBe(true);
+    expect(isAutomatedCheckSupported('Skyline Financial Services Private Ltd')).toBe(true);
+    expect(isAutomatedCheckSupported('Skyline Financial Services')).toBe(true);
     expect(isAutomatedCheckSupported('Bigshare Services')).toBe(false);
     expect(isAutomatedCheckSupported('Cameo Corporate Services')).toBe(false);
     expect(isAutomatedCheckSupported(null)).toBe(false);

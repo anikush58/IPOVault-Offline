@@ -19,6 +19,7 @@ import { BlurView } from 'expo-blur';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import * as WebBrowser from 'expo-web-browser';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -1650,6 +1651,34 @@ export default function AllotmentCheckerScreen() {
         : '';
 
       addLog(`IPO selected: ${targetIpo?.ipo_name || ipoId} (Registrar: ${targetRegistrar})`, 'info');
+
+      // Registrars without automated backend support: open their portal in-app instantly
+      const registrarUpper = (targetIpo?.registrar || '').toUpperCase();
+      const manualRedirectRegistrar = registrarUpper.includes('BIGSHARE')
+        ? 'BIGSHARE'
+        : registrarUpper.includes('CAMEO')
+          ? 'CAMEO'
+          : registrarUpper.includes('INTEGRATED')
+            ? 'INTEGRATED'
+            : registrarUpper.includes('MAS')
+              ? 'MAS'
+              : registrarUpper.includes('MUDRA')
+                ? 'MUDRA'
+                : registrarUpper.includes('ALANKIT')
+                  ? 'ALANKIT'
+                  : null;
+      if (manualRedirectRegistrar) {
+        const portalConfig = getRegistrarConfig(manualRedirectRegistrar);
+        addLog(`Opening ${portalConfig.name} allotment portal for ${targetIpo?.ipo_name || ipoId}`, 'info');
+        void WebBrowser.openBrowserAsync(portalConfig.url, {
+          showTitle: true,
+          enableBarCollapsing: true,
+        });
+        // Reset so user returns to picker when coming back
+        resetCheckState();
+        setSelectedIpoId(null);
+        return;
+      }
 
       if (targetRegistrar && isAutomatedCheckSupported(targetRegistrar)) {
         void startAutomatedAllotmentCheck(ipoId, targetIpo);

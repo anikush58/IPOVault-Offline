@@ -107,14 +107,15 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
     return 'TBA';
   }, [ipo.price_band_min, ipo.price_band_max]);
 
-  // Calculated lot value
+  // Calculated min investment amount (Shares in 1 Lot * Upper price Band * 2 for SME, Shares in 1 Lot * Upper price Band for Mainboard)
+  const isSme = (ipo.issue_type || '').toUpperCase().includes('SME');
   const lotValue = React.useMemo(() => {
     const p = ipo.price_band_max || ipo.price_band_min;
     if (p && ipo.lot_size) {
-      return p * ipo.lot_size;
+      return isSme ? p * ipo.lot_size * 2 : p * ipo.lot_size;
     }
     return null;
-  }, [ipo.price_band_max, ipo.price_band_min, ipo.lot_size]);
+  }, [ipo.price_band_max, ipo.price_band_min, ipo.lot_size, isSme]);
 
   // Fallback Initials
   const initials = companyNameStr
@@ -279,7 +280,7 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
             </Text>
           </View>
           <View style={styles.infoLineRow}>
-            <Text style={[styles.infoLineLabel, { color: colors.mutedForeground }]}>Profit / Lot: </Text>
+            <Text style={[styles.infoLineLabel, { color: colors.mutedForeground }]}>Profit: </Text>
             <Text style={[styles.gmpValText, { color: listingColor }]}>
               {profitAmtText} ({profitPctText})
             </Text>
@@ -323,9 +324,9 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
         </View>
 
         <View style={[styles.metricGridCol, { alignItems: 'flex-end' }]}>
-          <Text style={[styles.metricGridLabel, { color: colors.mutedForeground }]}>Lot Size</Text>
+          <Text style={[styles.metricGridLabel, { color: colors.mutedForeground }]}>Overall Sub</Text>
           <Text style={[styles.metricGridVal, { color: colors.foreground }]}>
-            {ipo.lot_size ?? '—'}
+            {ipo.total_sub != null ? `${ipo.total_sub.toFixed(1)}x` : (ipo.qib_sub != null ? `${ipo.qib_sub.toFixed(1)}x` : '—')}
           </Text>
         </View>
       </View>

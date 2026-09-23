@@ -539,7 +539,7 @@ export default function IPODetailsScreen() {
 
             <View style={{ flex: 1 }}>
               <Text style={[styles.metricHeaderLabel, { color: colors.mutedForeground }]}>
-                {normStatus === 'LISTED' ? 'Est. Profit' : 'Est. GMP'}
+                {normStatus === 'LISTED' ? 'Est. Profit' : 'GMP'}
               </Text>
               <TouchableOpacity onPress={openGmpModal} activeOpacity={0.8}>
                 <Text

@@ -415,12 +415,18 @@ export function UserCard({
               </>
             ) : (
               <TouchableOpacity
-                onPress={() => onConnectBroker && onConnectBroker(user)}
+                onPress={() => {
+                  try {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  } catch {}
+                  if (onConnectBroker) onConnectBroker(user);
+                }}
                 style={[
                   styles.brokerActionBtn,
                   { backgroundColor: colors.primary },
                 ]}
-                activeOpacity={0.8}
+                activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Feather
                   name="link-2"

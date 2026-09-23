@@ -135,3 +135,18 @@ CREATE POLICY "User backups storage delete policy" ON storage.objects
     bucket_id = 'user-backups' AND
     (storage.foldername(name))[1] = auth.uid()::text
   );
+
+-- ============================================================================
+-- 5. GRANTS & POSTGREST SCHEMA CACHE RELOAD
+-- ============================================================================
+
+-- Grant schema usage
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+
+-- Grant table privileges
+GRANT ALL ON TABLE public.user_backups TO authenticated, service_role;
+GRANT SELECT ON TABLE public.user_backups TO anon;
+
+-- Refresh PostgREST schema cache immediately
+NOTIFY pgrst, 'reload schema';
+

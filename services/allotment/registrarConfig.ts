@@ -36,13 +36,49 @@ export const REGISTRAR_CONFIGS: RegistrarConfig[] = [
   {
     name: 'Cameo Corporate Services Limited',
     keywords: ['CAMEO'],
-    url: 'https://ipo.cameoindia.com/',
+    url: 'https://ipostatus1.cameoindia.com/',
     supportLevel: 'MANUAL_ONLY',
+  },
+  {
+    name: 'Maashitla Securities Private Limited',
+    keywords: ['MAASHITLA'],
+    url: 'https://maashitla.com/',
+    supportLevel: 'AUTOMATED',
   },
   {
     name: 'Skyline Financial Services Private Ltd',
     keywords: ['SKYLINE'],
     url: 'https://www.skylinerta.com/ipo.php',
+    supportLevel: 'AUTOMATED',
+  },
+  {
+    name: 'Purva Sharegistry India Pvt Ltd',
+    keywords: ['PURVA', 'PURVASHAREREGISTRY'],
+    url: 'https://www.purvashare.com/investor-service/ipo-query',
+    supportLevel: 'AUTOMATED',
+  },
+  {
+    name: 'Integrated Registry Management Services Private Limited',
+    keywords: ['INTEGRATED', 'INTEGRATED_REGISTRY', 'INTEGRATED REGISTRY'],
+    url: 'https://ipostatus.integratedregistry.in/',
+    supportLevel: 'MANUAL_ONLY',
+  },
+  {
+    name: 'MAS Services Limited',
+    keywords: ['MAS', 'MAS_SERVICES', 'MAS SERVICES'],
+    url: 'https://www.masserv.com/opt.asp',
+    supportLevel: 'MANUAL_ONLY',
+  },
+  {
+    name: 'Mudra RTA Private Limited',
+    keywords: ['MUDRA', 'MUDRARTA', 'MUDRA_RTA', 'MUDRA RTA'],
+    url: 'https://mudrarta.com/ipo.php',
+    supportLevel: 'MANUAL_ONLY',
+  },
+  {
+    name: 'Alankit Assignments Limited',
+    keywords: ['ALANKIT', 'ALANKIT_ASSIGNMENTS', 'ALANKIT ASSIGNMENTS'],
+    url: 'https://ipo.alankit.com/',
     supportLevel: 'MANUAL_ONLY',
   },
   {
@@ -92,7 +128,9 @@ export function isAutomatedCheckSupported(registrarName?: string | null): boolea
     upper.includes('MUFG') ||
     upper.includes('LINK') ||
     upper.includes('INTIME') ||
-    upper.includes('ESDS')
+    upper.includes('ESDS') ||
+    upper.includes('MAASHITLA') ||
+    upper.includes('SKYLINE')
   );
 }
 

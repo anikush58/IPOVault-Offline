@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Linking,
   Platform,
@@ -26,7 +25,12 @@ import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { useCloudBackup } from '@/hooks/useCloudBackup';
 
-async function shareFile(content: string, filename: string, mimeType: string): Promise<boolean> {
+async function shareFile(
+  content: string,
+  filename: string,
+  mimeType: string,
+  onSuccess?: (title: string, message: string) => void
+): Promise<boolean> {
   if (Platform.OS === 'web') {
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
@@ -37,6 +41,9 @@ async function shareFile(content: string, filename: string, mimeType: string): P
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    if (onSuccess) {
+      onSuccess('Backup Downloaded', `Downloaded ${filename} successfully.`);
+    }
     return true;
   }
 
@@ -50,7 +57,9 @@ async function shareFile(content: string, filename: string, mimeType: string): P
       mimeType
     );
     await FileSystem.writeAsStringAsync(fileUri, content, { encoding: FileSystem.EncodingType.UTF8 });
-    Alert.alert('Backup Saved', `Saved ${filename} to the folder you selected.`);
+    if (onSuccess) {
+      onSuccess('Backup Saved', `Saved ${filename} to the folder you selected.`);
+    }
     return true;
   }
 
@@ -60,7 +69,9 @@ async function shareFile(content: string, filename: string, mimeType: string): P
   if (available) {
     await Sharing.shareAsync(path, { mimeType, dialogTitle: 'Export IPO Data' });
   } else {
-    Alert.alert('Saved', `File saved to:\n${path}`);
+    if (onSuccess) {
+      onSuccess('Saved', `File saved to:\n${path}`);
+    }
   }
   return true;
 }
@@ -249,7 +260,9 @@ export default function SettingsScreen() {
           const dateStr = new Date().toISOString().slice(0, 10);
           const sizeKb = (new Blob([jsonStr]).size / 1024).toFixed(1);
           console.log(`[IPOVault] Generated JSON backup: ipovault_backup_${dateStr}.json (${sizeKb} KB)`);
-          await shareFile(jsonStr, `ipovault_backup_${dateStr}.json`, 'application/json');
+          await shareFile(jsonStr, `ipovault_backup_${dateStr}.json`, 'application/json', (title, msg) => {
+            showSuccess(title, msg);
+          });
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } catch (e: any) {
           showError('Export Failed', e?.message ?? 'Could not generate backup file.');
@@ -263,7 +276,9 @@ export default function SettingsScreen() {
           const csvMap = await exportCSV();
           const dateStr = new Date().toISOString().slice(0, 10);
           for (const [tbl, csvStr] of Object.entries(csvMap)) {
-            await shareFile(csvStr, `ipovault_${tbl}_${dateStr}.csv`, 'text/csv');
+            await shareFile(csvStr, `ipovault_${tbl}_${dateStr}.csv`, 'text/csv', (title, msg) => {
+              showSuccess(title, msg);
+            });
           }
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } catch (e: any) {

@@ -183,6 +183,42 @@ export class LiveIPOProvider implements IPOProvider {
 
     const gmpUpdated = raw.currentGmp?.observedAt || raw.gmp_updated_at || null;
 
+    let totalSub: number | null = null;
+    let qibSub: number | null = null;
+    let niiSub: number | null = null;
+    let retailSub: number | null = null;
+
+    if (raw.currentSubscription) {
+      if (raw.currentSubscription.totalSubscriptionMultiple != null) {
+        totalSub = Number(raw.currentSubscription.totalSubscriptionMultiple);
+      }
+      if (Array.isArray(raw.currentSubscription.categories)) {
+        for (const cat of raw.currentSubscription.categories) {
+          const mult = Number(cat.subscriptionMultiple);
+          if (!isNaN(mult)) {
+            if (cat.category === 'QIB') qibSub = mult;
+            else if (cat.category === 'NII') niiSub = mult;
+            else if (cat.category === 'RETAIL') retailSub = mult;
+            else if ((cat.category === 'OTHER' || cat.category === 'TOTAL') && totalSub == null) totalSub = mult;
+          }
+        }
+      }
+    } else if (raw.subscriptionObservations && Array.isArray(raw.subscriptionObservations)) {
+      for (const obs of raw.subscriptionObservations) {
+        const mult = Number(obs.subscriptionMultiple);
+        if (!isNaN(mult)) {
+          if (obs.category === 'QIB') qibSub = mult;
+          else if (obs.category === 'NII') niiSub = mult;
+          else if (obs.category === 'RETAIL') retailSub = mult;
+          else if ((obs.category === 'OTHER' || obs.category === 'TOTAL') && totalSub == null) totalSub = mult;
+        }
+      }
+    }
+
+    if (totalSub == null && (raw.total_sub != null || raw.total_subscription != null)) {
+      totalSub = Number(raw.total_sub ?? raw.total_subscription);
+    }
+
     return {
       id,
       company_name: String(companyDisplayName).trim(),
@@ -212,6 +248,10 @@ export class LiveIPOProvider implements IPOProvider {
       gmp_percent: gmpPct,
       profit_per_lot: profitPerLot,
       gmp_updated_at: gmpUpdated,
+      total_sub: totalSub,
+      qib_sub: qibSub ?? (raw.qib_sub != null ? Number(raw.qib_sub) : null),
+      nii_sub: niiSub ?? (raw.nii_sub != null ? Number(raw.nii_sub) : null),
+      retail_sub: retailSub ?? (raw.retail_sub != null ? Number(raw.retail_sub) : null),
       sync_version: raw.sync_version ?? 1,
       updated_at: raw.updated_at || raw.updatedAt || now,
     };

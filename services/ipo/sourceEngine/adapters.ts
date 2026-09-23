@@ -52,6 +52,18 @@ function inferRegistrarAndWebsite(companyName: string): { registrar: string; reg
   if (norm.includes('cameo')) {
     return { registrar: 'Cameo Corporate Services Limited', registrar_website: 'https://ipo.cameoindia.com/' };
   }
+  if (norm.includes('integrated')) {
+    return { registrar: 'Integrated Registry Management Services Private Limited', registrar_website: 'https://ipostatus.integratedregistry.in/' };
+  }
+  if (norm.includes('mas') || norm.includes('masserv')) {
+    return { registrar: 'MAS Services Limited', registrar_website: 'https://www.masserv.com/opt.asp' };
+  }
+  if (norm.includes('mudra')) {
+    return { registrar: 'Mudra RTA Private Limited', registrar_website: 'https://mudrarta.com/ipo.php' };
+  }
+  if (norm.includes('alankit')) {
+    return { registrar: 'Alankit Assignments Limited', registrar_website: 'https://ipo.alankit.com/' };
+  }
   return { registrar: 'Link Intime India Private Limited', registrar_website: 'https://linkintime.co.in/initial_offer/public-issues.html' };
 }
 

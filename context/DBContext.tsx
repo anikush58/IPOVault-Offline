@@ -979,6 +979,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         id: u.id,
         name: u.name,
         pan_number: u.pan_number,
+        client_id: u.client_id || '',
+        upi_id: u.upi_id || '',
         broker: u.broker,
         tpin: u.tpin,
         upi_app: u.upi_app,

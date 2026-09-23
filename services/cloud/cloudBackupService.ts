@@ -12,7 +12,7 @@ import { getEffectiveAvatarUrl } from '@/utils/avatarUtils';
 export const LAST_CLOUD_BACKUP_KEY = 'ipovault_last_cloud_backup_ts';
 
 export const SUPPORTED_BACKUP_VERSION = 1;
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 3;
 export const CURRENT_APP_VERSION = '2.0.2';
 
 export interface CloudBackupMetadata {

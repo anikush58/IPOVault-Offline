@@ -95,12 +95,14 @@ export function AnimatedSplashScreen({ onAnimationComplete, isReady }: AnimatedS
             containerAnimatedStyle,
           ]}
         >
-          <Image
-            source={splashSource}
-            style={StyleSheet.absoluteFillObject}
-            contentFit="cover"
-            priority="high"
-          />
+          <View style={styles.logoContainer}>
+            <Image
+              source={splashSource}
+              style={styles.logo}
+              contentFit="contain"
+              priority="high"
+            />
+          </View>
         </Animated.View>
       </Pressable>
     </View>
@@ -111,6 +113,18 @@ const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 9999,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoContainer: {
+    width: 140,
+    height: 140,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logo: {
+    width: '100%',
+    height: '100%',
   },
 });
 

@@ -10,12 +10,12 @@
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/splash-light.png",
-      "resizeMode": "cover",
+      "resizeMode": "contain",
       "backgroundColor": "#FAFAFC",
       "dark": {
         "image": "./assets/images/splash-dark.png",
         "backgroundColor": "#090A0C",
-        "resizeMode": "cover"
+        "resizeMode": "contain"
       }
     },
     "ios": {
@@ -23,12 +23,12 @@
       "userInterfaceStyle": "automatic",
       "splash": {
         "image": "./assets/images/splash-light.png",
-        "resizeMode": "cover",
+        "resizeMode": "contain",
         "backgroundColor": "#FAFAFC",
         "dark": {
           "image": "./assets/images/splash-dark.png",
           "backgroundColor": "#090A0C",
-          "resizeMode": "cover"
+          "resizeMode": "contain"
         }
       }
     },
@@ -39,12 +39,12 @@
       },
       "splash": {
         "image": "./assets/images/splash-light.png",
-        "resizeMode": "cover",
+        "resizeMode": "contain",
         "backgroundColor": "#FAFAFC",
         "dark": {
           "image": "./assets/images/splash-dark.png",
           "backgroundColor": "#090A0C",
-          "resizeMode": "cover"
+          "resizeMode": "contain"
         }
       },
       "edgeToEdgeEnabled": true,
@@ -61,12 +61,12 @@
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-light.png",
-          "resizeMode": "cover",
+          "resizeMode": "contain",
           "backgroundColor": "#FAFAFC",
           "dark": {
             "image": "./assets/images/splash-dark.png",
             "backgroundColor": "#090A0C",
-            "resizeMode": "cover"
+            "resizeMode": "contain"
           }
         }
       ],

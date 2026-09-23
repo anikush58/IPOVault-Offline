@@ -22,6 +22,87 @@ import { formatCurrency } from '@/utils/formatters';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { BackendIpo } from '@/types/backend-ipo';
 
+import { calculateNormalizedIPOStatus } from '@/services/ipo/statusNormalizer';
+
+function parseDateOnly(dateStr?: string | null): string | null {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const clean = dateStr.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(clean)) return clean.substring(0, 10);
+  if (/^\d{2}-\d{2}-\d{4}$/.test(clean)) {
+    const [d, m, y] = clean.split('-');
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  const d = new Date(clean);
+  if (!isNaN(d.getTime())) {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return null;
+}
+
+function isIpoCurrentlyOpen(record: {
+  status?: string | null;
+  lifecycle_status?: string | null;
+  open_date?: string | null;
+  close_date?: string | null;
+  allotment_date?: string | null;
+  listing_date?: string | null;
+  openDate?: string | null;
+  closeDate?: string | null;
+  allotmentDate?: string | null;
+  listingDate?: string | null;
+}): boolean {
+  const openDateRaw = record.open_date || record.openDate || null;
+  const closeDateRaw = record.close_date || record.closeDate || null;
+  const allotmentDateRaw = record.allotment_date || record.allotmentDate || null;
+  const listingDateRaw = record.listing_date || record.listingDate || null;
+  const statusRaw = record.status || record.lifecycle_status || null;
+
+  const openDate = parseDateOnly(openDateRaw);
+  const closeDate = parseDateOnly(closeDateRaw);
+  const allotmentDate = parseDateOnly(allotmentDateRaw);
+  const listingDate = parseDateOnly(listingDateRaw);
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+  // 1. If close date has passed, it is closed
+  if (closeDate && todayStr > closeDate) {
+    return false;
+  }
+
+  // 2. If open date is in the future, bidding is not open yet
+  if (openDate && todayStr < openDate) {
+    return false;
+  }
+
+  // 3. Evaluate lifecycle status
+  const normalizedStatus = calculateNormalizedIPOStatus({
+    status: statusRaw,
+    open_date: openDate || openDateRaw,
+    close_date: closeDate || closeDateRaw,
+    allotment_date: allotmentDate || allotmentDateRaw,
+    listing_date: listingDate || listingDateRaw,
+  }, todayStr);
+
+  const rawUpper = (statusRaw || '').trim().toUpperCase();
+  if (
+    rawUpper.includes('CLOSED') ||
+    rawUpper.includes('ALLOT') ||
+    rawUpper.includes('LISTED') ||
+    rawUpper.includes('UPCOMING')
+  ) {
+    if (normalizedStatus !== 'OPEN' && normalizedStatus !== 'CLOSING_TODAY') {
+      return false;
+    }
+  }
+
+  return normalizedStatus === 'OPEN' || normalizedStatus === 'CLOSING_TODAY';
+}
+
 const UPI_APPS = ['GPay', 'PhonePe', 'Paytm', 'BHIM', 'BoB ASBA', 'IDFC ASBA', 'Other'];
 
 export interface BulkIPOOption {
@@ -100,10 +181,9 @@ export function BulkApplySheet({ visible, onClose }: Props) {
   const openBackendOptions = useMemo(() => {
     return backendIpos
       .filter((b) => {
-        const st = (b.status || '').toUpperCase();
         const compName = (b.company?.displayName || b.companyName || b.symbol || '').trim();
         if (!compName || compName.toUpperCase() === 'IPO') return false;
-        return st === 'OPEN' || st === 'ACTIVE' || st === 'LIVE' || st === 'CLOSING_TODAY';
+        return isIpoCurrentlyOpen(b);
       })
       .map((b): BulkIPOOption => {
         const price = b.priceBandHigh || b.priceBandLow || 100;
@@ -129,13 +209,35 @@ export function BulkApplySheet({ visible, onClose }: Props) {
   }, [backendIpos]);
 
   const openLocalOptions = useMemo(() => {
+    // Build lookup of all non-open backend IPO identifiers to prevent showing closed IPOs stored in local SQLite
+    const closedBackendIdentifiers = new Set<string>();
+    for (const b of backendIpos) {
+      if (!isIpoCurrentlyOpen(b)) {
+        if (b.id) closedBackendIdentifiers.add(b.id.toLowerCase());
+        if (b.symbol) closedBackendIdentifiers.add(b.symbol.toLowerCase().trim());
+        const compName = (b.company?.displayName || b.companyName || '').toLowerCase().trim();
+        if (compName) closedBackendIdentifiers.add(compName);
+      }
+    }
+
     return ipos
       .filter((i) => {
         if (i.archived === 1) return false;
         const name = (i.ipo_name || i.company_name || '').trim();
         if (!name || name.toUpperCase() === 'IPO' || name.toLowerCase().includes('test')) return false;
-        const st = (i.status || i.lifecycle_status || '').toUpperCase();
-        return st === 'OPEN' || st === 'ACTIVE' || st === 'LIVE' || st === 'CLOSING_TODAY';
+
+        const cleanName = name.toLowerCase();
+        const cleanSymbol = (i.symbol || '').toLowerCase().trim();
+        if (
+          closedBackendIdentifiers.has(i.id.toLowerCase()) ||
+          (i.backend_ipo_id && closedBackendIdentifiers.has(i.backend_ipo_id.toLowerCase())) ||
+          (cleanSymbol && closedBackendIdentifiers.has(cleanSymbol)) ||
+          closedBackendIdentifiers.has(cleanName)
+        ) {
+          return false;
+        }
+
+        return isIpoCurrentlyOpen(i);
       })
       .map((i): BulkIPOOption => ({
         id: i.id,
@@ -153,7 +255,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
         symbol: i.symbol,
         isBackend: false,
       }));
-  }, [ipos]);
+  }, [ipos, backendIpos]);
 
   const activeIPOs = useMemo(() => {
     const list: BulkIPOOption[] = [...openBackendOptions];

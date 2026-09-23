@@ -792,8 +792,19 @@ export default function DashboardScreen() {
             <View style={styles.portfolioMetricsRow}>
               {/* Column 1: Gross Profit (shifted 15px left) */}
               <View style={[styles.portfolioCell, styles.portfolioCellLeft]}>
-                <View style={[styles.portfolioIconWrap, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F3F4F6' }]}>
-                  <Feather name="trending-up" size={18} color={colors.foreground} />
+                <View
+                  style={[
+                    styles.portfolioIconWrap,
+                    {
+                      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.10)',
+                    },
+                  ]}
+                >
+                  <Feather
+                    name="trending-up"
+                    size={18}
+                    color={isDark ? '#34D399' : '#059669'}
+                  />
                 </View>
                 <Text style={[styles.portfolioVal, { color: colors.foreground }]}>
                   {formatCurrency(totalPL).replace(/,/g, '')}
@@ -807,8 +818,19 @@ export default function DashboardScreen() {
 
               {/* Column 2: Holding Profit */}
               <View style={styles.portfolioCell}>
-                <View style={[styles.portfolioIconWrap, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F3F4F6' }]}>
-                  <Feather name="briefcase" size={18} color={colors.foreground} />
+                <View
+                  style={[
+                    styles.portfolioIconWrap,
+                    {
+                      backgroundColor: isDark ? 'rgba(99, 102, 241, 0.12)' : 'rgba(99, 102, 241, 0.10)',
+                    },
+                  ]}
+                >
+                  <Feather
+                    name="briefcase"
+                    size={18}
+                    color={isDark ? '#818CF8' : '#4F46E5'}
+                  />
                 </View>
                 <Text style={[styles.portfolioVal, { color: colors.foreground }]}>
                   {formatCurrency(totalHoldingNet).replace(/,/g, '')}
@@ -822,8 +844,19 @@ export default function DashboardScreen() {
 
               {/* Column 3: Charges (shifted 15px right) */}
               <View style={[styles.portfolioCell, styles.portfolioCellRight]}>
-                <View style={[styles.portfolioIconWrap, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F3F4F6' }]}>
-                  <Feather name="percent" size={18} color={colors.foreground} />
+                <View
+                  style={[
+                    styles.portfolioIconWrap,
+                    {
+                      backgroundColor: isDark ? 'rgba(245, 158, 11, 0.12)' : 'rgba(245, 158, 11, 0.10)',
+                    },
+                  ]}
+                >
+                  <Feather
+                    name="percent"
+                    size={18}
+                    color={isDark ? '#FBBF24' : '#D97706'}
+                  />
                 </View>
                 <Text style={[styles.portfolioVal, { color: colors.foreground }]}>
                   {formatCurrency(totalTax + totalUserCut).replace(/,/g, '')}
@@ -1163,9 +1196,10 @@ export default function DashboardScreen() {
                   priceBandText = formatCurrency(priceMax);
                 }
 
-                // Minimum Investment / Lot size calculation
+                // Minimum Investment calculation (Shares in 1 Lot * Upper price Band * 2 for SME, Shares in 1 Lot * Upper price Band for Mainboard)
+                const isSme = (ipo.issue_type || item.issue_type || ipo.marketSegment || item.marketSegment || '').toUpperCase().includes('SME');
                 const lotSize = item.lot_size || item.quantity;
-                const lotVal = priceMax && lotSize ? priceMax * lotSize : null;
+                const lotVal = priceMax && lotSize ? (isSme ? priceMax * lotSize * 2 : priceMax * lotSize) : null;
 
                 // GMP
                 const gmpAmt = item.gmp_amount ?? item.gmp_value;
@@ -1259,8 +1293,8 @@ export default function DashboardScreen() {
                         </View>
                       </View>
 
-                      {/* Main Decision Banner: Price Band | GMP / Listing */}
-                      <View style={[styles.openIpoMetricsBanner, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(241, 243, 245, 0.65)', borderColor: colors.border }]}>
+                      {/* Main Decision Banner: Price Band | GMP / Profit */}
+                      <View style={[styles.openIpoMetricsBanner, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(241, 243, 245, 0.32)', borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : colors.border }]}>
                         {/* Price Band or Listing Price */}
                         <View style={styles.openIpoMetricCell}>
                           <Text style={[styles.openIpoMetricLabel, { color: colors.mutedForeground }]}>
@@ -1276,24 +1310,24 @@ export default function DashboardScreen() {
 
                         <View style={[styles.openIpoMetricDivider, { backgroundColor: colors.border }]} />
 
-                        {/* Expected GMP or Listing Gain */}
+                        {/* GMP or Profit */}
                         <View style={styles.openIpoMetricCellRight}>
                           <Text style={[styles.openIpoMetricLabel, { color: colors.mutedForeground }]}>
-                            {ipo.lifecycle_status === 'LISTED' || ipo.status === 'Listed' || ipo.status === 'LISTED' ? 'LISTING GAIN' : 'EXPECTED GMP'}
+                            {ipo.lifecycle_status === 'LISTED' || ipo.status === 'Listed' || ipo.status === 'LISTED' ? 'PROFIT' : 'GMP'}
                           </Text>
-                          <Text style={[styles.openIpoMetricValue, { color: (ipo.lifecycle_status === 'LISTED' || ipo.status === 'Listed' || ipo.status === 'LISTED') ? ((ipo.listing_gain_percent || 0) >= 0 ? '#10B981' : '#EF4444') : gmpColor }]} numberOfLines={1}>
-                            {(ipo.lifecycle_status === 'LISTED' || ipo.status === 'Listed' || ipo.status === 'LISTED') ? (ipo.listing_gain_percent != null ? `${ipo.listing_gain_percent > 0 ? '+' : ''}${ipo.listing_gain_percent.toFixed(2)}%` : '—') : gmpDisplay}
+                          <Text style={[styles.openIpoMetricValue, { color: (ipo.lifecycle_status === 'LISTED' || ipo.status === 'Listed' || ipo.status === 'LISTED') ? ((ipo.profit_amount ?? ipo.listing_gain_percent ?? 0) >= 0 ? '#10B981' : '#EF4444') : gmpColor }]} numberOfLines={1}>
+                            {(ipo.lifecycle_status === 'LISTED' || ipo.status === 'Listed' || ipo.status === 'LISTED') ? (ipo.profit_amount != null ? `${ipo.profit_amount > 0 ? '+' : ''}₹${Math.round(ipo.profit_amount).toLocaleString('en-IN')}${ipo.listing_gain_percent != null ? ` (${ipo.listing_gain_percent > 0 ? '+' : ''}${ipo.listing_gain_percent.toFixed(1)}%)` : ''}` : (ipo.listing_gain_percent != null ? `${ipo.listing_gain_percent > 0 ? '+' : ''}${ipo.listing_gain_percent.toFixed(1)}%` : '—')) : gmpDisplay}
                           </Text>
                           <Text style={[styles.openIpoMetricSub, { color: colors.mutedForeground }]} numberOfLines={1}>
-                            {(ipo.lifecycle_status === 'LISTED' || ipo.status === 'Listed' || ipo.status === 'LISTED') ? (ipo.profit_amount != null ? `Est. Profit: ₹${Math.round(ipo.profit_amount).toLocaleString('en-IN')}` : 'Listed') : (subDisplay !== '—' ? `${subDisplay} Subscribed` : 'Demand TBA')}
+                            {(ipo.lifecycle_status === 'LISTED' || ipo.status === 'Listed' || ipo.status === 'LISTED') ? (ipo.listing_gain_percent != null ? `Gain: ${ipo.listing_gain_percent > 0 ? '+' : ''}${ipo.listing_gain_percent.toFixed(1)}%` : 'Listed') : (subDisplay !== '—' ? `${subDisplay} Subscribed` : 'Demand TBA')}
                           </Text>
                         </View>
                       </View>
 
-                      {/* Bottom Row: Total Amount & Apply CTA */}
+                      {/* Bottom Row: Min Investment & Apply CTA */}
                       <View style={styles.openIpoFooterRow}>
                         <Text style={[styles.openIpoTotalAmountText, { color: colors.foreground }]} numberOfLines={1}>
-                          {lotVal ? formatCurrency(lotVal) : '—'}
+                          {lotVal ? `Min Investment: ${formatCurrency(lotVal)}` : 'Min Investment: —'}
                         </Text>
 
                         <TouchableOpacity

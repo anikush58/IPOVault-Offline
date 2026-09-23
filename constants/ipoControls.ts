@@ -11,7 +11,9 @@ export const CONTROLLED_REGISTRARS: ControlledOption[] = [
   { code: 'CAMEO', label: 'Cameo Corporate' },
   { code: 'SKYLINE', label: 'Skyline Financial' },
   { code: 'PURVA', label: 'Purva Sharegistry' },
+  { code: 'INTEGRATED', label: 'Integrated Registry' },
   { code: 'MAS', label: 'Mas Services' },
+  { code: 'MUDRA', label: 'Mudra RTA' },
   { code: 'ALANKIT', label: 'Alankit Assignments' },
   { code: 'BEETAL', label: 'Beetal Financial' },
   { code: 'OTHER', label: 'Other / Unknown' },
@@ -44,6 +46,10 @@ export function getRegistrarLabel(codeOrText?: string | null): string {
   if (trimmed.toUpperCase().includes('KFIN')) return 'KFin Technologies';
   if (trimmed.toUpperCase().includes('BIGSHARE')) return 'Bigshare Services';
   if (trimmed.toUpperCase().includes('LINK') || trimmed.toUpperCase().includes('MUFG')) return 'Link Intime India';
+  if (trimmed.toUpperCase().includes('INTEGRATED')) return 'Integrated Registry';
+  if (trimmed.toUpperCase().includes('MAS')) return 'Mas Services';
+  if (trimmed.toUpperCase().includes('MUDRA')) return 'Mudra RTA';
+  if (trimmed.toUpperCase().includes('ALANKIT')) return 'Alankit Assignments';
   return trimmed;
 }
 
@@ -60,7 +66,9 @@ export function resolveRegistrarCode(input?: string | null): string {
   if (upper.includes('CAMEO')) return 'CAMEO';
   if (upper.includes('SKYLINE')) return 'SKYLINE';
   if (upper.includes('PURVA')) return 'PURVA';
+  if (upper.includes('INTEGRATED')) return 'INTEGRATED';
   if (upper.includes('MAS')) return 'MAS';
+  if (upper.includes('MUDRA')) return 'MUDRA';
   if (upper.includes('ALANKIT')) return 'ALANKIT';
   if (upper.includes('BEETAL')) return 'BEETAL';
 

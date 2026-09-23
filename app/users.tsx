@@ -240,6 +240,10 @@ export default function UsersScreen() {
   }, [loadBrokerAccounts, showError]);
 
   const handleConnectBroker = async (targetUser: User) => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch {}
+
     const canonical = getCanonicalBroker(targetUser.broker);
     if (!canonical) {
       showError(
@@ -331,10 +335,18 @@ export default function UsersScreen() {
       await loadBrokerAccounts();
     } catch (err: any) {
       console.error('[UsersScreen] handleConnectBroker error:', err);
-      showError(
-        'Connection Failed',
-        err?.message || 'Failed to complete broker authentication flow.',
-      );
+      const errMsg = err?.message || '';
+      if (errMsg.includes('not configured') || errMsg.includes('API key') || errMsg.includes('partner ID')) {
+        showError(
+          `${canonical.displayName} Integration (Preview)`,
+          `Connecting ${canonical.displayName} for ${targetUser.name} will enable automatic post-listing holding & PnL sync.\n\nLive OAuth consent for ${canonical.displayName} requires broker API partner credentials on the server. Post-listing sync will become active automatically once configured.`,
+        );
+      } else {
+        showError(
+          'Connection Failed',
+          errMsg || 'Failed to complete broker authentication flow.',
+        );
+      }
     } finally {
       setBrokerActionUserId(null);
     }

@@ -421,7 +421,7 @@ export default function BackendIpoDetailsScreen() {
 
             <View style={{ flex: 1 }}>
               <Text style={[styles.metricHeaderLabel, { color: colors.mutedForeground }]}>
-                {isListed ? 'Est. Profit' : 'Est. GMP'}
+                {isListed ? 'Est. Profit' : 'GMP'}
               </Text>
               <Text
                 style={[
