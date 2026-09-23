@@ -37,7 +37,7 @@ import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 import { triggerCentralizedIPOSync } from '@/services/ipo/centralizedSync';
 
 type NewIpoTab = 'live' | 'upcoming' | 'closed' | 'listed';
-type SortOption = 'DEFAULT' | 'GMP' | 'DATE' | 'MIN_INVEST' | 'NAME';
+type SortOption = 'DEFAULT' | 'GMP';
 
 const AVATAR_PALETTES: [string, string][] = [
   ['#8B5CF6', '#6D28D9'],
@@ -158,18 +158,26 @@ const NewIpoCardItem = React.memo(
     onApplyPress,
   }: NewIpoCardItemProps) {
     const companyName = item.company?.displayName || item.companyName || item.symbol || 'IPO';
-    const priceBandText = item.priceBandLow && item.priceBandHigh
-      ? item.priceBandLow === item.priceBandHigh
-        ? `₹${item.priceBandHigh}`
-        : `₹${item.priceBandLow} to ₹${item.priceBandHigh}`
-      : item.priceBandHigh
-      ? `₹${item.priceBandHigh}`
-      : item.priceBandLow
-      ? `₹${item.priceBandLow}`
+    const formatIntPrice = (val: any) => {
+      if (val == null || val === '') return null;
+      const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^0-9.]/g, ''));
+      if (isNaN(num)) return null;
+      return Math.round(num);
+    };
+    const lowPrice = formatIntPrice(item.priceBandLow);
+    const highPrice = formatIntPrice(item.priceBandHigh);
+    const priceBandText = lowPrice && highPrice
+      ? lowPrice === highPrice
+        ? `₹${highPrice}`
+        : `₹${lowPrice} to ₹${highPrice}`
+      : highPrice
+      ? `₹${highPrice}`
+      : lowPrice
+      ? `₹${lowPrice}`
       : 'TBA';
 
     const isSme = item.marketSegment === 'SME' || ((item as any).issue_type || '').toUpperCase().includes('SME');
-    const upperPrice = item.priceBandHigh || item.priceBandLow || 0;
+    const upperPrice = highPrice || lowPrice || 0;
     const lotQty = item.lotSize || 0;
     const minInvestment = upperPrice && lotQty ? (isSme ? upperPrice * lotQty * 2 : upperPrice * lotQty) : null;
 
@@ -301,7 +309,7 @@ const NewIpoCardItem = React.memo(
               <Text style={[styles.bidPriceSubtitle, { color: colors.mutedForeground }]}>
                 {isListed && listingPrice != null ? 'Listing Price: ' : 'Bid Price: '}
                 <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>
-                  {isListed && listingPrice != null ? `₹${listingPrice}` : priceBandText}
+                  {isListed && listingPrice != null ? `₹${Math.round(listingPrice)}` : priceBandText}
                 </Text>
               </Text>
             </View>
@@ -499,19 +507,22 @@ export default function NewIposScreen() {
 
   const [activeTab, setActiveTab] = useState<NewIpoTab>('live');
   const [includeSme, setIncludeSme] = useState(true);
+  const [onlyActiveGmp, setOnlyActiveGmp] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('DEFAULT');
   const [tempIncludeSme, setTempIncludeSme] = useState(true);
+  const [tempOnlyActiveGmp, setTempOnlyActiveGmp] = useState(false);
   const [tempSortBy, setTempSortBy] = useState<SortOption>('DEFAULT');
   const [showFilterModal, setShowFilterModal] = useState(false);
 
-  const hasActiveFilter = !includeSme || sortBy !== 'DEFAULT';
+  const hasActiveFilter = !includeSme || onlyActiveGmp || sortBy !== 'DEFAULT';
 
   const openFilterModal = useCallback(() => {
     setTempIncludeSme(includeSme);
+    setTempOnlyActiveGmp(onlyActiveGmp);
     setTempSortBy(sortBy);
     setShowFilterModal(true);
     try { Haptics.selectionAsync(); } catch {}
-  }, [includeSme, sortBy]);
+  }, [includeSme, onlyActiveGmp, sortBy]);
 
   const handleTabPress = useCallback((tab: NewIpoTab) => {
     setActiveTab(tab);
@@ -620,6 +631,13 @@ export default function NewIposScreen() {
     if (!includeSme) {
       list = list.filter((i) => i.marketSegment !== 'SME');
     }
+    if (onlyActiveGmp) {
+      list = list.filter((i) => {
+        const gmpAmt = i.currentGmp?.gmpAmount != null ? Number(i.currentGmp.gmpAmount) : null;
+        const gmpPct = i.currentGmp?.gmpPercentage != null ? Number(i.currentGmp.gmpPercentage) : null;
+        return gmpAmt != null || gmpPct != null;
+      });
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       list = list.filter((i) => {
@@ -628,7 +646,7 @@ export default function NewIposScreen() {
       });
     }
     return list;
-  }, [rawIpos, includeSme, searchQuery]);
+  }, [rawIpos, includeSme, onlyActiveGmp, searchQuery]);
 
   const liveList = useMemo(() => {
     return filteredRawIpos.filter((item) => {
@@ -668,24 +686,6 @@ export default function NewIposScreen() {
             const gmpA = Number(a.currentGmp?.gmpAmount || a.currentGmp?.gmpPercentage || 0);
             const gmpB = Number(b.currentGmp?.gmpAmount || b.currentGmp?.gmpPercentage || 0);
             return gmpB - gmpA;
-          });
-        case 'DATE':
-          return arr.sort((a, b) => (a.openDate || '').localeCompare(b.openDate || ''));
-        case 'MIN_INVEST':
-          return arr.sort((a, b) => {
-            const isSmeA = a.marketSegment === 'SME';
-            const isSmeB = b.marketSegment === 'SME';
-            const priceA = a.priceBandHigh || a.priceBandLow || 0;
-            const priceB = b.priceBandHigh || b.priceBandLow || 0;
-            const valA = priceA * (a.lotSize || 1) * (isSmeA ? 2 : 1);
-            const valB = priceB * (b.lotSize || 1) * (isSmeB ? 2 : 1);
-            return valA - valB;
-          });
-        case 'NAME':
-          return arr.sort((a, b) => {
-            const nameA = a.company?.displayName || a.companyName || a.symbol || '';
-            const nameB = b.company?.displayName || b.companyName || b.symbol || '';
-            return nameA.localeCompare(nameB);
           });
         default:
           return arr;
@@ -945,69 +945,168 @@ export default function NewIposScreen() {
       <Modal visible={showFilterModal} transparent animationType="fade" onRequestClose={() => setShowFilterModal(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setShowFilterModal(false)}>
           <Pressable style={[styles.filterModalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
+            {/* Drag handle */}
+            <View style={styles.modalHandleWrap}>
+              <View style={[styles.modalHandle, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.15)' }]} />
+            </View>
+
+            {/* Modal Header */}
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Filter & Sort</Text>
-              <TouchableOpacity onPress={() => setShowFilterModal(false)} hitSlop={8}>
-                <Feather name="x" size={18} color={colors.mutedForeground} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.modalTitle, { color: colors.foreground }]}>Filter & Sort</Text>
+                <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
+                  Customize IPO Hub listings & ranking
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowFilterModal(false)}
+                hitSlop={8}
+                style={[styles.modalCloseBtn, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)' }]}
+              >
+                <Feather name="x" size={16} color={colors.foreground} />
               </TouchableOpacity>
             </View>
 
-            <View style={{ padding: 16, gap: 14 }}>
-              {/* Filter Section: SME Toggle */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flex: 1, marginRight: 12 }}>
-                  <Text style={{ fontSize: 14.5, fontFamily: 'GoogleSansFlex_600SemiBold', color: colors.foreground }}>
-                    Include SME IPOs
-                  </Text>
-                  <Text style={{ fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', color: colors.mutedForeground, marginTop: 2 }}>
-                    Show Small & Medium Enterprise IPOs
-                  </Text>
-                </View>
-                <Switch
-                  value={tempIncludeSme}
-                  onValueChange={(val) => {
-                    setTempIncludeSme(val);
-                    try { Haptics.selectionAsync(); } catch {}
-                  }}
-                  trackColor={{ false: colors.border, true: colors.primary + '80' }}
-                  thumbColor={tempIncludeSme ? colors.primary : '#FFFFFF'}
-                />
+            <View style={styles.modalContent}>
+              {/* Filter Section */}
+              <View style={styles.sectionHeaderRow}>
+                <Feather name="filter" size={11} color={colors.primary} />
+                <Text style={[styles.sectionHeaderTitle, { color: colors.mutedForeground }]}>
+                  Filters
+                </Text>
               </View>
 
-              <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 2 }} />
+              <View style={[styles.filterSectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                {/* SME Toggle */}
+                <View style={styles.filterRow}>
+                  <View style={[styles.filterIconWrap, { backgroundColor: isDark ? 'rgba(236, 72, 153, 0.15)' : '#FCE7F3' }]}>
+                    <Feather name="layers" size={15} color={isDark ? '#F472B6' : '#DB2777'} />
+                  </View>
+                  <View style={{ flex: 1, marginRight: 10 }}>
+                    <Text style={[styles.filterItemTitle, { color: colors.foreground }]}>
+                      Include SME IPOs
+                    </Text>
+                    <Text style={[styles.filterItemSub, { color: colors.mutedForeground }]}>
+                      Show Small & Medium Enterprise IPOs
+                    </Text>
+                  </View>
+                  <Switch
+                    value={tempIncludeSme}
+                    onValueChange={(val) => {
+                      setTempIncludeSme(val);
+                      try { Haptics.selectionAsync(); } catch {}
+                    }}
+                    trackColor={{ false: isDark ? '#334155' : '#CBD5E1', true: colors.primary + '80' }}
+                    thumbColor={tempIncludeSme ? colors.primary : '#FFFFFF'}
+                  />
+                </View>
 
-              {/* Sort Section Title */}
-              <Text style={{ fontSize: 12, fontFamily: 'GoogleSansFlex_700Bold', color: colors.mutedForeground, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                Sort By
-              </Text>
+                <View style={[styles.filterItemDivider, { backgroundColor: colors.border }]} />
 
-              {[
-                { key: 'DEFAULT', label: 'Default Order' },
-                { key: 'GMP', label: 'GMP: Highest First' },
-                { key: 'DATE', label: 'Apply Date: Opening Soon' },
-                { key: 'MIN_INVEST', label: 'Min Investment: Low to High' },
-                { key: 'NAME', label: 'Alphabetical: A-Z' },
-              ].map((opt) => (
-                <TouchableOpacity
-                  key={opt.key}
-                  onPress={() => {
-                    setTempSortBy(opt.key as SortOption);
-                    try { Haptics.selectionAsync(); } catch {}
-                  }}
-                  style={[
-                    styles.sortOptionRow,
-                    {
-                      borderColor: tempSortBy === opt.key ? colors.primary : colors.border,
-                      backgroundColor: tempSortBy === opt.key ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : 'transparent',
-                    },
-                  ]}
-                >
-                  <Text style={[styles.sortOptionText, { color: tempSortBy === opt.key ? colors.primary : colors.foreground }]}>
-                    {opt.label}
-                  </Text>
-                  {tempSortBy === opt.key ? <Feather name="check" size={16} color={colors.primary} /> : null}
-                </TouchableOpacity>
-              ))}
+                {/* Only Active GMP Toggle */}
+                <View style={styles.filterRow}>
+                  <View style={[styles.filterIconWrap, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7' }]}>
+                    <Feather name="trending-up" size={15} color="#10B981" />
+                  </View>
+                  <View style={{ flex: 1, marginRight: 10 }}>
+                    <Text style={[styles.filterItemTitle, { color: colors.foreground }]}>
+                      Only Active GMP
+                    </Text>
+                    <Text style={[styles.filterItemSub, { color: colors.mutedForeground }]}>
+                      Hide IPOs with TBA or unlisted GMP
+                    </Text>
+                  </View>
+                  <Switch
+                    value={tempOnlyActiveGmp}
+                    onValueChange={(val) => {
+                      setTempOnlyActiveGmp(val);
+                      try { Haptics.selectionAsync(); } catch {}
+                    }}
+                    trackColor={{ false: isDark ? '#334155' : '#CBD5E1', true: '#10B98180' }}
+                    thumbColor={tempOnlyActiveGmp ? '#10B981' : '#FFFFFF'}
+                  />
+                </View>
+              </View>
+
+              {/* Sort Section */}
+              <View style={[styles.sectionHeaderRow, { marginTop: 4 }]}>
+                <Feather name="bar-chart-2" size={11} color={colors.primary} />
+                <Text style={[styles.sectionHeaderTitle, { color: colors.mutedForeground }]}>
+                  Sort By
+                </Text>
+              </View>
+
+              <View style={{ gap: 8 }}>
+                {[
+                  {
+                    key: 'DEFAULT',
+                    label: 'Default Order',
+                    sub: 'Standard catalog & timeline order',
+                    icon: 'list',
+                    color: colors.primary,
+                  },
+                  {
+                    key: 'GMP',
+                    label: 'GMP: Highest First',
+                    sub: 'Rank by highest grey market premium',
+                    icon: 'arrow-up-right',
+                    color: '#10B981',
+                  },
+                ].map((opt) => {
+                  const isSelected = tempSortBy === opt.key;
+                  return (
+                    <TouchableOpacity
+                      key={opt.key}
+                      activeOpacity={0.75}
+                      onPress={() => {
+                        setTempSortBy(opt.key as SortOption);
+                        try { Haptics.selectionAsync(); } catch {}
+                      }}
+                      style={[
+                        styles.sortCard,
+                        {
+                          borderColor: isSelected ? colors.primary : colors.border,
+                          backgroundColor: isSelected
+                            ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF')
+                            : colors.surface,
+                        },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.sortIconWrap,
+                          {
+                            backgroundColor: isSelected
+                              ? (isDark ? 'rgba(99, 102, 241, 0.2)' : '#E0E7FF')
+                              : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)'),
+                          },
+                        ]}
+                      >
+                        <Feather name={opt.icon as any} size={15} color={isSelected ? colors.primary : colors.mutedForeground} />
+                      </View>
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <Text style={[styles.sortCardTitle, { color: isSelected ? colors.primary : colors.foreground }]}>
+                          {opt.label}
+                        </Text>
+                        <Text style={[styles.sortCardSub, { color: colors.mutedForeground }]}>
+                          {opt.sub}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.radioCircle,
+                          {
+                            borderColor: isSelected ? colors.primary : colors.border,
+                            backgroundColor: isSelected ? colors.primary : 'transparent',
+                          },
+                        ]}
+                      >
+                        {isSelected && <Feather name="check" size={10} color="#FFFFFF" />}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
 
             {/* Modal Actions Footer */}
@@ -1015,15 +1114,18 @@ export default function NewIposScreen() {
               <TouchableOpacity
                 onPress={() => {
                   setTempIncludeSme(true);
+                  setTempOnlyActiveGmp(false);
                   setTempSortBy('DEFAULT');
                   setIncludeSme(true);
+                  setOnlyActiveGmp(false);
                   setSortBy('DEFAULT');
                   setShowFilterModal(false);
-                  try { Haptics.selectionAsync(); } catch {}
+                  try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); } catch {}
                 }}
-                style={[styles.modalFooterResetBtn, { borderColor: colors.border }]}
+                style={[styles.modalFooterResetBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}
+                activeOpacity={0.8}
               >
-                <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold', color: colors.foreground }}>
+                <Text style={[styles.resetBtnText, { color: colors.mutedForeground }]}>
                   Reset All
                 </Text>
               </TouchableOpacity>
@@ -1031,13 +1133,16 @@ export default function NewIposScreen() {
               <TouchableOpacity
                 onPress={() => {
                   setIncludeSme(tempIncludeSme);
+                  setOnlyActiveGmp(tempOnlyActiveGmp);
                   setSortBy(tempSortBy);
                   setShowFilterModal(false);
-                  try { Haptics.selectionAsync(); } catch {}
+                  try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
                 }}
                 style={[styles.modalFooterApplyBtn, { backgroundColor: colors.primary }]}
+                activeOpacity={0.85}
               >
-                <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold', color: colors.primaryForeground }}>
+                <Feather name="check" size={14} color={colors.primaryForeground} style={{ marginRight: 6 }} />
+                <Text style={[styles.applyBtnText, { color: colors.primaryForeground }]}>
                   Apply Filters
                 </Text>
               </TouchableOpacity>
@@ -1349,51 +1454,143 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
   },
   filterModalCard: {
     width: '100%',
-    maxWidth: 400,
+    maxWidth: 410,
     borderRadius: 24,
     borderWidth: 1,
     padding: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 12,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
+    elevation: 16,
+  },
+  modalHandleWrap: {
+    alignItems: 'center',
+    marginTop: -8,
+    marginBottom: 8,
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingBottom: 12,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
   },
   modalTitle: {
     fontSize: 18,
     fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
   },
-  sortOptionRow: {
+  modalSubtitle: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 2,
+  },
+  modalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalContent: {
+    paddingTop: 14,
+    gap: 10,
+  },
+  sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
+    gap: 6,
+    marginBottom: 2,
   },
-  sortOptionText: {
+  sectionHeaderTitle: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  filterSectionCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  filterIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  filterItemTitle: {
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  filterItemSub: {
+    fontSize: 11.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 1.5,
+  },
+  filterItemDivider: {
+    height: 1,
+    marginHorizontal: -4,
+  },
+  sortCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderRadius: 14,
+    borderWidth: 1.5,
+  },
+  sortIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  sortCardTitle: {
     fontSize: 13.5,
-    fontFamily: 'GoogleSansFlex_500Medium',
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  sortCardSub: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 1,
+  },
+  radioCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalFooter: {
     flexDirection: 'row',
     gap: 12,
     marginTop: 18,
-    paddingTop: 16,
+    paddingTop: 14,
     borderTopWidth: 1,
   },
   modalFooterResetBtn: {
@@ -1404,11 +1601,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  resetBtnText: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
   modalFooterApplyBtn: {
-    flex: 2,
+    flex: 1.8,
     height: 44,
     borderRadius: 12,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  applyBtnText: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
 });

@@ -94,16 +94,24 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
   const avatarGradient = getAvatarGradient(companyNameStr);
   const resolvedLogo = getResolvedLogoUrl(ipo.logo_url, ipo.website, companyNameStr);
 
-  // Format Price Band
+  // Format Price Band (No decimals)
   const priceBandText = React.useMemo(() => {
-    if (ipo.price_band_min && ipo.price_band_max) {
-      if (ipo.price_band_min === ipo.price_band_max) {
-        return `₹${ipo.price_band_max}`;
+    const formatIntVal = (v: any) => {
+      if (v == null || v === '') return null;
+      const n = typeof v === 'number' ? v : parseFloat(String(v));
+      if (isNaN(n)) return null;
+      return Math.round(n);
+    };
+    const low = formatIntVal(ipo.price_band_min);
+    const high = formatIntVal(ipo.price_band_max);
+    if (low && high) {
+      if (low === high) {
+        return `₹${high}`;
       }
-      return `₹${ipo.price_band_min} to ₹${ipo.price_band_max}`;
+      return `₹${low} to ₹${high}`;
     }
-    if (ipo.price_band_max) return `₹${ipo.price_band_max}`;
-    if (ipo.price_band_min) return `₹${ipo.price_band_min}`;
+    if (high) return `₹${high}`;
+    if (low) return `₹${low}`;
     return 'TBA';
   }, [ipo.price_band_min, ipo.price_band_max]);
 
@@ -178,7 +186,7 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
   const listingGainText = listingGainPct != null ? `${listingGainPct > 0 ? '+' : ''}${listingGainPct.toFixed(2)}%` : '—';
   const profitAmtText = profitAmt != null ? `₹${profitAmt > 0 ? '+' : ''}${Math.round(profitAmt).toLocaleString('en-IN')}` : '—';
   const profitPctText = profitPct != null ? `${profitPct > 0 ? '+' : ''}${profitPct.toFixed(2)}%` : '—';
-  const listingPriceText = listingPrice != null ? `₹${listingPrice}` : 'TBA';
+  const listingPriceText = listingPrice != null ? `₹${Math.round(listingPrice)}` : 'TBA';
   const listingColor = listingGainPct != null ? (listingGainPct >= 0 ? '#10B981' : '#EF4444') : colors.mutedForeground;
 
   const applyDateStr = formatApplyDates(ipo.open_date, ipo.close_date);

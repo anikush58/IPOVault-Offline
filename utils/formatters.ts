@@ -10,7 +10,7 @@ export function formatCurrency(
   }
 
   const currStr = typeof currency === "string" ? currency : "INR";
-  const rounded = Math.ceil(amount);
+  const rounded = Math.round(amount);
 
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -23,7 +23,7 @@ export function formatCurrency(
 export function formatRupees(amount?: number | null): string {
   if (amount === undefined || amount === null || isNaN(amount)) return "N/A";
   if (amount === 0) return "₹0";
-  return `₹${Math.ceil(amount).toLocaleString("en-IN")}`;
+  return `₹${Math.round(amount).toLocaleString("en-IN")}`;
 }
 
 export function formatLakhsCrores(amountInRupees?: number | null): string {

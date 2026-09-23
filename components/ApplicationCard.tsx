@@ -354,7 +354,9 @@ export function ApplicationCard({
                 <Text style={[styles.gridValue, { color: colors.foreground }]}>
                   {app.status === 'Sold'
                     ? formatCurrency(app.sell_price || 0)
-                    : formatCurrency(holdingPrice)}
+                    : app.status === 'Holding'
+                    ? formatCurrency(holdingPrice)
+                    : formatCurrency(app.buy_price || 0)}
                 </Text>
               </View>
 
