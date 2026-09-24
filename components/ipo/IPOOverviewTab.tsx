@@ -97,9 +97,26 @@ export function IPOsTab({
 
     // Apply Sorting
     switch (sortBy) {
-      case 'GMP':
-        list.sort((a, b) => (b.gmp_percent || b.gmp_amount || 0) - (a.gmp_percent || a.gmp_amount || 0));
+      case 'GMP': {
+        const getGmpPercentage = (r: any): number => {
+          if (r.gmp_percent != null && !isNaN(Number(r.gmp_percent))) {
+            return Number(r.gmp_percent);
+          }
+          const price = r.price_band_max || r.price_band_min || 0;
+          if (r.gmp_amount != null && Number(r.gmp_amount) > 0 && price > 0) {
+            return (Number(r.gmp_amount) / price) * 100;
+          }
+          return 0;
+        };
+
+        list = list.filter((r) => {
+          const hasActiveGmpAmount = r.gmp_amount != null && Number(r.gmp_amount) > 0;
+          const hasActiveGmpPercent = r.gmp_percent != null && Number(r.gmp_percent) > 0;
+          return hasActiveGmpAmount || hasActiveGmpPercent;
+        });
+        list.sort((a, b) => getGmpPercentage(b) - getGmpPercentage(a));
         break;
+      }
       case 'DATE':
         list.sort((a, b) => (a.open_date || '').localeCompare(b.open_date || ''));
         break;

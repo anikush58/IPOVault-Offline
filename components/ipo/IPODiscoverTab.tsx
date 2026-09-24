@@ -66,11 +66,28 @@ export function IPOExploreTab({
   const [activeMarketView, setActiveMarketView] = useState<'highest_gmp' | 'most_subscribed' | 'top_listed'>('highest_gmp');
   const [selectedSectorFilter, setSelectedSectorFilter] = useState<string | null>(null);
 
-  // Highest GMP items
+  // Helper to calculate effective GMP percentage
+  const getGmpPercentage = (r: IPOMasterRecord): number => {
+    if (r.gmp_percent != null && !isNaN(Number(r.gmp_percent))) {
+      return Number(r.gmp_percent);
+    }
+    const price = r.price_band_max || r.price_band_min || 0;
+    if (r.gmp_amount != null && Number(r.gmp_amount) > 0 && price > 0) {
+      return (Number(r.gmp_amount) / price) * 100;
+    }
+    return 0;
+  };
+
+  // Highest GMP items (active only: price > 0 or % > 0, ranked by GMP %)
   const highestGmpItems = useMemo(() => {
     return [...allRecords]
-      .filter((r) => (r as any).archived !== 1 && (r.gmp_percent != null || r.gmp_amount != null))
-      .sort((a, b) => (b.gmp_percent || b.gmp_amount || 0) - (a.gmp_percent || a.gmp_amount || 0))
+      .filter((r) => {
+        if ((r as any).archived === 1) return false;
+        const hasActiveGmpAmount = r.gmp_amount != null && Number(r.gmp_amount) > 0;
+        const hasActiveGmpPercent = r.gmp_percent != null && Number(r.gmp_percent) > 0;
+        return hasActiveGmpAmount || hasActiveGmpPercent;
+      })
+      .sort((a, b) => getGmpPercentage(b) - getGmpPercentage(a))
       .slice(0, 5);
   }, [allRecords]);
 
