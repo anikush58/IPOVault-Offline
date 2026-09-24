@@ -232,7 +232,14 @@ export class LiveIPOProvider implements IPOProvider {
       issue_size: raw.issueSize ?? raw.issue_size_cr ?? raw.issue_size ?? null,
       open_date: raw.openDate || raw.open_date || raw.lifecycle?.openDate || null,
       close_date: raw.closeDate || raw.close_date || raw.lifecycle?.closeDate || null,
-      allotment_date: raw.allotmentDate || raw.allotment_date || raw.lifecycle?.basisOfAllotmentDate || null,
+      allotment_date:
+        raw.allotmentDate ||
+        raw.allotment_date ||
+        raw.lifecycle?.basisOfAllotmentDate ||
+        raw.lifecycle?.allotmentDate ||
+        raw.allotment?.expectedDate ||
+        raw.allotment?.expectedAllotmentDate ||
+        null,
       listing_date: raw.listingDate || raw.listing_date || raw.lifecycle?.listingDate || null,
       refund_date: raw.refundDate || raw.refund_date || raw.lifecycle?.refundInitiationDate || null,
       demat_credit_date: raw.dematCreditDate || raw.demat_credit_date || raw.lifecycle?.dematCreditDate || null,
