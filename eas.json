@@ -12,14 +12,18 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.getipovault.in",
-        "EXPO_PUBLIC_IPO_SYNC_URL": "https://api.getipovault.in/api/v1/ipos"
+        "EXPO_PUBLIC_IPO_SYNC_URL": "https://api.getipovault.in/api/v1/ipos",
+        "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "720793268491-rbuifpfkufpr0c56bbpj05qnebuprmv4.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "720793268491-7qjb9tsfeqb3rhchaliooeaa92pk73ko.apps.googleusercontent.com"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.getipovault.in",
-        "EXPO_PUBLIC_IPO_SYNC_URL": "https://api.getipovault.in/api/v1/ipos"
+        "EXPO_PUBLIC_IPO_SYNC_URL": "https://api.getipovault.in/api/v1/ipos",
+        "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "720793268491-rbuifpfkufpr0c56bbpj05qnebuprmv4.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "720793268491-7qjb9tsfeqb3rhchaliooeaa92pk73ko.apps.googleusercontent.com"
       }
     }
   },

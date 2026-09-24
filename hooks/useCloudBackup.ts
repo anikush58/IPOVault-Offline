@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@/context/AuthContext';
 import { useDB } from '@/context/DBContext';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import {
@@ -11,26 +10,36 @@ import {
   CloudRestoreResult,
   LAST_CLOUD_BACKUP_KEY,
 } from '@/services/cloud/cloudBackupService';
+import {
+  getGoogleAuthSession,
+  signInWithGoogleDrive,
+  disconnectGoogleDrive,
+  GoogleAuthUser,
+} from '@/services/cloud/googleDriveAuthService';
 
 export function useCloudBackup() {
-  const { user } = useAuth();
   const { exportJSON, importJSON } = useDB();
 
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [lastBackupTime, setLastBackupTime] = useState<string | null>(null);
   const [latestMetadata, setLatestMetadata] = useState<CloudBackupMetadata | null>(null);
+  const [googleUser, setGoogleUser] = useState<GoogleAuthUser | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Load last backup timestamp & latest metadata when user auth state changes
   const refreshMetadata = useCallback(async () => {
-    if (!user) {
-      setLastBackupTime(null);
-      setLatestMetadata(null);
-      return;
-    }
-
     try {
+      const session = await getGoogleAuthSession();
+      if (!session) {
+        setGoogleUser(null);
+        setLastBackupTime(null);
+        setLatestMetadata(null);
+        return;
+      }
+
+      setGoogleUser(session.user);
+
       const storedTs = await safeAsyncStorage.getItem(LAST_CLOUD_BACKUP_KEY);
       if (storedTs) setLastBackupTime(storedTs);
 
@@ -43,13 +52,47 @@ export function useCloudBackup() {
         }
       }
     } catch (err) {
-      console.warn('[useCloudBackup] Error loading metadata:', err);
+      console.warn('[useCloudBackup] Error loading Google Drive metadata:', err);
     }
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     refreshMetadata();
   }, [refreshMetadata]);
+
+  const connect = async (): Promise<{ success: boolean; error?: string }> => {
+    setIsConnecting(true);
+    setError(null);
+    try {
+      const res = await signInWithGoogleDrive();
+      if (res.success && res.session) {
+        setGoogleUser(res.session.user);
+        await refreshMetadata();
+        return { success: true };
+      } else {
+        const errMsg = res.error || 'Google connection failed';
+        setError(errMsg);
+        return { success: false, error: errMsg };
+      }
+    } catch (err: any) {
+      const errMsg = err?.message || 'Google connection failed';
+      setError(errMsg);
+      return { success: false, error: errMsg };
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  const disconnect = async (): Promise<void> => {
+    try {
+      await disconnectGoogleDrive();
+      setGoogleUser(null);
+      setLastBackupTime(null);
+      setLatestMetadata(null);
+    } catch (err) {
+      console.warn('[useCloudBackup] Error disconnecting Google Drive:', err);
+    }
+  };
 
   const backupNow = async (): Promise<CloudBackupResult> => {
     if (isBackingUp || isRestoring) {
@@ -68,7 +111,7 @@ export function useCloudBackup() {
       }
       return res;
     } catch (err: any) {
-      const errMsg = err?.message || 'Cloud backup failed';
+      const errMsg = err?.message || 'Google Drive cloud backup failed';
       setError(errMsg);
       return { success: false, imagesUploaded: 0, error: errMsg };
     } finally {
@@ -100,7 +143,7 @@ export function useCloudBackup() {
       }
       return res;
     } catch (err: any) {
-      const errMsg = err?.message || 'Cloud restore failed';
+      const errMsg = err?.message || 'Google Drive cloud restore failed';
       setError(errMsg);
       return {
         success: false,
@@ -117,13 +160,18 @@ export function useCloudBackup() {
   };
 
   return {
-    isAuthenticated: !!user,
-    userEmail: user?.email ?? null,
+    isAuthenticated: Boolean(googleUser),
+    isConnected: Boolean(googleUser),
+    userEmail: googleUser?.email ?? null,
+    userName: googleUser?.name ?? null,
+    isConnecting,
     isBackingUp,
     isRestoring,
     lastBackupTime,
     latestMetadata,
     error,
+    connect,
+    disconnect,
     backupNow,
     restoreNow,
     refreshMetadata,

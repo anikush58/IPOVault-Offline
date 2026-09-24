@@ -51,13 +51,45 @@ export class BackendIpoApiService {
     let items: BackendIpo[] = [];
 
     if (Array.isArray(res.data)) {
-      items = res.data;
+      items = [...res.data];
     } else if (
       typeof res.data === 'object' &&
       'items' in res.data &&
       Array.isArray((res.data as any).items)
     ) {
-      items = (res.data as any).items;
+      items = [...(res.data as any).items];
+    }
+
+    // If multiple pages exist and no specific page was requested, fetch remaining pages
+    if (
+      !filter?.page &&
+      res.meta &&
+      typeof (res.meta as any).totalPages === 'number' &&
+      (res.meta as any).totalPages > 1
+    ) {
+      const totalPages = (res.meta as any).totalPages;
+      const pagePromises = [];
+      for (let p = 2; p <= totalPages; p++) {
+        pagePromises.push(
+          this.apiClient.get<BackendIpo[] | { items: BackendIpo[] }>(
+            ENDPOINTS.IPOS,
+            { ...queryParams, page: p },
+          ),
+        );
+      }
+      const pagedResults = await Promise.all(pagePromises);
+      for (const pageRes of pagedResults) {
+        if (pageRes.data && Array.isArray(pageRes.data)) {
+          items.push(...pageRes.data);
+        } else if (
+          pageRes.data &&
+          typeof pageRes.data === 'object' &&
+          'items' in pageRes.data &&
+          Array.isArray((pageRes.data as any).items)
+        ) {
+          items.push(...(pageRes.data as any).items);
+        }
+      }
     }
 
     return items.map(normalizeBackendIpo);

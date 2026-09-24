@@ -18,19 +18,17 @@ import { Stack, useRouter } from 'expo-router';
 import { ONBOARDING_STORAGE_KEY } from '@/constants/onboarding';
 import * as SplashScreen from 'expo-splash-screen';
 import { DBProvider } from '@/context/DBContext';
-import { AuthProvider } from '@/context/AuthContext';
+import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { DialogProvider } from '@/context/DialogContext';
 import { AppStoreProvider } from '@/store/useAppStore';
 import { CompareProvider } from '@/context/CompareContext';
 import { NotificationProvider } from '@/context/NotificationContext';
-import { AnimatedSplashScreen } from '@/components/AnimatedSplashScreen';
 import {
   registerDevicePushTokenAsync,
   setupNotificationPresentation,
   setupNotificationResponseListener,
 } from '@/services/notifications/notificationEngine';
-import { useAuth } from '@/context/AuthContext';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -105,11 +103,7 @@ function RootLayoutNav() {
   );
 }
 
-let hasShownInitialSplash = false;
-
 export default function RootLayout() {
-  const [splashFinished, setSplashFinished] = React.useState(hasShownInitialSplash);
-
   const [fontsLoaded, fontsError] = useFonts({
     GoogleSansFlex_400Regular,
     GoogleSansFlex_500Medium,
@@ -122,12 +116,15 @@ export default function RootLayout() {
 
   const ready = fontsLoaded || !!fontsError;
 
-
-  // Safety timeout: hide splash after 4s regardless of font state
   useEffect(() => {
-    const t = setTimeout(() => SplashScreen.hideAsync(), 4000);
-    return () => clearTimeout(t);
-  }, []);
+    if (ready) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [ready]);
+
+  if (!ready) {
+    return null;
+  }
 
   return (
     <SafeAreaProvider>
@@ -142,15 +139,6 @@ export default function RootLayout() {
                       <CompareProvider>
                         <AppStoreProvider>
                           <RootLayoutNav />
-                          {!splashFinished && (
-                            <AnimatedSplashScreen
-                              isReady={ready}
-                              onAnimationComplete={() => {
-                                hasShownInitialSplash = true;
-                                setSplashFinished(true);
-                              }}
-                            />
-                          )}
                         </AppStoreProvider>
                       </CompareProvider>
                     </NotificationProvider>

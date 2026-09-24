@@ -5,7 +5,10 @@
     "version": "2.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "ipovault",
+    "scheme": [
+      "ipovault",
+      "com.googleusercontent.apps.720793268491-7qjb9tsfeqb3rhchaliooeaa92pk73ko"
+    ],
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {

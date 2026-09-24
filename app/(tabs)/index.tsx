@@ -417,12 +417,66 @@ export default function DashboardScreen() {
 
   // ── filter state ───────────────────────────────────────────────────────────
   const [filterUserIds, setFilterUserIds] = useState<string[]>([]);
-  const [filterBrokers, setFilterBrokers] = useState<string[]>([]);
-  const [filterBankNames, setFilterBankNames] = useState<string[]>([]);
   const [filterYear, setFilterYear] = useState<string | null>(null);
   const [filterIpoNames, setFilterIpoNames] = useState<string[]>([]);
   const [cardLogoErrors, setCardLogoErrors] = useState<Record<string, boolean>>({});
   const [showFilter, setShowFilter] = useState(false);
+
+  // ── Allotted IPO names for dashboard filter (only IPOs allotted from IPO Hub) ──
+  const allottedIpoNames = useMemo(() => {
+    const allottedSet = new Set<string>();
+
+    const checkAndAdd = (item: any) => {
+      if (!item) return;
+      const rawStatus = (item.status || item.lifecycle_status || '').toUpperCase().trim();
+      const clean = rawStatus.replace(/[\s-]+/g, '_');
+      const isAllotted =
+        clean === 'ALLOTMENT_COMPLETED' ||
+        clean === 'ALLOTMENT_OUT' ||
+        clean === 'ALLOTMENT' ||
+        clean === 'ALLOTTED' ||
+        clean === 'ALLOTTED_AVAILABLE' ||
+        clean === 'LISTING_PENDING' ||
+        clean === 'LISTING_UPCOMING' ||
+        clean === 'LISTED' ||
+        clean.includes('ALLOT') ||
+        clean.includes('LIST');
+
+      if (isAllotted) {
+        if (item.id) allottedSet.add(String(item.id).toLowerCase());
+        if (item.symbol) allottedSet.add(String(item.symbol).toLowerCase().trim());
+        if (item.company_name) allottedSet.add(String(item.company_name).toLowerCase().trim());
+        if (item.ipo_name) allottedSet.add(String(item.ipo_name).toLowerCase().trim());
+      }
+    };
+
+    ipos.forEach(checkAndAdd);
+    ipoHubItems.forEach(checkAndAdd);
+
+    const names = new Set<string>();
+    for (const app of applications) {
+      if (!app.ipo_name) continue;
+      const appNameLower = app.ipo_name.toLowerCase().trim();
+      const appIpoId = app.ipo_id ? String(app.ipo_id).toLowerCase() : '';
+      const appStatus = (app.status || '').toLowerCase();
+
+      const isAppHoldingOrSold =
+        appStatus === 'holding' ||
+        appStatus === 'sold' ||
+        appStatus === 'allotted' ||
+        appStatus === 'partially allotted';
+
+      const isHubAllotted =
+        (appIpoId && allottedSet.has(appIpoId)) ||
+        allottedSet.has(appNameLower);
+
+      if (isAppHoldingOrSold || isHubAllotted) {
+        names.add(app.ipo_name);
+      }
+    }
+
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [applications, ipos, ipoHubItems]);
 
   React.useEffect(() => {
     setCardLogoErrors({});
@@ -478,14 +532,9 @@ export default function DashboardScreen() {
     }
   };
 
-  // ── base filter (user / broker / year / IPO) ──────────────────────────────
+  // ── base filter (user / year / IPO) ──────────────────────────────
   const baseFilteredApps = applications.filter((a) => {
     if (filterUserIds.length > 0 && !filterUserIds.includes(a.user_id)) return false;
-    if (filterBrokers.length > 0 && !filterBrokers.includes(a.user_broker ?? '')) return false;
-    if (filterBankNames.length > 0) {
-      const appBank = (a.user_bank_name || (a as any).bank_name || '').trim();
-      if (!appBank || !filterBankNames.some((b) => b.trim().toLowerCase() === appBank.toLowerCase())) return false;
-    }
     if (filterIpoNames.length > 0 && !filterIpoNames.includes(a.ipo_name ?? '')) return false;
     if (filterYear) {
       const y = a.open_date ? a.open_date.slice(0, 4) : '';
@@ -570,12 +619,12 @@ export default function DashboardScreen() {
   const holdingProfitPctLabel = holdingProfitPct != null ? `${holdingProfitPct >= 0 ? '+' : ''}${holdingProfitPct.toFixed(1)}%` : '—';
 
   // ── display helpers ────────────────────────────────────────────────────────
-  const hasFilter = filterUserIds.length > 0 || filterBrokers.length > 0 || filterIpoNames.length > 0 || filterBankNames.length > 0;
+  const hasFilter = filterUserIds.length > 0 || filterIpoNames.length > 0 || filterYear !== null;
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const filterUserNames = filterUserIds
     .map((uid) => applications.find((a) => a.user_id === uid)?.user_name)
     .filter(Boolean) as string[];
-  const filterChipLabel = [...filterUserNames, ...filterBrokers, ...filterBankNames, ...filterIpoNames].join(' · ');
+  const filterChipLabel = [...filterUserNames, ...(filterYear ? [filterYear] : []), ...filterIpoNames].join(' · ');
 
   const searchBarHeight = searchAnim.interpolate({
     inputRange: [0, 1],
@@ -633,7 +682,7 @@ export default function DashboardScreen() {
             ref={searchRef}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search users or brokers…"
+            placeholder="Search users or IPOs…"
             placeholderTextColor={colors.mutedForeground}
             style={[styles.searchInput, { color: colors.foreground }]}
             returnKeyType="search"
@@ -665,7 +714,7 @@ export default function DashboardScreen() {
             <Feather name="filter" size={12} color={colors.primary} />
             <Text style={[styles.filterBarText, { color: colors.primary }]}>{filterChipLabel}</Text>
             <TouchableOpacity
-              onPress={() => { setFilterUserIds([]); setFilterBrokers([]); setFilterIpoNames([]); setFilterBankNames([]); setFilterYear(null); }}
+              onPress={() => { setFilterUserIds([]); setFilterIpoNames([]); setFilterYear(null); }}
               hitSlop={8}
             >
               <Feather name="x" size={14} color={colors.primary} />
@@ -1380,16 +1429,17 @@ export default function DashboardScreen() {
       <FilterSheet
         visible={showFilter}
         filterUserIds={filterUserIds}
-        filterBrokers={filterBrokers}
+        filterBrokers={[]}
         filterYear={filterYear}
         filterIpoNames={filterIpoNames}
-        filterBankNames={filterBankNames}
-        onFilterChange={(uids, brokers, year, ipos, banks) => {
+        filterBankNames={[]}
+        hideBank={true}
+        hideBroker={true}
+        customIpoNames={allottedIpoNames}
+        onFilterChange={(uids, _brokers, year, ipos) => {
           setFilterUserIds(uids);
-          setFilterBrokers(brokers);
           setFilterYear(year);
           setFilterIpoNames(ipos);
-          setFilterBankNames(banks || []);
         }}
         onClose={() => setShowFilter(false)}
       />

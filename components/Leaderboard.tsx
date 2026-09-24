@@ -21,7 +21,7 @@ import { formatCurrency } from '@/utils/formatters';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type TabKey = 'user' | 'broker' | 'ipo';
+type TabKey = 'user' | 'ipo';
 
 type LeaderEntry = {
   id: string;
@@ -42,8 +42,8 @@ function computeRankings(
 
   for (const a of applications) {
     if (a.status !== 'Sold' && a.status !== 'Holding') continue;
-    const key = by === 'user' ? String(a.user_id) : by === 'broker' ? (a.user_broker ?? 'Unknown') : String(a.ipo_id);
-    const name = by === 'user' ? a.user_name : by === 'broker' ? (a.user_broker ?? 'Unknown') : (a.ipo_name ?? 'Unknown');
+    const key = by === 'user' ? String(a.user_id) : String(a.ipo_id);
+    const name = by === 'user' ? a.user_name : (a.ipo_name ?? 'Unknown');
     if (!map[key]) map[key] = { name, netProfit: 0, soldCount: 0 };
     const { netPL } = calculateAppTaxAndNet(a);
     map[key].netProfit += netPL;
@@ -188,17 +188,16 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* User / Broker / IPO chip tabs (Left aligned above user rankings) */}
+      {/* User / IPO chip tabs (Left aligned above user rankings) */}
       <View style={styles.tabsRow}>
         <Tabs
           variant="pills"
           tabs={[
             { key: 'user', label: 'User' },
-            { key: 'broker', label: 'Broker' },
             { key: 'ipo', label: 'IPO' },
           ]}
           activeTab={activeTab}
-          onChange={setActiveTab}
+          onChange={(key) => setActiveTab(key as TabKey)}
         />
       </View>
 

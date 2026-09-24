@@ -18,23 +18,23 @@ export interface AllotmentCheckerIpoItem {
 /**
  * Filter predicate to determine if an IPO is eligible for allotment checking.
  * STRICT REQUIREMENT: Only IPOs whose status is one of:
- * - Closed
- * - Allotment Out
- * - Listed
+ * - Allotment Out (ALLOTMENT_OUT, ALLOTMENT_COMPLETED, ALLOTMENT, ALLOTTED, ALLOTTED_AVAILABLE)
+ * - Listed (LISTED)
  *
  * Excludes:
+ * - Closed (where allotment is not out yet)
  * - Upcoming
- * - Open / Active / Live
- * - Draft / Archived / Any other status
+ * - Open / Active / Live / Closing Today / Bidding
+ * - Draft / Archived / Deleted / Withdrawn / Cancelled
  */
 export function isBackendIpoAllotmentEligible(b: BackendIpo): boolean {
   if (!b || !b.id) return false;
   const rawStatus = (b.status || '').trim();
   const clean = rawStatus.toUpperCase().replace(/[\s-]+/g, '_');
 
-  if (['DRAFT', 'ARCHIVED', 'DELETED', ''].includes(clean)) return false;
+  if (['DRAFT', 'ARCHIVED', 'DELETED', 'CANCELLED', 'WITHDRAWN', ''].includes(clean)) return false;
 
-  // Ineligible statuses: UPCOMING, OPEN, CLOSED, ALLOTMENT_PENDING, LISTING_PENDING
+  // Ineligible statuses: CLOSED, ALLOTMENT_PENDING, LISTING_PENDING, OPEN, UPCOMING, LIVE, etc.
   if (
     clean === 'CLOSED' ||
     clean === 'ALLOTMENT_PENDING' ||
@@ -46,7 +46,8 @@ export function isBackendIpoAllotmentEligible(b: BackendIpo): boolean {
     clean === 'CLOSING_TODAY' ||
     clean === 'UPCOMING' ||
     clean === 'LIVE' ||
-    clean === 'ACTIVE'
+    clean === 'ACTIVE' ||
+    clean === 'BIDDING'
   ) {
     return false;
   }
@@ -122,6 +123,8 @@ export function parseAllotmentSortTimestamp(b: BackendIpo): number {
     b.allotment?.expectedDate,
     b.closeDate,
     b.lifecycle?.closeDate,
+    b.listingDate,
+    b.lifecycle?.listingDate,
     b.updatedAt,
     b.createdAt,
   ];
@@ -141,8 +144,8 @@ export function parseAllotmentSortTimestamp(b: BackendIpo): number {
 }
 
 /**
- * Sorts backend IPOs so that newly allotment out IPOs appear at the top
- * and older IPOs appear at the bottom.
+ * Sorts backend IPOs so that newly allotment out IPOs appear at the top,
+ * followed by recently closed IPOs, and older IPOs appear at the bottom.
  */
 export function sortCheckerIposByAllotmentRecency(ipos: BackendIpo[]): BackendIpo[] {
   return [...ipos].sort((a, b) => {
@@ -153,11 +156,20 @@ export function sortCheckerIposByAllotmentRecency(ipos: BackendIpo[]): BackendIp
       return timeB - timeA; // Descending: newest date first
     }
 
-    // Secondary priority: Allotment Out status before Listed
-    const isOutA = (a.status || '').toUpperCase().includes('ALLOT');
-    const isOutB = (b.status || '').toUpperCase().includes('ALLOT');
-    if (isOutA && !isOutB) return -1;
-    if (!isOutA && isOutB) return 1;
+    // Secondary priority: Allotment Out status before Closed, and Closed before Listed
+    const getStatusWeight = (status: string) => {
+      const s = (status || '').toUpperCase();
+      if (s.includes('ALLOT')) return 3;
+      if (s.includes('CLOSED') || s.includes('PENDING')) return 2;
+      if (s.includes('LISTED')) return 1;
+      return 0;
+    };
+
+    const weightA = getStatusWeight(a.status || '');
+    const weightB = getStatusWeight(b.status || '');
+    if (weightA !== weightB) {
+      return weightB - weightA;
+    }
 
     // Tertiary: alphabetical by company name / symbol
     const nameA = a.company?.displayName || a.companyName || a.symbol || '';

@@ -166,10 +166,13 @@ export default function SettingsScreen() {
   const {
     isAuthenticated,
     userEmail,
+    isConnecting,
     isBackingUp,
     isRestoring,
     lastBackupTime,
     latestMetadata,
+    connect,
+    disconnect,
     backupNow,
     restoreNow,
   } = useCloudBackup();
@@ -185,9 +188,54 @@ export default function SettingsScreen() {
     );
   };
 
+  const handleConnectGoogleDrive = async () => {
+    setBusy(true);
+    try {
+      const res = await connect();
+      if (res.success) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        showSuccess(
+          'Google Drive Connected',
+          'IPOVault is now connected to your private Google Drive AppData storage. Your backups will be stored safely and privately in your own Google Drive.'
+        );
+      } else if (res.error && !res.error.includes('cancelled')) {
+        showError('Connection Failed', res.error);
+      }
+    } catch (e: any) {
+      showError('Connection Failed', e?.message || 'Failed to connect Google Drive.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDisconnectGoogleDrive = () => {
+    showConfirm({
+      title: 'Disconnect Google Drive',
+      message:
+        'Disconnect IPOVault from your Google Drive account? Existing backup files in your Google Drive will be preserved.',
+      confirmText: 'Disconnect',
+      isDanger: true,
+      onConfirm: async () => {
+        setBusy(true);
+        try {
+          await disconnect();
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          showSuccess(
+            'Disconnected',
+            'Google Drive account disconnected successfully.'
+          );
+        } catch (e: any) {
+          showError('Disconnect Failed', e?.message || 'Failed to disconnect Google Drive.');
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+  };
+
   const handleCloudBackupNow = async () => {
     if (!isAuthenticated) {
-      router.push({ pathname: '/auth', params: { returnTo: '/(tabs)/settings' } });
+      await handleConnectGoogleDrive();
       return;
     }
 
@@ -197,14 +245,14 @@ export default function SettingsScreen() {
       if (res.success) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         showSuccess(
-          'Cloud Backup Successful',
-          `Successfully saved snapshot to Supabase Cloud.\n\nUploaded Assets: ${res.imagesUploaded} image(s).`
+          'Google Drive Backup Successful',
+          'Successfully created and saved your IPOVault backup snapshot to your private Google Drive AppData.'
         );
       } else {
-        showError('Cloud Backup Failed', res.error || 'Failed to complete cloud backup.');
+        showError('Backup Failed', res.error || 'Failed to complete Google Drive backup.');
       }
     } catch (e: any) {
-      showError('Cloud Backup Failed', e?.message || 'Unexpected cloud backup error.');
+      showError('Backup Failed', e?.message || 'Unexpected Google Drive backup error.');
     } finally {
       setBusy(false);
     }
@@ -212,17 +260,17 @@ export default function SettingsScreen() {
 
   const handleCloudRestoreNow = async () => {
     if (!isAuthenticated) {
-      router.push({ pathname: '/auth', params: { returnTo: '/(tabs)/settings' } });
+      await handleConnectGoogleDrive();
       return;
     }
 
     const metaStr = latestMetadata
-      ? `Snapshot Date: ${new Date(latestMetadata.created_at).toLocaleString()}\nRecords: ${latestMetadata.userCount || 0} users, ${latestMetadata.ipoCount || 0} IPOs, ${latestMetadata.applicationCount || 0} apps`
-      : 'Restoring will merge remote snapshot data into your local database.';
+      ? `Snapshot Date: ${new Date(latestMetadata.created_at).toLocaleString()}\nRecords: ${latestMetadata.userCount ?? 0} user(s), ${latestMetadata.ipoCount ?? 0} IPO(s), ${latestMetadata.applicationCount ?? 0} app(s)`
+      : 'Restoring will merge remote snapshot data from your Google Drive into your local database.';
 
     showConfirm({
-      title: 'Restore Cloud Backup',
-      message: `${metaStr}\n\nDo you want to proceed with restoring from Supabase Cloud?`,
+      title: 'Restore from Google Drive',
+      message: `${metaStr}\n\nDo you want to proceed with restoring your data from Google Drive?`,
       confirmText: 'Restore Now',
       cancelText: 'Cancel',
       onConfirm: async () => {
@@ -232,17 +280,37 @@ export default function SettingsScreen() {
           if (res.success) {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             showSuccess(
-              'Cloud Restore Complete',
-              `Successfully restored from cloud snapshot:\n• ${res.userCount} user(s)\n• ${res.ipoCount} IPO(s)\n• ${res.applicationCount} application(s)\n• ${res.imagesRestored} image file(s)`
+              'Google Drive Restore Complete',
+              `Successfully restored from cloud snapshot:\n• ${res.userCount} user(s)\n• ${res.ipoCount} IPO(s)\n• ${res.applicationCount} application(s)`
             );
           } else {
-            showError('Cloud Restore Failed', res.error || 'Failed to restore snapshot from cloud.');
+            showError('Restore Failed', res.error || 'Failed to restore snapshot from Google Drive.');
           }
         } catch (e: any) {
-          showError('Cloud Restore Failed', e?.message || 'Unexpected cloud restore error.');
+          showError('Restore Failed', e?.message || 'Unexpected Google Drive restore error.');
         } finally {
           setBusy(false);
         }
+      },
+    });
+  };
+
+  const handleGoogleDriveAccountPress = () => {
+    if (!isAuthenticated) {
+      handleConnectGoogleDrive();
+      return;
+    }
+
+    showConfirm({
+      title: 'Google Drive Account',
+      message: `Connected as:\n${userEmail || 'Google Account'}\n\nChoose an action:`,
+      confirmText: 'Backup Now',
+      cancelText: 'Disconnect',
+      onConfirm: () => {
+        handleCloudBackupNow();
+      },
+      onCancel: () => {
+        handleDisconnectGoogleDrive();
       },
     });
   };
@@ -495,8 +563,8 @@ export default function SettingsScreen() {
             icon="cloud"
             iconBg={isAuthenticated ? '#10B98118' : isDark ? '#262C36' : '#F3F4F6'}
             iconColor={isAuthenticated ? '#10B981' : colors.mutedForeground}
-            title="Cloud Backup"
-            subtitle={isAuthenticated ? (userEmail || 'Account connected') : 'Sign in to sync your data across devices'}
+            title="Google Drive Backup"
+            subtitle={isAuthenticated ? (userEmail || 'Connected') : 'Connect your Google account for private cloud backup'}
             subtitle2={isAuthenticated ? (formattedLastBackup ? `Last backup: ${formattedLastBackup}` : 'No backups created yet') : undefined}
             badge={
               isAuthenticated
@@ -508,10 +576,33 @@ export default function SettingsScreen() {
                     dotColor: colors.mutedForeground,
                   }
             }
-            onPress={handleCloudBackupNow}
-            disabled={busy || isBackingUp}
-            isLast
+            onPress={handleGoogleDriveAccountPress}
+            disabled={busy || isConnecting}
+            isLast={!isAuthenticated}
           />
+          {isAuthenticated && (
+            <>
+              <SettingRow
+                icon="upload-cloud"
+                iconBg="#3B82F618"
+                iconColor="#3B82F6"
+                title="Backup Now"
+                subtitle="Save snapshot to Google Drive"
+                onPress={handleCloudBackupNow}
+                disabled={busy || isBackingUp}
+              />
+              <SettingRow
+                icon="download-cloud"
+                iconBg="#8B5CF618"
+                iconColor="#8B5CF6"
+                title="Restore from Google Drive"
+                subtitle="Restore data from latest cloud snapshot"
+                onPress={handleCloudRestoreNow}
+                disabled={busy || isRestoring}
+                isLast
+              />
+            </>
+          )}
         </View>
 
         {/* ── SECTION 4: DATA MANAGEMENT ── */}

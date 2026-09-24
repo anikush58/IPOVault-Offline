@@ -12,6 +12,9 @@ type Props = {
   filterYear: string | null;
   filterIpoNames: string[];
   filterBankNames?: string[];
+  hideBank?: boolean;
+  hideBroker?: boolean;
+  customIpoNames?: string[];
   onFilterChange: (
     userIds: string[],
     brokers: string[],
@@ -46,6 +49,9 @@ export function FilterSheet({
   filterYear,
   filterIpoNames,
   filterBankNames = [],
+  hideBank = false,
+  hideBroker = false,
+  customIpoNames,
   onFilterChange,
   onClose,
 }: Props) {
@@ -79,10 +85,12 @@ export function FilterSheet({
     [activeUsers, bankAccounts, applications]
   );
 
-  const ipoNames = useMemo(
+  const defaultIpoNames = useMemo(
     () => [...new Set(applications.map((a) => a.ipo_name).filter((name): name is string => Boolean(name)))].sort(),
     [applications]
   );
+
+  const ipoNames = customIpoNames ?? defaultIpoNames;
 
   const currentYear = new Date().getFullYear().toString();
   const years = useMemo(
@@ -164,103 +172,160 @@ export function FilterSheet({
             </View>
 
             <ScrollView contentContainerStyle={{ gap: 12 }} showsVerticalScrollIndicator={false}>
-              {/* 2-Column Grid Row 1: BY BANK & BY USER */}
-              <View style={styles.gridRow}>
-                <View style={styles.gridCol}>
-                  <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY BANK</Text>
-                  <TouchableOpacity
-                    onPress={() => openPicker('bank')}
-                    style={[
-                      styles.dropdownTrigger,
-                      {
-                        borderColor: filterBankNames.length > 0 ? colors.primary : colors.border,
-                        backgroundColor: colors.surface,
-                      },
-                    ]}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.dropdownInner}>
-                      <Feather name="credit-card" size={15} color={filterBankNames.length > 0 ? colors.primary : colors.mutedForeground} />
-                      <Text style={[styles.dropdownValue, { color: filterBankNames.length > 0 ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
-                        {bankLabel}
-                      </Text>
-                    </View>
-                    <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
-                  </TouchableOpacity>
-                </View>
+              {/* If bank and broker are both hidden (Dashboard filter) */}
+              {hideBank && hideBroker ? (
+                <View style={styles.gridRow}>
+                  <View style={styles.gridCol}>
+                    <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY USER</Text>
+                    <TouchableOpacity
+                      onPress={() => openPicker('user')}
+                      style={[
+                        styles.dropdownTrigger,
+                        {
+                          borderColor: filterUserIds.length > 0 ? colors.primary : colors.border,
+                          backgroundColor: colors.surface,
+                        },
+                      ]}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.dropdownInner}>
+                        <Feather name="users" size={15} color={filterUserIds.length > 0 ? colors.primary : colors.mutedForeground} />
+                        <Text style={[styles.dropdownValue, { color: filterUserIds.length > 0 ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
+                          {userLabel}
+                        </Text>
+                      </View>
+                      <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
+                    </TouchableOpacity>
+                  </View>
 
-                <View style={styles.gridCol}>
-                  <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY USER</Text>
-                  <TouchableOpacity
-                    onPress={() => openPicker('user')}
-                    style={[
-                      styles.dropdownTrigger,
-                      {
-                        borderColor: filterUserIds.length > 0 ? colors.primary : colors.border,
-                        backgroundColor: colors.surface,
-                      },
-                    ]}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.dropdownInner}>
-                      <Feather name="users" size={15} color={filterUserIds.length > 0 ? colors.primary : colors.mutedForeground} />
-                      <Text style={[styles.dropdownValue, { color: filterUserIds.length > 0 ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
-                        {userLabel}
-                      </Text>
-                    </View>
-                    <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
-                  </TouchableOpacity>
+                  <View style={styles.gridCol}>
+                    <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY YEAR</Text>
+                    <TouchableOpacity
+                      onPress={() => openPicker('year')}
+                      style={[
+                        styles.dropdownTrigger,
+                        {
+                          borderColor: filterYear ? colors.primary : colors.border,
+                          backgroundColor: colors.surface,
+                        },
+                      ]}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.dropdownInner}>
+                        <Feather name="calendar" size={15} color={filterYear ? colors.primary : colors.mutedForeground} />
+                        <Text style={[styles.dropdownValue, { color: filterYear ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
+                          {yearLabel}
+                        </Text>
+                      </View>
+                      <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
+              ) : (
+                <>
+                  {/* 2-Column Grid Row 1: BY BANK & BY USER */}
+                  <View style={styles.gridRow}>
+                    {!hideBank && (
+                      <View style={styles.gridCol}>
+                        <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY BANK</Text>
+                        <TouchableOpacity
+                          onPress={() => openPicker('bank')}
+                          style={[
+                            styles.dropdownTrigger,
+                            {
+                              borderColor: filterBankNames.length > 0 ? colors.primary : colors.border,
+                              backgroundColor: colors.surface,
+                            },
+                          ]}
+                          activeOpacity={0.8}
+                        >
+                          <View style={styles.dropdownInner}>
+                            <Feather name="credit-card" size={15} color={filterBankNames.length > 0 ? colors.primary : colors.mutedForeground} />
+                            <Text style={[styles.dropdownValue, { color: filterBankNames.length > 0 ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
+                              {bankLabel}
+                            </Text>
+                          </View>
+                          <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
+                        </TouchableOpacity>
+                      </View>
+                    )}
 
-              {/* 2-Column Grid Row 2: BY BROKER & BY YEAR */}
-              <View style={styles.gridRow}>
-                <View style={styles.gridCol}>
-                  <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY BROKER</Text>
-                  <TouchableOpacity
-                    onPress={() => openPicker('broker')}
-                    style={[
-                      styles.dropdownTrigger,
-                      {
-                        borderColor: filterBrokers.length > 0 ? colors.primary : colors.border,
-                        backgroundColor: colors.surface,
-                      },
-                    ]}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.dropdownInner}>
-                      <Feather name="briefcase" size={15} color={filterBrokers.length > 0 ? colors.primary : colors.mutedForeground} />
-                      <Text style={[styles.dropdownValue, { color: filterBrokers.length > 0 ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
-                        {brokerLabel}
-                      </Text>
+                    <View style={styles.gridCol}>
+                      <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY USER</Text>
+                      <TouchableOpacity
+                        onPress={() => openPicker('user')}
+                        style={[
+                          styles.dropdownTrigger,
+                          {
+                            borderColor: filterUserIds.length > 0 ? colors.primary : colors.border,
+                            backgroundColor: colors.surface,
+                          },
+                        ]}
+                        activeOpacity={0.8}
+                      >
+                        <View style={styles.dropdownInner}>
+                          <Feather name="users" size={15} color={filterUserIds.length > 0 ? colors.primary : colors.mutedForeground} />
+                          <Text style={[styles.dropdownValue, { color: filterUserIds.length > 0 ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
+                            {userLabel}
+                          </Text>
+                        </View>
+                        <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
+                      </TouchableOpacity>
                     </View>
-                    <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
-                  </TouchableOpacity>
-                </View>
+                  </View>
 
-                <View style={styles.gridCol}>
-                  <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY YEAR</Text>
-                  <TouchableOpacity
-                    onPress={() => openPicker('year')}
-                    style={[
-                      styles.dropdownTrigger,
-                      {
-                        borderColor: filterYear ? colors.primary : colors.border,
-                        backgroundColor: colors.surface,
-                      },
-                    ]}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.dropdownInner}>
-                      <Feather name="calendar" size={15} color={filterYear ? colors.primary : colors.mutedForeground} />
-                      <Text style={[styles.dropdownValue, { color: filterYear ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
-                        {yearLabel}
-                      </Text>
+                  {/* 2-Column Grid Row 2: BY BROKER & BY YEAR */}
+                  <View style={styles.gridRow}>
+                    {!hideBroker && (
+                      <View style={styles.gridCol}>
+                        <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY BROKER</Text>
+                        <TouchableOpacity
+                          onPress={() => openPicker('broker')}
+                          style={[
+                            styles.dropdownTrigger,
+                            {
+                              borderColor: filterBrokers.length > 0 ? colors.primary : colors.border,
+                              backgroundColor: colors.surface,
+                            },
+                          ]}
+                          activeOpacity={0.8}
+                        >
+                          <View style={styles.dropdownInner}>
+                            <Feather name="briefcase" size={15} color={filterBrokers.length > 0 ? colors.primary : colors.mutedForeground} />
+                            <Text style={[styles.dropdownValue, { color: filterBrokers.length > 0 ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
+                              {brokerLabel}
+                            </Text>
+                          </View>
+                          <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+
+                    <View style={styles.gridCol}>
+                      <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY YEAR</Text>
+                      <TouchableOpacity
+                        onPress={() => openPicker('year')}
+                        style={[
+                          styles.dropdownTrigger,
+                          {
+                            borderColor: filterYear ? colors.primary : colors.border,
+                            backgroundColor: colors.surface,
+                          },
+                        ]}
+                        activeOpacity={0.8}
+                      >
+                        <View style={styles.dropdownInner}>
+                          <Feather name="calendar" size={15} color={filterYear ? colors.primary : colors.mutedForeground} />
+                          <Text style={[styles.dropdownValue, { color: filterYear ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
+                            {yearLabel}
+                          </Text>
+                        </View>
+                        <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
+                      </TouchableOpacity>
                     </View>
-                    <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
-                  </TouchableOpacity>
-                </View>
-              </View>
+                  </View>
+                </>
+              )}
 
               {/* Full Width Row: BY IPO */}
               <View>
