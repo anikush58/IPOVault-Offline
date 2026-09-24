@@ -266,10 +266,12 @@ export default function UsersScreen() {
       });
 
       // 2. Fetch OAuth authorization URL
+      const redirectUri = Linking.createURL('broker-callback');
       const { authorizationUrl } = await brokerApiService.getAuthorizationUrl(
         activeUserId,
         account.id,
         canonical.slug,
+        redirectUri,
       );
 
       if (!authorizationUrl) {
@@ -277,7 +279,6 @@ export default function UsersScreen() {
       }
 
       // 3. Open authorization session
-      const redirectUri = Linking.createURL('broker-callback');
       let authResult: WebBrowser.WebBrowserAuthSessionResult;
 
       try {
@@ -324,7 +325,7 @@ export default function UsersScreen() {
               activeUserId,
               account.id,
               canonical.slug,
-              { code, tokenId, authCode, requestToken, state },
+              { code, tokenId, authCode, requestToken, state, redirectUri },
             );
           }
         }

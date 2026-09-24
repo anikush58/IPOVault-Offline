@@ -188,10 +188,14 @@ export class BrokerApiService {
     userId: string,
     accountId: string,
     brokerSlug: string,
+    redirectUri?: string,
   ): Promise<{ authorizationUrl: string }> {
+    const queryParams: Record<string, string> = {};
+    if (redirectUri) queryParams.redirectUri = redirectUri;
+
     const response = await this.apiClient.get<{ authorizationUrl: string }>(
       `/api/v1/broker-accounts/${accountId}/connect/${brokerSlug}`,
-      undefined,
+      queryParams,
       { 'x-user-id': userId },
     );
     const data = extractResponseData<{ authorizationUrl: string }>(response);
@@ -214,6 +218,7 @@ export class BrokerApiService {
       authCode?: string;
       requestToken?: string;
       state?: string;
+      redirectUri?: string;
     },
   ): Promise<BrokerAccountConnection> {
     const queryParams: Record<string, string> = {};
@@ -222,6 +227,7 @@ export class BrokerApiService {
     if (params.authCode) queryParams.auth_code = params.authCode;
     if (params.requestToken) queryParams.request_token = params.requestToken;
     if (params.state) queryParams.state = params.state;
+    if (params.redirectUri) queryParams.redirectUri = params.redirectUri;
 
     const response = await this.apiClient.get<BrokerAccountConnection>(
       `/api/v1/broker-accounts/${accountId}/connect/${brokerSlug}/callback`,
