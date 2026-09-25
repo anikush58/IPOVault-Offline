@@ -18,6 +18,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDialog } from '@/context/DialogContext';
 import { Button } from '@/components/ui/Button';
 import { useDB, type ApplicationStatus, type ApplicationWithDetails } from '@/context/DBContext';
@@ -51,6 +52,8 @@ function getAvatarGradient(name: string): [string, string] {
 
 export function UpdateApplicationModal({ application: app, onClose }: Props) {
   const colors = useColors();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const { ipos, bankAccounts, updateApplication, partialSellApplication, deleteApplication } = useDB();
   const { showError, showConfirm, showSuccess } = useDialog();
   const insets = useSafeAreaInsets();

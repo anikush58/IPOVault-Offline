@@ -453,8 +453,7 @@ export default function PortfolioReportScreen() {
                     style={[
                       styles.priceRow,
                       {
-                        backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC',
-                        borderColor: isDark ? 'rgba(255,255,255,0.06)' : '#E2E8F0',
+                        backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(241, 243, 245, 0.5)',
                       },
                     ]}
                   >
@@ -614,7 +613,7 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', paddingVertical: 0 },
   chartSection: { paddingHorizontal: 16, paddingTop: 14 },
-  chipTabContainer: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 6, zIndex: 10 },
+  chipTabContainer: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6, zIndex: 10 },
   listSection: { paddingHorizontal: 16, paddingTop: 14, gap: 10 },
   reportCard: {
     borderRadius: 18,
@@ -637,7 +636,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-around',
     borderRadius: 10,
-    borderWidth: 1,
     paddingVertical: 6,
     paddingHorizontal: 10,
   },

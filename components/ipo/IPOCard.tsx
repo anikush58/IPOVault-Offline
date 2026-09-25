@@ -214,6 +214,22 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
     dateColValue = formatSingleDate(ipo.allotment_date);
   }
 
+  const issuePrice = ipo.price_band_max || ipo.price_band_min || 0;
+  const listingPrice = (ipo as any).listing_price != null ? Number((ipo as any).listing_price) : null;
+  const listingGainPct = (ipo as any).listing_gain_percent != null
+    ? Number((ipo as any).listing_gain_percent)
+    : (listingPrice && issuePrice > 0 ? ((listingPrice - issuePrice) / issuePrice) * 100 : null);
+  const profitAmt = (ipo as any).profit_amount != null
+    ? Number((ipo as any).profit_amount)
+    : (listingPrice && issuePrice > 0 && ipo.lot_size ? (listingPrice - issuePrice) * ipo.lot_size : null);
+  const profitPct = (ipo as any).profit_percentage != null ? Number((ipo as any).profit_percentage) : listingGainPct;
+
+  const listingPriceText = listingPrice != null ? `₹${Math.round(listingPrice)}` : 'TBA';
+  const listingGainText = listingGainPct != null ? `${listingGainPct > 0 ? '+' : ''}${listingGainPct.toFixed(1)}%` : 'Gain TBA';
+  const listingColor = (listingGainPct ?? 0) >= 0 ? '#10B981' : '#EF4444';
+  const profitAmtText = profitAmt != null ? `${profitAmt > 0 ? '+' : ''}₹${Math.round(profitAmt).toLocaleString('en-IN')}` : 'TBA';
+  const profitPctText = profitPct != null ? `${profitPct > 0 ? '+' : ''}${profitPct.toFixed(1)}%` : '0%';
+
   return (
     <TouchableOpacity
       onPress={() => onPress(ipo)}

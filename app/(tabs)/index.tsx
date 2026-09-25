@@ -1372,7 +1372,7 @@ export default function DashboardScreen() {
                       </View>
 
                       {/* Main Decision Banner: Price Band | GMP / Profit */}
-                      <View style={[styles.openIpoMetricsBanner, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(241, 243, 245, 0.32)', borderColor: isDark ? 'rgba(255, 255, 255, 0.06)' : colors.border }]}>
+                      <View style={[styles.openIpoMetricsBanner, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(241, 243, 245, 0.5)' }]}>
                         {/* Price Band or Listing Price */}
                         <View style={styles.openIpoMetricCell}>
                           <Text style={[styles.openIpoMetricLabel, { color: colors.mutedForeground }]}>
@@ -1867,7 +1867,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 12,
-    borderWidth: 1,
     paddingVertical: 8,
     paddingHorizontal: 12,
   },

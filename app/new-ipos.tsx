@@ -413,8 +413,7 @@ const NewIpoCardItem = React.memo(
           style={[
             styles.middleGridCard,
             {
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(241, 243, 245, 0.4)',
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)',
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(241, 243, 245, 0.5)',
             },
           ]}
         >
@@ -1447,7 +1446,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 12,
-    borderWidth: 1,
     marginBottom: 10,
   },
   gridCol: {

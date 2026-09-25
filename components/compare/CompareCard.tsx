@@ -2,6 +2,7 @@ import React from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IPOMasterRecord } from '@/services/ipo/types';
 import { formatCurrency } from '@/utils/formatters';
 
@@ -13,6 +14,8 @@ type Props = {
 
 export const CompareCard = React.memo(function CompareCard({ ipo, onRemove, width = 160 }: Props) {
   const colors = useColors();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const [logoError, setLogoError] = React.useState(false);
 
   const priceText = React.useMemo(() => {
