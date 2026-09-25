@@ -96,36 +96,32 @@ const badge = StyleSheet.create({
 function LeaderRow({
   entry,
   rank,
-  isLast,
   isDark,
   colors,
 }: {
   entry: LeaderEntry;
   rank: number;
-  isLast: boolean;
+  isLast?: boolean;
   isDark: boolean;
   colors: ReturnType<typeof useColors>;
 }) {
   const isPos = entry.netProfit >= 0;
 
   return (
-    <View>
-      <View style={row.wrap}>
-        <RankBadge rank={rank} isDark={isDark} colors={colors} />
+    <View style={row.wrap}>
+      <RankBadge rank={rank} isDark={isDark} colors={colors} />
 
-        <View style={row.info}>
-          <Text style={[row.name, { color: colors.foreground }]} numberOfLines={1}>
-            {entry.name}
-          </Text>
-          <Text style={[row.sub, { color: colors.mutedForeground }]}>
-            {entry.soldCount} {entry.soldCount === 1 ? 'sale' : 'sales'}
-          </Text>
-        </View>
-        <Text style={[row.profit, { color: isPos ? '#10B981' : colors.destructive }]}>
-          {isPos ? '+' : ''}{formatCurrency(entry.netProfit)}
+      <View style={row.info}>
+        <Text style={[row.name, { color: colors.foreground }]} numberOfLines={1}>
+          {entry.name}
+        </Text>
+        <Text style={[row.sub, { color: colors.mutedForeground }]}>
+          {entry.soldCount} {entry.soldCount === 1 ? 'sale' : 'sales'}
         </Text>
       </View>
-      {!isLast && <View style={[row.divider, { backgroundColor: colors.border }]} />}
+      <Text style={[row.profit, { color: isPos ? '#10B981' : colors.destructive }]}>
+        {isPos ? '+' : ''}{formatCurrency(entry.netProfit)}
+      </Text>
     </View>
   );
 }
@@ -133,12 +129,11 @@ function LeaderRow({
 const CARD_PADDING_H = 18;
 
 const row = StyleSheet.create({
-  wrap: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: CARD_PADDING_H },
+  wrap: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 9, paddingHorizontal: CARD_PADDING_H },
   info: { flex: 1 },
   name: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: -0.1 },
   sub: { fontSize: 11, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 1 },
   profit: { fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.2 },
-  divider: { height: 1, marginHorizontal: CARD_PADDING_H },
 });
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -169,22 +164,24 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
   return (
     <View style={[styles.card, { backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderColor: colors.border }]}>
 
-      {/* Header with View More on Top-Right */}
+      {/* Header with View More matching Portfolio Details */}
       <View style={styles.header}>
-        <View>
-          <Text style={[styles.eyebrow, { color: colors.mutedForeground }]}>RANKINGS</Text>
-          <Text style={[styles.title, { color: colors.foreground }]}>Leaderboard</Text>
-        </View>
-
+        <Text style={[styles.title, { color: colors.foreground }]}>Leaderboard</Text>
         <TouchableOpacity
           onPress={() => router.push({ pathname: '/leaderboard', params: { tab: activeTab } })}
-          style={[styles.headerViewMoreBtn, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: colors.border }]}
-          activeOpacity={0.75}
+          style={[
+            styles.viewMoreBtn,
+            {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
+              borderColor: isDark ? '#374151' : '#E5E7EB',
+            },
+          ]}
+          activeOpacity={0.7}
         >
-          <Text style={[styles.headerViewMoreText, { color: colors.foreground }]}>
+          <Text style={[styles.viewMoreText, { color: colors.foreground }]}>
             View More
           </Text>
-          <Feather name="chevron-right" size={13} color={colors.foreground} />
+          <Feather name="chevron-right" size={13} color={colors.mutedForeground} />
         </TouchableOpacity>
       </View>
 
@@ -192,6 +189,7 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
       <View style={styles.tabsRow}>
         <Tabs
           variant="pills"
+          height={36}
           tabs={[
             { key: 'user', label: 'User' },
             { key: 'ipo', label: 'IPO' },
@@ -240,7 +238,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1,
     paddingTop: 18,
-    paddingBottom: 6,
+    paddingBottom: 12,
     overflow: 'hidden',
   },
   header: {
@@ -249,21 +247,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: CARD_PADDING_H,
     marginBottom: 10,
-    gap: 12,
   },
   eyebrow: { fontSize: 10, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 },
   title: { fontSize: 18, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
 
-  headerViewMoreBtn: {
+  viewMoreBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 16,
+    borderRadius: 10,
     borderWidth: 1,
   },
-  headerViewMoreText: {
+  viewMoreText: {
     fontSize: 12,
     fontFamily: 'GoogleSansFlex_600SemiBold',
   },

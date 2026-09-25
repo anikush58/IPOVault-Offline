@@ -361,7 +361,7 @@ export default function PortfolioReportScreen() {
         <View style={[styles.chipTabContainer, { backgroundColor: colors.background }]}>
           <Tabs
             variant="pills"
-            scrollable
+            height={36}
             tabs={[
               { key: 'profits', label: 'All Profits', count: tabCounts.profits },
               { key: 'holding', label: 'Holding Profits', count: tabCounts.holding },
@@ -369,7 +369,6 @@ export default function PortfolioReportScreen() {
             ]}
             activeTab={activeTab}
             onChange={(key) => setActiveTab(key as TabType)}
-            style={{ paddingVertical: 4 }}
           />
         </View>
 
@@ -615,7 +614,7 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', paddingVertical: 0 },
   chartSection: { paddingHorizontal: 16, paddingTop: 14 },
-  chipTabContainer: { paddingTop: 8, paddingBottom: 6, zIndex: 10 },
+  chipTabContainer: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 6, zIndex: 10 },
   listSection: { paddingHorizontal: 16, paddingTop: 14, gap: 10 },
   reportCard: {
     borderRadius: 18,

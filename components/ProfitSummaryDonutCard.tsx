@@ -426,7 +426,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     borderWidth: 1,
-    borderRadius: 18,
+    borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },

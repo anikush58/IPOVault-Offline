@@ -452,7 +452,7 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 18,
+    borderRadius: 10,
     borderWidth: 1,
   },
   periodPillText: {

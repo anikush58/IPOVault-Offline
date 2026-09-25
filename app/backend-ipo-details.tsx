@@ -30,21 +30,38 @@ import { AnchorInvestorAllocation } from '@/components/ipo/AnchorInvestorAllocat
 import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 import { IPOStatusChip } from '@/components/ipo/IPOStatusChip';
 
+const TIMELINE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 function formatDateShort(dateStr?: string | null): string {
   if (!dateStr) return 'TBA';
-  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const clean = dateStr.trim();
-  const parts = clean.split('-');
-  if (parts.length === 3) {
-    const day = parseInt(parts[2], 10);
-    const mIdx = parseInt(parts[1], 10) - 1;
-    if (!isNaN(day) && mIdx >= 0 && mIdx < 12) {
-      return `${day} ${MONTHS[mIdx]}`;
+  if (!clean || clean.toUpperCase() === 'TBA' || clean.toUpperCase() === 'N/A') return 'TBA';
+
+  // DD-MM-YYYY or DD/MM/YYYY
+  if (/^\d{1,2}[-/]\d{1,2}[-/]\d{4}$/.test(clean)) {
+    const parts = clean.split(/[-/]/);
+    const d = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    if (m >= 0 && m < 12 && !isNaN(d)) {
+      return `${String(d).padStart(2, '0')} ${TIMELINE_MONTHS[m]}`;
     }
   }
+
+  // YYYY-MM-DD or ISO string
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(clean)) {
+    const datePart = clean.split('T')[0];
+    const parts = datePart.split(/[-/]/);
+    const d = parseInt(parts[2], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    if (m >= 0 && m < 12 && !isNaN(d)) {
+      return `${String(d).padStart(2, '0')} ${TIMELINE_MONTHS[m]}`;
+    }
+  }
+
   const d = new Date(clean);
   if (!isNaN(d.getTime())) {
-    return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${day} ${TIMELINE_MONTHS[d.getMonth()]}`;
   }
   return clean;
 }

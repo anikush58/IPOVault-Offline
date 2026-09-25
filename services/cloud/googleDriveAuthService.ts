@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { NativeModules, Platform, TurboModuleRegistry } from 'react-native';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import Constants from 'expo-constants';
@@ -39,6 +39,62 @@ export const GOOGLE_DRIVE_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.profile',
 ];
 
+// Lazy-loaded native GoogleSignin reference
+let _googleSigninModule: any = null;
+let _googleSigninConfigured = false;
+
+function isNativeGoogleSigninLinked(): boolean {
+  if (Platform.OS !== 'android') return false;
+  try {
+    const turbo =
+      typeof TurboModuleRegistry?.get === 'function'
+        ? TurboModuleRegistry.get('RNGoogleSignin')
+        : null;
+    if (turbo) return true;
+  } catch {}
+  try {
+    if (
+      NativeModules &&
+      (NativeModules.RNGoogleSignin || NativeModules.RNGoogleSigninModule)
+    ) {
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+function getNativeGoogleSignin(): { GoogleSignin: any; statusCodes: any } | null {
+  if (!isNativeGoogleSigninLinked()) return null;
+  if (_googleSigninModule) return _googleSigninModule;
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require('@react-native-google-signin/google-signin');
+    if (mod?.GoogleSignin) {
+      if (!_googleSigninConfigured) {
+        const webClientId =
+          process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ||
+          '720793268491-rbuifpfkufpr0c56bbpj05qnebuprmv4.apps.googleusercontent.com';
+
+        mod.GoogleSignin.configure({
+          scopes: ['https://www.googleapis.com/auth/drive.appdata'],
+          webClientId,
+          offlineAccess: false,
+        });
+        _googleSigninConfigured = true;
+      }
+      _googleSigninModule = mod;
+      return mod;
+    }
+  } catch (err) {
+    console.warn(
+      '[googleDriveAuthService] Failed to initialize native GoogleSignin:',
+      err
+    );
+  }
+  return null;
+}
+
 /**
  * Resolves platform-specific Google OAuth Client ID from env or Expo config
  */
@@ -50,7 +106,7 @@ export function getGoogleClientId(): string {
       extra.googleAndroidClientId ||
       process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ||
       extra.googleClientId ||
-      ''
+      '720793268491-7qjb9tsfeqb3rhchaliooeaa92pk73ko.apps.googleusercontent.com'
     );
   }
   if (Platform.OS === 'ios') {
@@ -67,7 +123,7 @@ export function getGoogleClientId(): string {
     extra.googleWebClientId ||
     process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ||
     extra.googleClientId ||
-    ''
+    '720793268491-rbuifpfkufpr0c56bbpj05qnebuprmv4.apps.googleusercontent.com'
   );
 }
 
@@ -89,16 +145,55 @@ export async function getGoogleAuthSession(): Promise<GoogleAuthSession | null> 
  * Returns a valid Google OAuth access token, automatically refreshing if expired
  */
 export async function getValidAccessToken(): Promise<string | null> {
+  const nativeAuth = getNativeGoogleSignin();
+  if (nativeAuth) {
+    try {
+      const tokens = await nativeAuth.GoogleSignin.getTokens();
+      if (tokens?.accessToken) {
+        const session = await getGoogleAuthSession();
+        if (session && session.accessToken !== tokens.accessToken) {
+          session.accessToken = tokens.accessToken;
+          await safeAsyncStorage.setItem(
+            GOOGLE_AUTH_SESSION_KEY,
+            JSON.stringify(session)
+          );
+        }
+        return tokens.accessToken;
+      }
+    } catch {
+      try {
+        await nativeAuth.GoogleSignin.signInSilently();
+        const freshTokens = await nativeAuth.GoogleSignin.getTokens();
+        if (freshTokens?.accessToken) {
+          const session = await getGoogleAuthSession();
+          if (session) {
+            session.accessToken = freshTokens.accessToken;
+            await safeAsyncStorage.setItem(
+              GOOGLE_AUTH_SESSION_KEY,
+              JSON.stringify(session)
+            );
+          }
+          return freshTokens.accessToken;
+        }
+      } catch (silentErr) {
+        console.warn(
+          '[googleDriveAuthService] Silent sign-in failed on Android:',
+          silentErr
+        );
+      }
+    }
+  }
+
+  // Web / Fallback flow
   const session = await getGoogleAuthSession();
   if (!session || !session.accessToken) return null;
 
-  // Check if token is expired or expiring within 60 seconds
   const isExpiring = session.expiresAt && Date.now() > session.expiresAt - 60000;
   if (!isExpiring) {
     return session.accessToken;
   }
 
-  // Refresh token if refresh_token is available
+  // Refresh token if refresh_token is available (Web fallback)
   if (session.refreshToken) {
     const clientId = getGoogleClientId();
     if (clientId) {
@@ -143,13 +238,77 @@ export async function getValidAccessToken(): Promise<string | null> {
 }
 
 /**
- * Initiates Google OAuth consent flow using PKCE for Google Drive AppData access
+ * Initiates Google OAuth consent flow for Google Drive AppData access
  */
 export async function signInWithGoogleDrive(): Promise<{
   success: boolean;
   session?: GoogleAuthSession;
   error?: string;
 }> {
+  const nativeAuth = getNativeGoogleSignin();
+
+  // Native Google Sign-In for Android builds with RNGoogleSignin
+  if (nativeAuth) {
+    try {
+      await nativeAuth.GoogleSignin.hasPlayServices({
+        showPlayServicesUpdateDialog: true,
+      });
+      const response = await nativeAuth.GoogleSignin.signIn();
+
+      if (response?.type === 'cancelled') {
+        return { success: false, error: 'Sign in was cancelled.' };
+      }
+
+      const userData = response?.data?.user;
+      const tokens = await nativeAuth.GoogleSignin.getTokens();
+
+      if (!tokens?.accessToken) {
+        throw new Error('Failed to obtain Google Drive access token.');
+      }
+
+      const session: GoogleAuthSession = {
+        accessToken: tokens.accessToken,
+        refreshToken: null,
+        expiresAt: null,
+        tokenType: 'Bearer',
+        scope: 'https://www.googleapis.com/auth/drive.appdata',
+        user: {
+          id: userData?.id,
+          email: userData?.email || 'Google Account',
+          name: userData?.name || undefined,
+          picture: userData?.photo || undefined,
+        },
+      };
+
+      await safeAsyncStorage.setItem(
+        GOOGLE_AUTH_SESSION_KEY,
+        JSON.stringify(session)
+      );
+
+      return { success: true, session };
+    } catch (err: any) {
+      if (err?.code === nativeAuth.statusCodes?.SIGN_IN_CANCELLED) {
+        return { success: false, error: 'Sign in was cancelled.' };
+      }
+      if (err?.code === nativeAuth.statusCodes?.IN_PROGRESS) {
+        return { success: false, error: 'Sign in is already in progress.' };
+      }
+      if (err?.code === nativeAuth.statusCodes?.PLAY_SERVICES_NOT_AVAILABLE) {
+        return {
+          success: false,
+          error:
+            'Google Play Services is not available or outdated on this device.',
+        };
+      }
+      console.error('[googleDriveAuthService] Native GoogleSignin error:', err);
+      return {
+        success: false,
+        error: err?.message || 'Failed to authenticate with Google.',
+      };
+    }
+  }
+
+  // Fallback for Web and environments without native binary linked
   const clientId = getGoogleClientId();
   if (!clientId) {
     return {
@@ -159,19 +318,10 @@ export async function signInWithGoogleDrive(): Promise<{
     };
   }
 
-  let redirectUri: string;
-  if (Platform.OS === 'android' && clientId.includes('.apps.googleusercontent.com')) {
-    const clientIdPrefix = clientId.replace('.apps.googleusercontent.com', '');
-    redirectUri = AuthSession.makeRedirectUri({
-      scheme: `com.googleusercontent.apps.${clientIdPrefix}`,
-      path: 'oauth2redirect',
-    });
-  } else {
-    redirectUri = AuthSession.makeRedirectUri({
-      scheme: 'ipovault',
-      path: 'google-auth-callback',
-    });
-  }
+  const redirectUri = AuthSession.makeRedirectUri({
+    scheme: 'ipovault',
+    path: 'google-auth-callback',
+  });
 
   try {
     const request = new AuthSession.AuthRequest({
@@ -189,7 +339,6 @@ export async function signInWithGoogleDrive(): Promise<{
     const result = await request.promptAsync(GOOGLE_DISCOVERY);
 
     if (result.type === 'success' && result.params?.code) {
-      // Exchange authorization code for access & refresh tokens
       const tokenResponse = await AuthSession.exchangeCodeAsync(
         {
           clientId,
@@ -207,7 +356,6 @@ export async function signInWithGoogleDrive(): Promise<{
       const expiresIn = tokenResponse.expiresIn;
       const expiresAt = expiresIn ? Date.now() + expiresIn * 1000 : null;
 
-      // Fetch user profile from userinfo endpoint
       let user: GoogleAuthUser = { email: 'Google Account' };
       try {
         const userInfoRes = await fetch(GOOGLE_DISCOVERY.userInfoEndpoint!, {
@@ -223,7 +371,10 @@ export async function signInWithGoogleDrive(): Promise<{
           };
         }
       } catch (uiErr) {
-        console.warn('[googleDriveAuthService] Failed to fetch user profile:', uiErr);
+        console.warn(
+          '[googleDriveAuthService] Failed to fetch user profile:',
+          uiErr
+        );
       }
 
       const session: GoogleAuthSession = {
@@ -263,6 +414,13 @@ export async function signInWithGoogleDrive(): Promise<{
  * Revokes active Google token and removes stored session from device
  */
 export async function disconnectGoogleDrive(): Promise<void> {
+  const nativeAuth = getNativeGoogleSignin();
+  if (nativeAuth) {
+    try {
+      await nativeAuth.GoogleSignin.signOut();
+    } catch {}
+  }
+
   try {
     const session = await getGoogleAuthSession();
     if (session?.accessToken) {
@@ -277,6 +435,7 @@ export async function disconnectGoogleDrive(): Promise<void> {
       ).catch(() => {});
     }
   } catch {}
+
   await safeAsyncStorage.removeItem(GOOGLE_AUTH_SESSION_KEY);
   await safeAsyncStorage.removeItem(LAST_CLOUD_BACKUP_KEY);
 }

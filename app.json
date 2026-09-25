@@ -5,10 +5,7 @@
     "version": "2.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": [
-      "ipovault",
-      "com.googleusercontent.apps.720793268491-7qjb9tsfeqb3rhchaliooeaa92pk73ko"
-    ],
+    "scheme": "ipovault",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -74,7 +71,8 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "expo-sqlite"
+      "expo-sqlite",
+      "@react-native-google-signin/google-signin"
     ],
     "experiments": {
       "typedRoutes": true,

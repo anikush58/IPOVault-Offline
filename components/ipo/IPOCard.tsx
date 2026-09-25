@@ -38,34 +38,57 @@ type Props = {
   onLongPress?: (ipo: IPOMasterRecord) => void;
 };
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function parseDateComponents(str?: string | null): { day: number; month: string; monthIdx: number } | null {
+  if (!str) return null;
+  const clean = str.trim();
+  if (!clean || clean.toUpperCase() === 'TBA' || clean.toUpperCase() === 'N/A') return null;
+
+  // DD-MM-YYYY or DD/MM/YYYY
+  if (/^\d{1,2}[-/]\d{1,2}[-/]\d{4}$/.test(clean)) {
+    const parts = clean.split(/[-/]/);
+    const day = parseInt(parts[0], 10);
+    const monthIdx = parseInt(parts[1], 10) - 1;
+    if (!isNaN(day) && monthIdx >= 0 && monthIdx < 12) {
+      return { day, month: MONTHS[monthIdx], monthIdx };
+    }
+  }
+
+  // YYYY-MM-DD or ISO string
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(clean)) {
+    const datePart = clean.split('T')[0];
+    const parts = datePart.split(/[-/]/);
+    const day = parseInt(parts[2], 10);
+    const monthIdx = parseInt(parts[1], 10) - 1;
+    if (!isNaN(day) && monthIdx >= 0 && monthIdx < 12) {
+      return { day, month: MONTHS[monthIdx], monthIdx };
+    }
+  }
+
+  const d = new Date(clean);
+  if (!isNaN(d.getTime())) {
+    return { day: d.getDate(), month: MONTHS[d.getMonth()], monthIdx: d.getMonth() };
+  }
+  return null;
+}
+
+function formatSingleDate(dateStr?: string | null): string {
+  if (!dateStr) return 'TBA';
+  const parsed = parseDateComponents(dateStr);
+  if (parsed) {
+    return `${parsed.day} ${parsed.month}`;
+  }
+  return dateStr.trim() || 'TBA';
+}
+
 function formatApplyDates(openDate?: string | null, closeDate?: string | null): string {
   if (!openDate && !closeDate) return 'TBA';
-  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  
-  const parseD = (str?: string | null) => {
-    if (!str) return null;
-    const clean = str.trim();
-    if (!clean) return null;
-    const parts = clean.split('-');
-    if (parts.length === 3) {
-      const day = parseInt(parts[2], 10);
-      const monthIdx = parseInt(parts[1], 10) - 1;
-      if (!isNaN(day) && monthIdx >= 0 && monthIdx < 12) {
-        return { day, month: MONTHS[monthIdx] };
-      }
-    }
-    const d = new Date(clean);
-    if (!isNaN(d.getTime())) {
-      return { day: d.getDate(), month: MONTHS[d.getMonth()] };
-    }
-    return null;
-  };
-
-  const o = parseD(openDate);
-  const c = parseD(closeDate);
+  const o = parseDateComponents(openDate);
+  const c = parseDateComponents(closeDate);
 
   if (o && c) {
-    if (o.month === c.month) {
+    if (o.monthIdx === c.monthIdx) {
       return `${o.day}-${c.day} ${o.month}`;
     }
     return `${o.day} ${o.month} - ${c.day} ${c.month}`;
@@ -176,20 +199,20 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
     return `Updated ${diffHours}h ago`;
   }, [hasGmp, ipo.gmp_updated_at]);
 
-  const isListed = ipo.status?.toUpperCase() === 'LISTED' || ipo.lifecycle_status?.toUpperCase() === 'LISTED';
-  const issuePrice = ipo.price_band_max || ipo.price_band_min || 0;
-  const listingPrice = ipo.listing_price;
-  const listingGainPct = ipo.listing_gain_percent ?? (listingPrice && issuePrice > 0 ? ((listingPrice - issuePrice) / issuePrice) * 100 : null);
-  const profitAmt = (ipo as any).profit_amount ?? (listingPrice && issuePrice > 0 && ipo.lot_size ? (listingPrice - issuePrice) * ipo.lot_size : null);
-  const profitPct = (ipo as any).profit_percent ?? listingGainPct;
+  const normStatus = (ipo.status || ipo.lifecycle_status || '').toUpperCase().trim();
+  const isListed = normStatus === 'LISTED' || normStatus === 'LISTING_PENDING';
+  const isClosed = normStatus === 'CLOSED' || normStatus.includes('ALLOT') || normStatus.includes('AWAIT');
 
-  const listingGainText = listingGainPct != null ? `${listingGainPct > 0 ? '+' : ''}${listingGainPct.toFixed(2)}%` : '—';
-  const profitAmtText = profitAmt != null ? `₹${profitAmt > 0 ? '+' : ''}${Math.round(profitAmt).toLocaleString('en-IN')}` : '—';
-  const profitPctText = profitPct != null ? `${profitPct > 0 ? '+' : ''}${profitPct.toFixed(2)}%` : '—';
-  const listingPriceText = listingPrice != null ? `₹${Math.round(listingPrice)}` : 'TBA';
-  const listingColor = listingGainPct != null ? (listingGainPct >= 0 ? '#10B981' : '#EF4444') : colors.mutedForeground;
+  let dateColLabel = 'Apply Date';
+  let dateColValue = formatApplyDates(ipo.open_date, ipo.close_date);
 
-  const applyDateStr = formatApplyDates(ipo.open_date, ipo.close_date);
+  if (isListed) {
+    dateColLabel = 'Listing Date';
+    dateColValue = formatSingleDate(ipo.listing_date);
+  } else if (isClosed) {
+    dateColLabel = 'Allotment Date';
+    dateColValue = formatSingleDate(ipo.allotment_date);
+  }
 
   return (
     <TouchableOpacity
@@ -205,7 +228,15 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
     >
       {/* Top Header: Logo on left, Segment & Actions on right */}
       <View style={styles.cardHeaderRow}>
-        <View style={styles.logoWrap}>
+        <View
+          style={[
+            styles.logoWrap,
+            {
+              backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+              borderColor: colors.border,
+            },
+          ]}
+        >
           {resolvedLogo && !logoError ? (
             <Image
               source={{ uri: resolvedLogo }}
@@ -325,9 +356,9 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
         </View>
 
         <View style={[styles.metricGridCol, { alignItems: 'center' }]}>
-          <Text style={[styles.metricGridLabel, { color: colors.mutedForeground }]}>Apply Date</Text>
+          <Text style={[styles.metricGridLabel, { color: colors.mutedForeground }]}>{dateColLabel}</Text>
           <Text style={[styles.metricGridVal, { color: colors.foreground }]}>
-            {applyDateStr}
+            {dateColValue}
           </Text>
         </View>
 
@@ -359,17 +390,20 @@ const styles = StyleSheet.create({
   logoWrap: {
     width: 48,
     height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   logoImage: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: '100%',
+    height: '100%',
     resizeMode: 'contain',
   },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: '100%',
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -226,7 +226,7 @@ export default function IPOManagementScreen() {
       )}
 
       {/* ── Filter Segment Tabs (Active / Favorites / Archived) ── */}
-      <View style={[styles.segmentBarWrap, { backgroundColor: colors.background }]}>
+      <View style={[styles.segmentBarWrap, { backgroundColor: colors.background, paddingVertical: 8 }]}>
         <Tabs
           variant="pills"
           tabs={[
@@ -236,7 +236,6 @@ export default function IPOManagementScreen() {
           ]}
           activeTab={activeSegment}
           onChange={(key) => setActiveSegment(key as TabSegment)}
-          style={{ paddingVertical: 10 }}
         />
       </View>
 

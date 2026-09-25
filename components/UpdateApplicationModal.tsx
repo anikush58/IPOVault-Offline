@@ -231,23 +231,25 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
                 {/* Info card with Company Logo Avatar */}
                 <View style={[styles.infoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                   <View style={styles.infoRow}>
-                    {logoUrl && !logoError ? (
-                      <Image
-                        source={{ uri: logoUrl }}
-                        style={styles.modalLogoImage}
-                        resizeMode="contain"
-                        onError={() => setLogoError(true)}
-                      />
-                    ) : (
-                      <LinearGradient
-                        colors={avatarGradient}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.modalAvatar}
-                      >
-                        <Text style={styles.modalAvatarText}>{initials}</Text>
-                      </LinearGradient>
-                    )}
+                    <View style={[styles.modalLogoWrap, { borderColor: colors.border, backgroundColor: isDark ? '#1E293B' : '#FFFFFF' }]}>
+                      {logoUrl && !logoError ? (
+                        <Image
+                          source={{ uri: logoUrl }}
+                          style={styles.modalLogoImage}
+                          resizeMode="contain"
+                          onError={() => setLogoError(true)}
+                        />
+                      ) : (
+                        <LinearGradient
+                          colors={avatarGradient}
+                          start={{ x: 0, y: 0 }}
+                          end={{ x: 1, y: 1 }}
+                          style={styles.modalAvatar}
+                        >
+                          <Text style={styles.modalAvatarText}>{initials}</Text>
+                        </LinearGradient>
+                      )}
+                    </View>
 
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.ipoName, { color: colors.foreground }]}>{app.ipo_name}</Text>
@@ -557,8 +559,9 @@ const styles = StyleSheet.create({
   content: { padding: 18, gap: 0 },
   infoCard: { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 16 },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  modalLogoImage: { width: 40, height: 40, borderRadius: 12, resizeMode: 'contain' },
-  modalAvatar: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  modalLogoWrap: { width: 40, height: 40, borderRadius: 12, borderWidth: 1, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  modalLogoImage: { width: '100%', height: '100%', resizeMode: 'contain' },
+  modalAvatar: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   modalAvatarText: { fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', color: '#FFFFFF' },
   ipoName: { fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
   metaLine: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 3 },

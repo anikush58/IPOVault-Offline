@@ -28,7 +28,7 @@ import { PerformanceChart } from '@/components/PerformanceChart';
 import { Leaderboard } from '@/components/Leaderboard';
 import { FilterSheet } from '@/components/FilterSheet';
 import { BulkApplySheet } from '@/components/BulkApplySheet';
-import { formatCurrency, getResolvedLogoUrl } from '@/utils/formatters';
+import { formatCurrency, formatDayMonth, getResolvedLogoUrl } from '@/utils/formatters';
 import { calculateNormalizedIPOStatus } from '@/services/ipo/statusNormalizer';
 import { IPORepository } from '@/services/ipo/ipoRepository';
 import { triggerCentralizedIPOSync } from '@/services/ipo/centralizedSync';
@@ -648,7 +648,7 @@ export default function DashboardScreen() {
         ]}
       >
         <View style={{ flex: 1, justifyContent: 'center' }}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>IPO PORTFOLIO</Text>
+          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>IPOVAULT</Text>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Dashboard</Text>
         </View>
 
@@ -827,13 +827,19 @@ export default function DashboardScreen() {
               </Text>
               <TouchableOpacity
                 onPress={() => router.push('/portfolio-report')}
-                style={styles.viewReportBtn}
-                hitSlop={8}
+                style={[
+                  styles.viewReportBtn,
+                  {
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
+                    borderColor: isDark ? '#374151' : '#E5E7EB',
+                  },
+                ]}
+                activeOpacity={0.7}
               >
-                <Text style={[styles.viewReportText, { color: colors.mutedForeground }]}>
+                <Text style={[styles.viewReportText, { color: colors.foreground }]}>
                   View Report
                 </Text>
-                <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
+                <Feather name="chevron-right" size={13} color={colors.mutedForeground} />
               </TouchableOpacity>
             </View>
 
@@ -1289,23 +1295,33 @@ export default function DashboardScreen() {
                     >
                       {/* Top Header: Logo/Avatar + Name + Issue Type & Timeline Pill */}
                       <View style={styles.openIpoHeaderRow}>
-                        {resolvedLogo && !cardLogoErrors[item.id || idx] ? (
-                          <Image
-                            source={{ uri: resolvedLogo }}
-                            style={styles.openIpoLogoImage}
-                            resizeMode="contain"
-                            onError={() => setCardLogoErrors((prev) => ({ ...prev, [item.id || idx]: true }))}
-                          />
-                        ) : (
-                          <LinearGradient
-                            colors={getAvatarGradient(companyName)}
-                            start={{ x: 0, y: 0 }}
-                            end={{ x: 1, y: 1 }}
-                            style={styles.openIpoAvatar}
-                          >
-                            <Text style={styles.openIpoAvatarText}>{initials}</Text>
-                          </LinearGradient>
-                        )}
+                        <View
+                          style={[
+                            styles.openIpoLogoWrap,
+                            {
+                              backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+                              borderColor: colors.border,
+                            },
+                          ]}
+                        >
+                          {resolvedLogo && !cardLogoErrors[item.id || idx] ? (
+                            <Image
+                              source={{ uri: resolvedLogo }}
+                              style={styles.openIpoLogoImage}
+                              resizeMode="contain"
+                              onError={() => setCardLogoErrors((prev) => ({ ...prev, [item.id || idx]: true }))}
+                            />
+                          ) : (
+                            <LinearGradient
+                              colors={getAvatarGradient(companyName)}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 1 }}
+                              style={styles.openIpoAvatar}
+                            >
+                              <Text style={styles.openIpoAvatarText}>{initials}</Text>
+                            </LinearGradient>
+                          )}
+                        </View>
 
                         <View style={styles.openIpoHeaderInfo}>
                           <Text style={[styles.openIpoTitle, { color: colors.foreground }]} numberOfLines={1}>
@@ -1331,10 +1347,23 @@ export default function DashboardScreen() {
                               </Text>
                             </View>
                             {ipo.close_date ? (
-                              <View style={[styles.openIpoDateBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                                <Feather name="clock" size={10} color={colors.mutedForeground} />
-                                <Text style={[styles.openIpoDateText, { color: colors.mutedForeground }]}>
-                                  {ipo.close_date}
+                              <View
+                                style={[
+                                  styles.openIpoDateBadge,
+                                  {
+                                    backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7',
+                                    borderColor: isDark ? 'rgba(245, 158, 11, 0.3)' : 'rgba(217, 119, 6, 0.25)',
+                                  },
+                                ]}
+                              >
+                                <Feather name="clock" size={10} color={isDark ? '#FBBF24' : '#D97706'} />
+                                <Text
+                                  style={[
+                                    styles.openIpoDateText,
+                                    { color: isDark ? '#FBBF24' : '#D97706' },
+                                  ]}
+                                >
+                                  Closing: {formatDayMonth(ipo.close_date)}
                                 </Text>
                               </View>
                             ) : null}
@@ -1375,8 +1404,13 @@ export default function DashboardScreen() {
 
                       {/* Bottom Row: Min Investment & Apply CTA */}
                       <View style={styles.openIpoFooterRow}>
-                        <Text style={[styles.openIpoTotalAmountText, { color: colors.foreground }]} numberOfLines={1}>
-                          {lotVal ? `Min Investment: ${formatCurrency(lotVal)}` : 'Min Investment: —'}
+                        <Text style={styles.openIpoTotalAmountRow} numberOfLines={1}>
+                          <Text style={[styles.openIpoTotalAmountLabel, { color: colors.mutedForeground }]}>
+                            Min Investment:{' '}
+                          </Text>
+                          <Text style={[styles.openIpoTotalAmountValue, { color: colors.foreground }]}>
+                            {lotVal ? formatCurrency(lotVal) : '—'}
+                          </Text>
                         </Text>
 
                         <TouchableOpacity
@@ -1684,11 +1718,15 @@ const styles = StyleSheet.create({
   viewReportBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
   },
   viewReportText: {
-    fontSize: 13,
-    fontFamily: 'GoogleSansFlex_500Medium',
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
   },
   portfolioMetricsRow: {
     flexDirection: 'row',
@@ -1748,10 +1786,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   openIpoCard: {
-    width: 310,
+    width: 320,
     borderRadius: 22,
     borderWidth: 1,
-    padding: 14,
+    paddingHorizontal: 15,
+    paddingVertical: 14,
     gap: 12,
   },
   openIpoHeaderRow: {
@@ -1759,16 +1798,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  openIpoLogoImage: {
+  openIpoLogoWrap: {
     width: 38,
     height: 38,
     borderRadius: 10,
-    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  openIpoLogoImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'contain',
   },
   openIpoAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
+    width: '100%',
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1861,19 +1907,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingTop: 2,
+    gap: 8,
+  },
+  openIpoTotalAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 1,
+    marginRight: 6,
+  },
+  openIpoTotalAmountLabel: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_400Regular',
+  },
+  openIpoTotalAmountValue: {
+    fontSize: 12.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.2,
   },
   openIpoTotalAmountText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: -0.2,
   },
   openIpoCtaButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
-    paddingHorizontal: 12,
+    paddingHorizontal: 11,
     paddingVertical: 6,
-    borderRadius: 100,
+    borderRadius: 10,
+    flexShrink: 0,
   },
   openIpoCtaText: {
     fontSize: 10.5,

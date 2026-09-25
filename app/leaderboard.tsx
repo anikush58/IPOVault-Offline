@@ -124,16 +124,31 @@ export default function LeaderboardScreen() {
     outputRange: [0, 0, 1],
   });
 
-  const rankings = useMemo(
-    () => computeRankings(applications, activeTab),
-    [applications, activeTab],
+  const userRankings = useMemo(
+    () => computeRankings(applications, 'user'),
+    [applications],
   );
+
+  const ipoRankings = useMemo(
+    () => computeRankings(applications, 'ipo'),
+    [applications],
+  );
+
+  const rankings = activeTab === 'user' ? userRankings : ipoRankings;
 
   const filteredRankings = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return rankings;
     return rankings.filter((e) => e.name.toLowerCase().includes(q));
   }, [rankings, searchQuery]);
+
+  const tabsConfig = useMemo(
+    () => [
+      { key: 'user' as const, label: 'By user', count: userRankings.length },
+      { key: 'ipo' as const, label: 'By IPO', count: ipoRankings.length },
+    ],
+    [userRankings.length, ipoRankings.length],
+  );
 
   const totalNetPL = useMemo(
     () => rankings.reduce((acc, r) => acc + r.netProfit, 0),
@@ -238,11 +253,8 @@ export default function LeaderboardScreen() {
       <View style={[styles.tabBarWrap, { backgroundColor: colors.background }]}>
         <Tabs
           variant="pills"
-          scrollable
-          tabs={[
-            { key: 'user', label: 'By User' },
-            { key: 'ipo', label: 'By IPO' },
-          ]}
+          height={36}
+          tabs={tabsConfig}
           activeTab={activeTab}
           onChange={(key) => setActiveTab(key as TabKey)}
         />

@@ -215,6 +215,7 @@ function PeriodTabs({
   return (
     <Tabs
       variant="pills"
+      height={36}
       tabs={PERIOD_TABS.map((t) => ({ key: t.value, label: t.label }))}
       activeTab={period}
       onChange={onChange}
@@ -607,19 +608,24 @@ export function PerformanceChart({ applications }: Props) {
       {/* Header row with Title on Left & Small Dropdown on Top-Right */}
       <View style={styles.header}>
         <View>
-          <Text style={[styles.eyebrow, { color: colors.mutedForeground }]}>ANALYTICS</Text>
           <Text style={[styles.title, { color: colors.foreground }]}>Performance</Text>
         </View>
 
         <TouchableOpacity
           onPress={() => setShowHeaderDropdown(true)}
-          style={[styles.headerDropdownBtn, { backgroundColor: isDark ? '#27272A' : '#F1F5F9', borderColor: colors.border }]}
-          activeOpacity={0.75}
+          style={[
+            styles.headerDropdownBtn,
+            {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
+              borderColor: isDark ? '#374151' : '#E5E7EB',
+            },
+          ]}
+          activeOpacity={0.7}
         >
           <Text style={[styles.headerDropdownText, { color: colors.foreground }]}>
             {getHeaderDropdownLabel()}
           </Text>
-          <Feather name="chevron-down" size={13} color={colors.foreground} />
+          <Feather name="chevron-down" size={13} color={colors.mutedForeground} />
         </TouchableOpacity>
       </View>
 
@@ -976,9 +982,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
     borderWidth: 1,
   },
   headerDropdownText: {

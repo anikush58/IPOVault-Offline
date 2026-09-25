@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconButton } from '@/components/ui/IconButton';
+import { Tabs } from '@/components/ui/Tabs';
 import { analyticsApiService } from '@/services/analytics/AnalyticsApiService';
 import {
   AnalyticsFilter,
@@ -158,48 +159,21 @@ export default function AnalyticsDashboardScreen() {
 
       {/* Tab Navigation */}
       <View style={styles.tabBarContainer}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
-        >
-          {(
-            [
-              { key: 'summary', label: 'Summary' },
-              { key: 'market', label: 'Market' },
-              { key: 'performance', label: 'Performance' },
-              { key: 'subscription', label: 'Subscription' },
-              { key: 'allotment', label: 'Allotment' },
-              { key: 'quality', label: 'Data Quality' },
-            ] as Array<{ key: AnalyticsTab; label: string }>
-          ).map((t) => (
-            <TouchableOpacity
-              key={t.key}
-              onPress={() => setActiveTab(t.key)}
-              style={[
-                styles.tabPill,
-                {
-                  backgroundColor:
-                    activeTab === t.key ? colors.primary : colors.surface,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.tabPillText,
-                  {
-                    color:
-                      activeTab === t.key
-                        ? colors.primaryForeground
-                        : colors.mutedForeground,
-                  },
-                ]}
-              >
-                {t.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        <Tabs
+          variant="pills"
+          scrollable
+          tabs={[
+            { key: 'summary', label: 'Summary' },
+            { key: 'market', label: 'Market' },
+            { key: 'performance', label: 'Performance' },
+            { key: 'subscription', label: 'Subscription' },
+            { key: 'allotment', label: 'Allotment' },
+            { key: 'quality', label: 'Data Quality' },
+          ]}
+          activeTab={activeTab}
+          onChange={(tab) => setActiveTab(tab as AnalyticsTab)}
+          style={{ marginHorizontal: 16 }}
+        />
       </View>
 
       {/* Filter Toolbar (Only when not in summary tab) */}

@@ -195,8 +195,8 @@ export function IPOsTab({
               setIncludeSme(val);
               Haptics.selectionAsync();
             }}
-            trackColor={{ false: colors.border, true: colors.primary + '80' }}
-            thumbColor={includeSme ? colors.primary : '#FFFFFF'}
+            trackColor={{ false: colors.border, true: '#10B98180' }}
+            thumbColor={includeSme ? '#10B981' : '#FFFFFF'}
           />
           <Text style={[styles.smeToggleText, { color: colors.foreground }]}>
             SME IPOs

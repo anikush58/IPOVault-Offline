@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -24,7 +23,7 @@ import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { useDB, type BankAccount } from '@/context/DBContext';
 import { useDialog } from '@/context/DialogContext';
-import { KPICard } from '@/components/KPICard';
+import { BanksOverviewCard } from '@/components/BanksOverviewCard';
 import { IconButton } from '@/components/ui/IconButton';
 import { formatCurrency } from '@/utils/formatters';
 
@@ -342,10 +341,15 @@ export default function BanksScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingBank, setEditingBank] = useState<BankAccount | null>(null);
 
-  const activeIpo = ipos.find((i) => i.archived === 0);
-  const activeIpoLotCost = (activeIpo && activeIpo.buy_price && activeIpo.quantity)
-    ? activeIpo.buy_price * activeIpo.quantity
-    : 15000;
+  // Find active retail Mainboard IPO with standard lot cost (₹10k - ₹16k), fallback to standard ₹15,000
+  const activeRetailIpo = ipos.find((i) => {
+    if (i.archived !== 0) return false;
+    const lot = (i.buy_price || 0) * (i.quantity || 0);
+    return lot >= 10000 && lot <= 16000;
+  });
+  const activeIpoLotCost = (activeRetailIpo && activeRetailIpo.buy_price && activeRetailIpo.quantity)
+    ? activeRetailIpo.buy_price * activeRetailIpo.quantity
+    : IPO_LOT_COST;
 
   const getBankBlocked = (bankName: string) => {
     const targetKey = (bankName || '').trim().toLowerCase();
@@ -441,26 +445,14 @@ export default function BanksScreen() {
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refresh} tintColor={colors.primary} />}
         ListHeaderComponent={() => (
           <>
-            {/* KPI 2×2 grid */}
-            <View style={styles.kpiGrid}>
-              <View style={styles.kpiRow}>
-                <KPICard label="Total Balance" value={formatCurrency(totalBalance)} />
-                <KPICard
-                  label="Total Blocked"
-                  value={formatCurrency(totalBlocked)}
-                  isNegative={totalBlocked > 0}
-                />
-              </View>
-              <View style={styles.kpiRow}>
-                <KPICard label="Available" value={formatCurrency(totalAvailable)} isPositive={totalAvailable > 0} />
-                <KPICard
-                  label="IPO Slots"
-                  value={String(totalSlots)}
-                  isPositive={totalSlots > 0}
-                  isNegative={totalSlots === 0 && totalBalance > 0}
-                />
-              </View>
-            </View>
+            <BanksOverviewCard
+              totalBalance={totalBalance}
+              totalBlocked={totalBlocked}
+              totalAvailable={totalAvailable}
+              totalSlots={totalSlots}
+              activeIpoLotCost={activeIpoLotCost}
+              accountsCount={bankAccounts.length}
+            />
 
             {bankAccounts.length > 0 && (
               <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>ACCOUNTS</Text>

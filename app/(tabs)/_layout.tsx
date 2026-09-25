@@ -215,7 +215,7 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
               >
                 <Feather
                   name={icon as any}
-                  size={18}
+                  size={19}
                   color={isFocused ? activeText : inactiveText}
                 />
                 <Text
@@ -248,7 +248,7 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
           >
             <Feather
               name={getFabIconName()}
-              size={22}
+              size={24}
               color={isDestructiveState ? '#FFFFFF' : colors.primaryForeground}
             />
           </TouchableOpacity>
@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
   },
   mainCapsule: {
     flex: 1,
-    height: 58,
+    height: 66,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -342,18 +342,18 @@ const styles = StyleSheet.create({
   },
   tabItem: {
     flex: 1,
-    height: 46,
+    height: 54,
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
+    gap: 2.5,
     paddingVertical: 4,
     paddingHorizontal: 4,
     borderRadius: 100,
     zIndex: 2,
   },
   tabLabel: {
-    fontSize: 10,
+    fontSize: 10.5,
   },
   tabLabelActive: {
     fontFamily: 'GoogleSansFlex_700Bold',
@@ -362,9 +362,9 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_600SemiBold',
   },
   circleBtn: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 66,
+    height: 66,
+    borderRadius: 33,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',

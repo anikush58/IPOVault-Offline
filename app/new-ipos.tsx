@@ -59,34 +59,57 @@ function getAvatarGradient(name: string): [string, string] {
   return AVATAR_PALETTES[index];
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function parseDatePart(str?: string | null) {
+function parseDateComponents(str?: string | null): { day: number; month: string; monthIdx: number } | null {
   if (!str) return null;
   const clean = str.trim();
-  if (!clean) return null;
-  const parts = clean.split('-');
-  if (parts.length === 3) {
+  if (!clean || clean.toUpperCase() === 'TBA' || clean.toUpperCase() === 'N/A') return null;
+
+  // DD-MM-YYYY or DD/MM/YYYY
+  if (/^\d{1,2}[-/]\d{1,2}[-/]\d{4}$/.test(clean)) {
+    const parts = clean.split(/[-/]/);
+    const day = parseInt(parts[0], 10);
+    const monthIdx = parseInt(parts[1], 10) - 1;
+    if (!isNaN(day) && monthIdx >= 0 && monthIdx < 12) {
+      return { day, month: MONTHS_SHORT[monthIdx], monthIdx };
+    }
+  }
+
+  // YYYY-MM-DD or ISO string
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(clean)) {
+    const datePart = clean.split('T')[0];
+    const parts = datePart.split(/[-/]/);
     const day = parseInt(parts[2], 10);
     const monthIdx = parseInt(parts[1], 10) - 1;
     if (!isNaN(day) && monthIdx >= 0 && monthIdx < 12) {
-      return { day, month: MONTHS[monthIdx] };
+      return { day, month: MONTHS_SHORT[monthIdx], monthIdx };
     }
   }
+
   const d = new Date(clean);
   if (!isNaN(d.getTime())) {
-    return { day: d.getDate(), month: MONTHS[d.getMonth()] };
+    return { day: d.getDate(), month: MONTHS_SHORT[d.getMonth()], monthIdx: d.getMonth() };
   }
   return null;
 }
 
+function formatSingleDate(dateStr?: string | null): string {
+  if (!dateStr) return 'TBA';
+  const parsed = parseDateComponents(dateStr);
+  if (parsed) {
+    return `${parsed.day} ${parsed.month}`;
+  }
+  return dateStr.trim() || 'TBA';
+}
+
 function formatApplyDates(openDate?: string | null, closeDate?: string | null): string {
   if (!openDate && !closeDate) return 'TBA';
-  const o = parseDatePart(openDate);
-  const c = parseDatePart(closeDate);
+  const o = parseDateComponents(openDate);
+  const c = parseDateComponents(closeDate);
 
   if (o && c) {
-    if (o.month === c.month) {
+    if (o.monthIdx === c.monthIdx) {
       return `${o.day}-${c.day} ${o.month}`;
     }
     return `${o.day} ${o.month} - ${c.day} ${c.month}`;
@@ -96,13 +119,41 @@ function formatApplyDates(openDate?: string | null, closeDate?: string | null): 
   return 'TBA';
 }
 
-function formatSingleDate(dateStr?: string | null): string {
-  if (!dateStr) return 'TBA';
-  const p = parseDatePart(dateStr);
-  if (p) {
-    return `${p.day} ${p.month}`;
+function getIpoGmpPercentage(item: BackendIpo): number {
+  if (item.currentGmp?.gmpPercentage != null) {
+    const p = parseFloat(String(item.currentGmp.gmpPercentage));
+    if (!isNaN(p)) return p;
   }
-  return 'TBA';
+  if (item.currentGmp?.gmpAmount != null) {
+    const amt = parseFloat(String(item.currentGmp.gmpAmount));
+    const price = item.priceBandHigh || item.priceBandLow || item.issuePriceInr || 0;
+    if (!isNaN(amt) && price > 0) {
+      return (amt / price) * 100;
+    }
+  }
+  return 0;
+}
+
+function hasActiveGmp(item: BackendIpo): boolean {
+  const gmpAmt = item.currentGmp?.gmpAmount != null ? parseFloat(String(item.currentGmp.gmpAmount)) : null;
+  const gmpPct = item.currentGmp?.gmpPercentage != null ? parseFloat(String(item.currentGmp.gmpPercentage)) : null;
+  const isAmtActive = gmpAmt !== null && !isNaN(gmpAmt) && gmpAmt > 0;
+  const isPctActive = gmpPct !== null && !isNaN(gmpPct) && gmpPct > 0;
+  return isAmtActive || isPctActive;
+}
+
+function isClosingToday(item: BackendIpo): boolean {
+  const st = (item.status || '').toUpperCase().trim();
+  if (st === 'CLOSING_TODAY' || st === 'CLOSING TODAY' || st === 'CLOSES TODAY') return true;
+
+  const todayIso = new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const closeDate = (item.closeDate || item.lifecycle?.closeDate || '').trim();
+  if (closeDate) {
+    if (closeDate === todayIso || closeDate === localToday) return true;
+  }
+  return false;
 }
 
 function getStatusBadge(status?: string, openDate?: string | null) {
@@ -287,7 +338,15 @@ const NewIpoCardItem = React.memo(
         {/* Card Header Row: Logo/Avatar + Company Title & Price + Segment & Exchange Badge */}
         <View style={styles.cardHeaderRow}>
           <View style={styles.headerLeftCol}>
-            <View style={styles.logoWrap}>
+            <View
+              style={[
+                styles.logoWrap,
+                {
+                  backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+                  borderColor: colors.border,
+                },
+              ]}
+            >
               {logoUrl ? (
                 <Image source={{ uri: logoUrl }} style={styles.logoImage} resizeMode="contain" />
               ) : (
@@ -508,21 +567,24 @@ export default function NewIposScreen() {
   const [activeTab, setActiveTab] = useState<NewIpoTab>('live');
   const [includeSme, setIncludeSme] = useState(true);
   const [onlyActiveGmp, setOnlyActiveGmp] = useState(false);
+  const [onlyClosingToday, setOnlyClosingToday] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('DEFAULT');
   const [tempIncludeSme, setTempIncludeSme] = useState(true);
   const [tempOnlyActiveGmp, setTempOnlyActiveGmp] = useState(false);
+  const [tempOnlyClosingToday, setTempOnlyClosingToday] = useState(false);
   const [tempSortBy, setTempSortBy] = useState<SortOption>('DEFAULT');
   const [showFilterModal, setShowFilterModal] = useState(false);
 
-  const hasActiveFilter = !includeSme || onlyActiveGmp || sortBy !== 'DEFAULT';
+  const hasActiveFilter = !includeSme || onlyActiveGmp || onlyClosingToday || sortBy !== 'DEFAULT';
 
   const openFilterModal = useCallback(() => {
     setTempIncludeSme(includeSme);
     setTempOnlyActiveGmp(onlyActiveGmp);
+    setTempOnlyClosingToday(onlyClosingToday);
     setTempSortBy(sortBy);
     setShowFilterModal(true);
     try { Haptics.selectionAsync(); } catch {}
-  }, [includeSme, onlyActiveGmp, sortBy]);
+  }, [includeSme, onlyActiveGmp, onlyClosingToday, sortBy]);
 
   const handleTabPress = useCallback((tab: NewIpoTab) => {
     setActiveTab(tab);
@@ -632,11 +694,10 @@ export default function NewIposScreen() {
       list = list.filter((i) => i.marketSegment !== 'SME');
     }
     if (onlyActiveGmp) {
-      list = list.filter((i) => {
-        const gmpAmt = i.currentGmp?.gmpAmount != null ? Number(i.currentGmp.gmpAmount) : null;
-        const gmpPct = i.currentGmp?.gmpPercentage != null ? Number(i.currentGmp.gmpPercentage) : null;
-        return gmpAmt != null || gmpPct != null;
-      });
+      list = list.filter(hasActiveGmp);
+    }
+    if (onlyClosingToday) {
+      list = list.filter(isClosingToday);
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
@@ -646,7 +707,7 @@ export default function NewIposScreen() {
       });
     }
     return list;
-  }, [rawIpos, includeSme, onlyActiveGmp, searchQuery]);
+  }, [rawIpos, includeSme, onlyActiveGmp, onlyClosingToday, searchQuery]);
 
   const liveList = useMemo(() => {
     return filteredRawIpos.filter((item) => {
@@ -683,9 +744,9 @@ export default function NewIposScreen() {
       switch (sortBy) {
         case 'GMP':
           return arr.sort((a, b) => {
-            const gmpA = Number(a.currentGmp?.gmpAmount || a.currentGmp?.gmpPercentage || 0);
-            const gmpB = Number(b.currentGmp?.gmpAmount || b.currentGmp?.gmpPercentage || 0);
-            return gmpB - gmpA;
+            const gmpPctA = getIpoGmpPercentage(a);
+            const gmpPctB = getIpoGmpPercentage(b);
+            return gmpPctB - gmpPctA;
           });
         default:
           return arr;
@@ -735,8 +796,8 @@ export default function NewIposScreen() {
   );
 
   const renderTabCard = useCallback(
-    (tab: NewIpoTab) =>
-      ({ item }: { item: BackendIpo }) => {
+    (tab: NewIpoTab) => {
+      const TabCardItem = ({ item }: { item: BackendIpo }) => {
         const stats = appStatsMap.get(item.id) || { total: 0, applied: 0, allotted: 0 };
         return (
           <NewIpoCardItem
@@ -752,7 +813,10 @@ export default function NewIposScreen() {
             onApplyPress={handleApplyPress}
           />
         );
-      },
+      };
+      TabCardItem.displayName = 'TabCardItem';
+      return TabCardItem;
+    },
     [appStatsMap, colors, isDark, handleCardPress, handleApplyPress]
   );
 
@@ -842,14 +906,13 @@ export default function NewIposScreen() {
       </Animated.View>
 
       {/* Sub-Tab Bar matching Manage Users spacing & badge pills */}
-      <View style={{ marginTop: 10, marginBottom: 12 }}>
+      <View style={{ paddingHorizontal: 16, marginTop: 8, marginBottom: 12 }}>
         <Tabs
           variant="pills"
-          scrollable
+          height={36}
           tabs={tabsConfig}
           activeTab={activeTab}
           onChange={(newTab) => handleTabPress(newTab as NewIpoTab)}
-          style={{ paddingHorizontal: 16 }}
         />
       </View>
 
@@ -996,8 +1059,8 @@ export default function NewIposScreen() {
                       setTempIncludeSme(val);
                       try { Haptics.selectionAsync(); } catch {}
                     }}
-                    trackColor={{ false: isDark ? '#334155' : '#CBD5E1', true: colors.primary + '80' }}
-                    thumbColor={tempIncludeSme ? colors.primary : '#FFFFFF'}
+                    trackColor={{ false: isDark ? '#334155' : '#CBD5E1', true: '#10B98180' }}
+                    thumbColor={tempIncludeSme ? '#10B981' : '#FFFFFF'}
                   />
                 </View>
 
@@ -1013,7 +1076,7 @@ export default function NewIposScreen() {
                       Only Active GMP
                     </Text>
                     <Text style={[styles.filterItemSub, { color: colors.mutedForeground }]}>
-                      Hide IPOs with TBA or unlisted GMP
+                      Show IPOs with GMP price or % greater than 0
                     </Text>
                   </View>
                   <Switch
@@ -1024,6 +1087,32 @@ export default function NewIposScreen() {
                     }}
                     trackColor={{ false: isDark ? '#334155' : '#CBD5E1', true: '#10B98180' }}
                     thumbColor={tempOnlyActiveGmp ? '#10B981' : '#FFFFFF'}
+                  />
+                </View>
+
+                <View style={[styles.filterItemDivider, { backgroundColor: colors.border }]} />
+
+                {/* Closing Today Toggle */}
+                <View style={styles.filterRow}>
+                  <View style={[styles.filterIconWrap, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7' }]}>
+                    <Feather name="clock" size={15} color={isDark ? '#FBBF24' : '#D97706'} />
+                  </View>
+                  <View style={{ flex: 1, marginRight: 10 }}>
+                    <Text style={[styles.filterItemTitle, { color: colors.foreground }]}>
+                      Closing Today
+                    </Text>
+                    <Text style={[styles.filterItemSub, { color: colors.mutedForeground }]}>
+                      Show only IPOs ending subscription today
+                    </Text>
+                  </View>
+                  <Switch
+                    value={tempOnlyClosingToday}
+                    onValueChange={(val) => {
+                      setTempOnlyClosingToday(val);
+                      try { Haptics.selectionAsync(); } catch {}
+                    }}
+                    trackColor={{ false: isDark ? '#334155' : '#CBD5E1', true: '#10B98180' }}
+                    thumbColor={tempOnlyClosingToday ? '#10B981' : '#FFFFFF'}
                   />
                 </View>
               </View>
@@ -1115,9 +1204,11 @@ export default function NewIposScreen() {
                 onPress={() => {
                   setTempIncludeSme(true);
                   setTempOnlyActiveGmp(false);
+                  setTempOnlyClosingToday(false);
                   setTempSortBy('DEFAULT');
                   setIncludeSme(true);
                   setOnlyActiveGmp(false);
+                  setOnlyClosingToday(false);
                   setSortBy('DEFAULT');
                   setShowFilterModal(false);
                   try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); } catch {}
@@ -1134,6 +1225,7 @@ export default function NewIposScreen() {
                 onPress={() => {
                   setIncludeSme(tempIncludeSme);
                   setOnlyActiveGmp(tempOnlyActiveGmp);
+                  setOnlyClosingToday(tempOnlyClosingToday);
                   setSortBy(tempSortBy);
                   setShowFilterModal(false);
                   try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
@@ -1303,17 +1395,20 @@ const styles = StyleSheet.create({
   logoWrap: {
     width: 40,
     height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   logoImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+    width: '100%',
+    height: '100%',
     resizeMode: 'contain',
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+    width: '100%',
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },

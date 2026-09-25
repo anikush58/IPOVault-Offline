@@ -329,6 +329,7 @@ export default function IPOHubScreen() {
       <View style={[styles.segmentedWrap, { backgroundColor: colors.background, borderBottomWidth: 0 }]}>
         <Tabs
           variant="pills"
+          height={36}
           tabs={[
             { id: 'ipos', label: 'IPOs' },
             { id: 'insights', label: 'Insights' },

@@ -39,17 +39,20 @@ export const CompareCard = React.memo(function CompareCard({ ipo, onRemove, widt
         <Feather name="x" size={14} color={colors.mutedForeground} />
       </TouchableOpacity>
 
-      {ipo.logo_url && !logoError ? (
-        <Image
-          source={{ uri: ipo.logo_url }}
-          style={styles.logo}
-          onError={() => setLogoError(true)}
-        />
-      ) : (
-        <View style={[styles.avatar, { backgroundColor: colors.primary + '16' }]}>
-          <Text style={[styles.avatarText, { color: colors.primary }]}>{initials}</Text>
-        </View>
-      )}
+      <View style={[styles.logoWrap, { borderColor: colors.border, backgroundColor: isDark ? '#1E293B' : '#FFFFFF' }]}>
+        {ipo.logo_url && !logoError ? (
+          <Image
+            source={{ uri: ipo.logo_url }}
+            style={styles.logo}
+            resizeMode="contain"
+            onError={() => setLogoError(true)}
+          />
+        ) : (
+          <View style={[styles.avatar, { backgroundColor: colors.primary + '16' }]}>
+            <Text style={[styles.avatarText, { color: colors.primary }]}>{initials}</Text>
+          </View>
+        )}
+      </View>
 
       <Text style={[styles.name, { color: colors.foreground }]} numberOfLines={2}>
         {ipo.company_name || ipo.ipo_name}
@@ -88,19 +91,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 2,
   },
-  logo: {
+  logoWrap: {
     width: 36,
     height: 36,
     borderRadius: 10,
-    marginBottom: 8,
-  },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    borderWidth: 1,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
+  },
+  logo: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'contain',
+  },
+  avatar: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   avatarText: {
     fontSize: 13,

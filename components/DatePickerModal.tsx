@@ -167,7 +167,7 @@ export function DatePickerModal({ visible, value, label, onConfirm, onClose }: P
           <View style={[styles.selectedBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Feather name="calendar" size={14} color={colors.primary} style={{ marginRight: 6 }} />
             <Text style={[styles.selectedText, { color: colors.foreground }]}>
-              {selected.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })}
+              {`${String(selected.getDate()).padStart(2, '0')}/${String(selected.getMonth() + 1).padStart(2, '0')}/${selected.getFullYear()}`}
             </Text>
           </View>
 

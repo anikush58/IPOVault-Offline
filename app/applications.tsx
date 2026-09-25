@@ -26,16 +26,15 @@ import { ApplicationCard } from '@/components/ApplicationCard';
 import { FilterSheet } from '@/components/FilterSheet';
 import { UpdateApplicationModal } from '@/components/UpdateApplicationModal';
 import { ApplicationsOverviewCard } from '@/components/ApplicationsOverviewCard';
-import { Tabs } from '@/components/ui/Tabs';
 
 type TabKey = 'Applied' | 'Allotted' | 'Sold' | 'Holding' | 'Not Allotted';
 
-const TABS: { key: TabKey; label: string }[] = [
-  { key: 'Applied',      label: 'Active' },
-  { key: 'Allotted',     label: 'Allotted' },
-  { key: 'Sold',         label: 'Sold' },
-  { key: 'Holding',      label: 'Holding' },
-  { key: 'Not Allotted', label: 'Not Allotted' },
+const TABS: { key: TabKey; label: string; flex: number }[] = [
+  { key: 'Applied',      label: 'Active',       flex: 1.0 },
+  { key: 'Allotted',     label: 'Allotted',     flex: 1.1 },
+  { key: 'Sold',         label: 'Sold',         flex: 0.75 },
+  { key: 'Holding',      label: 'Holding',      flex: 1.0 },
+  { key: 'Not Allotted', label: 'Not Allotted', flex: 1.45 },
 ];
 
 export default function ApplicationsScreen() {
@@ -334,12 +333,8 @@ export default function ApplicationsScreen() {
         )}
         renderSectionHeader={() => (
           <View style={[styles.tabBar, { backgroundColor: colors.background }]}>
-            {/* All items scroll together: icon-only sort btn → divider → tab pills */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.tabScrollContent}
-            >
+            {/* Full width row: sort btn → divider → 5 tab pills */}
+            <View style={styles.tabBarRow}>
               {/* Icon-only Sort button — always visible */}
               <TouchableOpacity
                 onPress={() => {
@@ -359,31 +354,78 @@ export default function ApplicationsScreen() {
               {/* Vertical divider */}
               <View style={[styles.tabDivider, { backgroundColor: isDark ? '#334155' : '#E2E8F0' }]} />
 
-              {/* Tab pills */}
-              {TABS.map((t) => {
-                const isActive = activeTab === t.key;
-                return (
-                  <Pressable
-                    key={t.key}
-                    onPress={() => handleTabChange(t.key)}
-                    style={[
-                      styles.tabPill,
-                      {
-                        backgroundColor: isActive ? (isDark ? '#F8FAFC' : '#0B132B') : (isDark ? '#1E293B' : '#FFFFFF'),
-                        borderColor: isActive ? (isDark ? '#F8FAFC' : '#0B132B') : (isDark ? '#334155' : '#E2E8F0'),
-                      },
-                    ]}
-                  >
-                    <Text style={[
-                      styles.tabPillText,
-                      { color: isActive ? (isDark ? '#0B132B' : '#FFFFFF') : (isDark ? '#F8FAFC' : '#0B132B') },
-                    ]}>
-                      {t.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
+              {/* 5 Tab pills enclosed in sleek 36px pill track container filling full width */}
+              <View
+                style={[
+                  styles.tabPillsTrack,
+                  {
+                    backgroundColor: isDark ? '#181F2C' : '#ECEEF1',
+                    borderColor: isDark ? '#2D3748' : '#DFE2E6',
+                  },
+                ]}
+              >
+                {TABS.map((t) => {
+                  const isActive = activeTab === t.key;
+                  const count = countFor(t.key);
+                  return (
+                    <Pressable
+                      key={t.key}
+                      onPress={() => handleTabChange(t.key)}
+                      style={[
+                        styles.tabPill,
+                        { flex: t.flex },
+                        isActive && styles.tabPillActive,
+                        {
+                          backgroundColor: isActive
+                            ? (isDark ? '#2B3548' : '#FFFFFF')
+                            : 'transparent',
+                        },
+                      ]}
+                    >
+                      <View style={styles.tabContentRow}>
+                        <Text
+                          style={[
+                            styles.tabPillText,
+                            {
+                              color: isActive
+                                ? (isDark ? '#FFFFFF' : '#0B132B')
+                                : (isDark ? '#8A97A8' : '#6B7280'),
+                            },
+                            isActive ? styles.fontBold : styles.fontSemiBold,
+                          ]}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.75}
+                        >
+                          {t.label}
+                        </Text>
+                        {isActive && count != null ? (
+                          <View
+                            style={[
+                              styles.countBadgePill,
+                              {
+                                backgroundColor: '#EF4444',
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.countTextPill,
+                                {
+                                  color: '#FFFFFF',
+                                },
+                              ]}
+                            >
+                              {count}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
 
             {/* Count + sort-order row */}
             <View style={styles.listHeader}>
@@ -584,12 +626,12 @@ const styles = StyleSheet.create({
   },
   filterBarText: { flex: 1, fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold' },
   tabBar: { borderBottomWidth: 0 },
-  tabScrollContent: {
+  tabBarRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
+    paddingHorizontal: 16,
     paddingVertical: 8,
-    gap: 0,
+    width: '100%',
   },
   sortByBtn: {
     width: 36,
@@ -606,19 +648,65 @@ const styles = StyleSheet.create({
     marginRight: 9,
     borderRadius: 1,
   },
-  tabPill: {
+  tabPillsTrack: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     height: 36,
-    paddingHorizontal: 15,
-    borderRadius: 9999,
+    minHeight: 36,
+    maxHeight: 36,
+    borderRadius: 18,
     borderWidth: 1,
+    padding: 2.5,
+    gap: 1.5,
+    overflow: 'hidden',
+  },
+  tabPill: {
+    height: 30,
+    minHeight: 30,
+    maxHeight: 30,
+    paddingHorizontal: 2,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 8,
+    backgroundColor: 'transparent',
+  },
+  tabPillActive: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 2,
+    elevation: 2,
   },
   tabPillText: {
-    fontSize: 12.5,
+    fontSize: 10.5,
+    letterSpacing: 0,
+    textAlign: 'center',
+  },
+  tabContentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2.5,
+  },
+  countBadgePill: {
+    minWidth: 15,
+    height: 15,
+    paddingHorizontal: 2.5,
+    borderRadius: 7.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countTextPill: {
+    fontSize: 8.5,
     fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.1,
+    lineHeight: 11,
+  },
+  fontBold: {
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  fontSemiBold: {
+    fontFamily: 'GoogleSansFlex_600SemiBold',
   },
   listHeader: {
     flexDirection: 'row',

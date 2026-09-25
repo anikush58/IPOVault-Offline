@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  ActivityIndicator,
   Image,
   Linking,
   Platform,
@@ -461,7 +460,7 @@ export default function SettingsScreen() {
       {/* ── Header with Title ── */}
       <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
         <View style={{ flex: 1, justifyContent: 'center' }}>
-          <Text style={[styles.headerEyebrow, { color: colors.mutedForeground }]}>APP</Text>
+          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>PREFERENCES</Text>
           <Text style={[styles.headerTitle, { color: colors.foreground }]}>Settings</Text>
         </View>
       </View>
@@ -716,22 +715,24 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    overflow: 'hidden',
   },
   headerEyebrow: {
     fontSize: 11,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 1.1,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
     marginBottom: 2,
   },
   headerTitle: {
     fontSize: 30,
     fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.7,
+    letterSpacing: -0.8,
+    lineHeight: 34,
   },
   sectionHeader: {
     fontSize: 11,

@@ -12,7 +12,6 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { DesignSystem } from '@/constants/DesignSystem';
 
 export type TabStyleVariant = 'segmented' | 'segmented-secondary' | 'underline' | 'pills';
 
@@ -31,6 +30,7 @@ export interface TabsProps<T extends string = string> {
   onChange: (key: T) => void;
   variant?: TabStyleVariant;
   scrollable?: boolean;
+  height?: number;
   style?: ViewStyle;
   tabStyle?: ViewStyle;
   textStyle?: TextStyle;
@@ -43,6 +43,7 @@ export function Tabs<T extends string = string>({
   onChange,
   variant = 'pills',
   scrollable = false,
+  height,
   style,
   tabStyle,
   textStyle,
@@ -51,6 +52,15 @@ export function Tabs<T extends string = string>({
   const colors = useColors();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+
+  const pillTrackHeight = height || 30;
+  const pillBtnHeight = pillTrackHeight - 6;
+  const pillRadius = pillTrackHeight / 2;
+  const pillBtnRadius = pillBtnHeight / 2;
+  const pillFontSize = pillTrackHeight >= 36 ? 11.5 : 10.5;
+  const pillBadgeSize = pillTrackHeight >= 36 ? 18 : 16;
+  const pillBadgeRadius = pillBadgeSize / 2;
+  const pillBadgeFontSize = pillTrackHeight >= 36 ? 10 : 9.5;
 
   const handlePress = (key: T) => {
     if (key !== activeTab) {
@@ -127,13 +137,18 @@ export function Tabs<T extends string = string>({
           style={[
             styles.pillTabBtn,
             {
-              backgroundColor: isActive
-                ? (isDark ? '#F8FAFC' : '#0B132B')
-                : (isDark ? '#1E293B' : '#FFFFFF'),
-              borderColor: isActive
-                ? (isDark ? '#F8FAFC' : '#0B132B')
-                : (isDark ? '#334155' : '#E2E8F0'),
+              height: pillBtnHeight,
+              minHeight: pillBtnHeight,
+              maxHeight: pillBtnHeight,
+              borderRadius: pillBtnRadius,
             },
+            !scrollable && styles.pillTabBtnFlex,
+            isActive && [
+              styles.pillTabBtnActive,
+              {
+                backgroundColor: isDark ? '#2B3548' : '#FFFFFF',
+              },
+            ],
             tabStyle,
           ]}
         >
@@ -142,22 +157,29 @@ export function Tabs<T extends string = string>({
               <View
                 style={[
                   styles.dot,
-                  { backgroundColor: isActive ? (isDark ? '#0B132B' : '#FFFFFF') : tab.dotColor },
+                  { backgroundColor: isActive ? (isDark ? '#FFFFFF' : '#0B132B') : tab.dotColor },
                 ]}
               />
             ) : tab.icon ? (
               <Feather
                 name={tab.icon}
-                size={12}
-                color={isActive ? (isDark ? '#0B132B' : '#FFFFFF') : colors.mutedForeground}
+                size={pillTrackHeight >= 36 ? 12 : 11}
+                color={isActive ? (isDark ? '#FFFFFF' : '#0B132B') : (isDark ? '#8A97A8' : '#6B7280')}
               />
             ) : null}
             <Text
               style={[
                 styles.pillText,
-                { color: isActive ? (isDark ? '#0B132B' : '#FFFFFF') : (isDark ? '#F8FAFC' : '#0B132B') },
+                {
+                  fontSize: pillFontSize,
+                  color: isActive
+                    ? (isDark ? '#FFFFFF' : '#0B132B')
+                    : (isDark ? '#8A97A8' : '#6B7280'),
+                },
+                isActive ? styles.fontBold : styles.fontSemiBold,
                 textStyle,
               ]}
+              numberOfLines={1}
             >
               {tab.label}
             </Text>
@@ -166,9 +188,12 @@ export function Tabs<T extends string = string>({
                 style={[
                   styles.countBadgePill,
                   {
+                    minWidth: pillBadgeSize,
+                    height: pillBadgeSize,
+                    borderRadius: pillBadgeRadius,
                     backgroundColor: isActive
-                      ? (isDark ? 'rgba(11, 19, 43, 0.18)' : 'rgba(255, 255, 255, 0.22)')
-                      : (isDark ? 'rgba(255, 255, 255, 0.1)' : '#F1F5F9'),
+                      ? '#EF4444'
+                      : (isDark ? 'rgba(255, 255, 255, 0.12)' : '#DDE1E6'),
                   },
                 ]}
               >
@@ -176,9 +201,11 @@ export function Tabs<T extends string = string>({
                   style={[
                     styles.countTextPill,
                     {
+                      fontSize: pillBadgeFontSize,
+                      lineHeight: pillBadgeSize - 3,
                       color: isActive
-                        ? (isDark ? '#0B132B' : '#FFFFFF')
-                        : (isDark ? '#94A3B8' : '#64748B'),
+                        ? '#FFFFFF'
+                        : (isDark ? '#8A97A8' : '#6B7280'),
                     },
                   ]}
                 >
@@ -265,6 +292,56 @@ export function Tabs<T extends string = string>({
     return null;
   };
 
+  if (variant === 'pills') {
+    if (scrollable) {
+      return (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContentWrap}
+          style={style}
+          testID={testID}
+        >
+          <View
+            style={[
+              styles.pillTrackScrollContainer,
+              {
+                height: pillTrackHeight,
+                minHeight: pillTrackHeight,
+                maxHeight: pillTrackHeight,
+                borderRadius: pillRadius,
+                backgroundColor: isDark ? '#181F2C' : '#ECEEF1',
+                borderColor: isDark ? '#2D3748' : '#DFE2E6',
+              },
+            ]}
+          >
+            {tabs.map(renderTabItem)}
+          </View>
+        </ScrollView>
+      );
+    }
+
+    return (
+      <View
+        style={[
+          styles.pillTrackContainer,
+          {
+            height: pillTrackHeight,
+            minHeight: pillTrackHeight,
+            maxHeight: pillTrackHeight,
+            borderRadius: pillRadius,
+            backgroundColor: isDark ? '#181F2C' : '#ECEEF1',
+            borderColor: isDark ? '#2D3748' : '#DFE2E6',
+          },
+          style,
+        ]}
+        testID={testID}
+      >
+        {tabs.map(renderTabItem)}
+      </View>
+    );
+  }
+
   if (scrollable) {
     return (
       <ScrollView
@@ -309,6 +386,10 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 10,
   },
+  scrollContentWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
 
   // Segmented Variant
   segmentedContainer: {
@@ -346,20 +427,54 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 
-  // Pills Variant (Height: 36px, Padding: 15px Left & Right)
-  pillTabBtn: {
-    height: 36,
-    minHeight: 36,
-    paddingHorizontal: 15,
-    borderRadius: 9999,
+  // Pill Track Container (Total Height: 30px, Fully Rounded Pill: 15px, Full Width)
+  pillTrackContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    height: 30,
+    minHeight: 30,
+    maxHeight: 30,
+    borderRadius: 15,
     borderWidth: 1,
+    padding: 2.5,
+    gap: 3,
+  },
+  pillTrackScrollContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    height: 30,
+    minHeight: 30,
+    maxHeight: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    padding: 2.5,
+    gap: 3,
+  },
+  pillTabBtn: {
+    height: 24,
+    minHeight: 24,
+    maxHeight: 24,
+    paddingHorizontal: 10,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  pillTabBtnFlex: {
+    flex: 1,
+  },
+  pillTabBtnActive: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 2,
+    elevation: 2,
   },
   pillText: {
-    fontSize: 12.5,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.1,
+    fontSize: 10.5,
+    letterSpacing: 0.15,
   },
 
   // Common Typography & Elements
@@ -367,7 +482,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
+    gap: 4.5,
   },
   countBadge: {
     paddingHorizontal: 6,
@@ -379,14 +494,17 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_700Bold',
   },
   countBadgePill: {
-    paddingHorizontal: 6,
-    paddingVertical: 1.5,
-    borderRadius: 10,
-    marginLeft: 3,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   countTextPill: {
-    fontSize: 10.5,
+    fontSize: 9.5,
     fontFamily: 'GoogleSansFlex_700Bold',
+    lineHeight: 12,
   },
   dot: {
     width: 6,

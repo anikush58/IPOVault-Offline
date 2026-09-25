@@ -468,6 +468,7 @@ export default function UsersScreen() {
       <View style={{ paddingHorizontal: 10, marginTop: 10, marginBottom: 4 }}>
         <Tabs
           variant="pills"
+          height={36}
           tabs={[
             { key: 'active', label: 'Active', count: activeUsers.length },
             { key: 'archived', label: 'Archived', count: archivedUsers.length },
