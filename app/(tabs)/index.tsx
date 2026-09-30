@@ -145,109 +145,31 @@ export default function DashboardScreen() {
         return;
       }
 
-      // Map to aggregate holdings across connected accounts by ISIN or ipoId
-      const aggregatedMap = new Map<
-        string,
-        {
-          ipoId: string;
-          companyName: string;
-          symbol: string;
-          quantityHeld: number;
-          totalCost: number;
-          lastPrice: number;
-          currentValue: number;
-          dayPnl: number;
-        }
-      >();
+      const portfolioData = await brokerApiService.getUserPortfolio(activeUserId);
+      if (!portfolioData || !portfolioData.investments || portfolioData.investments.length === 0) {
+        setBrokerHoldings([]);
+        return;
+      }
 
-      await Promise.all(
-        connectedAccounts.map(async (acc) => {
-          const userApps = applications.filter(
-            (a) => a.user_id === acc.profileId && a.ipo_id,
-          );
-
-          for (const app of userApps) {
-            try {
-              const summary = await brokerApiService.getInvestmentSummary(
-                activeUserId,
-                acc.id,
-                app.ipo_id,
-              );
-
-              // Mandatory rule:
-              // - If an IPO holding has been fully sold, do NOT show that IPO holding's price/P&L row in the dashboard.
-              // - Determine sold status from the existing broker trade/holding data; do not add a new sold flag or database field.
-              // - Only currently held IPO shares should appear in the dashboard holding section.
-              // - Partial holdings must continue to be shown with the remaining quantity.
-              if (
-                !summary ||
-                summary.status === 'FULLY_SOLD' ||
-                summary.remainingQuantity <= 0
-              ) {
-                continue;
-              }
-
-              const key = summary.isin || summary.ipoId || app.ipo_id;
-              const name =
-                app.ipo_name || summary.ipoName || summary.symbol || 'IPO';
-              const sym = summary.symbol || (app as any).symbol || '';
-              const qty = summary.remainingQuantity;
-              const cost = (summary.allotmentPrice || 0) * qty;
-              const price =
-                summary.holding?.lastPrice || summary.allotmentPrice || 0;
-              const val =
-                summary.holding?.currentValue != null
-                  ? summary.holding.currentValue
-                  : price * qty;
-              const pnl =
-                summary.holding?.unrealizedPnl != null
-                  ? summary.holding.unrealizedPnl
-                  : (price - (summary.allotmentPrice || 0)) * qty;
-
-              const existing = aggregatedMap.get(key);
-              if (existing) {
-                existing.quantityHeld += qty;
-                existing.totalCost += cost;
-                existing.currentValue += val;
-                existing.dayPnl += pnl;
-                if (price > 0) existing.lastPrice = price;
-              } else {
-                aggregatedMap.set(key, {
-                  ipoId: summary.ipoId || app.ipo_id,
-                  companyName: name,
-                  symbol: sym,
-                  quantityHeld: qty,
-                  totalCost: cost,
-                  lastPrice: price,
-                  currentValue: val,
-                  dayPnl: pnl,
-                });
-              }
-            } catch (err) {
-              console.warn(
-                `[Dashboard] Failed to fetch investment summary for app ${app.id}:`,
-                err,
-              );
-            }
-          }
-        }),
+      // Filter only actively held shares (status !== FULLY_SOLD and remainingQuantity > 0)
+      const activeHoldings = portfolioData.investments.filter(
+        (inv) => inv.remainingHoldingQuantity > 0 && inv.status !== 'FULLY_SOLD',
       );
 
-      const holdingsList: DashboardIpoHoldingItem[] = Array.from(
-        aggregatedMap.values(),
-      ).map((h) => {
+      const holdingsList: DashboardIpoHoldingItem[] = activeHoldings.map((inv) => {
+        const totalCost = inv.remainingHoldingQuantity * (inv.allotmentPrice || 0);
         const pnlPct =
-          h.totalCost > 0
-            ? ((h.currentValue - h.totalCost) / h.totalCost) * 100
+          totalCost > 0
+            ? ((inv.totalHoldingValue - totalCost) / totalCost) * 100
             : 0;
         return {
-          ipoId: h.ipoId,
-          companyName: h.companyName,
-          symbol: h.symbol,
-          quantityHeld: h.quantityHeld,
-          currentPrice: h.lastPrice,
-          currentHoldingValue: h.currentValue,
-          dayPnl: h.dayPnl,
+          ipoId: inv.ipoId,
+          companyName: inv.companyName || inv.symbol || 'IPO',
+          symbol: inv.symbol || '',
+          quantityHeld: inv.remainingHoldingQuantity,
+          currentPrice: inv.currentHoldingPrice,
+          currentHoldingValue: inv.totalHoldingValue,
+          dayPnl: inv.unrealizedPnl,
           dayPnlPercent: pnlPct,
         };
       });
@@ -258,7 +180,7 @@ export default function DashboardScreen() {
     } finally {
       setLoadingHoldings(false);
     }
-  }, [activeUserId, applications]);
+  }, [activeUserId]);
 
   const loadIpoHubData = useCallback(async () => {
     try {

@@ -7,7 +7,7 @@ import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IPOMasterRecord } from '@/services/ipo/types';
-import { formatCurrency, getResolvedLogoUrl } from '@/utils/formatters';
+import { formatCurrency, formatIssueSize, getResolvedLogoUrl } from '@/utils/formatters';
 import { IPOStatusChip } from './IPOStatusChip';
 import { useCompare } from '@/context/CompareContext';
 
@@ -346,6 +346,13 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
           <View style={styles.infoLineRow}>
             <Text style={[styles.infoLineLabel, { color: colors.mutedForeground }]}>Bid Price: </Text>
             <Text style={[styles.infoLineVal, { color: colors.foreground }]}>{priceBandText}</Text>
+          </View>
+
+          <View style={styles.infoLineRow}>
+            <Text style={[styles.infoLineLabel, { color: colors.mutedForeground }]}>Total Issue Size: </Text>
+            <Text style={[styles.infoLineVal, { color: colors.foreground }]}>
+              {formatIssueSize(ipo.issue_size ?? (ipo as any).issueSize ?? (ipo as any).total_issue_size)}
+            </Text>
           </View>
 
           <View style={styles.infoLineRow}>

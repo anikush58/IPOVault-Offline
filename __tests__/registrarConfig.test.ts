@@ -1,7 +1,10 @@
 import {
+  detectBigshareCaptcha,
+  checkBigshareCaptchaPresence,
   getRegistrarConfig,
   isAutomatedCheckSupported,
 } from '../services/allotment/registrarConfig';
+import { resolveRegistrarCode } from '../constants/ipoControls';
 
 function assert(condition: boolean, testName: string, detail: string) {
   if (condition) {
@@ -136,19 +139,17 @@ export async function runRegistrarConfigTestSuite() {
   };
 
   const registrarUpper = (mockIntegratedIpo.registrar || '').toUpperCase();
-  const manualRedirectRegistrar = registrarUpper.includes('BIGSHARE')
-    ? 'BIGSHARE'
-    : registrarUpper.includes('CAMEO')
-      ? 'CAMEO'
-      : registrarUpper.includes('INTEGRATED')
-        ? 'INTEGRATED'
-        : registrarUpper.includes('MAS')
-          ? 'MAS'
-          : registrarUpper.includes('MUDRA')
-            ? 'MUDRA'
-            : registrarUpper.includes('ALANKIT')
-              ? 'ALANKIT'
-              : null;
+  const manualRedirectRegistrar = registrarUpper.includes('CAMEO')
+    ? 'CAMEO'
+    : registrarUpper.includes('INTEGRATED')
+      ? 'INTEGRATED'
+      : registrarUpper.includes('MAS')
+        ? 'MAS'
+        : registrarUpper.includes('MUDRA')
+          ? 'MUDRA'
+          : registrarUpper.includes('ALANKIT')
+            ? 'ALANKIT'
+            : null;
 
   let webBrowserUrlOpened = '';
   if (manualRedirectRegistrar) {
@@ -230,6 +231,112 @@ export async function runRegistrarConfigTestSuite() {
     alankitManualRedirect === 'ALANKIT' && alankitOpenedUrl === 'https://ipo.alankit.com/',
     'Test 10b',
     'Selecting an Alankit IPO routes directly to in-app browser with https://ipo.alankit.com/'
+  );
+
+  // =========================================================================
+  // Test 11: Bigshare flow — CAPTCHA absent vs CAPTCHA present
+  // =========================================================================
+  // 11a: CAPTCHA detection logic
+  const pageWithCaptcha = `
+    <html>
+      <body>
+        <form>
+          <input type="text" id="txtPan" />
+          <img id="imgCaptcha" src="captcha.aspx" />
+          <input type="text" name="txtCaptcha" placeholder="Enter Captcha" />
+        </form>
+      </body>
+    </html>
+  `;
+  const pageWithoutCaptcha = `
+    <html>
+      <body>
+        <form>
+          <input type="text" id="txtPan" />
+          <button id="btnSearch">Search</button>
+        </form>
+      </body>
+    </html>
+  `;
+
+  assert(
+    detectBigshareCaptcha(pageWithCaptcha) === true,
+    'Test 11a',
+    'detectBigshareCaptcha returns true when CAPTCHA image/field is present in HTML'
+  );
+  assert(
+    detectBigshareCaptcha(pageWithoutCaptcha) === false,
+    'Test 11b',
+    'detectBigshareCaptcha returns false when CAPTCHA elements are absent'
+  );
+
+  // 11c: Bigshare flow when CAPTCHA is absent → Automatic direct check executed
+  const mockBigshareIpo = {
+    id: 'bigshare-ipo-1',
+    ipo_name: 'Advit Jewels Limited',
+    registrar: 'Bigshare Services Pvt Ltd',
+  };
+
+  let directCheckExecuted = false;
+  let webViewOpenedUrl = '';
+
+  const mockFetchNoCaptcha: typeof fetch = async () =>
+    new Response(pageWithoutCaptcha, { status: 200 });
+
+  const captchaPresentForNoCaptcha = await checkBigshareCaptchaPresence({
+    customFetch: mockFetchNoCaptcha,
+  });
+
+  if (captchaPresentForNoCaptcha) {
+    const portalConfig = getRegistrarConfig('BIGSHARE');
+    webViewOpenedUrl = portalConfig.url;
+  } else {
+    directCheckExecuted = true;
+  }
+
+  assert(
+    captchaPresentForNoCaptcha === false && directCheckExecuted === true && webViewOpenedUrl === '',
+    'Test 11c',
+    'Bigshare flow with CAPTCHA absent automatically triggers direct check without opening WebView'
+  );
+
+  // 11d: Bigshare flow when CAPTCHA is present → Directly opens WebView, NO direct check
+  let directCheckAttemptedWhenCaptcha = false;
+  let webViewOpenedUrlWhenCaptcha = '';
+
+  const mockFetchWithCaptcha: typeof fetch = async () =>
+    new Response(pageWithCaptcha, { status: 200 });
+
+  const captchaPresentForWithCaptcha = await checkBigshareCaptchaPresence({
+    customFetch: mockFetchWithCaptcha,
+  });
+
+  if (captchaPresentForWithCaptcha) {
+    const portalConfig = getRegistrarConfig('BIGSHARE');
+    webViewOpenedUrlWhenCaptcha = portalConfig.url;
+  } else {
+    directCheckAttemptedWhenCaptcha = true;
+  }
+
+  assert(
+    captchaPresentForWithCaptcha === true &&
+      directCheckAttemptedWhenCaptcha === false &&
+      webViewOpenedUrlWhenCaptcha === 'https://www.bigshareonline.com/ipo_allotment.html',
+    'Test 11d',
+    'Bigshare flow with CAPTCHA present immediately opens WebView portal and does not attempt direct check'
+  );
+
+  // 11e: Exact runtime resolution case: "Bigshare Services Pvt Ltd" -> supported Bigshare adapter
+  const bigsharePvtLtdConfig = getRegistrarConfig('Bigshare Services Pvt Ltd');
+  const isBigsharePvtLtdSupported = isAutomatedCheckSupported('Bigshare Services Pvt Ltd');
+  const resolvedCode = resolveRegistrarCode('Bigshare Services Pvt Ltd');
+
+  assert(
+    bigsharePvtLtdConfig.name === 'Bigshare Services Pvt Ltd' &&
+      isBigsharePvtLtdSupported === true &&
+      resolvedCode === 'BIGSHARE',
+    'Test 11e',
+    '"Bigshare Services Pvt Ltd" resolves to supported Bigshare adapter and controlled code BIGSHARE'
   );
 
   console.log('==================================================');

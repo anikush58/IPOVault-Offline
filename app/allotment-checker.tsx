@@ -40,6 +40,7 @@ import {
 } from '@/services/allotment/AllotmentApiService';
 import { panSyncService } from '@/services/allotment/PanSyncService';
 import {
+  checkBigshareCaptchaPresence,
   getRegistrarConfig,
   isAutomatedCheckSupported,
 } from '@/services/allotment/registrarConfig';
@@ -1652,21 +1653,51 @@ export default function AllotmentCheckerScreen() {
 
       addLog(`IPO selected: ${targetIpo?.ipo_name || ipoId} (Registrar: ${targetRegistrar})`, 'info');
 
+      // Bigshare hybrid flow: Check CAPTCHA presence first
+      const registrarUpper = (targetIpo?.registrar || targetRegistrar || '').toUpperCase();
+      const isBigshare =
+        registrarUpper.includes('BIGSHARE') ||
+        registrarUpper.replace(/[\s_.-]+/g, '').includes('BIGSHARE');
+
+      if (isBigshare) {
+        addLog(`Checking Bigshare CAPTCHA status for ${targetIpo?.ipo_name || ipoId}...`, 'info');
+        let captchaPresent = false;
+        try {
+          captchaPresent = await checkBigshareCaptchaPresence();
+        } catch (err: any) {
+          addLog(`Could not determine Bigshare CAPTCHA status: ${err?.message}`, 'warn');
+          captchaPresent = true;
+        }
+
+        if (captchaPresent) {
+          addLog(`Bigshare CAPTCHA detected. Immediately opening Bigshare WebView for manual completion.`, 'info');
+          const portalConfig = getRegistrarConfig('BIGSHARE');
+          void WebBrowser.openBrowserAsync(portalConfig.url, {
+            showTitle: true,
+            enableBarCollapsing: true,
+          });
+          resetCheckState();
+          setSelectedIpoId(null);
+          return;
+        }
+
+        addLog(`Bigshare CAPTCHA absent. Running direct automated check for ${targetIpo?.ipo_name || ipoId}.`, 'success');
+        void startAutomatedAllotmentCheck(ipoId, targetIpo);
+        return;
+      }
+
       // Registrars without automated backend support: open their portal in-app instantly
-      const registrarUpper = (targetIpo?.registrar || '').toUpperCase();
-      const manualRedirectRegistrar = registrarUpper.includes('BIGSHARE')
-        ? 'BIGSHARE'
-        : registrarUpper.includes('CAMEO')
-          ? 'CAMEO'
-          : registrarUpper.includes('INTEGRATED')
-            ? 'INTEGRATED'
-            : registrarUpper.includes('MAS')
-              ? 'MAS'
-              : registrarUpper.includes('MUDRA')
-                ? 'MUDRA'
-                : registrarUpper.includes('ALANKIT')
-                  ? 'ALANKIT'
-                  : null;
+      const manualRedirectRegistrar = registrarUpper.includes('CAMEO')
+        ? 'CAMEO'
+        : registrarUpper.includes('INTEGRATED')
+          ? 'INTEGRATED'
+          : registrarUpper.includes('MAS')
+            ? 'MAS'
+            : registrarUpper.includes('MUDRA')
+              ? 'MUDRA'
+              : registrarUpper.includes('ALANKIT')
+                ? 'ALANKIT'
+                : null;
       if (manualRedirectRegistrar) {
         const portalConfig = getRegistrarConfig(manualRedirectRegistrar);
         addLog(`Opening ${portalConfig.name} allotment portal for ${targetIpo?.ipo_name || ipoId}`, 'info');

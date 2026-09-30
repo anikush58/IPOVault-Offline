@@ -320,27 +320,37 @@ export default function UsersScreen() {
           const requestToken = query.request_token || query.requestToken;
           const state = query.state;
 
-          if (code || tokenId || authCode || requestToken) {
-            await brokerApiService.completeOAuthCallback(
-              activeUserId,
-              account.id,
-              canonical.slug,
-              { code, tokenId, authCode, requestToken, state, redirectUri },
-            );
+          if (query.status === 'success' || code || tokenId || authCode || requestToken) {
+            if (code || tokenId || authCode || requestToken) {
+              await brokerApiService.completeOAuthCallback(
+                activeUserId,
+                account.id,
+                canonical.slug,
+                { code, tokenId, authCode, requestToken, state, redirectUri },
+              );
+            }
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           }
         }
       }
 
-      // 5. Refresh broker accounts and provide success feedback
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // 5. Refresh broker accounts
       await loadBrokerAccounts();
     } catch (err: any) {
       console.error('[UsersScreen] handleConnectBroker error:', err);
       const errMsg = err?.message || '';
-      if (errMsg.includes('not configured') || errMsg.includes('API key') || errMsg.includes('partner ID')) {
+      const lowerMsg = errMsg.toLowerCase();
+      if (
+        lowerMsg.includes('not configured') ||
+        lowerMsg.includes('api key') ||
+        lowerMsg.includes('partner id') ||
+        lowerMsg.includes('partner credentials') ||
+        lowerMsg.includes('app id')
+      ) {
         showError(
-          `${canonical.displayName} Integration (Preview)`,
-          `Connecting ${canonical.displayName} for ${targetUser.name} will enable automatic post-listing holding & PnL sync.\n\nLive OAuth consent for ${canonical.displayName} requires broker API partner credentials on the server. Post-listing sync will become active automatically once configured.`,
+          'Broker Not Configured',
+          errMsg ||
+            `${canonical.displayName} API credentials are not configured on the server.`,
         );
       } else {
         showError(

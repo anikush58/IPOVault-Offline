@@ -29,7 +29,16 @@ export const REGISTRAR_CONFIGS: RegistrarConfig[] = [
   },
   {
     name: 'Bigshare Services Pvt Ltd',
-    keywords: ['BIGSHARE'],
+    keywords: [
+      'BIGSHARE',
+      'BIG_SHARE',
+      'BIG SHARE',
+      'BIGSHARE_SERVICES',
+      'BIGSHARE SERVICES',
+      'BIGSHAREONLINE',
+      'BIGSHARE SERVICES PVT LTD',
+      'BIGSHARE SERVICES PRIVATE LIMITED',
+    ],
     url: 'https://www.bigshareonline.com/ipo_allotment.html',
     supportLevel: 'HYBRID',
   },
@@ -106,8 +115,13 @@ export function getRegistrarConfig(registrarName?: string | null): RegistrarConf
   }
 
   const upper = registrarName.trim().toUpperCase();
+  const normalized = upper.replace(/[\s_.-]+/g, '');
   const found = REGISTRAR_CONFIGS.find((cfg) =>
-    cfg.keywords.some((kw) => upper.includes(kw))
+    cfg.keywords.some((kw) => {
+      const kwUpper = kw.toUpperCase();
+      const kwNormalized = kwUpper.replace(/[\s_.-]+/g, '');
+      return upper.includes(kwUpper) || normalized.includes(kwNormalized);
+    })
   );
 
   if (found) return found;
@@ -123,6 +137,7 @@ export function getRegistrarConfig(registrarName?: string | null): RegistrarConf
 export function isAutomatedCheckSupported(registrarName?: string | null): boolean {
   if (!registrarName) return false;
   const upper = registrarName.trim().toUpperCase();
+  const normalized = upper.replace(/[\s_.-]+/g, '');
   return (
     upper.includes('KFIN') ||
     upper.includes('MUFG') ||
@@ -130,7 +145,65 @@ export function isAutomatedCheckSupported(registrarName?: string | null): boolea
     upper.includes('INTIME') ||
     upper.includes('ESDS') ||
     upper.includes('MAASHITLA') ||
-    upper.includes('SKYLINE')
+    upper.includes('SKYLINE') ||
+    upper.includes('BIGSHARE') ||
+    normalized.includes('BIGSHARE')
   );
+}
+
+/**
+ * Checks whether response text / HTML contains a CAPTCHA challenge on Bigshare.
+ */
+export function detectBigshareCaptcha(content: string): boolean {
+  if (!content || typeof content !== 'string') return false;
+
+  const captchaPatterns = [
+    /<img[^>]+(?:captcha|CaptchaImage)[^>]*>/i,
+    /<(?:input|div|span)[^>]+(?:id|name)=["'](?:captcha|txtCaptcha|captchaCode|cpatchaTextBox|hfCaptcha)["']/i,
+    /<(?:div|span)[^>]+class=["'][^"']*(?:g-recaptcha|h-captcha|cf-turnstile|captcha-container)[^"']*["']/i,
+    /["']?captcha_required["']?\s*:\s*true/i,
+    /["']?status["']?\s*:\s*["']captcha_required["']/i,
+    /CAPTCHA_DETECTED/i,
+    /enter\s+(?:the\s+)?captcha/i,
+    /enter\s+security\s+code/i,
+  ];
+
+  return captchaPatterns.some((pattern) => pattern.test(content));
+}
+
+/**
+ * Checks the Bigshare portal/endpoint to determine if CAPTCHA is currently present.
+ */
+export async function checkBigshareCaptchaPresence(options?: {
+  url?: string;
+  customFetch?: typeof fetch;
+}): Promise<boolean> {
+  const fetchFn = options?.customFetch || (typeof fetch !== 'undefined' ? fetch : undefined);
+  if (!fetchFn) {
+    return true; // Safe fallback to WebView if no fetch environment
+  }
+
+  const targetUrl = options?.url || 'https://www.bigshareonline.com/ipo_allotment.html';
+
+  try {
+    const res = await fetchFn(targetUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    });
+
+    if (!res.ok) {
+      return true;
+    }
+
+    const text = await res.text();
+    return detectBigshareCaptcha(text);
+  } catch (_err) {
+    // If checking fails, default to manual WebView
+    return true;
+  }
 }
 

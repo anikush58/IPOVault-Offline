@@ -43,13 +43,15 @@ export function getRegistrarLabel(codeOrText?: string | null): string {
       trimmed.toUpperCase().includes(r.code),
   );
   if (match) return match.label;
-  if (trimmed.toUpperCase().includes('KFIN')) return 'KFin Technologies';
-  if (trimmed.toUpperCase().includes('BIGSHARE')) return 'Bigshare Services';
-  if (trimmed.toUpperCase().includes('LINK') || trimmed.toUpperCase().includes('MUFG')) return 'Link Intime India';
-  if (trimmed.toUpperCase().includes('INTEGRATED')) return 'Integrated Registry';
-  if (trimmed.toUpperCase().includes('MAS')) return 'Mas Services';
-  if (trimmed.toUpperCase().includes('MUDRA')) return 'Mudra RTA';
-  if (trimmed.toUpperCase().includes('ALANKIT')) return 'Alankit Assignments';
+  const upper = trimmed.toUpperCase();
+  const clean = upper.replace(/[\s_.-]+/g, '');
+  if (clean.includes('KFIN')) return 'KFin Technologies';
+  if (clean.includes('BIGSHARE')) return 'Bigshare Services';
+  if (clean.includes('LINK') || clean.includes('MUFG')) return 'Link Intime India';
+  if (clean.includes('INTEGRATED')) return 'Integrated Registry';
+  if (clean.includes('MAS')) return 'Mas Services';
+  if (clean.includes('MUDRA')) return 'Mudra RTA';
+  if (clean.includes('ALANKIT')) return 'Alankit Assignments';
   return trimmed;
 }
 
@@ -59,18 +61,19 @@ export function getRegistrarLabel(codeOrText?: string | null): string {
 export function resolveRegistrarCode(input?: string | null): string {
   if (!input) return 'OTHER';
   const upper = input.trim().toUpperCase();
-  if (upper.includes('KFIN') || upper.includes('KARVY')) return 'KFINTECH';
-  if (upper.includes('MUFG')) return 'MUFG_INTIME';
-  if (upper.includes('LINK')) return 'LINK_INTIME';
-  if (upper.includes('BIGSHARE')) return 'BIGSHARE';
-  if (upper.includes('CAMEO')) return 'CAMEO';
-  if (upper.includes('SKYLINE')) return 'SKYLINE';
-  if (upper.includes('PURVA')) return 'PURVA';
-  if (upper.includes('INTEGRATED')) return 'INTEGRATED';
-  if (upper.includes('MAS')) return 'MAS';
-  if (upper.includes('MUDRA')) return 'MUDRA';
-  if (upper.includes('ALANKIT')) return 'ALANKIT';
-  if (upper.includes('BEETAL')) return 'BEETAL';
+  const clean = upper.replace(/[\s_.-]+/g, '');
+  if (clean.includes('KFIN') || clean.includes('KARVY')) return 'KFINTECH';
+  if (clean.includes('MUFG')) return 'MUFG_INTIME';
+  if (clean.includes('LINK')) return 'LINK_INTIME';
+  if (clean.includes('BIGSHARE')) return 'BIGSHARE';
+  if (clean.includes('CAMEO')) return 'CAMEO';
+  if (clean.includes('SKYLINE')) return 'SKYLINE';
+  if (clean.includes('PURVA')) return 'PURVA';
+  if (clean.includes('INTEGRATED')) return 'INTEGRATED';
+  if (clean.includes('MAS')) return 'MAS';
+  if (clean.includes('MUDRA')) return 'MUDRA';
+  if (clean.includes('ALANKIT')) return 'ALANKIT';
+  if (clean.includes('BEETAL')) return 'BEETAL';
 
   const exact = CONTROLLED_REGISTRARS.find((r) => r.code === upper);
   return exact ? exact.code : 'OTHER';

@@ -164,3 +164,11 @@ export function getResolvedLogoUrl(
   }
   return null;
 }
+
+export function formatIssueSize(val?: number | string | null): string {
+  if (val === undefined || val === null || val === '') return 'TBA';
+  const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^0-9.]/g, ''));
+  if (isNaN(num) || num <= 0) return 'TBA';
+  const cr = num >= 1000000 ? num / 10000000 : num;
+  return `₹${cr.toLocaleString('en-IN', { maximumFractionDigits: 2 })} Cr`;
+}

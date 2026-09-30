@@ -52,6 +52,65 @@ export interface DerivedInvestmentSummary {
   ipoName?: string;
 }
 
+export interface PortfolioHoldingAttribution {
+  brokerAccountId: string;
+  broker: string;
+  quantity: number;
+  averagePrice: number | null;
+  lastPrice: number | null;
+  currentValue: number | null;
+  unrealizedPnl: number | null;
+  asOf: string | null;
+}
+
+export interface PortfolioSellTradeAttribution {
+  brokerAccountId: string;
+  broker: string;
+  brokerTradeId: string;
+  quantity: number;
+  price: number;
+  tradedAt: string;
+}
+
+export interface UserPortfolioIpoSummary {
+  ipoId: string;
+  isin: string;
+  symbol: string | null;
+  companyName: string | null;
+  logoUrl: string | null;
+  exchange: string;
+  status: 'HOLDING' | 'PARTIALLY_SOLD' | 'FULLY_SOLD';
+  allottedQuantity: number;
+  allotmentPrice: number;
+  allotmentDate: string | null;
+  totalSoldQuantity: number;
+  weightedSellPrice: number | null;
+  totalSellValue: number;
+  realizedPnl: number;
+  remainingHoldingQuantity: number;
+  currentHoldingPrice: number;
+  priceSource: 'BROKER_HOLDING' | 'IPO_ALLOTMENT_FALLBACK';
+  totalHoldingValue: number;
+  unrealizedPnl: number;
+  totalPnl: number;
+  brokerHoldings: PortfolioHoldingAttribution[];
+  sellTrades: PortfolioSellTradeAttribution[];
+}
+
+export interface UserPortfolioSummaryResponse {
+  summary: {
+    totalInvested: number;
+    totalCurrentHoldingValue: number;
+    totalRealizedSellValue: number;
+    totalRealizedPnl: number;
+    totalUnrealizedPnl: number;
+    totalNetPnl: number;
+    activeHoldingsCount: number;
+    soldHoldingsCount: number;
+  };
+  investments: UserPortfolioIpoSummary[];
+}
+
 export interface CanonicalBrokerInfo {
   brokerType: 'UPSTOX' | 'DHAN' | 'FYERS' | 'ZERODHA' | 'GROWW' | 'MILLIONS';
   slug: 'upstox' | 'dhan' | 'fyers' | 'zerodha' | 'groww' | 'millions';
@@ -348,6 +407,28 @@ export class BrokerApiService {
         err,
       );
       return [];
+    }
+  }
+
+  /**
+   * Retrieves aggregated user portfolio investments and metrics across all connected brokers.
+   * Matches holdings and trades primarily by ISIN.
+   * Uses broker trade record for historical executed sell price and quantity.
+   */
+  public async getUserPortfolio(
+    userId: string,
+  ): Promise<UserPortfolioSummaryResponse | null> {
+    if (!userId) return null;
+    try {
+      const response = await this.apiClient.get<UserPortfolioSummaryResponse>(
+        '/api/v1/broker-accounts/portfolio',
+        undefined,
+        { 'x-user-id': userId },
+      );
+      return extractResponseData<UserPortfolioSummaryResponse>(response) || null;
+    } catch (err) {
+      console.warn('[BrokerApiService] getUserPortfolio failed:', err);
+      return null;
     }
   }
 }

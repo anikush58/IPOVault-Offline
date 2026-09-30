@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Image,
   Platform,
@@ -16,7 +16,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
+import { useAuth } from '@/context/AuthContext';
 import { useDB } from '@/context/DBContext';
+import {
+  brokerApiService,
+  UserPortfolioSummaryResponse,
+} from '@/services/broker/BrokerApiService';
 import { IconButton } from '@/components/ui/IconButton';
 import { ProfitSummaryDonutCard } from '@/components/ProfitSummaryDonutCard';
 import { Tabs } from '@/components/ui/Tabs';
@@ -91,7 +96,8 @@ export default function PortfolioReportScreen() {
   const insets = useSafeAreaInsets();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
-  const { applications, isLoading, refresh } = useDB();
+  const { user: authUser } = useAuth();
+  const { applications, users, ipos, isLoading, refresh } = useDB();
 
   const [activeTab, setActiveTab] = useState<TabType>('profits');
   const [showSearch, setShowSearch] = useState(false);
@@ -100,13 +106,129 @@ export default function PortfolioReportScreen() {
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
+  const activeUserId = useMemo(() => {
+    const firstUser = users?.[0] as
+      | { owner_id?: string; id?: string }
+      | undefined;
+    return (
+      authUser?.id || firstUser?.owner_id || firstUser?.id || 'default-user'
+    );
+  }, [authUser, users]);
+
+  const [brokerPortfolio, setBrokerPortfolio] =
+    useState<UserPortfolioSummaryResponse | null>(null);
+  const [isFetchingBroker, setIsFetchingBroker] = useState(false);
+
+  const loadBrokerPortfolio = useCallback(async () => {
+    if (!activeUserId) return;
+    try {
+      setIsFetchingBroker(true);
+      const data = await brokerApiService.getUserPortfolio(activeUserId);
+      setBrokerPortfolio(data);
+    } catch (err) {
+      console.warn('[PortfolioReport] Failed to fetch broker portfolio:', err);
+    } finally {
+      setIsFetchingBroker(false);
+    }
+  }, [activeUserId]);
+
+  useEffect(() => {
+    loadBrokerPortfolio();
+  }, [loadBrokerPortfolio]);
+
+  // Merge broker-backed data with local applications
+  const effectiveApplications = useMemo(() => {
+    if (
+      !brokerPortfolio ||
+      !brokerPortfolio.investments ||
+      brokerPortfolio.investments.length === 0
+    ) {
+      return applications;
+    }
+
+    const brokerInvByIsin = new Map<string, any>();
+    const brokerInvByIpoId = new Map<string, any>();
+    const brokerInvBySymbol = new Map<string, any>();
+
+    for (const inv of brokerPortfolio.investments) {
+      if (inv.isin) brokerInvByIsin.set(inv.isin.trim().toUpperCase(), inv);
+      if (inv.ipoId) brokerInvByIpoId.set(inv.ipoId, inv);
+      if (inv.symbol) brokerInvBySymbol.set(inv.symbol.trim().toUpperCase(), inv);
+    }
+
+    return applications.map((app) => {
+      const matchedIpo = ipos.find((i) => i.id === app.ipo_id);
+      const appIsin = (matchedIpo as any)?.isin?.trim().toUpperCase();
+      const appBackendIpoId = matchedIpo?.backend_ipo_id;
+      const appSymbol = (matchedIpo?.symbol || app.ipo_name || '').trim().toUpperCase();
+
+      const brokerInv =
+        (appIsin ? brokerInvByIsin.get(appIsin) : null) ||
+        (appBackendIpoId ? brokerInvByIpoId.get(appBackendIpoId) : null) ||
+        brokerInvByIpoId.get(app.ipo_id) ||
+        (appSymbol ? brokerInvBySymbol.get(appSymbol) : null);
+
+      if (!brokerInv) {
+        return app;
+      }
+
+      let effectiveSellPrice = app.sell_price;
+      let effectiveBroker = app.user_broker;
+      let effectiveQuantity = app.quantity;
+
+      if (app.status === 'Holding') {
+        // Holding price: Broker holding lastPrice (LTP) whenever available
+        if (brokerInv.currentHoldingPrice > 0) {
+          effectiveSellPrice = brokerInv.currentHoldingPrice;
+        }
+        if (brokerInv.brokerHoldings && brokerInv.brokerHoldings.length > 0) {
+          const brokerNames = Array.from(
+            new Set(brokerInv.brokerHoldings.map((bh: any) => bh.broker)),
+          ).join(', ');
+          if (brokerNames) {
+            effectiveBroker = brokerNames;
+          }
+        }
+        if (brokerInv.remainingHoldingQuantity > 0) {
+          effectiveQuantity = brokerInv.remainingHoldingQuantity;
+        }
+      } else if (app.status === 'Sold') {
+        // Sold price: Actual executed sell trade price from broker record (never current market LTP)
+        if (brokerInv.weightedSellPrice != null && brokerInv.weightedSellPrice > 0) {
+          effectiveSellPrice = brokerInv.weightedSellPrice;
+        }
+        if (brokerInv.sellTrades && brokerInv.sellTrades.length > 0) {
+          const brokerNames = Array.from(
+            new Set(brokerInv.sellTrades.map((st: any) => st.broker)),
+          ).join(', ');
+          if (brokerNames) {
+            effectiveBroker = brokerNames;
+          }
+        }
+        if (brokerInv.totalSoldQuantity > 0) {
+          effectiveQuantity = brokerInv.totalSoldQuantity;
+        }
+      }
+
+      return {
+        ...app,
+        sell_price: effectiveSellPrice,
+        quantity: effectiveQuantity,
+        user_broker: effectiveBroker,
+        _priceSource: brokerInv.priceSource,
+        _brokerHoldings: brokerInv.brokerHoldings,
+        _sellTrades: brokerInv.sellTrades,
+      };
+    });
+  }, [applications, brokerPortfolio, ipos]);
+
   // Compute tab counts based on current period filter
   const tabCounts = useMemo(() => {
     let profits = 0;
     let holding = 0;
     let charges = 0;
 
-    for (const a of applications) {
+    for (const a of effectiveApplications) {
       if (selectedPeriod !== 'All Time') {
         const dateStr = a.sale_date || (a as any).updated_at || (a as any).created_at;
         const appDate = parseAppDate(dateStr);
@@ -137,7 +259,7 @@ export default function PortfolioReportScreen() {
     }
 
     return { profits, holding, charges };
-  }, [applications, selectedPeriod]);
+  }, [effectiveApplications, selectedPeriod]);
 
   // Compute portfolio totals and vs last month comparison according to selected period
   const { totals, vsLastMonthPct, isVsLastMonthUp } = useMemo(() => {
@@ -156,7 +278,7 @@ export default function PortfolioReportScreen() {
     let thisMonthGross = 0;
     let lastMonthGross = 0;
 
-    for (const a of applications) {
+    for (const a of effectiveApplications) {
       if (a.status === 'Sold' || a.status === 'Holding') {
         const { grossPL, tax, userCut, netPL, isHolding } = calculateAppTaxAndNet(a);
 
@@ -232,11 +354,11 @@ export default function PortfolioReportScreen() {
       vsLastMonthPct: vsPct,
       isVsLastMonthUp: isUp,
     };
-  }, [applications, selectedPeriod]);
+  }, [effectiveApplications, selectedPeriod]);
 
   // Filter applications by search query, period and tab
   const filteredApps = useMemo(() => {
-    let list = applications.filter((a) => {
+    let list = effectiveApplications.filter((a) => {
       if (selectedPeriod !== 'All Time') {
         const dateStr = a.sale_date || (a as any).updated_at || (a as any).created_at;
         const appDate = parseAppDate(dateStr);
@@ -284,7 +406,7 @@ export default function PortfolioReportScreen() {
       }
       return String(b.id).localeCompare(String(a.id));
     });
-  }, [applications, activeTab, searchQuery, selectedPeriod]);
+  }, [effectiveApplications, activeTab, searchQuery, selectedPeriod]);
 
   const toggleSearch = () => {
     if (showSearch) {
@@ -338,7 +460,15 @@ export default function PortfolioReportScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         stickyHeaderIndices={[1]}
-        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refresh} tintColor={colors.primary} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading || isFetchingBroker}
+            onRefresh={async () => {
+              await Promise.all([refresh(), loadBrokerPortfolio()]);
+            }}
+            tintColor={colors.primary}
+          />
+        }
         contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
       >
         {/* Child 0: Profit Summary Donut Chart Card */}

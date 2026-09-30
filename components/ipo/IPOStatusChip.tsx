@@ -41,12 +41,28 @@ export function IPOStatusChip({ status }: { status: IPOStatusType }) {
         dot: '#3B82F6',
       };
     }
-    if (s === 'awaiting allotment' || s === 'awaiting_allotment' || s === 'closed') {
+    if (
+      s === 'awaiting allotment' ||
+      s === 'awaiting_allotment' ||
+      s === 'allotment awaited' ||
+      s === 'allotment_awaited' ||
+      s === 'allotment pending' ||
+      s === 'allotment_pending' ||
+      s === 'allotted_pending'
+    ) {
       return {
         bg: 'rgba(245, 158, 11, 0.10)',
         border: 'rgba(245, 158, 11, 0.22)',
         text: '#F59E0B',
         dot: '#F59E0B',
+      };
+    }
+    if (s === 'closed') {
+      return {
+        bg: 'rgba(100, 116, 139, 0.10)',
+        border: 'rgba(100, 116, 139, 0.22)',
+        text: '#64748B',
+        dot: '#64748B',
       };
     }
     if (
@@ -97,6 +113,17 @@ export function IPOStatusChip({ status }: { status: IPOStatusType }) {
       return 'Live Now';
     }
     if (
+      s === 'allotment awaited' ||
+      s === 'allotment_awaited' ||
+      s === 'allotment pending' ||
+      s === 'allotment_pending' ||
+      s === 'allotted_pending' ||
+      s === 'awaiting allotment' ||
+      s === 'awaiting_allotment'
+    ) {
+      return 'Allotment Awaited';
+    }
+    if (
       s === 'allotted' ||
       s === 'allotment out' ||
       s === 'allotment_out' ||
@@ -106,7 +133,7 @@ export function IPOStatusChip({ status }: { status: IPOStatusType }) {
     ) {
       return 'Allotment Out';
     }
-    if (s === 'closed' || s === 'allotment_pending' || s === 'awaiting allotment') {
+    if (s === 'closed') {
       return 'Closed';
     }
     if (s === 'upcoming') {

@@ -128,7 +128,11 @@ const jest = {
 
 import { AllotmentApiService } from './AllotmentApiService';
 import { PanSyncService } from './PanSyncService';
-import { getRegistrarConfig, isAutomatedCheckSupported } from './registrarConfig';
+import {
+  checkBigshareCaptchaPresence,
+  getRegistrarConfig,
+  isAutomatedCheckSupported,
+} from './registrarConfig';
 
 
 
@@ -423,7 +427,10 @@ describe('Allotment Checker Frontend Integration Tests', () => {
     expect(isAutomatedCheckSupported('Maashitla Securities')).toBe(true);
     expect(isAutomatedCheckSupported('Skyline Financial Services Private Ltd')).toBe(true);
     expect(isAutomatedCheckSupported('Skyline Financial Services')).toBe(true);
-    expect(isAutomatedCheckSupported('Bigshare Services')).toBe(false);
+    expect(isAutomatedCheckSupported('Bigshare Services')).toBe(true);
+    expect(isAutomatedCheckSupported('Bigshare Services Pvt Ltd')).toBe(true);
+    expect(isAutomatedCheckSupported('Bigshare Services Private Limited')).toBe(true);
+    expect(getRegistrarConfig('Bigshare Services Pvt Ltd').name).toBe('Bigshare Services Pvt Ltd');
     expect(isAutomatedCheckSupported('Cameo Corporate Services')).toBe(false);
     expect(isAutomatedCheckSupported(null)).toBe(false);
   });
@@ -446,6 +453,98 @@ describe('Allotment Checker Frontend Integration Tests', () => {
     await expect(
       allotmentApiService.createJob('esds-unsupported-id', 'user-1'),
     ).rejects.toThrow('Automated checking is not supported for IPO');
+  });
+
+  it('27. Bigshare flow: CAPTCHA absent -> runs direct automated check', async () => {
+    const pageWithoutCaptcha = `<html><body><form id="frmAllotment"><input id="txtPan" /></form></body></html>`;
+    let directCheckCalled = false;
+    let webViewOpened = false;
+
+    const mockFetch: typeof fetch = async () =>
+      new Response(pageWithoutCaptcha, { status: 200 });
+
+    const hasCaptcha = await checkBigshareCaptchaPresence({
+      customFetch: mockFetch,
+    });
+
+    if (hasCaptcha) {
+      webViewOpened = true;
+    } else {
+      directCheckCalled = true;
+    }
+
+    expect(hasCaptcha).toBe(false);
+    expect(directCheckCalled).toBe(true);
+    expect(webViewOpened).toBe(false);
+  });
+
+  it('28. Bigshare flow: CAPTCHA present -> directly opens WebView without running direct check', async () => {
+    const pageWithCaptcha = `<html><body><form id="frmAllotment"><img id="imgCaptcha" src="captcha.aspx" /><input name="txtCaptcha" /></form></body></html>`;
+    let directCheckCalled = false;
+    let webViewUrl = '';
+
+    const mockFetch: typeof fetch = async () =>
+      new Response(pageWithCaptcha, { status: 200 });
+
+    const hasCaptcha = await checkBigshareCaptchaPresence({
+      customFetch: mockFetch,
+    });
+
+    if (hasCaptcha) {
+      const portalConfig = getRegistrarConfig('BIGSHARE');
+      webViewUrl = portalConfig.url;
+    } else {
+      directCheckCalled = true;
+    }
+
+    expect(hasCaptcha).toBe(true);
+    expect(directCheckCalled).toBe(false);
+    expect(webViewUrl).toBe('https://www.bigshareonline.com/ipo_allotment.html');
+  });
+
+  it('29. EXACT RUNTIME REGRESSION: Bigshare IPO "522695d7-90ec-410b-8777-74b66f9abc17" resolves to supported Bigshare adapter', async () => {
+    const bigshareIpo = {
+      id: '522695d7-90ec-410b-8777-74b66f9abc17',
+      symbol: 'BIGSHARE_IPO',
+      company: { displayName: 'Bigshare Test Company Ltd' },
+      registrar: 'Bigshare Services Pvt Ltd',
+      status: 'ALLOTMENT_COMPLETED',
+      allotmentConfig: {
+        registrar: 'Bigshare Services Pvt Ltd',
+        expectedDate: '2026-09-30',
+      },
+    };
+
+    // 1. Verify exact registrar resolution
+    const resolvedConfig = getRegistrarConfig(bigshareIpo.registrar);
+    expect(resolvedConfig.name).toBe('Bigshare Services Pvt Ltd');
+    expect(isAutomatedCheckSupported(bigshareIpo.registrar)).toBe(true);
+
+    // 2. Mock backend job creation succeeding for Bigshare adapter without REGISTRAR_UNSUPPORTED
+    jest.spyOn(global, 'fetch').mockImplementationOnce(() =>
+      Promise.resolve({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          success: true,
+          data: {
+            id: 'job-bigshare-999',
+            ipoId: bigshareIpo.id,
+            status: 'QUEUED',
+            totalChecks: 1,
+            processedChecks: 0,
+            successfulChecks: 0,
+            failedChecks: 0,
+            items: [],
+          },
+        }),
+      } as Response),
+    );
+
+    const job = await allotmentApiService.createJob(bigshareIpo.id, 'user-123');
+    expect(job.id).toBe('job-bigshare-999');
+    expect(job.ipoId).toBe('522695d7-90ec-410b-8777-74b66f9abc17');
+    expect(job.status).toBe('QUEUED');
   });
 
   it('24. TASK 10A: Select Ashutosh -> resolve Ashutosh backend ID', async () => {

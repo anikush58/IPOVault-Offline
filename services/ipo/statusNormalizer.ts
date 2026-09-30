@@ -179,6 +179,20 @@ export function evaluateLifecycle(
       lifecycle_last_verified_at: nowIso,
     };
   }
+  if (
+    rawStatus.includes('ALLOTMENT_AWAITED') ||
+    rawStatus.includes('ALLOTMENT AWAITED') ||
+    rawStatus.includes('AWAITED') ||
+    rawStatus.includes('ALLOTMENT_PENDING') ||
+    rawStatus.includes('ALLOTTED_PENDING')
+  ) {
+    return {
+      lifecycle_status: 'ALLOTTED_PENDING',
+      lifecycle_confidence: 'High',
+      lifecycle_source: 'Authoritative Backend Status',
+      lifecycle_last_verified_at: nowIso,
+    };
+  }
   if (rawStatus.includes('ALLOT') || rawStatus.includes('ALLOTTED')) {
     return {
       lifecycle_status: 'ALLOTTED_AVAILABLE',
@@ -264,6 +278,10 @@ export function normalizeLifecycleStatus(value: string | null | undefined): Norm
 
     case 'ALLOTTED_PENDING':
     case 'ALLOTMENT_PENDING':
+    case 'ALLOTMENT_AWAITED':
+    case 'ALLOTMENT AWAITED':
+    case 'AWAITING_ALLOTMENT':
+    case 'AWAITING ALLOTMENT':
     case 'PENDING_ALLOTMENT':
       return 'ALLOTTED_PENDING';
 
@@ -282,6 +300,8 @@ export function normalizeLifecycleStatus(value: string | null | undefined): Norm
       return 'LISTED';
 
     default:
+      if (clean.includes('AWAITED')) return 'ALLOTTED_PENDING';
+      if (clean.includes('PENDING')) return 'ALLOTTED_PENDING';
       if (clean.includes('CLOSING') || clean.includes('CLOSES TODAY')) return 'CLOSING_TODAY';
       if (clean.includes('LISTING')) return 'LISTING_UPCOMING';
       if (clean.includes('LISTED')) return 'LISTED';
@@ -307,7 +327,7 @@ export function getLifecycleStatusLabel(status: NormalizedIPOStatus): string {
     case 'CLOSED':
       return 'Closed';
     case 'ALLOTTED_PENDING':
-      return 'Allotment Pending';
+      return 'Allotment Awaited';
     case 'ALLOTTED_AVAILABLE':
       return 'Allotment Out';
     case 'LISTING_UPCOMING':

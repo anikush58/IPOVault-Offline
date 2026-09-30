@@ -32,7 +32,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { BackendIpo } from '@/types/backend-ipo';
 import { useDB } from '@/context/DBContext';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, formatIssueSize } from '@/utils/formatters';
 import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 import { triggerCentralizedIPOSync } from '@/services/ipo/centralizedSync';
 
@@ -168,6 +168,16 @@ function getStatusBadge(status?: string, openDate?: string | null) {
     return { text: 'Listed', bg: '#E0E7FF', color: '#4338CA', icon: 'check-circle' };
   }
   if (
+    norm === 'ALLOTMENT_AWAITED' ||
+    norm === 'ALLOTMENT AWAITED' ||
+    norm === 'ALLOTMENT_PENDING' ||
+    norm === 'ALLOTTED_PENDING' ||
+    norm === 'AWAITING ALLOTMENT' ||
+    norm === 'AWAITING_ALLOTMENT'
+  ) {
+    return { text: 'Allotment Awaited', bg: 'rgba(245, 158, 11, 0.12)', color: '#F59E0B', icon: 'clock' };
+  }
+  if (
     norm === 'ALLOTMENT_OUT' ||
     norm === 'ALLOTTED' ||
     norm === 'ALLOTMENT' ||
@@ -177,7 +187,7 @@ function getStatusBadge(status?: string, openDate?: string | null) {
   ) {
     return { text: 'Allotment Out', bg: 'rgba(16, 185, 129, 0.12)', color: '#10B981', icon: 'check-circle' };
   }
-  if (norm === 'CLOSED' || norm === 'ALLOTMENT_PENDING' || norm === 'ALLOTTED_PENDING' || (norm.includes('CLOSED') && norm !== 'CLOSING_TODAY')) {
+  if (norm === 'CLOSED' || (norm.includes('CLOSED') && norm !== 'CLOSING_TODAY')) {
     return { text: 'Closed', bg: '#F1F5F9', color: '#64748B', icon: 'lock' };
   }
   const formattedOpen = openDate ? formatApplyDates(openDate, null) : 'Soon';
@@ -365,10 +375,16 @@ const NewIpoCardItem = React.memo(
               <Text style={[styles.companyTitle, { color: colors.foreground }]} numberOfLines={1}>
                 {companyName}
               </Text>
-              <Text style={[styles.bidPriceSubtitle, { color: colors.mutedForeground }]}>
+              <Text style={[styles.bidPriceSubtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
                 {isListed && listingPrice != null ? 'Listing Price: ' : 'Bid Price: '}
                 <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>
                   {isListed && listingPrice != null ? `₹${Math.round(listingPrice)}` : priceBandText}
+                </Text>
+              </Text>
+              <Text style={[styles.issueSizeSubtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
+                {'Total Issue Size: '}
+                <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>
+                  {formatIssueSize(item.issueSize ?? (item as any).issue_size ?? (item as any).totalIssueSize ?? (item as any).total_issue_size)}
                 </Text>
               </Text>
             </View>
@@ -564,17 +580,17 @@ export default function NewIposScreen() {
   const horizontalScrollViewRef = useRef<ScrollView>(null);
 
   const [activeTab, setActiveTab] = useState<NewIpoTab>('live');
-  const [includeSme, setIncludeSme] = useState(true);
+  const [includeSme, setIncludeSme] = useState(false);
   const [onlyActiveGmp, setOnlyActiveGmp] = useState(false);
   const [onlyClosingToday, setOnlyClosingToday] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('DEFAULT');
-  const [tempIncludeSme, setTempIncludeSme] = useState(true);
+  const [tempIncludeSme, setTempIncludeSme] = useState(false);
   const [tempOnlyActiveGmp, setTempOnlyActiveGmp] = useState(false);
   const [tempOnlyClosingToday, setTempOnlyClosingToday] = useState(false);
   const [tempSortBy, setTempSortBy] = useState<SortOption>('DEFAULT');
   const [showFilterModal, setShowFilterModal] = useState(false);
 
-  const hasActiveFilter = !includeSme || onlyActiveGmp || onlyClosingToday || sortBy !== 'DEFAULT';
+  const hasActiveFilter = includeSme || onlyActiveGmp || onlyClosingToday || sortBy !== 'DEFAULT';
 
   const openFilterModal = useCallback(() => {
     setTempIncludeSme(includeSme);
@@ -1201,11 +1217,11 @@ export default function NewIposScreen() {
             <View style={[styles.modalFooter, { borderTopColor: colors.border }]}>
               <TouchableOpacity
                 onPress={() => {
-                  setTempIncludeSme(true);
+                  setTempIncludeSme(false);
                   setTempOnlyActiveGmp(false);
                   setTempOnlyClosingToday(false);
                   setTempSortBy('DEFAULT');
-                  setIncludeSme(true);
+                  setIncludeSme(false);
                   setOnlyActiveGmp(false);
                   setOnlyClosingToday(false);
                   setSortBy('DEFAULT');
@@ -1381,7 +1397,7 @@ const styles = StyleSheet.create({
   cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 10,
   },
   headerLeftCol: {
@@ -1422,6 +1438,11 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   bidPriceSubtitle: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 1,
+  },
+  issueSizeSubtitle: {
     fontSize: 12,
     fontFamily: 'GoogleSansFlex_400Regular',
     marginTop: 1,
