@@ -40,6 +40,8 @@ import {
   brokerApiService,
   DashboardIpoHoldingItem,
 } from '@/services/broker/BrokerApiService';
+import { AllotmentSuccessModal } from '@/components/allotment/AllotmentSuccessModal';
+import { useAllotmentResultModal } from '@/hooks/useAllotmentResultModal';
 
 const AVATAR_PALETTES: [string, string][] = [
   ['#8B5CF6', '#6D28D9'], // Purple
@@ -103,6 +105,19 @@ export default function DashboardScreen() {
   const { user: authUser } = useAuth();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+
+  const {
+    visible: showAllotmentModal,
+    modalState: allotmentModalState,
+    dismissModal: dismissAllotmentModal,
+    recheckUnviewed: recheckAllotmentModal,
+  } = useAllotmentResultModal();
+
+  useFocusEffect(
+    useCallback(() => {
+      recheckAllotmentModal();
+    }, [recheckAllotmentModal])
+  );
 
   const [brokerAccounts, setBrokerAccounts] = useState<BrokerAccountItem[]>([]);
   const [brokerHoldings, setBrokerHoldings] = useState<
@@ -1197,6 +1212,12 @@ export default function DashboardScreen() {
                 const totalSub = item.total_sub ?? item.total_subscription;
                 const subDisplay = totalSub != null ? `${totalSub.toFixed(1)}x` : (item.qib_sub != null ? `${item.qib_sub.toFixed(1)}x QIB` : '—');
 
+                const isAllotmentOut =
+                  cardStatus === 'ALLOTTED_AVAILABLE' ||
+                  cardStatus === 'ALLOTMENT_OUT' ||
+                  cardStatus === 'ALLOTMENT_COMPLETED' ||
+                  cardStatus === 'ALLOTTED';
+
                 return (
                   <Animated.View
                     key={ipo.id || idx}
@@ -1324,7 +1345,7 @@ export default function DashboardScreen() {
                         </View>
                       </View>
 
-                      {/* Bottom Row: Min Investment & Apply CTA */}
+                      {/* Bottom Row: Min Investment & Apply / Check Allotment CTA */}
                       <View style={styles.openIpoFooterRow}>
                         <Text style={styles.openIpoTotalAmountRow} numberOfLines={1}>
                           <Text style={[styles.openIpoTotalAmountLabel, { color: colors.mutedForeground }]}>
@@ -1335,37 +1356,54 @@ export default function DashboardScreen() {
                           </Text>
                         </Text>
 
-                        <TouchableOpacity
-                          activeOpacity={0.85}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            const priceMin = item.price_band_min ?? item.priceBandLow;
-                            const priceMax = item.price_band_max ?? item.priceBandHigh ?? item.buy_price ?? ipo.buy_price;
-                            const lotSizeNum = item.lot_size || item.lotSize || item.quantity || ipo.quantity || 1;
-                            router.push({
-                              pathname: '/apply-ipo',
-                              params: {
-                                ipoId: ipo.id || item.id,
-                                item: JSON.stringify(item),
-                                name: companyName,
-                                company_name: companyName,
-                                symbol: item.symbol || ipo.symbol,
-                                priceBandLow: priceMin != null ? String(priceMin) : undefined,
-                                priceBandHigh: priceMax != null ? String(priceMax) : undefined,
-                                buy_price: String(priceMax || priceMin || ipo.buy_price || 0),
-                                lotSize: String(lotSizeNum),
-                                closeDate: item.close_date || item.closeDate || ipo.close_date || undefined,
-                                openDate: item.open_date || item.openDate || ipo.open_date || undefined,
-                                logoUrl: resolvedLogo || (ipo as any).logo_url || item.logo_url || item.logoUrl || undefined,
-                                issueType: ipo.issue_type || item.issue_type || (item.marketSegment === 'SME' ? 'SME' : 'Mainboard'),
-                              },
-                            } as any);
-                          }}
-                          style={[styles.openIpoCtaButton, { backgroundColor: colors.primary }]}
-                        >
-                          <Text style={[styles.openIpoCtaText, { color: colors.primaryForeground }]}>Apply Now</Text>
-                          <Feather name="arrow-right" size={12} color={colors.primaryForeground} />
-                        </TouchableOpacity>
+                        {isAllotmentOut ? (
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              router.push({
+                                pathname: '/allotment-checker',
+                                params: { ipoId: ipo.id || item.id },
+                              } as any);
+                            }}
+                            style={[styles.openIpoCtaButton, { backgroundColor: '#000000', paddingHorizontal: 12 }]}
+                          >
+                            <Text style={[styles.openIpoCtaText, { color: '#FFFFFF' }]}>Check Allotment</Text>
+                            <Feather name="arrow-right" size={12} color="#FFFFFF" />
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity
+                            activeOpacity={0.85}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              const priceMin = item.price_band_min ?? item.priceBandLow;
+                              const priceMax = item.price_band_max ?? item.priceBandHigh ?? item.buy_price ?? ipo.buy_price;
+                              const lotSizeNum = item.lot_size || item.lotSize || item.quantity || ipo.quantity || 1;
+                              router.push({
+                                pathname: '/apply-ipo',
+                                params: {
+                                  ipoId: ipo.id || item.id,
+                                  item: JSON.stringify(item),
+                                  name: companyName,
+                                  company_name: companyName,
+                                  symbol: item.symbol || ipo.symbol,
+                                  priceBandLow: priceMin != null ? String(priceMin) : undefined,
+                                  priceBandHigh: priceMax != null ? String(priceMax) : undefined,
+                                  buy_price: String(priceMax || priceMin || ipo.buy_price || 0),
+                                  lotSize: String(lotSizeNum),
+                                  closeDate: item.close_date || item.closeDate || ipo.close_date || undefined,
+                                  openDate: item.open_date || item.openDate || ipo.open_date || undefined,
+                                  logoUrl: resolvedLogo || (ipo as any).logo_url || item.logo_url || item.logoUrl || undefined,
+                                  issueType: ipo.issue_type || item.issue_type || (item.marketSegment === 'SME' ? 'SME' : 'Mainboard'),
+                                },
+                              } as any);
+                            }}
+                            style={[styles.openIpoCtaButton, { backgroundColor: colors.primary }]}
+                          >
+                            <Text style={[styles.openIpoCtaText, { color: colors.primaryForeground }]}>Apply Now</Text>
+                            <Feather name="arrow-right" size={12} color={colors.primaryForeground} />
+                          </TouchableOpacity>
+                        )}
                       </View>
                     </TouchableOpacity>
                   </Animated.View>
@@ -1404,6 +1442,23 @@ export default function DashboardScreen() {
         visible={showBulkSheet}
         onClose={() => setShowBulkSheet(false)}
       />
+
+      {allotmentModalState && (
+        <AllotmentSuccessModal
+          visible={showAllotmentModal}
+          ipoId={allotmentModalState.ipoId}
+          ipoName={allotmentModalState.ipoName}
+          companyName={allotmentModalState.companyName}
+          results={allotmentModalState.results}
+          onClose={dismissAllotmentModal}
+          onViewDetails={() => {
+            router.push({
+              pathname: '/allotment-checker',
+              params: { ipoId: allotmentModalState.ipoId },
+            } as any);
+          }}
+        />
+      )}
     </View>
   );
 }

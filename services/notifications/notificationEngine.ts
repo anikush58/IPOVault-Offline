@@ -312,6 +312,72 @@ export async function runNotificationEngine(
         );
       }
     }
+
+    // 7. EVENT: IPO ALLOTMENT OUT & ALLOTMENT RECEIVED FOR MANAGED ACCOUNTS
+    const statusUpper = (ipo.status || ipo.lifecycle_status || '').toUpperCase();
+    const isAllotmentOut =
+      statusUpper === 'ALLOTMENT_COMPLETED' ||
+      statusUpper === 'ALLOTMENT_OUT' ||
+      statusUpper === 'ALLOTMENT OUT';
+
+    if (isAllotmentOut) {
+      const localApps = await safeGetAllAsync<{
+        id: string;
+        user_id: string;
+        user_name?: string;
+        status?: string;
+        allotment_status?: string;
+        allotted_shares?: number;
+        allotted_lots?: number;
+      }>(
+        db,
+        `SELECT a.id, a.user_id, u.name as user_name, a.status,
+                alt.allotment_status, alt.allotted_shares, alt.allotted_lots
+         FROM ipo_applications a
+         JOIN users_table u ON a.user_id = u.id
+         LEFT JOIN ipo_allotments alt ON a.id = alt.application_id
+         WHERE a.ipo_id = ? OR a.ipo_id IN (SELECT id FROM ipo_listings WHERE backend_ipo_id = ?)`,
+        [ipo.id, ipo.id],
+        'runNotificationEngine.checkAllotmentApplications'
+      );
+
+      if (localApps && localApps.length > 0) {
+        // 7a. Generic Allotment Out notification (primary user device only)
+        const allotmentOutDedupe = `ipo_allotment_out_${ipo.id}`;
+        const notifAllotmentOut = await createDeduplicatedNotification(db, {
+          type: 'ALLOTTED',
+          ipo_id: ipo.id,
+          title: 'IPO Allotment Out',
+          body: `${ipoName} allotment is now available. Check your allotment status.`,
+          dedupe_key: allotmentOutDedupe,
+        });
+        if (notifAllotmentOut) generatedCount++;
+
+        // 7b. Check if one or more managed accounts received allotment
+        const allottedApps = localApps.filter((app) => {
+          const altStatus = (app.allotment_status || '').toUpperCase();
+          const appStatus = (app.status || '').toLowerCase();
+          return (
+            altStatus === 'ALLOTTED' ||
+            altStatus === 'PARTIALLY_ALLOTTED' ||
+            appStatus === 'allotted' ||
+            appStatus === 'partially allotted'
+          );
+        });
+
+        if (allottedApps.length > 0) {
+          const allottedDedupe = `ipo_allotment_received_${ipo.id}`;
+          const notifAllotted = await createDeduplicatedNotification(db, {
+            type: 'ALLOTTED',
+            ipo_id: ipo.id,
+            title: '🎉 Allotment Confirmed!',
+            body: `Congratulations! Allotment received for ${ipoName} across your managed account(s).`,
+            dedupe_key: allottedDedupe,
+          });
+          if (notifAllotted) generatedCount++;
+        }
+      }
+    }
   }
 
   return generatedCount;
