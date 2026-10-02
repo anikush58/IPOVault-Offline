@@ -982,7 +982,9 @@ export default function AllotmentCheckerScreen() {
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
   const router = useRouter();
-  const params = useLocalSearchParams<{ ipoId?: string }>();
+  const params = useLocalSearchParams<{ ipoId?: string; id?: string }>();
+  const routeIpoId = params.ipoId || params.id;
+  const autoCheckedRouteRef = useRef<string | null>(null);
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
   const { ipos, applications, users, updateApplication } = useDB();
@@ -1647,11 +1649,39 @@ export default function AllotmentCheckerScreen() {
         }
       }
 
+      if (!targetIpo && ipos && ipos.length > 0) {
+        const localMatch = ipos.find(
+          (i) =>
+            i.id === ipoId ||
+            (i.symbol && i.symbol.toLowerCase() === ipoId.toLowerCase()) ||
+            (i.ipo_name && i.ipo_name.toLowerCase() === ipoId.toLowerCase())
+        );
+        if (localMatch) {
+          const candidateId = (localMatch as any).backend_ipo_id || localMatch.id;
+          const candidateFromSelectable = selectableIpos.find(
+            (i) => i.id === candidateId || (i.symbol && localMatch.symbol && i.symbol.toLowerCase() === localMatch.symbol.toLowerCase())
+          );
+          if (candidateFromSelectable) {
+            targetIpo = candidateFromSelectable;
+          } else {
+            const candidateFromBackend = backendIpos.find(
+              (i) => i.id === candidateId || (i.symbol && localMatch.symbol && i.symbol.toLowerCase() === localMatch.symbol.toLowerCase())
+            );
+            if (candidateFromBackend) {
+              targetIpo = normalizeBackendIpoForChecker(candidateFromBackend);
+            }
+          }
+        }
+      }
+
+      const canonicalTargetId = targetIpo ? targetIpo.id : ipoId;
+      setSelectedIpoId(canonicalTargetId);
+
       const targetRegistrar = targetIpo
         ? getRegistrarConfig(targetIpo.registrar || targetIpo.ipo_name).name
         : '';
 
-      addLog(`IPO selected: ${targetIpo?.ipo_name || ipoId} (Registrar: ${targetRegistrar})`, 'info');
+      addLog(`IPO selected: ${targetIpo?.ipo_name || canonicalTargetId} (Registrar: ${targetRegistrar})`, 'info');
 
       // Bigshare hybrid flow: Check CAPTCHA presence first
       const registrarUpper = (targetIpo?.registrar || targetRegistrar || '').toUpperCase();
@@ -1660,7 +1690,7 @@ export default function AllotmentCheckerScreen() {
         registrarUpper.replace(/[\s_.-]+/g, '').includes('BIGSHARE');
 
       if (isBigshare) {
-        addLog(`Checking Bigshare CAPTCHA status for ${targetIpo?.ipo_name || ipoId}...`, 'info');
+        addLog(`Checking Bigshare CAPTCHA status for ${targetIpo?.ipo_name || canonicalTargetId}...`, 'info');
         let captchaPresent = false;
         try {
           captchaPresent = await checkBigshareCaptchaPresence();
@@ -1681,8 +1711,8 @@ export default function AllotmentCheckerScreen() {
           return;
         }
 
-        addLog(`Bigshare CAPTCHA absent. Running direct automated check for ${targetIpo?.ipo_name || ipoId}.`, 'success');
-        void startAutomatedAllotmentCheck(ipoId, targetIpo);
+        addLog(`Bigshare CAPTCHA absent. Running direct automated check for ${targetIpo?.ipo_name || canonicalTargetId}.`, 'success');
+        void startAutomatedAllotmentCheck(canonicalTargetId, targetIpo);
         return;
       }
 
@@ -1700,7 +1730,7 @@ export default function AllotmentCheckerScreen() {
                 : null;
       if (manualRedirectRegistrar) {
         const portalConfig = getRegistrarConfig(manualRedirectRegistrar);
-        addLog(`Opening ${portalConfig.name} allotment portal for ${targetIpo?.ipo_name || ipoId}`, 'info');
+        addLog(`Opening ${portalConfig.name} allotment portal for ${targetIpo?.ipo_name || canonicalTargetId}`, 'info');
         void WebBrowser.openBrowserAsync(portalConfig.url, {
           showTitle: true,
           enableBarCollapsing: true,
@@ -1712,20 +1742,28 @@ export default function AllotmentCheckerScreen() {
       }
 
       if (targetRegistrar && isAutomatedCheckSupported(targetRegistrar)) {
-        void startAutomatedAllotmentCheck(ipoId, targetIpo);
+        void startAutomatedAllotmentCheck(canonicalTargetId, targetIpo);
       } else {
         setIpoResolution({
           selectedName: targetIpo?.ipo_name,
-          localId: ipoId,
-          backendId: ipoId,
+          localId: canonicalTargetId,
+          backendId: canonicalTargetId,
           resolutionStatus: 'WAITING',
           resolutionMethod: 'Manual Registrar',
         });
         addLog(`Automated check unavailable for ${targetRegistrar}`, 'warn');
       }
     },
-    [selectableIpos, backendIpos, resetCheckState, startAutomatedAllotmentCheck, addLog],
+    [selectableIpos, backendIpos, ipos, resetCheckState, startAutomatedAllotmentCheck, addLog],
   );
+
+  // Auto-select and start check when route param ipoId is passed
+  useEffect(() => {
+    if (routeIpoId && autoCheckedRouteRef.current !== routeIpoId) {
+      autoCheckedRouteRef.current = routeIpoId;
+      handleSelectIpo(routeIpoId);
+    }
+  }, [routeIpoId, handleSelectIpo]);
 
   // Handle Switch IPO action
   const handleSwitchIpo = useCallback(() => {

@@ -171,11 +171,12 @@ function getStatusBadge(status?: string, openDate?: string | null) {
     norm === 'ALLOTMENT_AWAITED' ||
     norm === 'ALLOTMENT AWAITED' ||
     norm === 'ALLOTMENT_PENDING' ||
+    norm === 'ALLOTMENT PENDING' ||
     norm === 'ALLOTTED_PENDING' ||
     norm === 'AWAITING ALLOTMENT' ||
     norm === 'AWAITING_ALLOTMENT'
   ) {
-    return { text: 'Allotment Awaited', bg: 'rgba(245, 158, 11, 0.12)', color: '#F59E0B', icon: 'clock' };
+    return { text: 'Allotment Awaited', bg: '#FEF3C7', color: '#D97706', border: 'transparent', borderWidth: 0, icon: 'clock' };
   }
   if (
     norm === 'ALLOTMENT_OUT' ||
@@ -185,7 +186,7 @@ function getStatusBadge(status?: string, openDate?: string | null) {
     norm === 'ALLOTTED_AVAILABLE' ||
     norm.includes('ALLOT')
   ) {
-    return { text: 'Allotment Out', bg: 'rgba(16, 185, 129, 0.12)', color: '#10B981', icon: 'check-circle' };
+    return { text: 'Allotment Out', bg: '#DCFCE7', color: '#059669', border: 'transparent', borderWidth: 0, icon: 'check-circle' };
   }
   if (norm === 'CLOSED' || (norm.includes('CLOSED') && norm !== 'CLOSING_TODAY')) {
     return { text: 'Closed', bg: '#F1F5F9', color: '#64748B', icon: 'lock' };
@@ -218,6 +219,7 @@ const NewIpoCardItem = React.memo(
     onPress,
     onApplyPress,
   }: NewIpoCardItemProps) {
+    const router = useRouter();
     const companyName = item.company?.displayName || item.companyName || item.symbol || 'IPO';
     const formatIntPrice = (val: any) => {
       if (val == null || val === '') return null;
@@ -230,7 +232,7 @@ const NewIpoCardItem = React.memo(
     const priceBandText = lowPrice && highPrice
       ? lowPrice === highPrice
         ? `₹${highPrice}`
-        : `₹${lowPrice} to ₹${highPrice}`
+        : `₹${lowPrice} - ₹${highPrice}`
       : highPrice
       ? `₹${highPrice}`
       : lowPrice
@@ -245,17 +247,17 @@ const NewIpoCardItem = React.memo(
     const subTotal = (item as any).total_sub ?? (item as any).total_subscription ?? (item.currentSubscription?.totalSubscriptionMultiple != null ? Number(item.currentSubscription.totalSubscriptionMultiple) : null);
     const qibCat = item.currentSubscription?.categories?.find((c: any) => c.category === 'QIB');
     const subQib = (item as any).qib_sub ?? (qibCat?.subscriptionMultiple != null ? Number(qibCat.subscriptionMultiple) : null);
-    const subDisplay = subTotal != null ? `${subTotal.toFixed(1)}x` : (subQib != null ? `${subQib.toFixed(1)}x` : '—');
+    const subDisplay = subTotal != null ? `${Number(subTotal).toFixed(2)}x` : (subQib != null ? `${Number(subQib).toFixed(2)}x` : '—');
 
     const gmpAmt = item.currentGmp?.gmpAmount != null ? Number(item.currentGmp.gmpAmount) : null;
     const gmpPct = item.currentGmp?.gmpPercentage != null ? Number(item.currentGmp.gmpPercentage) : null;
     const hasGmp = gmpAmt != null || gmpPct != null;
 
     const gmpDisplay = gmpAmt != null
-      ? `${gmpAmt > 0 ? '+' : ''}₹${gmpAmt}${gmpPct != null ? ` (${gmpPct > 0 ? '+' : ''}${gmpPct.toFixed(1)}%)` : ''}`
+      ? `₹${Math.round(gmpAmt)}${gmpPct != null ? ` (${Math.round(gmpPct)}%)` : ''}`
       : gmpPct != null
-      ? `${gmpPct > 0 ? '+' : ''}${gmpPct.toFixed(1)}%`
-      : 'TBA';
+      ? `${Math.round(gmpPct)}%`
+      : '—';
 
     const gmpColor = hasGmp ? ((gmpAmt || gmpPct || 0) >= 0 ? '#10B981' : '#EF4444') : colors.mutedForeground;
 
@@ -296,14 +298,14 @@ const NewIpoCardItem = React.memo(
       (item as any).listing_date;
     const listingDateStr = formatSingleDate(listingDateRaw);
 
-    let dateLabel = 'Apply:';
+    let dateLabel = 'Apply Dates';
     let dateValueStr = applyDateStr;
 
     if (isListed) {
-      dateLabel = 'Listing:';
+      dateLabel = 'Listing Date';
       dateValueStr = listingDateStr;
     } else if (tab === 'closed' || isClosedOrListed) {
-      dateLabel = 'Allotment:';
+      dateLabel = 'Allotment Date';
       dateValueStr = allotmentDateStr;
     }
 
@@ -317,21 +319,61 @@ const NewIpoCardItem = React.memo(
       .toUpperCase();
 
     const statusBadge = getStatusBadge(item.status, item.openDate);
+    const isAllotmentOut =
+      statusBadge.text === 'Allotment Out' ||
+      normStatus === 'ALLOTTED_AVAILABLE' ||
+      normStatus === 'ALLOTMENT_OUT' ||
+      normStatus === 'ALLOTMENT_COMPLETED' ||
+      (item.status || '').toUpperCase() === 'ALLOTMENT_COMPLETED' ||
+      (item.status || '').toUpperCase() === 'ALLOTMENT_OUT';
 
     const issuePrice = upperPrice || 0;
     const listingPrice = item.listingPrice != null ? Number(item.listingPrice) : null;
     const listingGainPct = item.listingGainPct != null ? Number(item.listingGainPct) : (listingPrice && issuePrice > 0 ? ((listingPrice - issuePrice) / issuePrice) * 100 : null);
     const profitAmt = item.profitAmount != null ? Number(item.profitAmount) : (listingPrice && issuePrice > 0 && lotQty ? (listingPrice - issuePrice) * lotQty : null);
-    const profitPct = item.profitPercentage != null ? Number(item.profitPercentage) : listingGainPct;
 
-    const profitDisplay = profitAmt != null
-      ? `${profitAmt > 0 ? '+' : ''}₹${Math.round(profitAmt).toLocaleString('en-IN')}${profitPct != null ? ` (${profitPct > 0 ? '+' : ''}${profitPct.toFixed(1)}%)` : ''}`
-      : profitPct != null
-      ? `${profitPct > 0 ? '+' : ''}${profitPct.toFixed(1)}%`
-      : 'TBA';
-    const profitColor = (profitAmt ?? profitPct ?? 0) >= 0 ? '#10B981' : '#EF4444';
+    const exptProfitPerLot = React.useMemo(() => {
+      if (gmpAmt != null && lotQty > 0) {
+        return Math.round(gmpAmt * lotQty);
+      }
+      if (gmpPct != null && minInvestment) {
+        return Math.round(minInvestment * (gmpPct / 100));
+      }
+      if (isListed && profitAmt != null) {
+        return Math.round(profitAmt);
+      }
+      return null;
+    }, [gmpAmt, lotQty, gmpPct, minInvestment, isListed, profitAmt]);
 
-    const showAllottedCount = tab === 'closed' || tab === 'listed' || (!isOpen && isClosedOrListed);
+    const exptProfitDisplay = exptProfitPerLot != null
+      ? (exptProfitPerLot >= 0 ? `₹${exptProfitPerLot.toLocaleString('en-IN')}` : `-₹${Math.abs(exptProfitPerLot).toLocaleString('en-IN')}`)
+      : '—';
+
+    const profitColor = exptProfitPerLot != null
+      ? (exptProfitPerLot >= 0 ? '#10B981' : '#EF4444')
+      : colors.mutedForeground;
+
+    const buttonLabel = isAllotmentOut
+      ? 'Check'
+      : isUpcoming || (tab as string) === 'upcoming'
+      ? 'View'
+      : isListed || isClosedOrListed
+      ? 'Details'
+      : 'Apply Now';
+
+    const handleButtonAction = (e: any) => {
+      e.stopPropagation?.();
+      if (isAllotmentOut) {
+        router.push({
+          pathname: '/allotment-checker',
+          params: { ipoId: item.id },
+        } as any);
+      } else if (isOpen) {
+        onApplyPress(item);
+      } else {
+        onPress(item);
+      }
+    };
 
     return (
       <TouchableOpacity
@@ -340,20 +382,20 @@ const NewIpoCardItem = React.memo(
         style={[
           styles.itemCard,
           {
-            backgroundColor: colors.card,
-            borderColor: isDark ? '#1E293B' : colors.border,
+            backgroundColor: isDark ? '#1E293B' : '#F4F5F7',
+            borderColor: isDark ? '#334155' : '#E5E7EB',
           },
         ]}
       >
-        {/* Card Header Row: Logo/Avatar + Company Title & Price + Segment & Exchange Badge */}
+        {/* Card Header Row: Logo + Company Title & Bid Price + Badges */}
         <View style={styles.cardHeaderRow}>
           <View style={styles.headerLeftCol}>
             <View
               style={[
                 styles.logoWrap,
                 {
-                  backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-                  borderColor: colors.border,
+                  backgroundColor: '#FFFFFF',
+                  borderColor: isDark ? '#334155' : '#E5E7EB',
                 },
               ]}
             >
@@ -371,164 +413,218 @@ const NewIpoCardItem = React.memo(
               )}
             </View>
 
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.companyTitle, { color: colors.foreground }]} numberOfLines={1}>
+            <View style={{ flex: 1, justifyContent: 'center' }}>
+              <Text style={[styles.companyTitle, { color: colors.foreground }]} numberOfLines={1} ellipsizeMode="tail">
                 {companyName}
               </Text>
-              <Text style={[styles.bidPriceSubtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
-                {isListed && listingPrice != null ? 'Listing Price: ' : 'Bid Price: '}
-                <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>
-                  {isListed && listingPrice != null ? `₹${Math.round(listingPrice)}` : priceBandText}
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', color: isDark ? '#94A3B8' : '#64748B' }}>
+                  Bid Price:{' '}
                 </Text>
-              </Text>
-              <Text style={[styles.issueSizeSubtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
-                {'Total Issue Size: '}
-                <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>
-                  {formatIssueSize(item.issueSize ?? (item as any).issue_size ?? (item as any).totalIssueSize ?? (item as any).total_issue_size)}
+                <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold', color: colors.foreground }}>
+                  {priceBandText}
                 </Text>
-              </Text>
+              </View>
             </View>
           </View>
 
-          <View style={{ alignItems: 'flex-end', gap: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            {/* Segment Badge (SME vs Mainboard) */}
             <View
               style={[
                 styles.segmentBadge,
-                {
-                  backgroundColor: isSme
-                    ? (isDark ? 'rgba(236, 72, 153, 0.15)' : '#FCE7F3')
-                    : (isDark ? 'rgba(139, 92, 246, 0.15)' : '#F3E8FF'),
-                  borderColor: isSme
-                    ? (isDark ? 'rgba(236, 72, 153, 0.3)' : 'rgba(236, 72, 153, 0.25)')
-                    : (isDark ? 'rgba(139, 92, 246, 0.3)' : 'rgba(139, 92, 246, 0.25)'),
-                  borderWidth: 1,
-                },
+                isSme
+                  ? {
+                      backgroundColor: isDark ? 'rgba(236,72,153,0.12)' : '#FDF2F8',
+                      borderColor: isDark ? 'rgba(244,114,182,0.4)' : '#FBCFE8',
+                    }
+                  : {
+                      backgroundColor: isDark ? 'rgba(99,102,241,0.12)' : '#EEF2FF',
+                      borderColor: isDark ? 'rgba(199,210,254,0.4)' : '#C7D2FE',
+                    },
               ]}
             >
               <Text
                 style={[
                   styles.segmentBadgeText,
-                  {
-                    color: isSme
-                      ? (isDark ? '#F472B6' : '#DB2777')
-                      : (isDark ? '#A78BFA' : '#7C3AED'),
-                  },
+                  { color: isSme ? (isDark ? '#F472B6' : '#BE185D') : (isDark ? '#818CF8' : '#4F46E5') },
                 ]}
               >
                 {isSme ? 'SME' : 'Mainboard'}
               </Text>
             </View>
-            <Text style={[styles.topExchangeTag, { color: colors.mutedForeground }]}>
-              NSE • BSE
-            </Text>
+
+            {/* Status Pill */}
+            <View
+              style={[
+                styles.statusPillNew,
+                isOpen
+                  ? {
+                      backgroundColor: isDark ? 'rgba(34,197,94,0.12)' : '#F0FDF4',
+                      borderColor: isDark ? 'rgba(134,239,172,0.4)' : '#86EFAC',
+                    }
+                  : isUpcoming
+                  ? {
+                      backgroundColor: isDark ? 'rgba(59,130,246,0.12)' : '#EFF6FF',
+                      borderColor: isDark ? 'rgba(147,197,253,0.4)' : '#93C5FD',
+                    }
+                  : isAllotmentOut
+                  ? {
+                      backgroundColor: isDark ? 'rgba(34,197,94,0.12)' : '#F0FDF4',
+                      borderColor: isDark ? 'rgba(134,239,172,0.4)' : '#86EFAC',
+                    }
+                  : isListed
+                  ? {
+                      backgroundColor: isDark ? 'rgba(139,92,246,0.12)' : '#F5F3FF',
+                      borderColor: isDark ? 'rgba(221,214,254,0.4)' : '#DDD6FE',
+                    }
+                  : {
+                      backgroundColor: isDark ? 'rgba(148,163,184,0.12)' : '#F8FAFC',
+                      borderColor: isDark ? 'rgba(203,213,225,0.4)' : '#CBD5E1',
+                    },
+              ]}
+            >
+              {isOpen && (
+                <Feather
+                  name="zap"
+                  size={11.5}
+                  color={isDark ? '#4ADE80' : '#16A34A'}
+                  style={{ marginRight: 2 }}
+                />
+              )}
+              <Text
+                style={[
+                  styles.statusTextNew,
+                  {
+                    color: isOpen
+                      ? (isDark ? '#4ADE80' : '#15803D')
+                      : isUpcoming
+                      ? (isDark ? '#60A5FA' : '#1D4ED8')
+                      : isAllotmentOut
+                      ? (isDark ? '#4ADE80' : '#15803D')
+                      : isListed
+                      ? (isDark ? '#A78BFA' : '#7C3AED')
+                      : (isDark ? '#94A3B8' : '#64748B'),
+                  },
+                ]}
+              >
+                {isOpen
+                  ? 'Live Now'
+                  : isUpcoming
+                  ? 'Upcoming'
+                  : isAllotmentOut
+                  ? 'Allotment Out'
+                  : isListed
+                  ? 'Listed'
+                  : 'Closed'}
+              </Text>
+            </View>
           </View>
         </View>
 
-        {/* Compact Surface Box (Matching IPO Management card style, 50% reduced opacity) */}
+        {/* Inner White Data Box */}
         <View
           style={[
-            styles.middleGridCard,
+            styles.innerDataCardBox,
             {
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.03)' : 'rgba(241, 243, 245, 0.5)',
+              backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
+              borderColor: isDark ? '#334155' : '#E5E7EB',
             },
           ]}
         >
-          {/* Col 1: GMP / PROFIT & % */}
-          <View style={styles.gridCol}>
-            <Text style={[styles.gridLabel, { color: colors.mutedForeground }]}>
-              {isListed ? 'PROFIT' : 'GMP'}
-            </Text>
-            <Text style={[styles.gridVal, { color: isListed ? profitColor : gmpColor }]} numberOfLines={1}>
-              {isListed ? profitDisplay : gmpDisplay}
-            </Text>
-          </View>
-
-          <View style={[styles.gridDivider, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.border }]} />
-
-          {/* Col 2: OVERALL SUBSCRIPTION */}
-          <View style={[styles.gridCol, { alignItems: 'center' }]}>
-            <Text style={[styles.gridLabel, { color: colors.mutedForeground }]}>OVERALL SUB</Text>
-            <Text style={[styles.gridVal, { color: colors.foreground }]} numberOfLines={1}>
-              {subDisplay}
-            </Text>
-          </View>
-
-          <View style={[styles.gridDivider, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : colors.border }]} />
-
-          {/* Col 3: MIN INVESTMENT */}
-          <View style={[styles.gridCol, { alignItems: 'flex-end' }]}>
-            <Text style={[styles.gridLabel, { color: colors.mutedForeground }]}>MIN INVESTMENT</Text>
-            <Text style={[styles.gridVal, { color: colors.foreground }]} numberOfLines={1}>
-              {minInvestment != null ? formatCurrency(minInvestment) : '—'}
-            </Text>
-          </View>
-        </View>
-
-        {/* Timeline & Status Badge Row */}
-        <View style={[styles.dateAndStatusRow, isUpcoming && { marginBottom: 0 }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-            <Feather name="calendar" size={12} color={colors.mutedForeground} />
-            <Text style={[styles.dateRowText, { color: colors.mutedForeground }]} numberOfLines={1}>
-              {dateLabel}{' '}
-              <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_600SemiBold' }}>
+          {/* Row 1: Apply Dates | Min Investment | Lot Size | Issue Size */}
+          <View style={styles.innerDataRow}>
+            <View style={{ flex: 1.2 }}>
+              <Text style={[styles.innerDataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                {dateLabel}
+              </Text>
+              <Text style={[styles.innerDataVal, { color: colors.foreground }]} numberOfLines={1}>
                 {dateValueStr}
               </Text>
-            </Text>
-          </View>
-
-          <View
-            style={[
-              styles.statusPill,
-              { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : statusBadge.bg },
-            ]}
-          >
-            <Feather name={statusBadge.icon as any} size={11} color={isDark ? colors.foreground : statusBadge.color} />
-            <Text style={[styles.statusPillText, { color: isDark ? colors.foreground : statusBadge.color }]}>
-              {statusBadge.text}
-            </Text>
-          </View>
-        </View>
-
-        {/* Applications Stats Pill Row & Apply CTA Footer (Hidden for Upcoming tab/status) */}
-        {!isUpcoming && (
-          <View style={[styles.footerRow, { borderTopColor: colors.border }]}>
-            <View style={styles.appPillsContainer}>
-              <View style={[styles.countPill, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' }]}>
-                <Text style={[styles.countPillText, { color: isDark ? '#60A5FA' : '#2563EB' }]}>
-                  {totalAppsCount} applied
-                </Text>
-              </View>
-
-              {showAllottedCount && (
-                <View style={[styles.countPill, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7' }]}>
-                  <Text style={[styles.countPillText, { color: isDark ? '#34D399' : '#15803D' }]}>
-                    {allottedCount} allotted
-                  </Text>
-                </View>
-              )}
             </View>
 
-            {isOpen ? (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => onApplyPress(item)}
-                style={[styles.applyCtaBtn, { backgroundColor: colors.primary }]}
-              >
-                <Text style={[styles.applyCtaText, { color: colors.primaryForeground }]}>Apply Now</Text>
-                <Feather name="arrow-right" size={12} color={colors.primaryForeground} />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => onPress(item)}
-                style={[styles.viewDetailsCtaBtn, { borderColor: colors.border }]}
-              >
-                <Text style={[styles.viewDetailsText, { color: colors.mutedForeground }]}>View Details</Text>
-                <Feather name="chevron-right" size={12} color={colors.mutedForeground} />
-              </TouchableOpacity>
-            )}
+            <View style={{ flex: 1.2 }}>
+              <Text style={[styles.innerDataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                Min Investment
+              </Text>
+              <Text style={[styles.innerDataVal, { color: colors.foreground }]} numberOfLines={1}>
+                {minInvestment ? `₹${minInvestment.toLocaleString('en-IN')}` : '—'}
+              </Text>
+            </View>
+
+            <View style={{ flex: 0.85 }}>
+              <Text style={[styles.innerDataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                Lot Size
+              </Text>
+              <Text style={[styles.innerDataVal, { color: colors.foreground }]} numberOfLines={1}>
+                {lotQty ? `${lotQty}` : '—'}
+              </Text>
+            </View>
+
+            <View style={{ flex: 1.15, alignItems: 'flex-end' }}>
+              <View style={{ width: 94, alignItems: 'flex-start' }}>
+                <Text style={[styles.innerDataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                  Issue Size
+                </Text>
+                <Text style={[styles.innerDataVal, { color: colors.foreground }]} numberOfLines={1}>
+                  {formatIssueSize(item.issueSize ?? (item as any).issue_size ?? (item as any).totalIssueSize ?? (item as any).total_issue_size)}
+                </Text>
+              </View>
+            </View>
           </View>
-        )}
+
+          {/* Row 2: Expt. GMP | Expt. Profit/Lot | Subscription | Action CTA Button */}
+          <View style={[styles.innerDataRow, { marginTop: 14, alignItems: 'center' }]}>
+            <View style={{ flex: 1.2 }}>
+              <Text style={[styles.innerDataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                Expt. GMP
+              </Text>
+              <Text style={[styles.innerDataVal, { color: gmpColor }]} numberOfLines={1}>
+                {gmpDisplay}
+              </Text>
+            </View>
+
+            <View style={{ flex: 1.2 }}>
+              <Text style={[styles.innerDataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                Expt. Profit/Lot
+              </Text>
+              <Text style={[styles.innerDataVal, { color: profitColor }]} numberOfLines={1}>
+                {exptProfitDisplay}
+              </Text>
+            </View>
+
+            <View style={{ flex: 0.85 }}>
+              <Text style={[styles.innerDataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                Subscription
+              </Text>
+              <Text style={[styles.innerDataVal, { color: colors.foreground }]} numberOfLines={1}>
+                {subDisplay}
+              </Text>
+            </View>
+
+            <View style={{ flex: 1.15, alignItems: 'flex-end', justifyContent: 'center' }}>
+              <TouchableOpacity
+                activeOpacity={0.82}
+                onPress={handleButtonAction}
+                style={[
+                  styles.innerApplyBtn,
+                  {
+                    backgroundColor: isDark ? '#38BDF8' : '#0F172A',
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.innerApplyBtnText,
+                    { color: isDark ? '#0F172A' : '#FFFFFF' },
+                  ]}
+                >
+                  {buttonLabel}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </TouchableOpacity>
     );
   }
@@ -580,17 +676,17 @@ export default function NewIposScreen() {
   const horizontalScrollViewRef = useRef<ScrollView>(null);
 
   const [activeTab, setActiveTab] = useState<NewIpoTab>('live');
-  const [includeSme, setIncludeSme] = useState(false);
+  const [includeSme, setIncludeSme] = useState(true);
   const [onlyActiveGmp, setOnlyActiveGmp] = useState(false);
   const [onlyClosingToday, setOnlyClosingToday] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('DEFAULT');
-  const [tempIncludeSme, setTempIncludeSme] = useState(false);
+  const [tempIncludeSme, setTempIncludeSme] = useState(true);
   const [tempOnlyActiveGmp, setTempOnlyActiveGmp] = useState(false);
   const [tempOnlyClosingToday, setTempOnlyClosingToday] = useState(false);
   const [tempSortBy, setTempSortBy] = useState<SortOption>('DEFAULT');
   const [showFilterModal, setShowFilterModal] = useState(false);
 
-  const hasActiveFilter = includeSme || onlyActiveGmp || onlyClosingToday || sortBy !== 'DEFAULT';
+  const hasActiveFilter = !includeSme || onlyActiveGmp || onlyClosingToday || sortBy !== 'DEFAULT';
 
   const openFilterModal = useCallback(() => {
     setTempIncludeSme(includeSme);
@@ -1217,11 +1313,11 @@ export default function NewIposScreen() {
             <View style={[styles.modalFooter, { borderTopColor: colors.border }]}>
               <TouchableOpacity
                 onPress={() => {
-                  setTempIncludeSme(false);
+                  setTempIncludeSme(true);
                   setTempOnlyActiveGmp(false);
                   setTempOnlyClosingToday(false);
                   setTempSortBy('DEFAULT');
-                  setIncludeSme(false);
+                  setIncludeSme(true);
                   setOnlyActiveGmp(false);
                   setOnlyClosingToday(false);
                   setSortBy('DEFAULT');
@@ -1389,32 +1485,36 @@ const styles = StyleSheet.create({
   },
   itemCard: {
     marginHorizontal: 16,
-    marginBottom: 12,
-    borderRadius: 18,
+    marginBottom: 14,
+    borderRadius: 22,
     borderWidth: 1,
-    padding: 14,
+    paddingTop: 14,
+    paddingLeft: 5,
+    paddingRight: 5,
+    paddingBottom: 5,
   },
   cardHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 10,
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingHorizontal: 9,
   },
   headerLeftCol: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
     flex: 1,
     marginRight: 8,
   },
   logoWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 1,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 10,
   },
   logoImage: {
     width: '100%',
@@ -1428,131 +1528,90 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarText: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: 'GoogleSansFlex_700Bold',
     color: '#FFFFFF',
   },
   companyTitle: {
-    fontSize: 15.5,
+    fontSize: 17,
     fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.3,
-  },
-  bidPriceSubtitle: {
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    marginTop: 1,
-  },
-  issueSizeSubtitle: {
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    marginTop: 1,
-  },
-  segmentBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3.5,
-    borderRadius: 6,
-  },
-  segmentBadgeText: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_700Bold',
-  },
-  topExchangeTag: {
-    fontSize: 10.5,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
-    letterSpacing: 0.5,
-  },
-  middleGridCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    marginBottom: 10,
-  },
-  gridCol: {
-    flex: 1,
-  },
-  gridDivider: {
-    width: 1,
-    height: 24,
-    marginHorizontal: 8,
-  },
-  gridLabel: {
-    fontSize: 10,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
+    letterSpacing: -0.2,
     marginBottom: 2,
   },
-  gridVal: {
-    fontSize: 13,
-    fontFamily: 'GoogleSansFlex_700Bold',
-  },
-  dateAndStatusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-    paddingHorizontal: 2,
-  },
-  dateRowText: {
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_400Regular',
-  },
-  footerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderTopWidth: 1,
-    paddingTop: 10,
-    marginTop: 2,
-  },
-  appPillsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flexWrap: 'wrap',
-    flex: 1,
-    marginRight: 8,
-  },
-  totalAppsLabel: {
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_500Medium',
-  },
-  countPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  countPillText: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_700Bold',
-  },
-  applyCtaBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 10,
-  },
-  applyCtaText: {
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    color: '#FFFFFF',
-  },
-  viewDetailsCtaBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
+  segmentBadge: {
+    borderRadius: 8,
     borderWidth: 1,
+    paddingHorizontal: 9,
+    paddingVertical: 4.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentBadgeText: {
+    fontSize: 11.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  statusPillNew: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 9,
+    paddingVertical: 4.5,
+  },
+  statusTextNew: {
+    fontSize: 11.5,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  innerDataCardBox: {
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+  },
+  innerDataRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  innerDataLabel: {
+    fontSize: 11.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginBottom: 3.5,
+  },
+  innerDataVal: {
+    fontSize: 12.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  innerApplyBtn: {
+    width: 94,
+    borderRadius: 20,
+    paddingVertical: 7.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  innerApplyBtnText: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.1,
   },
   viewDetailsText: {
     fontSize: 12,
     fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  checkAllotmentCtaBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6.5,
+    borderRadius: 10,
+    backgroundColor: '#000000',
+  },
+  checkAllotmentCtaText: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    color: '#FFFFFF',
   },
   statusPill: {
     flexDirection: 'row',

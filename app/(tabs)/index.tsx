@@ -39,6 +39,7 @@ import {
   BrokerAccountItem,
   brokerApiService,
   DashboardIpoHoldingItem,
+  UserPortfolioSummaryResponse,
 } from '@/services/broker/BrokerApiService';
 import { AllotmentSuccessModal } from '@/components/allotment/AllotmentSuccessModal';
 import { useAllotmentResultModal } from '@/hooks/useAllotmentResultModal';
@@ -120,6 +121,8 @@ export default function DashboardScreen() {
   );
 
   const [brokerAccounts, setBrokerAccounts] = useState<BrokerAccountItem[]>([]);
+  const [brokerPortfolio, setBrokerPortfolio] =
+    useState<UserPortfolioSummaryResponse | null>(null);
   const [brokerHoldings, setBrokerHoldings] = useState<
     DashboardIpoHoldingItem[]
   >([]);
@@ -157,10 +160,12 @@ export default function DashboardScreen() {
 
       if (connectedAccounts.length === 0) {
         setBrokerHoldings([]);
+        setBrokerPortfolio(null);
         return;
       }
 
       const portfolioData = await brokerApiService.getUserPortfolio(activeUserId);
+      setBrokerPortfolio(portfolioData);
       if (!portfolioData || !portfolioData.investments || portfolioData.investments.length === 0) {
         setBrokerHoldings([]);
         return;
@@ -469,8 +474,88 @@ export default function DashboardScreen() {
     }
   };
 
+  // ── Merge broker-backed live portfolio with local applications ──────────
+  const effectiveApplications = useMemo(() => {
+    if (
+      !brokerPortfolio ||
+      !brokerPortfolio.investments ||
+      brokerPortfolio.investments.length === 0
+    ) {
+      return applications;
+    }
+
+    const brokerInvByIsin = new Map<string, any>();
+    const brokerInvByIpoId = new Map<string, any>();
+    const brokerInvBySymbol = new Map<string, any>();
+
+    for (const inv of brokerPortfolio.investments) {
+      if (inv.isin) brokerInvByIsin.set(inv.isin.trim().toUpperCase(), inv);
+      if (inv.ipoId) brokerInvByIpoId.set(inv.ipoId, inv);
+      if (inv.symbol) brokerInvBySymbol.set(inv.symbol.trim().toUpperCase(), inv);
+    }
+
+    return applications.map((app) => {
+      const matchedIpo = ipos.find((i) => i.id === app.ipo_id);
+      const appIsin = (matchedIpo as any)?.isin?.trim().toUpperCase();
+      const appBackendIpoId = matchedIpo?.backend_ipo_id;
+      const appSymbol = (matchedIpo?.symbol || app.ipo_name || '').trim().toUpperCase();
+
+      const brokerInv =
+        (appIsin ? brokerInvByIsin.get(appIsin) : null) ||
+        (appBackendIpoId ? brokerInvByIpoId.get(appBackendIpoId) : null) ||
+        brokerInvByIpoId.get(app.ipo_id) ||
+        (appSymbol ? brokerInvBySymbol.get(appSymbol) : null);
+
+      if (!brokerInv) {
+        return app;
+      }
+
+      let effectiveSellPrice = app.sell_price;
+      let effectiveBroker = app.user_broker;
+      let effectiveQuantity = app.quantity;
+
+      if (app.status === 'Holding') {
+        // Holding price: Broker holding lastPrice (LTP) whenever available
+        if (brokerInv.currentHoldingPrice > 0) {
+          effectiveSellPrice = brokerInv.currentHoldingPrice;
+        }
+        if (brokerInv.brokerHoldings && brokerInv.brokerHoldings.length > 0) {
+          const brokerNames = Array.from(
+            new Set(brokerInv.brokerHoldings.map((bh: any) => bh.broker)),
+          ).join(', ');
+          if (brokerNames) {
+            effectiveBroker = brokerNames;
+          }
+        }
+        if (brokerInv.remainingHoldingQuantity > 0) {
+          effectiveQuantity = brokerInv.remainingHoldingQuantity;
+        }
+      } else if (app.status === 'Sold') {
+        // Sold price: Actual executed sell trade price from broker record (never current market LTP)
+        if (brokerInv.weightedSellPrice != null && brokerInv.weightedSellPrice > 0) {
+          effectiveSellPrice = brokerInv.weightedSellPrice;
+        }
+        if (brokerInv.sellTrades && brokerInv.sellTrades.length > 0) {
+          const brokerNames = Array.from(
+            new Set(brokerInv.sellTrades.map((st: any) => st.broker)),
+          ).join(', ');
+          if (brokerNames) {
+            effectiveBroker = brokerNames;
+          }
+        }
+      }
+
+      return {
+        ...app,
+        sell_price: effectiveSellPrice,
+        user_broker: effectiveBroker,
+        quantity: effectiveQuantity,
+      };
+    });
+  }, [applications, brokerPortfolio, ipos]);
+
   // ── base filter (user / year / IPO) ──────────────────────────────
-  const baseFilteredApps = applications.filter((a) => {
+  const baseFilteredApps = effectiveApplications.filter((a) => {
     if (filterUserIds.length > 0 && !filterUserIds.includes(a.user_id)) return false;
     if (filterIpoNames.length > 0 && !filterIpoNames.includes(a.ipo_name ?? '')) return false;
     if (filterYear) {

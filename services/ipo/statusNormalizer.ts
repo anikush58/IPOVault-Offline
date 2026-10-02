@@ -87,6 +87,21 @@ export function evaluateLifecycle(
     };
   }
 
+  // 1. Authoritative Backend Status is the SINGLE SOURCE OF TRUTH
+  const rawStatus = (record.status || '').trim();
+  if (rawStatus) {
+    const normalized = normalizeLifecycleStatus(rawStatus);
+    if (normalized !== 'UNKNOWN') {
+      return {
+        lifecycle_status: normalized,
+        lifecycle_confidence: 'High',
+        lifecycle_source: 'Authoritative Backend Status',
+        lifecycle_last_verified_at: nowIso,
+      };
+    }
+  }
+
+  // 2. Client-side date fallbacks (ONLY if record.status is missing or UNKNOWN)
   const openDate = record.open_date?.trim() || '';
   const closeDate = record.close_date?.trim() || '';
   const allotmentDate = record.allotment_date?.trim() || '';
@@ -97,7 +112,7 @@ export function evaluateLifecycle(
   const hasValidAllotment = isValidDate(allotmentDate);
   const hasValidListing = isValidDate(listingDate);
 
-  // 1. Listing date passed -> LISTED
+  // Listing date passed -> LISTED
   if (hasValidListing && today >= listingDate) {
     return {
       lifecycle_status: 'LISTED',
@@ -107,41 +122,17 @@ export function evaluateLifecycle(
     };
   }
 
-  // 2. Pre-listing day (day before listing) -> LISTING_UPCOMING
-  if (hasValidListing && hasValidAllotment && today >= allotmentDate && today < listingDate) {
-    return {
-      lifecycle_status: 'LISTING_UPCOMING',
-      lifecycle_confidence: 'High',
-      lifecycle_source: 'Authoritative Pre-Listing Timeline',
-      lifecycle_last_verified_at: nowIso,
-    };
-  }
-
-  // 3. Allotment date passed -> ALLOTTED_AVAILABLE
-  if (
-    hasValidAllotment &&
-    today >= allotmentDate &&
-    (!hasValidListing || today < listingDate)
-  ) {
-    return {
-      lifecycle_status: 'ALLOTTED_AVAILABLE',
-      lifecycle_confidence: 'High',
-      lifecycle_source: 'Authoritative Allotment Date',
-      lifecycle_last_verified_at: nowIso,
-    };
-  }
-
-  // 4. Close date passed but allotment date not reached -> ALLOTTED_PENDING
+  // Close date passed -> ALLOTTED_PENDING (Client-side date alone cannot determine allotment result)
   if (hasValidClose && today > closeDate) {
     return {
       lifecycle_status: 'ALLOTTED_PENDING',
-      lifecycle_confidence: 'High',
+      lifecycle_confidence: 'Medium',
       lifecycle_source: 'Authoritative Close Date',
       lifecycle_last_verified_at: nowIso,
     };
   }
 
-  // 5. Current date between Open and Close -> OPEN
+  // Current date between Open and Close -> OPEN
   if (hasValidOpen && hasValidClose && today >= openDate && today <= closeDate) {
     return {
       lifecycle_status: 'OPEN',
@@ -151,77 +142,12 @@ export function evaluateLifecycle(
     };
   }
 
-  // 6. Current date before Open -> UPCOMING
+  // Current date before Open -> UPCOMING
   if (hasValidOpen && today < openDate) {
     return {
       lifecycle_status: 'UPCOMING',
       lifecycle_confidence: 'High',
       lifecycle_source: 'Authoritative Open Date',
-      lifecycle_last_verified_at: nowIso,
-    };
-  }
-
-  // 7. Fallbacks based on raw status strings
-  const rawStatus = (record.status || '').trim().toUpperCase();
-  if (rawStatus === 'CLOSING_TODAY' || rawStatus === 'CLOSING TODAY' || rawStatus === 'CLOSES TODAY') {
-    return {
-      lifecycle_status: 'CLOSING_TODAY',
-      lifecycle_confidence: 'High',
-      lifecycle_source: 'Authoritative Backend Status',
-      lifecycle_last_verified_at: nowIso,
-    };
-  }
-  if (rawStatus.includes('LISTED')) {
-    return {
-      lifecycle_status: 'LISTED',
-      lifecycle_confidence: 'Medium',
-      lifecycle_source: 'Raw Status String Fallback',
-      lifecycle_last_verified_at: nowIso,
-    };
-  }
-  if (
-    rawStatus.includes('ALLOTMENT_AWAITED') ||
-    rawStatus.includes('ALLOTMENT AWAITED') ||
-    rawStatus.includes('AWAITED') ||
-    rawStatus.includes('ALLOTMENT_PENDING') ||
-    rawStatus.includes('ALLOTTED_PENDING')
-  ) {
-    return {
-      lifecycle_status: 'ALLOTTED_PENDING',
-      lifecycle_confidence: 'High',
-      lifecycle_source: 'Authoritative Backend Status',
-      lifecycle_last_verified_at: nowIso,
-    };
-  }
-  if (rawStatus.includes('ALLOT') || rawStatus.includes('ALLOTTED')) {
-    return {
-      lifecycle_status: 'ALLOTTED_AVAILABLE',
-      lifecycle_confidence: 'Medium',
-      lifecycle_source: 'Raw Status String Fallback',
-      lifecycle_last_verified_at: nowIso,
-    };
-  }
-  if (rawStatus.includes('CLOSED')) {
-    return {
-      lifecycle_status: 'CLOSED',
-      lifecycle_confidence: 'Medium',
-      lifecycle_source: 'Raw Status String Fallback',
-      lifecycle_last_verified_at: nowIso,
-    };
-  }
-  if (rawStatus.includes('OPEN')) {
-    return {
-      lifecycle_status: 'OPEN',
-      lifecycle_confidence: 'High',
-      lifecycle_source: 'Raw Status String Fallback',
-      lifecycle_last_verified_at: nowIso,
-    };
-  }
-  if (rawStatus.includes('UPCOMING') || rawStatus.includes('ANNOUNCED')) {
-    return {
-      lifecycle_status: 'UPCOMING',
-      lifecycle_confidence: 'Medium',
-      lifecycle_source: 'Raw Status String Fallback',
       lifecycle_last_verified_at: nowIso,
     };
   }
@@ -262,6 +188,8 @@ export function normalizeLifecycleStatus(value: string | null | undefined): Norm
       return 'UPCOMING';
 
     case 'OPEN':
+    case 'LIVE_NOW':
+    case 'LIVE NOW':
     case 'ACTIVE':
     case 'LIVE':
     case 'BIDDING':
@@ -280,35 +208,49 @@ export function normalizeLifecycleStatus(value: string | null | undefined): Norm
     case 'ALLOTMENT_PENDING':
     case 'ALLOTMENT_AWAITED':
     case 'ALLOTMENT AWAITED':
+    case 'ALLOTMENT PENDING':
     case 'AWAITING_ALLOTMENT':
     case 'AWAITING ALLOTMENT':
     case 'PENDING_ALLOTMENT':
+    case 'PENDING ALLOTMENT':
       return 'ALLOTTED_PENDING';
 
     case 'ALLOTTED_AVAILABLE':
     case 'ALLOTTED':
     case 'ALLOTMENT_OUT':
+    case 'ALLOTMENT OUT':
     case 'ALLOTMENT_COMPLETED':
+    case 'ALLOTMENT COMPLETED':
+    case 'ALLOTMENT_SUCCESS':
+    case 'ALLOTMENT SUCCESS':
       return 'ALLOTTED_AVAILABLE';
 
     case 'LISTING_UPCOMING':
     case 'LISTING_PENDING':
     case 'PRE_LISTING':
+    case 'PRE LISTING':
       return 'LISTING_UPCOMING';
 
     case 'LISTED':
       return 'LISTED';
 
     default:
-      if (clean.includes('AWAITED')) return 'ALLOTTED_PENDING';
-      if (clean.includes('PENDING')) return 'ALLOTTED_PENDING';
+      // Substring & keyword matching with strict priority:
+      // 1. Check AWAITED / PENDING first so ALLOTMENT_PENDING / ALLOTMENT_AWAITED never match ALLOT
+      if (clean.includes('AWAITED') || clean.includes('PENDING')) {
+        if (clean.includes('LISTING')) return 'LISTING_UPCOMING';
+        return 'ALLOTTED_PENDING';
+      }
       if (clean.includes('CLOSING') || clean.includes('CLOSES TODAY')) return 'CLOSING_TODAY';
-      if (clean.includes('LISTING')) return 'LISTING_UPCOMING';
       if (clean.includes('LISTED')) return 'LISTED';
-      if (clean.includes('ALLOT')) return 'ALLOTTED_AVAILABLE';
+      if (clean.includes('PRE_LISTING') || clean.includes('PRE LISTING')) return 'LISTING_UPCOMING';
+      if (clean.includes('OUT') || clean.includes('COMPLETED') || clean.includes('AVAILABLE') || clean.includes('SUCCESS')) {
+        if (clean.includes('ALLOT')) return 'ALLOTTED_AVAILABLE';
+      }
+      if (clean === 'ALLOTTED') return 'ALLOTTED_AVAILABLE';
       if (clean.includes('CLOSED')) return 'CLOSED';
-      if (clean.includes('OPEN')) return 'OPEN';
-      if (clean.includes('UPCOMING')) return 'UPCOMING';
+      if (clean.includes('OPEN') || clean.includes('LIVE')) return 'OPEN';
+      if (clean.includes('UPCOMING') || clean.includes('ANNOUNCED')) return 'UPCOMING';
       return 'UNKNOWN';
   }
 }

@@ -51,7 +51,7 @@ export function IPOsTab({
   const { ipos: dbIpos, toggleFavorite: dbToggleFavorite } = useDB();
 
   const [activeSubTab, setActiveSubTab] = useState<IPOSubTab>(initialSubTab);
-  const [includeSme, setIncludeSme] = useState(false);
+  const [includeSme, setIncludeSme] = useState(true);
   const [sortBy, setSortBy] = useState<SortOption>('DEFAULT');
   const [showSortModal, setShowSortModal] = useState(false);
 

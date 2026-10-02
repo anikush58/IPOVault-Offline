@@ -1312,13 +1312,52 @@ export default function BackendIpoDetailsScreen() {
         </View>
       </ScrollView>
 
-      {/* ── 4. STICKY BOTTOM APPLY ACTION BAR ── */}
+      {/* ── 4. STICKY BOTTOM APPLY / CHECK ALLOTMENT ACTION BAR ── */}
       {(() => {
         const statusUpper = (ipo.status || '').toUpperCase();
+        const isAllotmentOut =
+          statusUpper === 'ALLOTMENT_OUT' ||
+          statusUpper === 'ALLOTMENT_COMPLETED' ||
+          statusUpper === 'ALLOTTED_AVAILABLE' ||
+          statusUpper === 'ALLOTTED';
+
+        if (isAllotmentOut) {
+          return (
+            <View
+              style={[
+                styles.stickyBottomBar,
+                {
+                  backgroundColor: colors.card,
+                  borderTopColor: colors.border,
+                  paddingBottom: Math.max(insets.bottom, 12),
+                },
+              ]}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.applyNowButton,
+                  { backgroundColor: '#000000', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+                ]}
+                activeOpacity={0.88}
+                onPress={() =>
+                  router.push({
+                    pathname: '/allotment-checker',
+                    params: { ipoId: ipo.id },
+                  } as any)
+                }
+              >
+                <Text style={[styles.applyNowButtonText, { color: '#FFFFFF' }]}>
+                  Check Allotment
+                </Text>
+              </TouchableOpacity>
+            </View>
+          );
+        }
+
         const isClosedOrPast =
           statusUpper === 'CLOSED' ||
-          statusUpper === 'ALLOTTED' ||
-          statusUpper.includes('ALLOT') ||
+          statusUpper === 'ALLOTMENT_PENDING' ||
+          statusUpper === 'ALLOTMENT_AWAITED' ||
           statusUpper.includes('CLOSED') ||
           statusUpper.includes('LIST');
 

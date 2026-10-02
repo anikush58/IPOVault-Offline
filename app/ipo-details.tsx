@@ -1449,22 +1449,61 @@ export default function IPODetailsScreen() {
         </View>
       </ScrollView>
 
-      {/* ── 4. STICKY BOTTOM APPLY ACTION BAR ── */}
+      {/* ── 4. STICKY BOTTOM APPLY / CHECK ALLOTMENT ACTION BAR ── */}
       {(() => {
         const normUpper = (normStatus || '').toUpperCase();
         const rawUpper = (ipo.status || '').toUpperCase();
+        const isAllotmentOut =
+          normUpper === 'ALLOTTED_AVAILABLE' ||
+          normUpper === 'ALLOTMENT_OUT' ||
+          normUpper === 'ALLOTMENT_COMPLETED' ||
+          rawUpper === 'ALLOTMENT_OUT' ||
+          rawUpper === 'ALLOTMENT_COMPLETED' ||
+          rawUpper === 'ALLOTTED' ||
+          rawUpper === 'ALLOTTED_AVAILABLE';
+
+        if (isAllotmentOut) {
+          return (
+            <View
+              style={[
+                styles.stickyBottomBar,
+                {
+                  backgroundColor: colors.card,
+                  borderTopColor: colors.border,
+                  paddingBottom: Math.max(insets.bottom, 12),
+                },
+              ]}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.applyNowButton,
+                  { backgroundColor: '#000000', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+                ]}
+                activeOpacity={0.88}
+                onPress={() =>
+                  router.push({
+                    pathname: '/allotment-checker',
+                    params: { ipoId: ipo.id },
+                  } as any)
+                }
+              >
+                <Text style={[styles.applyNowButtonText, { color: '#FFFFFF' }]}>
+                  Check Allotment
+                </Text>
+              </TouchableOpacity>
+            </View>
+          );
+        }
+
         const isClosedOrPast =
           normUpper === 'CLOSED' ||
-          normUpper === 'ALLOTTED' ||
           normUpper === 'ALLOTTED_PENDING' ||
-          normUpper === 'ALLOTTED_AVAILABLE' ||
           normUpper === 'LISTING_UPCOMING' ||
           normUpper === 'LISTED' ||
           rawUpper === 'CLOSED' ||
-          rawUpper === 'ALLOTTED' ||
-          rawUpper === 'LISTED' ||
-          rawUpper.includes('CLOSED') ||
-          rawUpper.includes('ALLOT');
+          rawUpper === 'ALLOTMENT_PENDING' ||
+          rawUpper === 'ALLOTMENT_AWAITED' ||
+          rawUpper === 'LISTED';
 
         if (isClosedOrPast) return null;
 
