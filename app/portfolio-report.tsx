@@ -27,6 +27,10 @@ import { ProfitSummaryDonutCard } from '@/components/ProfitSummaryDonutCard';
 import { Tabs } from '@/components/ui/Tabs';
 import { calculateAppTaxAndNet, calcBuyValue } from '@/utils/calculations';
 import { formatCurrency } from '@/utils/formatters';
+import {
+  enrichApplicationsWithBrokerData,
+  resolveCanonicalBrokerUserId,
+} from '@/utils/brokerMatching';
 
 type TabType = 'profits' | 'holding' | 'charges';
 
@@ -107,12 +111,7 @@ export default function PortfolioReportScreen() {
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
   const activeUserId = useMemo(() => {
-    const firstUser = users?.[0] as
-      | { owner_id?: string; id?: string }
-      | undefined;
-    return (
-      authUser?.id || firstUser?.owner_id || firstUser?.id || 'default-user'
-    );
+    return resolveCanonicalBrokerUserId(authUser, users);
   }, [authUser, users]);
 
   const [brokerPortfolio, setBrokerPortfolio] =
@@ -138,88 +137,11 @@ export default function PortfolioReportScreen() {
 
   // Merge broker-backed data with local applications
   const effectiveApplications = useMemo(() => {
-    if (
-      !brokerPortfolio ||
-      !brokerPortfolio.investments ||
-      brokerPortfolio.investments.length === 0
-    ) {
-      return applications;
-    }
-
-    const brokerInvByIsin = new Map<string, any>();
-    const brokerInvByIpoId = new Map<string, any>();
-    const brokerInvBySymbol = new Map<string, any>();
-
-    for (const inv of brokerPortfolio.investments) {
-      if (inv.isin) brokerInvByIsin.set(inv.isin.trim().toUpperCase(), inv);
-      if (inv.ipoId) brokerInvByIpoId.set(inv.ipoId, inv);
-      if (inv.symbol) brokerInvBySymbol.set(inv.symbol.trim().toUpperCase(), inv);
-    }
-
-    return applications.map((app) => {
-      const matchedIpo = ipos.find((i) => i.id === app.ipo_id);
-      const appIsin = (matchedIpo as any)?.isin?.trim().toUpperCase();
-      const appBackendIpoId = matchedIpo?.backend_ipo_id;
-      const appSymbol = (matchedIpo?.symbol || app.ipo_name || '').trim().toUpperCase();
-
-      const brokerInv =
-        (appIsin ? brokerInvByIsin.get(appIsin) : null) ||
-        (appBackendIpoId ? brokerInvByIpoId.get(appBackendIpoId) : null) ||
-        brokerInvByIpoId.get(app.ipo_id) ||
-        (appSymbol ? brokerInvBySymbol.get(appSymbol) : null);
-
-      if (!brokerInv) {
-        return app;
-      }
-
-      let effectiveSellPrice = app.sell_price;
-      let effectiveBroker = app.user_broker;
-      let effectiveQuantity = app.quantity;
-
-      if (app.status === 'Holding') {
-        // Holding price: Broker holding lastPrice (LTP) whenever available
-        if (brokerInv.currentHoldingPrice > 0) {
-          effectiveSellPrice = brokerInv.currentHoldingPrice;
-        }
-        if (brokerInv.brokerHoldings && brokerInv.brokerHoldings.length > 0) {
-          const brokerNames = Array.from(
-            new Set(brokerInv.brokerHoldings.map((bh: any) => bh.broker)),
-          ).join(', ');
-          if (brokerNames) {
-            effectiveBroker = brokerNames;
-          }
-        }
-        if (brokerInv.remainingHoldingQuantity > 0) {
-          effectiveQuantity = brokerInv.remainingHoldingQuantity;
-        }
-      } else if (app.status === 'Sold') {
-        // Sold price: Actual executed sell trade price from broker record (never current market LTP)
-        if (brokerInv.weightedSellPrice != null && brokerInv.weightedSellPrice > 0) {
-          effectiveSellPrice = brokerInv.weightedSellPrice;
-        }
-        if (brokerInv.sellTrades && brokerInv.sellTrades.length > 0) {
-          const brokerNames = Array.from(
-            new Set(brokerInv.sellTrades.map((st: any) => st.broker)),
-          ).join(', ');
-          if (brokerNames) {
-            effectiveBroker = brokerNames;
-          }
-        }
-        if (brokerInv.totalSoldQuantity > 0) {
-          effectiveQuantity = brokerInv.totalSoldQuantity;
-        }
-      }
-
-      return {
-        ...app,
-        sell_price: effectiveSellPrice,
-        quantity: effectiveQuantity,
-        user_broker: effectiveBroker,
-        _priceSource: brokerInv.priceSource,
-        _brokerHoldings: brokerInv.brokerHoldings,
-        _sellTrades: brokerInv.sellTrades,
-      };
-    });
+    return enrichApplicationsWithBrokerData(
+      applications,
+      ipos,
+      brokerPortfolio?.investments,
+    );
   }, [applications, brokerPortfolio, ipos]);
 
   // Compute tab counts based on current period filter

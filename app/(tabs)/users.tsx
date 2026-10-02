@@ -31,6 +31,7 @@ import {
   getCanonicalBroker,
   parseQueryParams,
 } from '@/services/broker/BrokerApiService';
+import { resolveCanonicalBrokerUserId } from '@/utils/brokerMatching';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -64,12 +65,7 @@ export default function UsersScreen() {
 
   // Active user ID for backend scoping
   const activeUserId = useMemo(() => {
-    const firstUser = users[0] as
-      | { owner_id?: string; id?: string }
-      | undefined;
-    return (
-      authUser?.id || firstUser?.owner_id || firstUser?.id || 'default-user'
-    );
+    return resolveCanonicalBrokerUserId(authUser, users);
   }, [authUser, users]);
 
   // Load broker accounts & investment summaries for connected user profiles

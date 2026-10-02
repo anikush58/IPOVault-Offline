@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import {
   Animated,
   DeviceEventEmitter,
@@ -23,6 +23,8 @@ import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { IconButton } from '@/components/ui/IconButton';
 import { useDB, type ApplicationStatus, type ApplicationWithDetails } from '@/context/DBContext';
+import { useAuth } from '@/context/AuthContext';
+import { useSQLiteContext } from 'expo-sqlite';
 import { ApplicationCard } from '@/components/ApplicationCard';
 import { FilterSheet } from '@/components/FilterSheet';
 import { UpdateApplicationModal } from '@/components/UpdateApplicationModal';
@@ -30,6 +32,15 @@ import { ApplicationsOverviewCard } from '@/components/ApplicationsOverviewCard'
 import { FeatureFlags } from '@/constants/FeatureFlags';
 import { calcBuyValue, calcNetProfit, calcProfitLoss, calcSaleValue } from '@/utils/calculations';
 import { formatCurrency } from '@/utils/formatters';
+import {
+  brokerApiService,
+  UserPortfolioSummaryResponse,
+} from '@/services/broker/BrokerApiService';
+import {
+  enrichApplicationsWithBrokerData,
+  resolveCanonicalBrokerUserId,
+  syncBrokerHoldingPricesToLocalDb,
+} from '@/utils/brokerMatching';
 
 type TabKey = 'Applied' | 'Allotted' | 'Sold' | 'Holding' | 'Not Allotted';
 
@@ -46,9 +57,49 @@ export default function ApplicationsScreen() {
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
   const router = useRouter();
-  const { applications, isLoading, refresh, updateBulkApplications } = useDB();
+  const { applications, ipos, users, isLoading, refresh, updateBulkApplications } = useDB();
+  const { user: authUser } = useAuth();
+  const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
+
+  const [brokerPortfolio, setBrokerPortfolio] =
+    useState<UserPortfolioSummaryResponse | null>(null);
+
+  const activeUserId = React.useMemo(() => {
+    return resolveCanonicalBrokerUserId(authUser, users);
+  }, [authUser, users]);
+
+  const loadBrokerPortfolio = React.useCallback(async () => {
+    if (!activeUserId) return;
+    try {
+      const portfolio = await brokerApiService.getUserPortfolio(activeUserId);
+      if (portfolio) {
+        setBrokerPortfolio(portfolio);
+        if (portfolio.investments && db) {
+          syncBrokerHoldingPricesToLocalDb(
+            applications,
+            ipos,
+            portfolio.investments,
+            db,
+            refresh,
+          ).catch(() => {});
+        }
+      }
+    } catch {
+      // Non-critical fallback
+    }
+  }, [activeUserId, applications, db, ipos, refresh]);
+
+  useEffect(() => {
+    loadBrokerPortfolio();
+  }, [loadBrokerPortfolio]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadBrokerPortfolio();
+    }, [loadBrokerPortfolio])
+  );
 
   const [activeTab, setActiveTab] = useState<TabKey>('Applied');
   const [selectedApp, setSelectedApp] = useState<ApplicationWithDetails | null>(null);
@@ -119,8 +170,16 @@ export default function ApplicationsScreen() {
 
   const hasFilter = filterUserIds.length > 0 || filterBrokers.length > 0 || filterIpoNames.length > 0 || filterBankNames.length > 0;
 
+  const effectiveApplications = React.useMemo(() => {
+    return enrichApplicationsWithBrokerData(
+      applications,
+      ipos,
+      brokerPortfolio?.investments,
+    );
+  }, [applications, ipos, brokerPortfolio]);
+
   // Base list of applications
-  const sortedApplications = [...applications];
+  const sortedApplications = [...effectiveApplications];
 
   const filterBase = sortedApplications.filter((a) => {
     if (filterUserIds.length > 0 && !filterUserIds.includes(a.user_id)) return false;
@@ -282,7 +341,13 @@ export default function ApplicationsScreen() {
         keyExtractor={(item) => item.id.toString()}
         stickySectionHeadersEnabled={true}
         refreshControl={
-          <RefreshControl refreshing={isLoading} onRefresh={refresh} tintColor={colors.primary} />
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={async () => {
+              await Promise.all([refresh(), loadBrokerPortfolio()]);
+            }}
+            tintColor={colors.primary}
+          />
         }
         ListHeaderComponent={() => (
           <View>
@@ -330,7 +395,7 @@ export default function ApplicationsScreen() {
             )}
 
             {/* Applications Overview Card */}
-            <ApplicationsOverviewCard applications={applications} />
+            <ApplicationsOverviewCard applications={effectiveApplications} />
 
             {/* Check Allotment Button */}
             {FeatureFlags.ENABLE_AUTO_ALLOTMENT && (

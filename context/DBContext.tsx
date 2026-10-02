@@ -14,6 +14,8 @@ import { getEffectiveAvatarUrl } from '@/utils/avatarUtils';
 import { getRegistrarConfig } from '@/services/allotment/registrarConfig';
 import { scheduleDebouncedCloudBackup, isRestoreInProgress } from '@/services/cloud/cloudBackupService';
 
+import { useAuth } from '@/context/AuthContext';
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type User = {
@@ -30,6 +32,7 @@ export type User = {
   avatarUrl?: string;
   default_amount_blocked: number;
   archived?: number;
+  owner_id?: string;
 };
 
 export type IPOListing = {
@@ -247,6 +250,7 @@ const DBContext = createContext<DBContextType | null>(null);
 
 function DBProviderInner({ children }: { children: React.ReactNode }) {
   const db = useSQLiteContext();
+  const { user: authUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [ipos, setIPOs] = useState<IPOListing[]>([]);
   const [applications, setApplications] = useState<ApplicationWithDetails[]>([]);
@@ -254,6 +258,15 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   const refresh = useCallback(async () => {
+    // Sync authenticated user ID to local users_table owner_id column
+    if (authUser?.id) {
+      try {
+        await db.runAsync(
+          'UPDATE users_table SET owner_id = ? WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL',
+          [authUser.id],
+        );
+      } catch {}
+    }
     // Repair legacy rows where id is null or empty
     const nullBankRows = await db.getAllAsync<{ rowid: number }>(
       'SELECT rowid FROM bank_accounts WHERE id IS NULL OR id = ""',

@@ -41,6 +41,13 @@ import {
   DashboardIpoHoldingItem,
   UserPortfolioSummaryResponse,
 } from '@/services/broker/BrokerApiService';
+import {
+  enrichApplicationsWithBrokerData,
+  findMatchingBrokerInvestment,
+  getBrokerLtpForApplication,
+  resolveCanonicalBrokerUserId,
+  syncBrokerHoldingPricesToLocalDb,
+} from '@/utils/brokerMatching';
 import { AllotmentSuccessModal } from '@/components/allotment/AllotmentSuccessModal';
 import { useAllotmentResultModal } from '@/hooks/useAllotmentResultModal';
 
@@ -127,14 +134,10 @@ export default function DashboardScreen() {
     DashboardIpoHoldingItem[]
   >([]);
   const [loadingHoldings, setLoadingHoldings] = useState<boolean>(false);
+  const [isHoldingsExpanded, setIsHoldingsExpanded] = useState<boolean>(true);
 
   const activeUserId = useMemo(() => {
-    const firstUser = users?.[0] as
-      | { owner_id?: string; id?: string }
-      | undefined;
-    return (
-      authUser?.id || firstUser?.owner_id || firstUser?.id || 'default-user'
-    );
+    return resolveCanonicalBrokerUserId(authUser, users);
   }, [authUser, users]);
 
   const isBrokerConnected = useMemo(() => {
@@ -159,48 +162,29 @@ export default function DashboardScreen() {
       );
 
       if (connectedAccounts.length === 0) {
-        setBrokerHoldings([]);
         setBrokerPortfolio(null);
         return;
       }
 
       const portfolioData = await brokerApiService.getUserPortfolio(activeUserId);
       setBrokerPortfolio(portfolioData);
-      if (!portfolioData || !portfolioData.investments || portfolioData.investments.length === 0) {
-        setBrokerHoldings([]);
-        return;
+
+      // Persist authoritative broker LTPs into SQLite for Holding applications
+      if (portfolioData?.investments && db) {
+        syncBrokerHoldingPricesToLocalDb(
+          applications,
+          ipos,
+          portfolioData.investments,
+          db,
+          refresh,
+        ).catch(() => {});
       }
-
-      // Filter only actively held shares (status !== FULLY_SOLD and remainingQuantity > 0)
-      const activeHoldings = portfolioData.investments.filter(
-        (inv) => inv.remainingHoldingQuantity > 0 && inv.status !== 'FULLY_SOLD',
-      );
-
-      const holdingsList: DashboardIpoHoldingItem[] = activeHoldings.map((inv) => {
-        const totalCost = inv.remainingHoldingQuantity * (inv.allotmentPrice || 0);
-        const pnlPct =
-          totalCost > 0
-            ? ((inv.totalHoldingValue - totalCost) / totalCost) * 100
-            : 0;
-        return {
-          ipoId: inv.ipoId,
-          companyName: inv.companyName || inv.symbol || 'IPO',
-          symbol: inv.symbol || '',
-          quantityHeld: inv.remainingHoldingQuantity,
-          currentPrice: inv.currentHoldingPrice,
-          currentHoldingValue: inv.totalHoldingValue,
-          dayPnl: inv.unrealizedPnl,
-          dayPnlPercent: pnlPct,
-        };
-      });
-
-      setBrokerHoldings(holdingsList);
     } catch (err) {
       console.warn('[Dashboard] Failed to load broker holdings data:', err);
     } finally {
       setLoadingHoldings(false);
     }
-  }, [activeUserId]);
+  }, [activeUserId, applications, db, ipos, refresh]);
 
   const loadIpoHubData = useCallback(async () => {
     try {
@@ -476,82 +460,11 @@ export default function DashboardScreen() {
 
   // ── Merge broker-backed live portfolio with local applications ──────────
   const effectiveApplications = useMemo(() => {
-    if (
-      !brokerPortfolio ||
-      !brokerPortfolio.investments ||
-      brokerPortfolio.investments.length === 0
-    ) {
-      return applications;
-    }
-
-    const brokerInvByIsin = new Map<string, any>();
-    const brokerInvByIpoId = new Map<string, any>();
-    const brokerInvBySymbol = new Map<string, any>();
-
-    for (const inv of brokerPortfolio.investments) {
-      if (inv.isin) brokerInvByIsin.set(inv.isin.trim().toUpperCase(), inv);
-      if (inv.ipoId) brokerInvByIpoId.set(inv.ipoId, inv);
-      if (inv.symbol) brokerInvBySymbol.set(inv.symbol.trim().toUpperCase(), inv);
-    }
-
-    return applications.map((app) => {
-      const matchedIpo = ipos.find((i) => i.id === app.ipo_id);
-      const appIsin = (matchedIpo as any)?.isin?.trim().toUpperCase();
-      const appBackendIpoId = matchedIpo?.backend_ipo_id;
-      const appSymbol = (matchedIpo?.symbol || app.ipo_name || '').trim().toUpperCase();
-
-      const brokerInv =
-        (appIsin ? brokerInvByIsin.get(appIsin) : null) ||
-        (appBackendIpoId ? brokerInvByIpoId.get(appBackendIpoId) : null) ||
-        brokerInvByIpoId.get(app.ipo_id) ||
-        (appSymbol ? brokerInvBySymbol.get(appSymbol) : null);
-
-      if (!brokerInv) {
-        return app;
-      }
-
-      let effectiveSellPrice = app.sell_price;
-      let effectiveBroker = app.user_broker;
-      let effectiveQuantity = app.quantity;
-
-      if (app.status === 'Holding') {
-        // Holding price: Broker holding lastPrice (LTP) whenever available
-        if (brokerInv.currentHoldingPrice > 0) {
-          effectiveSellPrice = brokerInv.currentHoldingPrice;
-        }
-        if (brokerInv.brokerHoldings && brokerInv.brokerHoldings.length > 0) {
-          const brokerNames = Array.from(
-            new Set(brokerInv.brokerHoldings.map((bh: any) => bh.broker)),
-          ).join(', ');
-          if (brokerNames) {
-            effectiveBroker = brokerNames;
-          }
-        }
-        if (brokerInv.remainingHoldingQuantity > 0) {
-          effectiveQuantity = brokerInv.remainingHoldingQuantity;
-        }
-      } else if (app.status === 'Sold') {
-        // Sold price: Actual executed sell trade price from broker record (never current market LTP)
-        if (brokerInv.weightedSellPrice != null && brokerInv.weightedSellPrice > 0) {
-          effectiveSellPrice = brokerInv.weightedSellPrice;
-        }
-        if (brokerInv.sellTrades && brokerInv.sellTrades.length > 0) {
-          const brokerNames = Array.from(
-            new Set(brokerInv.sellTrades.map((st: any) => st.broker)),
-          ).join(', ');
-          if (brokerNames) {
-            effectiveBroker = brokerNames;
-          }
-        }
-      }
-
-      return {
-        ...app,
-        sell_price: effectiveSellPrice,
-        user_broker: effectiveBroker,
-        quantity: effectiveQuantity,
-      };
-    });
+    return enrichApplicationsWithBrokerData(
+      applications,
+      ipos,
+      brokerPortfolio?.investments,
+    );
   }, [applications, brokerPortfolio, ipos]);
 
   // ── base filter (user / year / IPO) ──────────────────────────────
@@ -564,6 +477,18 @@ export default function DashboardScreen() {
     }
     return true;
   });
+
+  const holdingApplications = useMemo(() => {
+    return baseFilteredApps.filter((a) => a.status === 'Holding');
+  }, [baseFilteredApps]);
+
+  const totalHoldingCurrentValue = useMemo(() => {
+    return holdingApplications.reduce((sum, app) => {
+      const qty = app.shares_count ?? app.quantity;
+      const curPrice = app.sell_price ?? app.buy_price;
+      return sum + curPrice * qty;
+    }, 0);
+  }, [holdingApplications]);
 
   // ── KPI calculations ───────────────────────────────────────────────────────
   let totalPL = 0;
@@ -947,130 +872,152 @@ export default function DashboardScreen() {
             {/* ── Connected Broker IPO Holdings Section (Only when broker is connected) ── */}
             {isBrokerConnected && (
               <View style={[styles.dashboardHoldingsSection, { borderTopColor: colors.border }]}>
-                {/* Holdings Header */}
-                <View style={styles.dashboardHoldingsHeader}>
+                {/* Holdings Header with Expand/Collapse Toggle */}
+                <TouchableOpacity
+                  style={[
+                    styles.dashboardHoldingsHeader,
+                    !isHoldingsExpanded && { marginBottom: 0 },
+                  ]}
+                  activeOpacity={0.7}
+                  onPress={() => setIsHoldingsExpanded((prev) => !prev)}
+                >
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Feather name="layers" size={13} color={colors.mutedForeground} />
                     <Text style={[styles.dashboardHoldingsTitle, { color: colors.mutedForeground }]}>
-                      IPO HOLDINGS ({brokerHoldings.length})
+                      IPO HOLDINGS ({holdingApplications.length})
                     </Text>
                   </View>
-                  {brokerHoldings.length > 0 && (
-                    <Text style={[styles.dashboardHoldingsTotalVal, { color: colors.foreground }]}>
-                      Total: {formatCurrency(brokerHoldings.reduce((sum, h) => sum + h.currentHoldingValue, 0))}
-                    </Text>
-                  )}
-                </View>
-
-                {/* Holdings Rows */}
-                {loadingHoldings && brokerHoldings.length === 0 ? (
-                  <View style={{ paddingVertical: 12, alignItems: 'center' }}>
-                    <Text style={[styles.dashboardHoldingsEmptyText, { color: colors.mutedForeground }]}>
-                      Updating live broker holdings…
-                    </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    {holdingApplications.length > 0 && (
+                      <Text style={[styles.dashboardHoldingsTotalVal, { color: colors.foreground }]}>
+                        Total: {formatCurrency(totalHoldingCurrentValue)}
+                      </Text>
+                    )}
+                    <Feather
+                      name={isHoldingsExpanded ? 'chevron-up' : 'chevron-down'}
+                      size={14}
+                      color={colors.mutedForeground}
+                    />
                   </View>
-                ) : brokerHoldings.length === 0 ? (
-                  <View style={{ paddingVertical: 8, alignItems: 'center' }}>
-                    <Text style={[styles.dashboardHoldingsEmptyText, { color: colors.mutedForeground }]}>
-                      No active IPO shares currently held.
-                    </Text>
-                  </View>
-                ) : (
-                  brokerHoldings.map((holding, idx) => {
-                    const isPos = holding.dayPnl >= 0;
-                    const pnlColor = isPos
-                      ? isDark
-                        ? '#34D399'
-                        : '#10B981'
-                      : isDark
-                      ? '#F87171'
-                      : '#EF4444';
-                    const hasBorder = idx < brokerHoldings.length - 1;
+                </TouchableOpacity>
 
-                    return (
-                      <View
-                        key={`${holding.ipoId}-${idx}`}
-                        style={[
-                          styles.dashboardHoldingRow,
-                          hasBorder && {
-                            borderBottomColor: isDark
-                              ? 'rgba(255,255,255,0.06)'
-                              : 'rgba(0,0,0,0.05)',
-                            borderBottomWidth: 1,
-                          },
-                        ]}
-                      >
-                        {/* Left: IPO Name & Qty */}
-                        <View style={styles.dashboardHoldingLeft}>
-                          <Text
-                            style={[
-                              styles.dashboardHoldingName,
-                              { color: colors.foreground },
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {holding.companyName}
-                          </Text>
-                          <Text
-                            style={[
-                              styles.dashboardHoldingQty,
-                              { color: colors.mutedForeground },
-                            ]}
-                          >
-                            Qty:{' '}
-                            <Text
-                              style={{
-                                fontFamily: 'SpaceMono_700Bold',
-                                color: colors.foreground,
-                              }}
-                            >
-                              {holding.quantityHeld}
-                            </Text>
-                            {holding.currentPrice > 0
-                              ? `  •  LTP: ₹${holding.currentPrice.toFixed(2)}`
-                              : ''}
-                          </Text>
-                        </View>
+                {/* Holdings Rows (Expandable) */}
+                {isHoldingsExpanded && (
+                  loadingHoldings && holdingApplications.length === 0 ? (
+                    <View style={{ paddingVertical: 12, alignItems: 'center' }}>
+                      <Text style={[styles.dashboardHoldingsEmptyText, { color: colors.mutedForeground }]}>
+                        Updating live broker holdings…
+                      </Text>
+                    </View>
+                  ) : holdingApplications.length === 0 ? (
+                    <View style={{ paddingVertical: 8, alignItems: 'center' }}>
+                      <Text style={[styles.dashboardHoldingsEmptyText, { color: colors.mutedForeground }]}>
+                        No active IPO shares currently held.
+                      </Text>
+                    </View>
+                  ) : (
+                    holdingApplications.map((app, idx) => {
+                      const qty = app.shares_count ?? app.quantity;
+                      const currentPrice = app.sell_price ?? app.buy_price;
+                      const buyVal = calcBuyValue(app.buy_price, qty);
+                      const holdingVal = currentPrice * qty;
+                      const grossPL = holdingVal - buyVal;
+                      const gainPct = buyVal > 0 ? (grossPL / buyVal) * 100 : 0;
+                      const isPos = grossPL >= 0;
+                      const pnlColor = isPos
+                        ? isDark
+                          ? '#34D399'
+                          : '#10B981'
+                        : isDark
+                        ? '#F87171'
+                        : '#EF4444';
+                      const hasBorder = idx < holdingApplications.length - 1;
 
-                        {/* Right: Holding Value & Day P&L */}
-                        <View style={styles.dashboardHoldingRight}>
-                          <Text
-                            style={[
-                              styles.dashboardHoldingValue,
-                              { color: colors.foreground },
-                            ]}
-                          >
-                            {formatCurrency(holding.currentHoldingValue)}
-                          </Text>
-                          <View
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              gap: 3,
-                              marginTop: 2,
-                            }}
-                          >
-                            <Feather
-                              name={isPos ? 'arrow-up-right' : 'arrow-down-right'}
-                              size={11}
-                              color={pnlColor}
-                            />
+                      return (
+                        <View
+                          key={app.id || `${app.ipo_id}-${idx}`}
+                          style={[
+                            styles.dashboardHoldingRow,
+                            hasBorder && {
+                              borderBottomColor: isDark
+                                ? 'rgba(255,255,255,0.06)'
+                                : 'rgba(0,0,0,0.05)',
+                              borderBottomWidth: 1,
+                            },
+                          ]}
+                        >
+                          {/* Left: IPO Name & Qty */}
+                          <View style={styles.dashboardHoldingLeft}>
                             <Text
                               style={[
-                                styles.dashboardHoldingPnl,
-                                { color: pnlColor },
+                                styles.dashboardHoldingName,
+                                { color: colors.foreground },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {app.ipo_name}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.dashboardHoldingQty,
+                                { color: colors.mutedForeground },
                               ]}
                             >
-                              {isPos ? '+' : ''}
-                              {formatCurrency(holding.dayPnl)} (
-                              {isPos ? '+' : ''}
-                              {holding.dayPnlPercent.toFixed(1)}%)
+                              Qty:{' '}
+                              <Text
+                                style={{
+                                  fontFamily: 'SpaceMono_700Bold',
+                                  color: colors.foreground,
+                                }}
+                              >
+                                {qty}
+                              </Text>
+                              {currentPrice > 0
+                                ? `  •  LTP: ₹${currentPrice.toFixed(2)}`
+                                : ''}
                             </Text>
                           </View>
+
+                          {/* Right: Holding Value & Unrealized P&L */}
+                          <View style={styles.dashboardHoldingRight}>
+                            <Text
+                              style={[
+                                styles.dashboardHoldingValue,
+                                { color: colors.foreground },
+                              ]}
+                            >
+                              {formatCurrency(holdingVal)}
+                            </Text>
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 3,
+                                marginTop: 2,
+                              }}
+                            >
+                              <Feather
+                                name={isPos ? 'arrow-up-right' : 'arrow-down-right'}
+                                size={11}
+                                color={pnlColor}
+                              />
+                              <Text
+                                style={[
+                                  styles.dashboardHoldingPnl,
+                                  { color: pnlColor },
+                                ]}
+                              >
+                                {isPos ? '+' : ''}
+                                {formatCurrency(grossPL)} (
+                                {isPos ? '+' : ''}
+                                {gainPct.toFixed(1)}%)
+                              </Text>
+                            </View>
+                          </View>
                         </View>
-                      </View>
-                    );
-                  })
+                      );
+                    })
+                  )
                 )}
               </View>
             )}

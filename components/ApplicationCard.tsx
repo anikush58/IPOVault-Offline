@@ -70,8 +70,8 @@ export function ApplicationCard({
   const netProfit = pl != null ? calcNetProfit(pl, app.tax ?? 0, app.user_cut ?? 0) : null;
   const isProfit  = netProfit != null && netProfit >= 0;
 
-  // Holding Price calculation
-  const holdingPrice = app.sell_price || (app.buy_price ? Math.round(app.buy_price * 1.25) : 0);
+  // Holding Price calculation (uses authoritative broker LTP / manual sell_price, or falls back to buy_price)
+  const holdingPrice = app.sell_price != null && app.sell_price > 0 ? app.sell_price : (app.buy_price || 0);
   const holdingValue = calcSaleValue(holdingPrice, app.quantity);
   const currentProfit = holdingValue - buyValue;
 

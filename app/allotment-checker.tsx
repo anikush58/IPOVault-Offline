@@ -32,6 +32,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useDB, type ApplicationStatus, type ApplicationWithDetails } from '@/context/DBContext';
 import { useTheme } from '@/context/ThemeContext';
 import { useColors } from '@/hooks/useColors';
+import { resolveCanonicalBrokerUserId } from '@/utils/brokerMatching';
 import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 import {
   allotmentApiService,
@@ -993,8 +994,7 @@ export default function AllotmentCheckerScreen() {
 
   // Active user ID for backend scoping
   const activeUserId = useMemo(() => {
-    const firstUser = users[0] as { owner_id?: string; id?: string } | undefined;
-    return user?.id || firstUser?.owner_id || firstUser?.id || 'default-user';
+    return resolveCanonicalBrokerUserId(user, users);
   }, [user, users]);
 
   // Backend-published IPOs state
@@ -1383,7 +1383,7 @@ export default function AllotmentCheckerScreen() {
         try {
           const updatedJob = await allotmentApiService.getJob(
             jobId,
-            activeUserId,
+            activeUserId || undefined,
           );
           setActiveJob(updatedJob);
 
@@ -1472,7 +1472,7 @@ export default function AllotmentCheckerScreen() {
           const p = (usr.pan_number || '').trim().toUpperCase();
           if (p.length === 10) {
             userPanMap.set(p, {
-              userId: activeUserId,
+              userId: activeUserId || usr.id,
               pan: p,
               name: usr.name || 'Applicant',
             });
@@ -1485,7 +1485,7 @@ export default function AllotmentCheckerScreen() {
         if (localPanRecords.length > 0) {
           try {
             const syncSuccess = await panSyncService.syncLocalPans(
-              activeUserId,
+              activeUserId || '',
               localPanRecords,
             );
             setPanSyncState({
@@ -1562,7 +1562,7 @@ export default function AllotmentCheckerScreen() {
 
         // 3. Create backend job with canonicalId
         setJobCreationState({ status: 'RUNNING' });
-        const job = await allotmentApiService.createJob(canonicalId, activeUserId);
+        const job = await allotmentApiService.createJob(canonicalId, activeUserId || undefined);
         const createEndMs = Date.now();
         const endStr =
           new Date().toLocaleTimeString() + '.' + String(createEndMs % 1000).padStart(3, '0');
@@ -2494,7 +2494,7 @@ export default function AllotmentCheckerScreen() {
             appBuildMarker={APP_DEBUG_BUILD}
             apiBaseUrl={API_BASE_URL}
             healthState={healthState}
-            userId={activeUserId}
+            userId={activeUserId || undefined}
             ipoResolution={ipoResolution}
             selectedIpo={selectedIpo}
             effectiveRegistrar={effectiveRegistrar}

@@ -17,6 +17,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useDB } from '@/context/DBContext';
 import { brokerApiService } from '@/services/broker/BrokerApiService';
+import { resolveCanonicalBrokerUserId } from '@/utils/brokerMatching';
 
 export default function BrokerCallbackScreen() {
   const colors = useColors();
@@ -35,12 +36,7 @@ export default function BrokerCallbackScreen() {
   }>();
 
   const activeUserId = useMemo(() => {
-    const firstUser = users?.[0] as
-      | { owner_id?: string; id?: string }
-      | undefined;
-    return (
-      authUser?.id || firstUser?.owner_id || firstUser?.id || 'default-user'
-    );
+    return resolveCanonicalBrokerUserId(authUser, users);
   }, [authUser, users]);
 
   const [isProcessing, setIsProcessing] = useState(true);
