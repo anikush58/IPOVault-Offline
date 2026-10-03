@@ -1109,6 +1109,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           is_favorite: a.is_favorite ?? 0,
           bank_name: (a as any).bank_name ?? (a as any).user_bank_name ?? '',
           upi_app: (a as any).upi_app ?? (a as any).user_upi_app ?? '',
+          broker_account_id: a.broker_account_id ?? (a as any).brokerAccountId ?? null,
           created_at: (a as any).created_at,
           updated_at: (a as any).updated_at,
         })),
@@ -1609,6 +1610,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
                 is_favorite = COALESCE(?, is_favorite),
                 bank_name = CASE WHEN ? IS NOT NULL AND ? != "" THEN ? ELSE bank_name END,
                 upi_app = CASE WHEN ? IS NOT NULL AND ? != "" THEN ? ELSE upi_app END,
+                broker_account_id = CASE WHEN ? IS NOT NULL AND ? != "" THEN ? ELSE broker_account_id END,
                 updated_at = ?
               WHERE id = ?`,
               [
@@ -1629,6 +1631,9 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
                 app.upi_app || null,
                 app.upi_app || '',
                 app.upi_app || null,
+                (app as any).broker_account_id || (app as any).brokerAccountId || null,
+                (app as any).broker_account_id || (app as any).brokerAccountId || '',
+                (app as any).broker_account_id || (app as any).brokerAccountId || null,
                 app.updated_at || now,
                 existing.id,
               ],
@@ -1639,7 +1644,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
             usedAppIds.add(id);
             await safeRunAsync(
               db,
-              'INSERT INTO ipo_applications (id, user_id, ipo_id, status, shares_count, sell_price, sale_date, tax, user_cut, is_favorite, bank_name, upi_app, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+              'INSERT INTO ipo_applications (id, user_id, ipo_id, status, shares_count, sell_price, sale_date, tax, user_cut, is_favorite, bank_name, upi_app, broker_account_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
               [
                 id,
                 targetUserId,
@@ -1653,6 +1658,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
                 isFavVal,
                 app.bank_name || '',
                 app.upi_app || '',
+                (app as any).broker_account_id || (app as any).brokerAccountId || null,
                 app.created_at || now,
                 app.updated_at || now,
               ],
