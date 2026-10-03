@@ -36,16 +36,19 @@ const queryClient = new QueryClient();
 
 function RootLayoutNav() {
   const { resolvedScheme } = useTheme();
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
+    if (isLoading) return;
     safeAsyncStorage.getItem(ONBOARDING_STORAGE_KEY).then((value) => {
       if (!value) {
         router.replace('/onboarding');
+      } else if (!user) {
+        router.replace('/auth');
       }
     });
-  }, []);
+  }, [isLoading, user, router]);
 
   useEffect(() => {
     setupNotificationPresentation();

@@ -8,7 +8,12 @@ import { useColors } from '@/hooks/useColors';
 import { useAuth } from '@/context/AuthContext';
 import { useDB } from '@/context/DBContext';
 import { syncStore } from '@/services/sync/syncStatus';
-import { uploadService, refreshService, networkService } from '@/services/infrastructure';
+import { networkService } from '@/services/infrastructure';
+import {
+  syncUserDataToFirestore,
+  fetchUserDataFromFirestore,
+  getCloudSyncMetadata,
+} from '@/services/cloud/firestoreSyncService';
 import { ipoDiagnosticsStore } from '@/services/ipo/ipoUpdater';
 import { SettingRow } from './(tabs)/settings';
 
@@ -21,7 +26,7 @@ export default function SyncDebugScreen() {
 
   const db = useSQLiteContext();
   const { session, user } = useAuth();
-  const { users, applications, bankAccounts } = useDB();
+  const { users, applications, bankAccounts, exportJSON, importJSON, refresh } = useDB();
 
   const [syncStatus, setSyncStatus] = useState(syncStore.getStatus());
   const [ipoStats, setIpoStats] = useState(ipoDiagnosticsStore.get());
@@ -64,12 +69,12 @@ export default function SyncDebugScreen() {
   const brokersCount = new Set(users.map((u) => u.broker).filter(Boolean)).size;
 
   const handleRunSync = async () => {
+    if (!user?.id) return;
     syncStore.update({ state: 'Syncing', lastTriggerSource: 'Developer Debug' });
     try {
-      for (const table of TABLES) {
-        await uploadService.uploadAllPending(db, table);
-        await refreshService.refreshTable(db, table);
-      }
+      const jsonStr = await exportJSON();
+      const exportData = JSON.parse(jsonStr);
+      await syncUserDataToFirestore(user.id, exportData);
       syncStore.update({
         state: 'Idle',
         lastSyncTimestamp: new Date().toISOString(),
@@ -98,11 +103,11 @@ export default function SyncDebugScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 40, padding: 16 }}>
         <Text style={[styles.sectionHeader, { color: colors.primary }]}>AUTHENTICATION & NETWORK</Text>
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
-          <SettingRow icon="user" title="Provider" subtitle={user?.app_metadata?.provider ? String(user.app_metadata.provider).toUpperCase() : 'None'} onPress={() => {}} disabled />
+          <SettingRow icon="user" title="Provider" subtitle={(user as any)?.app_metadata?.provider ? String((user as any).app_metadata.provider).toUpperCase() : user ? 'Firebase Auth' : 'None'} onPress={() => {}} disabled />
           <SettingRow icon="key" title="User ID" subtitle={user?.id ?? 'Not authenticated'} onPress={() => {}} disabled />
           <SettingRow icon="mail" title="Email" subtitle={user?.email ?? 'Unknown'} onPress={() => {}} disabled />
           <SettingRow icon="wifi" title="Network Status" subtitle={isOnline ? 'Online' : 'Offline'} onPress={() => {}} disabled />
-          <SettingRow icon="clock" title="Token Expiry" subtitle={session?.expires_at ? new Date(session.expires_at * 1000).toLocaleString() : 'No session'} onPress={() => {}} disabled />
+          <SettingRow icon="clock" title="Token Status" subtitle={(session as any)?.expires_at ? new Date((session as any).expires_at * 1000).toLocaleString() : user ? 'Active Firebase Session' : 'No session'} onPress={() => {}} disabled />
         </View>
 
         <Text style={[styles.sectionHeader, { color: colors.destructive }]}>INFRASTRUCTURE SYNC</Text>

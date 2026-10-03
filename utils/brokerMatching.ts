@@ -2,16 +2,17 @@ import { UserPortfolioIpoSummary } from '@/services/broker/BrokerApiService';
 
 /**
  * Resolves the authoritative canonical user ID for broker API operations following the hierarchy:
- * 1. Authenticated user ID (from Supabase Auth context / session)
+ * 1. Authenticated user ID (from Firebase Auth / Supabase Auth context / session)
  * 2. Authenticated owner_id present on local database user records (from cloud backup or previous session)
  * 3. Returns null if no authenticated user identity exists (never returns dummy 'default-user' or random local SQLite IDs).
  */
 export function resolveCanonicalBrokerUserId(
-  authUser?: { id?: string } | null,
+  authUser?: { id?: string; uid?: string } | null,
   users?: Array<{ owner_id?: string; id?: string }> | null,
 ): string | null {
-  if (authUser?.id && typeof authUser.id === 'string' && authUser.id.trim()) {
-    return authUser.id.trim();
+  const authUid = authUser?.uid || authUser?.id;
+  if (authUid && typeof authUid === 'string' && authUid.trim()) {
+    return authUid.trim();
   }
 
   if (users && users.length > 0) {
@@ -170,9 +171,31 @@ export function findMatchingBrokerInvestment(
 }
 
 /**
- * Returns ONLY the current broker LTP for a Holding application.
- * Never alters application quantity or buy price.
+ * Extracts authoritative LTP from a UserPortfolioIpoSummary record.
+ * Checks direct currentHoldingPrice as well as underlying brokerHoldings lastPrice attributions.
  */
+export function extractBrokerLtp(
+  inv: UserPortfolioIpoSummary | null | undefined,
+): number | null {
+  if (!inv) return null;
+  if (typeof inv.currentHoldingPrice === 'number' && inv.currentHoldingPrice > 0) {
+    return inv.currentHoldingPrice;
+  }
+  if (Array.isArray(inv.brokerHoldings) && inv.brokerHoldings.length > 0) {
+    for (const h of inv.brokerHoldings) {
+      const p =
+        (h as any).lastPrice ??
+        (h as any).last_price ??
+        (h as any).ltp ??
+        (h as any).currentPrice;
+      if (typeof p === 'number' && p > 0) {
+        return p;
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * Returns ONLY the current broker LTP for a Holding application if available and > 0.
  * Never alters application quantity or buy price.
@@ -190,15 +213,12 @@ export function getBrokerLtpForApplication(
   brokerInvestments?: UserPortfolioIpoSummary[] | null,
 ): number | null {
   const match = findMatchingBrokerInvestment(app, matchedIpo, brokerInvestments);
-  if (match && typeof match.currentHoldingPrice === 'number' && match.currentHoldingPrice > 0) {
-    return match.currentHoldingPrice;
-  }
-  return null;
+  return extractBrokerLtp(match);
 }
 
 /**
  * Resolves the authoritative current price / LTP for a Holding application following the strict priority:
- * 1. Matching connected broker LTP (> 0)
+ * 1. Matching connected broker LTP (> 0) (e.g. Zerodha LTP)
  * 2. Existing stored/manual current price (> 0) as fallback
  * 3. Buy price as final fallback
  */
@@ -214,13 +234,16 @@ export function resolveEffectiveHoldingPrice(
   } | null,
   brokerInvestments?: UserPortfolioIpoSummary[] | null,
 ): number {
+  // Priority 1: Authoritative live Zerodha / broker LTP (> 0)
   const brokerLtp = getBrokerLtpForApplication(app, matchedIpo, brokerInvestments);
   if (brokerLtp != null && brokerLtp > 0) {
     return brokerLtp;
   }
+  // Priority 2: Stored / manual SQLite current price fallback (> 0)
   if (app.sell_price != null && app.sell_price > 0) {
     return app.sell_price;
   }
+  // Priority 3: Buy / allotment price final fallback
   return app.buy_price || 0;
 }
 
@@ -255,76 +278,85 @@ export function enrichApplicationsWithBrokerData<
   }>,
   brokerInvestments?: UserPortfolioIpoSummary[] | null,
 ): T[] {
-  if (!brokerInvestments || brokerInvestments.length === 0) {
-    return applications;
-  }
-
   return applications.map((app) => {
-    const matchedIpo = ipos.find((i) => i.id === app.ipo_id);
+    const matchedIpo = ipos.find(
+      (i) =>
+        i.id === app.ipo_id ||
+        (i.backend_ipo_id && i.backend_ipo_id === app.ipo_id) ||
+        (app.ipo_name &&
+          (i.ipo_name === app.ipo_name || i.company_name === app.ipo_name)),
+    );
     const brokerInv = findMatchingBrokerInvestment(
       app,
       matchedIpo,
       brokerInvestments,
     );
 
-    if (!brokerInv) {
-      return app;
-    }
-
     let effectiveStatus = app.status;
     let effectiveSellPrice = app.sell_price;
     let effectiveBroker = app.user_broker;
 
-    const brokerNames = Array.from(
-      new Set(
-        [
-          ...(brokerInv.brokerHoldings || []).map((bh: any) => bh.broker),
-          ...(brokerInv.sellTrades || []).map((st: any) => st.broker),
-        ].filter(Boolean),
-      ),
-    ).join(', ');
-
-    if (brokerNames) {
-      effectiveBroker = brokerNames;
-    }
-
-    if (app.status === 'Holding') {
-      const isSoldOnBroker =
-        (brokerInv.status === 'FULLY_SOLD' ||
-          (brokerInv.totalSoldQuantity > 0 &&
-            brokerInv.remainingHoldingQuantity === 0)) &&
-        typeof brokerInv.weightedSellPrice === 'number' &&
-        brokerInv.weightedSellPrice > 0;
-
-      if (isSoldOnBroker) {
-        // Automatic sale detection: Transition Holding -> Sold with executed trade price
-        effectiveStatus = 'Sold';
-        effectiveSellPrice = brokerInv.weightedSellPrice;
-      } else if (
-        typeof brokerInv.currentHoldingPrice === 'number' &&
-        brokerInv.currentHoldingPrice > 0
-      ) {
-        // Priority 1: Authoritative LTP whenever available from connected broker (overrides SQLite stored price)
-        effectiveSellPrice = brokerInv.currentHoldingPrice;
-      } else if (app.sell_price != null && app.sell_price > 0) {
-        // Priority 2: Existing stored/manual current price fallback
-        effectiveSellPrice = app.sell_price;
-      } else {
-        // Priority 3: Buy price as final fallback
-        effectiveSellPrice = app.buy_price || 0;
+    if (brokerInv) {
+      const allBrokerHoldings = [
+        ...(brokerInv.brokerHoldings || []),
+        ...(brokerInv.sellTrades || []),
+      ];
+      if (allBrokerHoldings.length > 0) {
+        const brokerNames = Array.from(
+          new Set(allBrokerHoldings.map((b: any) => b.broker).filter(Boolean)),
+        ).join(', ');
+        if (brokerNames) {
+          effectiveBroker = brokerNames;
+        }
       }
-    } else if (app.status === 'Sold') {
-      // Priority 1: Actual executed broker sell_price
-      if (
-        typeof brokerInv.weightedSellPrice === 'number' &&
-        brokerInv.weightedSellPrice > 0
-      ) {
-        effectiveSellPrice = brokerInv.weightedSellPrice;
-      } else if (app.sell_price != null && app.sell_price > 0) {
-        // Priority 2: Existing stored executed sell_price
-        effectiveSellPrice = app.sell_price;
+
+      if (app.status === 'Holding') {
+        const isSoldOnBroker =
+          (brokerInv.status === 'FULLY_SOLD' ||
+            (brokerInv.totalSoldQuantity > 0 &&
+              brokerInv.remainingHoldingQuantity === 0)) &&
+          typeof brokerInv.weightedSellPrice === 'number' &&
+          brokerInv.weightedSellPrice > 0;
+
+        if (isSoldOnBroker) {
+          // Automatic sale detection: Transition Holding -> Sold with executed trade price
+          effectiveStatus = 'Sold';
+          effectiveSellPrice = brokerInv.weightedSellPrice;
+        } else {
+          const brokerLtp = extractBrokerLtp(brokerInv);
+          if (brokerLtp != null && brokerLtp > 0) {
+            // Priority 1: Authoritative LTP from connected broker (MUST take priority over SQLite stored sell_price)
+            effectiveSellPrice = brokerLtp;
+          } else if (app.sell_price != null && app.sell_price > 0) {
+            // Priority 2: Stored/manual current price fallback
+            effectiveSellPrice = app.sell_price;
+          } else {
+            // Priority 3: Buy price as final fallback
+            effectiveSellPrice = app.buy_price || 0;
+          }
+        }
+      } else if (app.status === 'Sold') {
+        // Priority 1: Actual executed broker sell_price
+        if (
+          typeof brokerInv.weightedSellPrice === 'number' &&
+          brokerInv.weightedSellPrice > 0
+        ) {
+          effectiveSellPrice = brokerInv.weightedSellPrice;
+        } else if (app.sell_price != null && app.sell_price > 0) {
+          // Priority 2: Existing stored executed sell_price
+          effectiveSellPrice = app.sell_price;
+        }
+        // Priority 3: Never use current broker LTP for Sold
       }
-      // Priority 3: Never use current broker LTP for Sold
+    } else {
+      // When no broker match exists:
+      if (app.status === 'Holding') {
+        if (app.sell_price != null && app.sell_price > 0) {
+          effectiveSellPrice = app.sell_price;
+        } else {
+          effectiveSellPrice = app.buy_price || 0;
+        }
+      }
     }
 
     // Quantity, shares_count, and buy_price are NEVER modified from broker

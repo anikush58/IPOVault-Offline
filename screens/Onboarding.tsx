@@ -18,10 +18,13 @@ import { PageIndicator } from '@/components/onboarding/PageIndicator';
 import { PrimaryButton } from '@/components/onboarding/PrimaryButton';
 import { ThemeToggle } from '@/components/onboarding/ThemeToggle';
 
+import { useAuth } from '@/context/AuthContext';
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export function OnboardingScreenView() {
   const router = useRouter();
+  const { user } = useAuth();
   const { isDark, getSlideImage } = useColorSchemeAssets();
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
@@ -45,7 +48,11 @@ export function OnboardingScreenView() {
       } catch (e) {
         if (__DEV__) console.warn('Failed to save onboarding completion state', e);
       }
-      router.replace('/(tabs)');
+      if (user) {
+        router.replace('/(tabs)');
+      } else {
+        router.replace('/auth');
+      }
     }
   };
 

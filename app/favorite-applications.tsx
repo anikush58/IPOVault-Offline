@@ -14,21 +14,45 @@ import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { IconButton } from '@/components/ui/IconButton';
 import { useDB, type ApplicationWithDetails } from '@/context/DBContext';
+import { useAuth } from '@/context/AuthContext';
 import { ApplicationCard } from '@/components/ApplicationCard';
 import { UpdateApplicationModal } from '@/components/UpdateApplicationModal';
+import { enrichApplicationsWithBrokerData, resolveCanonicalBrokerUserId } from '@/utils/brokerMatching';
+import { brokerApiService, type UserPortfolioSummaryResponse } from '@/services/broker/BrokerApiService';
 
 export default function FavoriteApplicationsScreen() {
   const colors = useColors();
   const router = useRouter();
-  const { applications, isLoading, refresh } = useDB();
+  const { user: authUser } = useAuth();
+  const { applications, ipos, users, isLoading, refresh } = useDB();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
   const [selectedApp, setSelectedApp] = useState<ApplicationWithDetails | null>(null);
+  const [brokerPortfolio, setBrokerPortfolio] = useState<UserPortfolioSummaryResponse | null>(null);
+
+  const activeUserId = React.useMemo(() => {
+    return resolveCanonicalBrokerUserId(authUser, users);
+  }, [authUser, users]);
+
+  React.useEffect(() => {
+    if (!activeUserId) return;
+    brokerApiService.getUserPortfolio(activeUserId).then((p) => {
+      if (p) setBrokerPortfolio(p);
+    }).catch(() => {});
+  }, [activeUserId]);
+
+  const effectiveApplications = React.useMemo(() => {
+    return enrichApplicationsWithBrokerData(
+      applications,
+      ipos,
+      brokerPortfolio?.investments,
+    );
+  }, [applications, ipos, brokerPortfolio]);
 
   const favoriteApps = React.useMemo(() => {
-    return applications.filter((a) => a.is_favorite === 1);
-  }, [applications]);
+    return effectiveApplications.filter((a) => a.is_favorite === 1);
+  }, [effectiveApplications]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

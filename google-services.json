@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "649099972",
+    "project_id": "getipovault1",
+    "storage_bucket": "getipovault1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:649099972:android:0dacd971a8c21982462791",
+        "android_client_info": {
+          "package_name": "com.ipovault.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "649099972-44aod5khi2li91lm6ucluf9220cndb97.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.ipovault.app",
+            "certificate_hash": "765e8512d8dc541ef12f4451f89e9b7299d69b58"
+          }
+        },
+        {
+          "client_id": "649099972-hrmk5h725abna6a4o96ikcbqfl4ke2tn.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCI_TIJyybMpBnywMDUeE56TQSyf5mgPWY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "649099972-hrmk5h725abna6a4o96ikcbqfl4ke2tn.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

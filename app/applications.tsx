@@ -383,7 +383,7 @@ export default function ApplicationsScreen() {
             )}
 
             {/* Applications Overview Card */}
-            <ApplicationsOverviewCard applications={applications} />
+            <ApplicationsOverviewCard applications={searchFiltered} />
           </View>
         )}
         renderSectionHeader={() => (

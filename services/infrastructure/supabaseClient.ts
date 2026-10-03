@@ -8,7 +8,7 @@ export class SupabaseClientService {
 
   async getUserId(): Promise<string | null> {
     const session = await this.getSession();
-    return session?.user?.id || null;
+    return session?.user?.uid || session?.user?.id || null;
   }
 
   async upsertRow(tableName: string, payload: any): Promise<{ data: any; error: any }> {

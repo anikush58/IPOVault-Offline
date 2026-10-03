@@ -22,7 +22,8 @@ import { useDialog } from '@/context/DialogContext';
 import { useDB } from '@/context/DBContext';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
-import { useCloudBackup } from '@/hooks/useCloudBackup';
+import { useFirestoreSync } from '@/hooks/useFirestoreSync';
+import { useAuth } from '@/context/AuthContext';
 
 async function shareFile(
   content: string,
@@ -163,22 +164,86 @@ export default function SettingsScreen() {
   const router = useRouter();
 
   const {
-    isAuthenticated,
-    userEmail,
-    isConnecting,
-    isBackingUp,
+    isAuthenticated: isCloudAuth,
+    userEmail: cloudUserEmail,
+    isSyncing,
     isRestoring,
-    lastBackupTime,
+    lastSyncTime,
     latestMetadata,
-    connect,
-    disconnect,
-    backupNow,
+    syncNow,
     restoreNow,
-  } = useCloudBackup();
+  } = useFirestoreSync();
+
+  const { user: authUser, signOut, resetPassword } = useAuth();
 
   const [busy, setBusy] = useState(false);
   const topPad = Platform.OS === 'web' ? 24 : insets.top;
   const hasData = users.length > 0 || ipos.length > 0 || applications.length > 0;
+
+  const handleLogout = () => {
+    showConfirm({
+      title: 'Sign Out',
+      message: `Are you sure you want to sign out${authUser?.email ? ` (${authUser.email})` : ''}?\n\nYour cloud backup is safe in Cloud Firestore. Local session data will be cleared on this device.`,
+      confirmText: 'Sign Out',
+      cancelText: 'Cancel',
+      isDanger: true,
+      onConfirm: async () => {
+        setBusy(true);
+        try {
+          await clearAllData();
+          await signOut();
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          showSuccess('Signed Out', 'You have been signed out successfully.');
+          router.replace('/auth');
+        } catch (e: any) {
+          showError('Sign Out Error', e?.message || 'Failed to sign out. Please try again.');
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+  };
+
+  const handleResetPassword = () => {
+    if (!authUser?.email) return;
+    showConfirm({
+      title: 'Reset Password',
+      message: `Send a password reset email to ${authUser.email}?`,
+      confirmText: 'Send Email',
+      cancelText: 'Cancel',
+      onConfirm: async () => {
+        setBusy(true);
+        try {
+          const res = await resetPassword(authUser.email!);
+          if (res.error) {
+            showError('Password Reset Failed', res.error);
+          } else {
+            showSuccess(
+              'Reset Link Sent',
+              `A password reset link has been sent to ${authUser.email}. Please check your email inbox to update your password.`
+            );
+          }
+        } catch (e: any) {
+          showError('Error', e?.message || 'Failed to send reset email.');
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+  };
+
+  const handleCopyUid = async () => {
+    if (!authUser?.uid) return;
+    try {
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(authUser.uid);
+      }
+      Haptics.selectionAsync();
+      showSuccess('User ID', `Firebase UID:\n${authUser.uid}`);
+    } catch {
+      showInfo('User ID', authUser.uid);
+    }
+  };
 
   const handleNotificationsPress = () => {
     showInfo(
@@ -187,89 +252,44 @@ export default function SettingsScreen() {
     );
   };
 
-  const handleConnectGoogleDrive = async () => {
-    setBusy(true);
-    try {
-      const res = await connect();
-      if (res.success) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        showSuccess(
-          'Google Drive Connected',
-          'IPOVault is now connected to your private Google Drive AppData storage. Your backups will be stored safely and privately in your own Google Drive.'
-        );
-      } else if (res.error && !res.error.includes('cancelled')) {
-        showError('Connection Failed', res.error);
-      }
-    } catch (e: any) {
-      showError('Connection Failed', e?.message || 'Failed to connect Google Drive.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleDisconnectGoogleDrive = () => {
-    showConfirm({
-      title: 'Disconnect Google Drive',
-      message:
-        'Disconnect IPOVault from your Google Drive account? Existing backup files in your Google Drive will be preserved.',
-      confirmText: 'Disconnect',
-      isDanger: true,
-      onConfirm: async () => {
-        setBusy(true);
-        try {
-          await disconnect();
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          showSuccess(
-            'Disconnected',
-            'Google Drive account disconnected successfully.'
-          );
-        } catch (e: any) {
-          showError('Disconnect Failed', e?.message || 'Failed to disconnect Google Drive.');
-        } finally {
-          setBusy(false);
-        }
-      },
-    });
-  };
-
-  const handleCloudBackupNow = async () => {
-    if (!isAuthenticated) {
-      await handleConnectGoogleDrive();
+  const handleCloudSyncNow = async () => {
+    if (!isCloudAuth) {
+      router.push('/auth');
       return;
     }
 
     setBusy(true);
     try {
-      const res = await backupNow();
+      const res = await syncNow();
       if (res.success) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         showSuccess(
-          'Google Drive Backup Successful',
-          'Successfully created and saved your IPOVault backup snapshot to your private Google Drive AppData.'
+          'Cloud Sync Complete',
+          'Successfully backed up all IPOVault data to Cloud Firestore.'
         );
       } else {
-        showError('Backup Failed', res.error || 'Failed to complete Google Drive backup.');
+        showError('Sync Failed', res.error || 'Failed to sync with Cloud Firestore.');
       }
     } catch (e: any) {
-      showError('Backup Failed', e?.message || 'Unexpected Google Drive backup error.');
+      showError('Sync Failed', e?.message || 'Unexpected cloud sync error.');
     } finally {
       setBusy(false);
     }
   };
 
   const handleCloudRestoreNow = async () => {
-    if (!isAuthenticated) {
-      await handleConnectGoogleDrive();
+    if (!isCloudAuth) {
+      router.push('/auth');
       return;
     }
 
     const metaStr = latestMetadata
-      ? `Snapshot Date: ${new Date(latestMetadata.created_at).toLocaleString()}\nRecords: ${latestMetadata.userCount ?? 0} user(s), ${latestMetadata.ipoCount ?? 0} IPO(s), ${latestMetadata.applicationCount ?? 0} app(s)`
-      : 'Restoring will merge remote snapshot data from your Google Drive into your local database.';
+      ? `Last Synced: ${new Date(latestMetadata.last_synced_at).toLocaleString()}\nCloud Records: ${latestMetadata.userCount ?? 0} user(s), ${latestMetadata.ipoCount ?? 0} IPO(s), ${latestMetadata.applicationCount ?? 0} application(s)`
+      : 'Restoring will download your data from Cloud Firestore into your local database.';
 
     showConfirm({
-      title: 'Restore from Google Drive',
-      message: `${metaStr}\n\nDo you want to proceed with restoring your data from Google Drive?`,
+      title: 'Restore from Cloud Firestore',
+      message: `${metaStr}\n\nDo you want to restore your cloud data into this device?`,
       confirmText: 'Restore Now',
       cancelText: 'Cancel',
       onConfirm: async () => {
@@ -279,37 +299,17 @@ export default function SettingsScreen() {
           if (res.success) {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             showSuccess(
-              'Google Drive Restore Complete',
-              `Successfully restored from cloud snapshot:\n• ${res.userCount} user(s)\n• ${res.ipoCount} IPO(s)\n• ${res.applicationCount} application(s)`
+              'Restore Complete',
+              `Successfully restored from Cloud Firestore:\n• ${res.userCount ?? 0} user(s)\n• ${res.ipoCount ?? 0} IPO(s)\n• ${res.applicationCount ?? 0} application(s)`
             );
           } else {
-            showError('Restore Failed', res.error || 'Failed to restore snapshot from Google Drive.');
+            showError('Restore Failed', res.error || 'Failed to restore data from Cloud Firestore.');
           }
         } catch (e: any) {
-          showError('Restore Failed', e?.message || 'Unexpected Google Drive restore error.');
+          showError('Restore Failed', e?.message || 'Unexpected cloud restore error.');
         } finally {
           setBusy(false);
         }
-      },
-    });
-  };
-
-  const handleGoogleDriveAccountPress = () => {
-    if (!isAuthenticated) {
-      handleConnectGoogleDrive();
-      return;
-    }
-
-    showConfirm({
-      title: 'Google Drive Account',
-      message: `Connected as:\n${userEmail || 'Google Account'}\n\nChoose an action:`,
-      confirmText: 'Backup Now',
-      cancelText: 'Disconnect',
-      onConfirm: () => {
-        handleCloudBackupNow();
-      },
-      onCancel: () => {
-        handleDisconnectGoogleDrive();
       },
     });
   };
@@ -383,7 +383,7 @@ export default function SettingsScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showSuccess(
         'Import Complete',
-        `Successfully imported:\n• ${stats.users} user(s)\n• ${stats.ipos} IPO(s)\n• ${stats.applications} application(s)\n\nExisting records were kept.`
+        `Successfully imported:\n• ${stats.users} user(s)\n• ${stats.ipos} IPO(s)\n• ${stats.applications} application(s)\n\nData has been saved locally and backed up to Cloud Firestore.`
       );
     } catch (e: any) {
       showError('Import Failed', e?.message ?? 'Could not read or parse the file. Make sure it was exported from this app.');
@@ -436,12 +436,12 @@ export default function SettingsScreen() {
   const handleLicensesPress = () => {
     showInfo(
       'Open Source Licenses',
-      'IPOVault is built with React Native, Expo, SQLite, Supabase, Lucide/Feather Icons, and open-source packages.\n\nAll components and dependencies are licensed under standard MIT and Apache 2.0 open-source licenses.'
+      'IPOVault is built with React Native, Expo, SQLite, Firebase, Lucide/Feather Icons, and open-source packages.\n\nAll components and dependencies are licensed under standard MIT and Apache 2.0 open-source licenses.'
     );
   };
 
-  const formattedLastBackup = lastBackupTime
-    ? new Date(lastBackupTime).toLocaleString('en-IN', {
+  const formattedLastSync = lastSyncTime
+    ? new Date(lastSyncTime).toLocaleString('en-IN', {
         day: '2-digit',
         month: 'short',
         year: 'numeric',
@@ -469,8 +469,107 @@ export default function SettingsScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: insets.bottom + 80, paddingTop: 10 }}
       >
+        {/* ── SECTION 0: ACCOUNT ── */}
+        <Text style={[styles.sectionHeader, { color: colors.mutedForeground, paddingTop: 0 }]}>ACCOUNT</Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          {authUser ? (
+            <>
+              {/* Profile Overview Card Header */}
+              <View
+                style={[
+                  styles.profileOverviewRow,
+                  {
+                    borderBottomWidth: 1,
+                    borderBottomColor: colors.border,
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.01)',
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.profileAvatar,
+                    {
+                      backgroundColor: isDark ? 'rgba(59, 130, 246, 0.18)' : '#EFF6FF',
+                      borderColor: isDark ? 'rgba(59, 130, 246, 0.35)' : '#BFDBFE',
+                    },
+                  ]}
+                >
+                  {authUser.photoURL ? (
+                    <Image source={{ uri: authUser.photoURL }} style={styles.profileAvatarImg} />
+                  ) : (
+                    <Text style={[styles.profileAvatarText, { color: '#3B82F6' }]}>
+                      {(authUser.displayName || authUser.email || 'U').charAt(0).toUpperCase()}
+                    </Text>
+                  )}
+                </View>
+
+                <View style={styles.profileDetails}>
+                  <Text style={[styles.profileNameText, { color: colors.foreground }]} numberOfLines={1}>
+                    {authUser.displayName || authUser.email?.split('@')[0] || 'Investor Profile'}
+                  </Text>
+                  <Text style={[styles.profileEmailText, { color: colors.mutedForeground }]} numberOfLines={1}>
+                    {authUser.email || 'No email associated'}
+                  </Text>
+
+                  <View style={styles.profileBadgeRow}>
+                    <View
+                      style={[
+                        styles.profileBadge,
+                        { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.18)' : '#ECFDF5' },
+                      ]}
+                    >
+                      <View style={[styles.statusDot, { backgroundColor: '#10B981' }]} />
+                      <Text style={[styles.profileBadgeText, { color: '#10B981' }]}>
+                        {authUser.email?.includes('gmail') ? 'Google Account' : 'Firebase Verified'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {/* Account Setting Options */}
+              <SettingRow
+                icon="key"
+                iconBg="#3B82F618"
+                iconColor="#3B82F6"
+                title="Account ID (UID)"
+                subtitle={authUser.uid}
+                onPress={handleCopyUid}
+              />
+              <SettingRow
+                icon="lock"
+                iconBg="#F59E0B18"
+                iconColor="#F59E0B"
+                title="Reset Password"
+                subtitle="Send reset link to your registered email"
+                onPress={handleResetPassword}
+              />
+              <SettingRow
+                icon="log-out"
+                iconBg="#EF444418"
+                iconColor="#EF4444"
+                title="Log Out"
+                subtitle="Sign out of your account on this device"
+                onPress={handleLogout}
+                danger
+                isLast
+              />
+            </>
+          ) : (
+            <SettingRow
+              icon="log-in"
+              iconBg={colors.primary + '18'}
+              iconColor={colors.primary}
+              title="Sign In / Create Account"
+              subtitle="Connect with Firebase or Google"
+              onPress={() => router.push('/auth')}
+              isLast
+            />
+          )}
+        </View>
+
         {/* ── SECTION 1: PREFERENCES ── */}
-        <Text style={[styles.sectionHeader, { color: colors.mutedForeground, paddingTop: 0 }]}>PREFERENCES</Text>
+        <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>PREFERENCES</Text>
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <SettingRow
             icon={isDark ? 'moon' : 'sun'}
@@ -555,47 +654,47 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* ── SECTION 3: BACKUP & SYNC ── */}
-        <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>BACKUP & SYNC</Text>
+        {/* ── SECTION 3: CLOUD SYNC & BACKUP ── */}
+        <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>CLOUD SYNC & BACKUP</Text>
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <SettingRow
             icon="cloud"
-            iconBg={isAuthenticated ? '#10B98118' : isDark ? '#262C36' : '#F3F4F6'}
-            iconColor={isAuthenticated ? '#10B981' : colors.mutedForeground}
-            title="Google Drive Backup"
-            subtitle={isAuthenticated ? (userEmail || 'Connected') : 'Connect your Google account for private cloud backup'}
-            subtitle2={isAuthenticated ? (formattedLastBackup ? `Last backup: ${formattedLastBackup}` : 'No backups created yet') : undefined}
+            iconBg={isCloudAuth ? '#10B98118' : isDark ? '#262C36' : '#F3F4F6'}
+            iconColor={isCloudAuth ? '#10B981' : colors.mutedForeground}
+            title="Firebase Cloud Firestore"
+            subtitle={isCloudAuth ? (cloudUserEmail || 'Cloud Sync Active') : 'Sign in to sync your data to Cloud Firestore'}
+            subtitle2={isCloudAuth ? (formattedLastSync ? `Last synced: ${formattedLastSync}` : 'Synced with Cloud') : undefined}
             badge={
-              isAuthenticated
-                ? { text: 'Connected' }
+              isCloudAuth
+                ? { text: 'Active' }
                 : {
-                    text: 'Not Connected',
+                    text: 'Offline',
                     bg: isDark ? 'rgba(107, 114, 128, 0.18)' : '#F3F4F6',
                     color: colors.mutedForeground,
                     dotColor: colors.mutedForeground,
                   }
             }
-            onPress={handleGoogleDriveAccountPress}
-            disabled={busy || isConnecting}
-            isLast={!isAuthenticated}
+            onPress={isCloudAuth ? handleCloudSyncNow : () => router.push('/auth')}
+            disabled={busy || isSyncing}
+            isLast={!isCloudAuth}
           />
-          {isAuthenticated && (
+          {isCloudAuth && (
             <>
               <SettingRow
                 icon="upload-cloud"
                 iconBg="#3B82F618"
                 iconColor="#3B82F6"
-                title="Backup Now"
-                subtitle="Save snapshot to Google Drive"
-                onPress={handleCloudBackupNow}
-                disabled={busy || isBackingUp}
+                title="Sync to Cloud Now"
+                subtitle="Upload current local data to Firestore"
+                onPress={handleCloudSyncNow}
+                disabled={busy || isSyncing}
               />
               <SettingRow
                 icon="download-cloud"
                 iconBg="#8B5CF618"
                 iconColor="#8B5CF6"
-                title="Restore from Google Drive"
-                subtitle="Restore data from latest cloud snapshot"
+                title="Restore from Cloud"
+                subtitle="Download data from Cloud Firestore into local database"
                 onPress={handleCloudRestoreNow}
                 disabled={busy || isRestoring}
                 isLast
@@ -881,5 +980,59 @@ const styles = StyleSheet.create({
   footerDot: {
     fontSize: 11,
     fontFamily: 'GoogleSansFlex_500Medium',
+  },
+  profileOverviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    gap: 14,
+  },
+  profileAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  profileAvatarImg: {
+    width: '100%',
+    height: '100%',
+  },
+  profileAvatarText: {
+    fontSize: 22,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  profileDetails: {
+    flex: 1,
+  },
+  profileNameText: {
+    fontSize: 16,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.2,
+  },
+  profileEmailText: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 2,
+  },
+  profileBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  profileBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    gap: 5,
+  },
+  profileBadgeText: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
   },
 });

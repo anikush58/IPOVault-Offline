@@ -251,10 +251,19 @@ export default function UsersScreen() {
       return;
     }
 
+    const resolvedUserId = activeUserId || resolveCanonicalBrokerUserId(authUser, users);
+    if (!resolvedUserId) {
+      showError(
+        'Sign-in Required',
+        'Please sign in with your account to connect a broker and sync your investments.',
+      );
+      return;
+    }
+
     setBrokerActionUserId(targetUser.id);
     try {
       // 1. Create or retrieve existing backend BrokerAccount
-      const account = await brokerApiService.createAccount(activeUserId, {
+      const account = await brokerApiService.createAccount(resolvedUserId, {
         profileId: targetUser.id,
         broker: canonical.brokerType,
         accountName: targetUser.name,
@@ -264,7 +273,7 @@ export default function UsersScreen() {
       // 2. Fetch OAuth authorization URL
       const redirectUri = Linking.createURL('broker-callback');
       const { authorizationUrl } = await brokerApiService.getAuthorizationUrl(
-        activeUserId,
+        resolvedUserId,
         account.id,
         canonical.slug,
         redirectUri,

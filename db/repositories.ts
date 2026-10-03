@@ -6,7 +6,7 @@ function getCurrentTime() {
   return new Date().toISOString();
 }
 
-import { repositoryAdapter } from '@/services/infrastructure';
+import { repositoryAdapter } from '@/services/infrastructure/repositoryAdapter';
 
 export interface IUserRepository {
   getAll(): Promise<User[]>;

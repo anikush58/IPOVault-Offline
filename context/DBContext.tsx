@@ -6,13 +6,19 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Crypto from 'expo-crypto';
 import { UserRepository, IPORepository, ApplicationRepository, BankRepository } from '@/db/repositories';
 import { syncStore } from '@/services/sync/syncStatus';
-import { uploadService } from '@/services/infrastructure';
 import { safeRunAsync, safeGetFirstAsync, safeGetAllAsync, runWithTransaction } from '@/utils/sqliteDebug';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { ensureBase64DataUrl, extractBase64Payload, saveBase64ToLocalImage } from '@/utils/imageUtils';
 import { getEffectiveAvatarUrl } from '@/utils/avatarUtils';
 import { getRegistrarConfig } from '@/services/allotment/registrarConfig';
-import { scheduleDebouncedCloudBackup, isRestoreInProgress } from '@/services/cloud/cloudBackupService';
+import {
+  scheduleDebouncedFirestoreSync,
+  syncUserDataToFirestore,
+  fetchUserDataFromFirestore,
+  syncDeltaFromFirestore,
+  clearLocalSyncCursor,
+  isCloudSyncBusy,
+} from '@/services/cloud/firestoreSyncService';
 
 import { useAuth } from '@/context/AuthContext';
 
@@ -102,7 +108,6 @@ export type BankAccount = {
   upi_app?: string;
 };
 
-type ImportResult = { users: number; ipos: number; applications: number; allotments?: number };
 
 export type IPOAllotmentRecord = {
   id: string;
@@ -138,12 +143,22 @@ export type SaveAllotmentParams = {
   error_code?: string;
 };
 
+export type ImportResult = {
+  users: number;
+  ipos: number;
+  applications: number;
+  banks?: number;
+  allotments?: number;
+};
+
 type DBContextType = {
   users: User[];
   ipos: IPOListing[];
   applications: ApplicationWithDetails[];
   bankAccounts: BankAccount[];
   isLoading: boolean;
+  isRestoring: boolean;
+  restoreCloudData: (targetUid?: string) => Promise<boolean>;
   refresh: () => Promise<void>;
   // User CRUD
   addUser: (user: Omit<User, 'id'>) => Promise<void>;
@@ -219,7 +234,7 @@ type DBContextType = {
   exportCSV: () => Promise<Record<string, string>>;
   importCSV: (csv: string) => Promise<ImportResult>;
   exportJSON: () => Promise<string>;
-  importJSON: (json: string) => Promise<ImportResult>;
+  importJSON: (json: string, options?: { suppressLegacySync?: boolean }) => Promise<ImportResult>;
   autoExportEnabled: boolean;
   setAutoExportEnabled: (val: boolean) => Promise<void>;
 };
@@ -256,6 +271,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
   const [applications, setApplications] = useState<ApplicationWithDetails[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const syncedUidRef = React.useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
     // Sync authenticated user ID to local users_table owner_id column
@@ -853,7 +870,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     } catch {}
 
     await refresh();
-    scheduleDebouncedCloudBackup(exportJSON, 10000);
+    scheduleDebouncedFirestoreSync(exportJSON, authUser?.uid, 5000);
 
     return {
       id,
@@ -898,6 +915,11 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
   // ── Data management ────────────────────────────────────────────────────────
 
   const clearAllData = async () => {
+    syncedUidRef.current = null;
+    if (authUser?.uid) {
+      await clearLocalSyncCursor(authUser.uid);
+    }
+    await db.execAsync('DELETE FROM ipo_allotments');
     await db.execAsync('DELETE FROM ipo_applications');
     await db.execAsync('DELETE FROM ipo_listings');
     await db.execAsync('DELETE FROM users_table');
@@ -1155,6 +1177,58 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     const usedAppIds = new Set<string>();
     const now = new Date().toISOString();
     const suppressSync = options?.suppressLegacySync ?? false;
+    const startTime = Date.now();
+
+    // 0. Prefetch existing tables into Memory Maps for instant O(1) lookup
+    const [
+      existingBanksList,
+      existingUsersList,
+      existingIposList,
+      existingAppsList,
+      existingAllotmentsList,
+    ] = await Promise.all([
+      safeGetAllAsync<{ id: string; bank_name: string }>(db, 'SELECT id, bank_name FROM bank_accounts', [], 'importJSON.prefetchBanks'),
+      safeGetAllAsync<{ id: string; pan_number: string; name: string }>(db, 'SELECT id, pan_number, name FROM users_table', [], 'importJSON.prefetchUsers'),
+      safeGetAllAsync<{ id: string; ipo_name: string }>(db, 'SELECT id, ipo_name FROM ipo_listings', [], 'importJSON.prefetchIPOs'),
+      safeGetAllAsync<{ id: string; user_id: string; ipo_id: string; status: string }>(db, 'SELECT id, user_id, ipo_id, status FROM ipo_applications', [], 'importJSON.prefetchApps'),
+      safeGetAllAsync<{ id: string; application_id: string }>(db, 'SELECT id, application_id FROM ipo_allotments', [], 'importJSON.prefetchAllotments'),
+    ]);
+
+    const existingBanksByName = new Map<string, string>();
+    for (const b of existingBanksList || []) {
+      if (b.bank_name) existingBanksByName.set(b.bank_name.trim().toLowerCase(), b.id);
+    }
+
+    const existingUsersById = new Map<string, { id: string; pan_number: string; name: string }>();
+    const existingUsersByPan = new Map<string, { id: string; pan_number: string; name: string }>();
+    const existingUsersByName = new Map<string, { id: string; pan_number: string; name: string }>();
+    for (const u of existingUsersList || []) {
+      if (u.id) existingUsersById.set(u.id, u);
+      if (u.pan_number) existingUsersByPan.set(u.pan_number.trim().toUpperCase(), u);
+      if (u.name) existingUsersByName.set(u.name.trim().toLowerCase(), u);
+    }
+
+    const existingIposById = new Map<string, { id: string; ipo_name: string }>();
+    const existingIposByName = new Map<string, { id: string; ipo_name: string }>();
+    for (const i of existingIposList || []) {
+      if (i.id) existingIposById.set(i.id, i);
+      if (i.ipo_name) existingIposByName.set(i.ipo_name.trim().toLowerCase(), i);
+    }
+
+    const existingAppsById = new Map<string, { id: string; user_id: string; ipo_id: string; status: string }>();
+    const existingAppsByCandidateKey = new Map<string, { id: string; user_id: string; ipo_id: string; status: string }>();
+    for (const a of existingAppsList || []) {
+      if (a.id) existingAppsById.set(a.id, a);
+      const candKey = `${a.user_id}_${a.ipo_id}_${a.status}`;
+      if (!existingAppsByCandidateKey.has(candKey)) {
+        existingAppsByCandidateKey.set(candKey, a);
+      }
+    }
+
+    const existingAllotmentsByAppId = new Map<string, { id: string; application_id: string }>();
+    for (const alt of existingAllotmentsList || []) {
+      if (alt.application_id) existingAllotmentsByAppId.set(alt.application_id, alt);
+    }
 
     // Transactional Restore Execution
     await runWithTransaction(
@@ -1163,13 +1237,9 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         // 1. Process Banks
         for (const bank of data.banks ?? []) {
           if (!bank || !bank.bank_name) continue;
-          const existing = await safeGetFirstAsync(
-            db,
-            'SELECT id FROM bank_accounts WHERE bank_name=?',
-            [bank.bank_name],
-            'DBContext.importJSON.bank'
-          );
-          if (!existing) {
+          const bankNameKey = bank.bank_name.trim().toLowerCase();
+          const existingId = existingBanksByName.get(bankNameKey);
+          if (!existingId) {
             const id = Crypto.randomUUID();
             const balance = bank.balance ?? 0;
             await safeRunAsync(
@@ -1178,10 +1248,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
               [id, bank.bank_name, balance, now, now],
               'DBContext.importJSON.insertBank'
             );
+            existingBanksByName.set(bankNameKey, id);
             bankImported++;
-            if (!suppressSync) {
-              await uploadService.enqueue(db, 'bank_accounts', id);
-            }
           }
         }
 
@@ -1189,25 +1257,16 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         for (const u of data.users ?? []) {
           if (!u) continue;
           const pan = u.pan_number?.trim() || '';
+          const panKey = pan.toUpperCase();
           const name = u.name?.trim() || 'Unknown User';
+          const nameKey = name.toLowerCase();
           const uId = u.id;
 
-          let existing: { id: string } | null = null;
-          if (pan) {
-            existing = await safeGetFirstAsync<{ id: string }>(
-              db,
-              'SELECT id FROM users_table WHERE pan_number = ? OR id = ?',
-              [pan, uId],
-              'DBContext.importJSON.user'
-            );
-          } else if (uId) {
-            existing = await safeGetFirstAsync<{ id: string }>(
-              db,
-              'SELECT id FROM users_table WHERE id = ? OR (name = ? AND name != "")',
-              [uId, name],
-              'DBContext.importJSON.user'
-            );
-          }
+          const existing =
+            (uId && existingUsersById.get(uId)) ||
+            (panKey && existingUsersByPan.get(panKey)) ||
+            (nameKey && existingUsersByName.get(nameKey)) ||
+            null;
 
           const restoredAvatarUrl = getEffectiveAvatarUrl({
             id: uId,
@@ -1238,11 +1297,13 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
               [newId, name, pan, u.client_id || '', u.upi_id || '', u.broker || '', u.tpin || '', u.upi_app || '', u.bank_name || '', restoredAvatarUrl, defaultAmount, archivedVal, now, now],
               'DBContext.importJSON.insertUser'
             );
+            const userObj = { id: newId, pan_number: pan, name };
+            if (uId) existingUsersById.set(uId, userObj);
+            existingUsersById.set(newId, userObj);
+            if (panKey) existingUsersByPan.set(panKey, userObj);
+            existingUsersByName.set(nameKey, userObj);
             userIdMap.set(uId, newId);
             userCount++;
-            if (!suppressSync) {
-              await uploadService.enqueue(db, 'users_table', newId);
-            }
           }
         }
 
@@ -1250,24 +1311,13 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         for (const ipo of data.ipos ?? []) {
           if (!ipo) continue;
           const ipoName = ipo.ipo_name?.trim() || 'Unknown IPO';
+          const ipoNameKey = ipoName.toLowerCase();
           const ipoId = ipo.id;
 
-          let existing: { id: string } | null = null;
-          if (ipoId) {
-            existing = await safeGetFirstAsync<{ id: string }>(
-              db,
-              'SELECT id FROM ipo_listings WHERE id = ? OR ipo_name = ?',
-              [ipoId, ipoName],
-              'DBContext.importJSON.ipo'
-            );
-          } else {
-            existing = await safeGetFirstAsync<{ id: string }>(
-              db,
-              'SELECT id FROM ipo_listings WHERE ipo_name = ?',
-              [ipoName],
-              'DBContext.importJSON.ipo'
-            );
-          }
+          const existing =
+            (ipoId && existingIposById.get(ipoId)) ||
+            existingIposByName.get(ipoNameKey) ||
+            null;
 
           let restoredLogoUrl = '';
           const logoInput =
@@ -1388,11 +1438,12 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
               ],
               'DBContext.importJSON.insertIPO'
             );
+            const ipoObj = { id: newId, ipo_name: ipoName };
+            if (ipoId) existingIposById.set(ipoId, ipoObj);
+            existingIposById.set(newId, ipoObj);
+            existingIposByName.set(ipoNameKey, ipoObj);
             ipoIdMap.set(ipoId, newId);
             ipoCount++;
-            if (!suppressSync) {
-              await uploadService.enqueue(db, 'ipo_listings', newId);
-            }
           }
         }
 
@@ -1506,51 +1557,23 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
           if (!targetUserId || !targetIpoId) continue;
 
-          const userExists = await safeGetFirstAsync(
-            db,
-            'SELECT id FROM users_table WHERE id = ?',
-            [targetUserId],
-            'DBContext.importJSON.checkUserFK'
-          );
-          const ipoExists = await safeGetFirstAsync(
-            db,
-            'SELECT id FROM ipo_listings WHERE id = ?',
-            [targetIpoId],
-            'DBContext.importJSON.checkIpoFK'
-          );
+          const userExists = existingUsersById.has(targetUserId);
+          const ipoExists = existingIposById.has(targetIpoId);
 
           if (!userExists || !ipoExists) {
-            console.warn(
-              `[DBContext.importJSON] Skipping application because user (${targetUserId}) or IPO (${targetIpoId}) does not exist.`
-            );
             continue;
           }
 
           const isFavVal = app.is_favorite ? 1 : 0;
           const targetSharesCount = app.shares_count ?? app.quantity ?? null;
 
-          // 1. Check if application matches by exact ID
-          let existing: { id: string } | null = null;
-          if (app.id && !usedAppIds.has(app.id)) {
-            existing = await safeGetFirstAsync<{ id: string }>(
-              db,
-              'SELECT id FROM ipo_applications WHERE id = ?',
-              [app.id],
-              'DBContext.importJSON.appById'
-            );
-          }
+          let existing = (app.id && !usedAppIds.has(app.id) && existingAppsById.get(app.id)) || null;
 
-          // 2. If not matched by ID, check if an unmapped existing application exists with matching user, ipo, and status
           if (!existing) {
-            const candidates = await safeGetAllAsync<{ id: string; status: string }>(
-              db,
-              'SELECT id, status FROM ipo_applications WHERE user_id = ? AND ipo_id = ? AND deleted_at IS NULL',
-              [targetUserId, targetIpoId],
-              'DBContext.importJSON.appCandidates'
-            );
-            const statusMatch = candidates.find((c) => !usedAppIds.has(c.id) && c.status === app.status);
-            if (statusMatch) {
-              existing = statusMatch;
+            const candKey = `${targetUserId}_${targetIpoId}_${app.status}`;
+            const candidate = existingAppsByCandidateKey.get(candKey);
+            if (candidate && !usedAppIds.has(candidate.id)) {
+              existing = candidate;
             }
           }
 
@@ -1618,11 +1641,10 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
               ],
               'DBContext.importJSON.insertApp'
             );
+            const appObj = { id, user_id: targetUserId, ipo_id: targetIpoId, status: app.status || 'Applied' };
+            existingAppsById.set(id, appObj);
             appIdMap.set(app.id, id);
             appCount++;
-            if (!suppressSync) {
-              await uploadService.enqueue(db, 'ipo_applications', id);
-            }
           }
         }
 
@@ -1633,20 +1655,10 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           const targetUserId = userIdMap.get(alt.user_id) ?? alt.user_id;
           const targetIpoId = ipoIdMap.get(alt.ipo_id) ?? alt.ipo_id;
 
-          const appExists = await safeGetFirstAsync(
-            db,
-            'SELECT id FROM ipo_applications WHERE id = ?',
-            [targetAppId],
-            'DBContext.importJSON.checkAppFK'
-          );
+          const appExists = existingAppsById.has(targetAppId);
           if (!appExists) continue;
 
-          const existingAlt = await safeGetFirstAsync<{ id: string }>(
-            db,
-            'SELECT id FROM ipo_allotments WHERE application_id = ?',
-            [targetAppId],
-            'DBContext.importJSON.alt'
-          );
+          const existingAlt = existingAllotmentsByAppId.get(targetAppId);
 
           if (existingAlt) {
             await safeRunAsync(
@@ -1663,6 +1675,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
               [altId, targetAppId, targetUserId, targetIpoId, alt.allotment_status || 'UNKNOWN', alt.allotted_lots ?? 0, alt.allotted_shares ?? 0, alt.allotment_price ?? 0, alt.application_amount ?? 0, alt.refund_amount ?? 0, alt.registrar || '', alt.verification_method || 'AUTOMATED', alt.checked_at || now, alt.error_code || '', alt.created_at || now, now],
               'DBContext.importJSON.insertAlt'
             );
+            existingAllotmentsByAppId.set(targetAppId, { id: altId, application_id: targetAppId });
             allotmentCount++;
           }
         }
@@ -1670,9 +1683,25 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       'DBContext.importJSON.transaction'
     );
 
+    const importDuration = Date.now() - startTime;
+    console.log(`[DBContext.importJSON] Imported in ${importDuration}ms:\nUsers: ${userCount}\nBanks: ${bankImported}\nIPOs: ${ipoCount}\nApplications: ${appCount}\nAllotments: ${allotmentCount}`);
+
     console.log(`Imported:\nUsers: ${userCount}\nBanks: ${bankImported}\nIPOs: ${ipoCount}\nApplications: ${appCount}\nAllotments: ${allotmentCount}`);
 
     await refresh();
+
+    // If authenticated, immediately sync imported dataset to Cloud Firestore
+    if (authUser?.uid && !options?.suppressLegacySync) {
+      try {
+        const fullJson = await exportJSON();
+        const fullData = JSON.parse(fullJson);
+        await syncUserDataToFirestore(authUser.uid, fullData);
+        console.log('[DBContext.importJSON] Successfully synced imported data to Cloud Firestore.');
+      } catch (err) {
+        console.warn('[DBContext.importJSON] Firestore sync after import warning:', err);
+      }
+    }
+
     return { users: userCount, ipos: ipoCount, applications: appCount, allotments: allotmentCount };
   };
 
@@ -2161,14 +2190,73 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     runAutoExport();
   }, [isLoading, autoExportEnabled, users, ipos, applications, bankAccounts, exportJSON]);
 
-  // Run debounced auto-cloud backup trigger when persistent user data changes
-  useEffect(() => {
-    if (isLoading) return;
-    if (isRestoreInProgress()) return;
-    if (users.length === 0 && ipos.length === 0 && applications.length === 0 && bankAccounts.length === 0) return;
+  const restoreCloudData = useCallback(
+    async (targetUid?: string): Promise<boolean> => {
+      const uid = targetUid || authUser?.uid;
+      if (!uid) return false;
+      setIsRestoring(true);
+      const startTime = Date.now();
+      try {
+        console.log(`[DBContext] Starting incremental delta cloud restore for user: ${uid}`);
+        const deltaRes = await syncDeltaFromFirestore(uid, db, async (json) => {
+          await importJSON(json, { suppressLegacySync: true });
+        });
+        if (deltaRes.success) {
+          syncedUidRef.current = uid;
+          await refresh();
+          const duration = Date.now() - startTime;
+          console.log(
+            `[DBContext] Cloud restore completed in ${duration}ms. (Changes applied: ${deltaRes.changesApplied ?? 0}, upToDate: ${deltaRes.upToDate ?? false})`
+          );
+          return true;
+        }
+        return false;
+      } catch (err) {
+        console.warn('[DBContext] restoreCloudData error:', err);
+        return false;
+      } finally {
+        setIsRestoring(false);
+      }
+    },
+    [authUser?.uid, db, importJSON, refresh]
+  );
 
-    scheduleDebouncedCloudBackup(exportJSON, 10000);
-  }, [isLoading, users, ipos, applications, bankAccounts, exportJSON]);
+  // Incremental delta-sync from Firestore on app startup / login (once per user session)
+  useEffect(() => {
+    if (isLoading || !authUser?.uid) {
+      if (!authUser?.uid) {
+        syncedUidRef.current = null;
+      }
+      return;
+    }
+
+    if (syncedUidRef.current === authUser.uid) {
+      return;
+    }
+
+    let isMounted = true;
+    const checkAndSyncDelta = async () => {
+      try {
+        syncedUidRef.current = authUser.uid;
+        console.log('[DBContext] Checking cloud sync state for authenticated user:', authUser.uid);
+        const deltaRes = await syncDeltaFromFirestore(authUser.uid, db, async (json) => {
+          if (isMounted) {
+            await importJSON(json, { suppressLegacySync: true });
+          }
+        });
+        if (isMounted && deltaRes.success && (deltaRes.changesApplied || 0) > 0) {
+          await refresh();
+        }
+      } catch (err) {
+        console.warn('[DBContext] Delta sync check warning:', err);
+      }
+    };
+
+    checkAndSyncDelta();
+    return () => {
+      isMounted = false;
+    };
+  }, [authUser?.uid, isLoading, db, importJSON, refresh]);
 
   return (
     <DBContext.Provider
@@ -2178,6 +2266,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         applications,
         bankAccounts,
         isLoading,
+        isRestoring,
+        restoreCloudData,
         refresh,
         addUser,
         updateUser,

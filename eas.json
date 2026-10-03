@@ -13,8 +13,13 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.getipovault.in",
         "EXPO_PUBLIC_IPO_SYNC_URL": "https://api.getipovault.in/api/v1/ipos",
-        "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "720793268491-rbuifpfkufpr0c56bbpj05qnebuprmv4.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "720793268491-7qjb9tsfeqb3rhchaliooeaa92pk73ko.apps.googleusercontent.com"
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyCI_TIJyybMpBnywMDUeE56TQSyf5mgPWY",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "getipovault1.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "getipovault1",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "getipovault1.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "649099972",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:649099972:android:0dacd971a8c21982462791",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "649099972-hrmk5h725abna6a4o96ikcbqfl4ke2tn.apps.googleusercontent.com"
       }
     },
     "production": {
@@ -22,8 +27,13 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.getipovault.in",
         "EXPO_PUBLIC_IPO_SYNC_URL": "https://api.getipovault.in/api/v1/ipos",
-        "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "720793268491-rbuifpfkufpr0c56bbpj05qnebuprmv4.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "720793268491-7qjb9tsfeqb3rhchaliooeaa92pk73ko.apps.googleusercontent.com"
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyCI_TIJyybMpBnywMDUeE56TQSyf5mgPWY",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "getipovault1.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "getipovault1",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "getipovault1.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "649099972",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:649099972:android:0dacd971a8c21982462791",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "649099972-hrmk5h725abna6a4o96ikcbqfl4ke2tn.apps.googleusercontent.com"
       }
     }
   },

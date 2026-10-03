@@ -488,7 +488,7 @@ export async function runBrokerMatchingTestSuite() {
     'Broker execution price (85.0) is stored as sell_price upon sale, never market LTP (75.25)',
   );
 
-  // Test 9: Canonical User ID Resolution - Authenticated Supabase user ID takes highest priority
+  // Test 9: Canonical User ID Resolution - Authenticated Supabase / Firebase user ID takes highest priority
   const canonicalAuthUser = { id: '8b888228-e13c-4148-ac9f-a91d7381db12' };
   const mockLocalUsersWithMismatch = [
     { id: 'usr_local_123', owner_id: '8b888228-e13c-4148-ac9f-a91d7381db12' },
@@ -499,6 +499,15 @@ export async function runBrokerMatchingTestSuite() {
     resolvedAuthUid === '8b888228-e13c-4148-ac9f-a91d7381db12',
     'Identity Resolution 1',
     'Authenticated Supabase user ID (8b888228-e13c-4148-ac9f-a91d7381db12) is canonically resolved for broker API requests',
+  );
+
+  // Test 9b: Canonical User ID Resolution - Firebase user object with uid property
+  const canonicalFirebaseAuthUser = { uid: 'firebase-user-uid-7890' };
+  const resolvedFirebaseUid = resolveCanonicalBrokerUserId(canonicalFirebaseAuthUser, mockLocalUsersWithMismatch);
+  assert(
+    resolvedFirebaseUid === 'firebase-user-uid-7890',
+    'Identity Resolution 1b',
+    'Authenticated Firebase UID is canonically resolved for broker API requests',
   );
 
   // Test 10: Canonical User ID Resolution - Local owner_id used when authUser is null (offline/reloading)
@@ -565,8 +574,73 @@ export async function runBrokerMatchingTestSuite() {
     'Holding application displays live Zerodha LTP (237.0) while preserving IPO identity (Belrise), quantity (75), and buy_price (191.7)',
   );
 
+  // Test: Holding with SQLite price ₹100 + Zerodha LTP ₹237 -> UI price ₹237
+  const appHolding100 = [
+    {
+      id: 'app-holding-100',
+      ipo_id: 'ipo-test-1',
+      ipo_name: 'Test IPO',
+      status: 'Holding',
+      buy_price: 90.0,
+      sell_price: 100.0, // Stored SQLite price
+      quantity: 50,
+      user_broker: null,
+    },
+  ];
+  const ipoTest1 = [
+    {
+      id: 'ipo-test-1',
+      isin: 'INE111A01011',
+      symbol: 'TESTIPO',
+      company_name: 'Test IPO Ltd',
+      ipo_name: 'Test IPO',
+    },
+  ];
+  const brokerZerodhaLtp237 = [
+    {
+      isin: 'INE111A01011',
+      symbol: 'TESTIPO',
+      companyName: 'Test IPO Ltd',
+      currentHoldingPrice: 237.0, // Zerodha LTP
+      brokerHoldings: [{ broker: 'ZERODHA', quantity: 50, lastPrice: 237.0 }],
+      sellTrades: [],
+    },
+  ] as any;
+  const res1 = enrichApplicationsWithBrokerData(appHolding100, ipoTest1, brokerZerodhaLtp237);
+  assert(
+    res1[0].sell_price === 237.0 && res1[0].quantity === 50 && res1[0].buy_price === 90.0,
+    'LTP Priority Test',
+    'Holding with SQLite price ₹100 + Zerodha LTP ₹237 -> UI price ₹237, quantity 50 & buy price 90 unchanged',
+  );
+
+  // Test: Holding with no Zerodha LTP (0 or null) + SQLite price ₹100 -> UI price ₹100
+  const brokerNoLtp = [
+    {
+      isin: 'INE111A01011',
+      symbol: 'TESTIPO',
+      companyName: 'Test IPO Ltd',
+      currentHoldingPrice: 0,
+      brokerHoldings: [],
+      sellTrades: [],
+    },
+  ] as any;
+  const res2 = enrichApplicationsWithBrokerData(appHolding100, ipoTest1, brokerNoLtp);
+  assert(
+    res2[0].sell_price === 100.0,
+    'No LTP Fallback Test',
+    'Holding with no Zerodha LTP + SQLite price ₹100 -> UI price ₹100',
+  );
+
+  // Test: Holding with no broker match + SQLite price ₹100 -> SQLite fallback ₹100
+  const res3 = enrichApplicationsWithBrokerData(appHolding100, ipoTest1, []);
+  assert(
+    res3[0].sell_price === 100.0,
+    'No Match Fallback Test',
+    'Holding with no broker match + SQLite price ₹100 -> SQLite fallback ₹100',
+  );
+
   console.log('==================================================');
-  console.log('ALL BROKER MATCHING & IDENTITY TESTS PASSED (18/18)');
+  console.log('ALL BROKER MATCHING & IDENTITY TESTS PASSED (21/21)');
   console.log('==================================================');
 }
 

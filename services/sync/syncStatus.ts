@@ -12,7 +12,7 @@ export interface SyncStatus {
   retryCount: number;
   lastFailedSync: string | null;
   avgSyncDurationMs: number;
-  supabaseLatencyMs: number;
+  cloudLatencyMs: number;
   lastAutoSyncTimestamp: string | null;
   nextScheduledSyncTimestamp: string | null;
   lastTriggerSource: string | null;
@@ -33,7 +33,7 @@ class SyncStatusStore {
     retryCount: 0,
     lastFailedSync: null,
     avgSyncDurationMs: 0,
-    supabaseLatencyMs: 0,
+    cloudLatencyMs: 0,
     lastAutoSyncTimestamp: null,
     nextScheduledSyncTimestamp: null,
     lastTriggerSource: null,

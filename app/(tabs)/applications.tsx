@@ -395,7 +395,7 @@ export default function ApplicationsScreen() {
             )}
 
             {/* Applications Overview Card */}
-            <ApplicationsOverviewCard applications={effectiveApplications} />
+            <ApplicationsOverviewCard applications={searchFiltered} />
 
             {/* Check Allotment Button */}
             {FeatureFlags.ENABLE_AUTO_ALLOTMENT && (
