@@ -194,7 +194,13 @@ export default function UsersScreen() {
 
   // Handle incoming deep link when returning from external browser or OAuth redirect
   useEffect(() => {
-    const handleUrl = async ({ url }: { url: string }) => {
+    Linking.getInitialURL().then((initialUrl) => {
+      console.log('[BrokerAuth Diagnostic] Linking.getInitialURL():', initialUrl ?? 'none');
+    });
+
+    const handleUrl = async (event: { url: string }) => {
+      console.log('[BrokerAuth Diagnostic] Linking.addEventListener received URL:', event?.url);
+      const url = event?.url;
       if (!url) return;
       const query = parseQueryParams(url);
       const hasToken =
@@ -223,7 +229,7 @@ export default function UsersScreen() {
         return;
       }
 
-      if (hasToken) {
+      if (hasToken || query.status === 'success') {
         await loadBrokerAccounts();
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
@@ -262,6 +268,24 @@ export default function UsersScreen() {
 
     setBrokerActionUserId(targetUser.id);
     try {
+      let Constants: any = {};
+      try {
+        Constants = require('expo-constants').default || require('expo-constants');
+      } catch {
+        Constants = {};
+      }
+
+      const runtimeInfo = {
+        platform: Platform.OS,
+        appOwnership: Constants?.appOwnership,
+        executionEnvironment: Constants?.executionEnvironment,
+        expoVersion: Constants?.expoVersion,
+        scheme: Constants?.expoConfig?.scheme,
+        hostUri: Constants?.expoConfig?.hostUri || Constants?.manifest?.debuggerHost,
+        linkingUri: Constants?.linkingUri,
+      };
+      console.log('[BrokerAuth Diagnostic 6] Expo Runtime Environment:', JSON.stringify(runtimeInfo, null, 2));
+
       // 1. Create or retrieve existing backend BrokerAccount
       const account = await brokerApiService.createAccount(resolvedUserId, {
         profileId: targetUser.id,
@@ -272,12 +296,16 @@ export default function UsersScreen() {
 
       // 2. Fetch OAuth authorization URL
       const redirectUri = Linking.createURL('broker-callback');
+      console.log('[BrokerAuth Diagnostic 1] Exact redirectUri passed:', redirectUri);
+
       const { authorizationUrl } = await brokerApiService.getAuthorizationUrl(
         resolvedUserId,
         account.id,
         canonical.slug,
         redirectUri,
       );
+
+      console.log('[BrokerAuth Diagnostic 2] Exact authorizationUrl:', authorizationUrl);
 
       if (!authorizationUrl) {
         throw new Error('No authorization URL returned by broker service');
@@ -287,13 +315,15 @@ export default function UsersScreen() {
       let authResult: WebBrowser.WebBrowserAuthSessionResult;
 
       try {
+        console.log('[BrokerAuth Diagnostic] Calling WebBrowser.openAuthSessionAsync...');
         authResult = await WebBrowser.openAuthSessionAsync(
           authorizationUrl,
           redirectUri,
         );
+        console.log('[BrokerAuth Diagnostic 5] Exact result returned by WebBrowser.openAuthSessionAsync():', JSON.stringify(authResult, null, 2));
       } catch (browserErr) {
         console.warn(
-          '[UsersScreen] openAuthSessionAsync failed, falling back to Linking.openURL:',
+          '[BrokerAuth Diagnostic] openAuthSessionAsync failed, falling back to Linking.openURL:',
           browserErr,
         );
         await Linking.openURL(authorizationUrl);
@@ -302,6 +332,7 @@ export default function UsersScreen() {
 
       // 4. Handle returned auth session result
       if (authResult.type === 'success' && authResult.url) {
+        console.log('[BrokerAuth Diagnostic] Auth session success URL:', authResult.url);
         const query = parseQueryParams(authResult.url);
 
         // Check for error parameters
