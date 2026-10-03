@@ -222,7 +222,7 @@ export class ApplicationRepository implements IApplicationRepository {
     repositoryAdapter.applications.getAll(this.db).catch(() => {});
     return await this.db.getAllAsync<ApplicationWithDetails>(`
       SELECT a.id, a.user_id, a.ipo_id, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
-             a.shares_count, a.is_favorite, a.created_at,
+             a.shares_count, a.is_favorite, a.created_at, a.broker_account_id,
              u.name        AS user_name,
              u.broker      AS user_broker,
              u.client_id   AS user_client_id,

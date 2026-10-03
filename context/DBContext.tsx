@@ -99,6 +99,8 @@ export type ApplicationWithDetails = {
   updated_at?: string;
   ipo_logo_url?: string;
   is_favorite: number; // 0 = no, 1 = yes
+  broker_account_id?: string | null;
+  brokerAccountId?: string | null;
 };
 
 export type BankAccount = {
@@ -189,7 +191,8 @@ type DBContextType = {
     tax?: number,
     userCut?: number,
     bankName?: string,
-    upiApp?: string
+    upiApp?: string,
+    brokerAccountId?: string | null
   ) => Promise<void>;
   partialSellApplication: (
     id: string,
@@ -215,6 +218,7 @@ type DBContextType = {
       saleDate?: string | null;
       tax?: number;
       userCut?: number;
+      brokerAccountId?: string | null;
     }
   ) => Promise<void>;
   updateBulkApplications: (ids: string[], status: ApplicationStatus) => Promise<void>;
@@ -666,18 +670,27 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     userCut?: number,
     bankName?: string,
     upiApp?: string,
+    brokerAccountId?: string | null,
   ) => {
     await handleBankAllotmentDebit(db, id, status, bankName ? { bank_name: bankName } : undefined);
     const repo = new ApplicationRepository(db);
     await repo.update(id, status, sellPrice, saleDate, tax, userCut);
-    if (bankName !== undefined || upiApp !== undefined) {
+    if (bankName !== undefined || upiApp !== undefined || brokerAccountId !== undefined) {
       await db.runAsync(
         `UPDATE ipo_applications SET
           bank_name = COALESCE(?, bank_name),
           upi_app = COALESCE(?, upi_app),
+          broker_account_id = CASE WHEN ? = 1 THEN ? ELSE broker_account_id END,
           updated_at = ?
          WHERE id = ?`,
-        [bankName ?? null, upiApp ?? null, new Date().toISOString(), id]
+        [
+          bankName ?? null,
+          upiApp ?? null,
+          brokerAccountId !== undefined ? 1 : 0,
+          brokerAccountId ?? null,
+          new Date().toISOString(),
+          id,
+        ]
       );
     }
     await refresh();
@@ -712,12 +725,13 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       saleDate?: string | null;
       tax?: number;
       userCut?: number;
+      brokerAccountId?: string | null;
     }
   ) => {
     await handleBankAllotmentDebit(db, id, details.status, details);
     const repo = new ApplicationRepository(db);
     await repo.update(id, details.status, details.sellPrice, details.saleDate, details.tax, details.userCut);
-    if (details.bank_name || details.upi_app || details.app_number || details.lots || details.bid_price || details.mandate_status || details.category) {
+    if (details.bank_name || details.upi_app || details.app_number || details.lots || details.bid_price || details.mandate_status || details.category || details.brokerAccountId !== undefined) {
       await db.runAsync(
         `UPDATE ipo_applications SET
           bank_name = COALESCE(?, bank_name),
@@ -727,6 +741,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           bid_price = COALESCE(?, bid_price),
           mandate_status = COALESCE(?, mandate_status),
           category = COALESCE(?, category),
+          broker_account_id = CASE WHEN ? = 1 THEN ? ELSE broker_account_id END,
           updated_at = ?
          WHERE id = ?`,
         [
@@ -737,6 +752,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           details.bid_price ?? null,
           details.mandate_status ?? null,
           details.category ?? null,
+          details.brokerAccountId !== undefined ? 1 : 0,
+          details.brokerAccountId ?? null,
           new Date().toISOString(),
           id
         ]

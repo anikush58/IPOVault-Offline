@@ -172,15 +172,38 @@ export function findMatchingBrokerInvestment(
 
 /**
  * Extracts authoritative LTP from a UserPortfolioIpoSummary record.
- * Checks direct currentHoldingPrice as well as underlying brokerHoldings lastPrice attributions.
+ * If targetAccountId is specified, prioritizes the quote from that exact linked broker account holding.
+ * Falls back to general currentHoldingPrice or any underlying brokerHoldings lastPrice.
  */
 export function extractBrokerLtp(
   inv: UserPortfolioIpoSummary | null | undefined,
+  targetAccountId?: string | null,
 ): number | null {
   if (!inv) return null;
+
+  // 1. Check specific linked broker account holding attribution if requested
+  if (targetAccountId && Array.isArray(inv.brokerHoldings) && inv.brokerHoldings.length > 0) {
+    const specificHolding = inv.brokerHoldings.find(
+      (h) => h.brokerAccountId === targetAccountId,
+    );
+    if (specificHolding) {
+      const p =
+        (specificHolding as any).lastPrice ??
+        (specificHolding as any).last_price ??
+        (specificHolding as any).ltp ??
+        (specificHolding as any).currentPrice;
+      if (typeof p === 'number' && p > 0) {
+        return p;
+      }
+    }
+  }
+
+  // 2. Check general currentHoldingPrice
   if (typeof inv.currentHoldingPrice === 'number' && inv.currentHoldingPrice > 0) {
     return inv.currentHoldingPrice;
   }
+
+  // 3. Fallback: Check any holding attribution
   if (Array.isArray(inv.brokerHoldings) && inv.brokerHoldings.length > 0) {
     for (const h of inv.brokerHoldings) {
       const p =
@@ -198,10 +221,18 @@ export function extractBrokerLtp(
 
 /**
  * Returns ONLY the current broker LTP for a Holding application if available and > 0.
+ * Respects application-level brokerAccountId linkage where specified.
  * Never alters application quantity or buy price.
  */
 export function getBrokerLtpForApplication(
-  app: { ipo_name?: string; ipo_id?: string; sell_price?: number | null; buy_price?: number },
+  app: {
+    ipo_name?: string;
+    ipo_id?: string;
+    sell_price?: number | null;
+    buy_price?: number;
+    broker_account_id?: string | null;
+    brokerAccountId?: string | null;
+  },
   matchedIpo?: {
     id?: string;
     backend_ipo_id?: string | null;
@@ -213,17 +244,25 @@ export function getBrokerLtpForApplication(
   brokerInvestments?: UserPortfolioIpoSummary[] | null,
 ): number | null {
   const match = findMatchingBrokerInvestment(app, matchedIpo, brokerInvestments);
-  return extractBrokerLtp(match);
+  const targetAccountId = app.broker_account_id || app.brokerAccountId;
+  return extractBrokerLtp(match, targetAccountId);
 }
 
 /**
  * Resolves the authoritative current price / LTP for a Holding application following the strict priority:
- * 1. Matching connected broker LTP (> 0) (e.g. Zerodha LTP)
+ * 1. Matching connected broker LTP (> 0) (e.g. Zerodha LTP from linked account or market match)
  * 2. Existing stored/manual current price (> 0) as fallback
  * 3. Buy price as final fallback
  */
 export function resolveEffectiveHoldingPrice(
-  app: { ipo_name?: string; ipo_id?: string; sell_price?: number | null; buy_price: number },
+  app: {
+    ipo_name?: string;
+    ipo_id?: string;
+    sell_price?: number | null;
+    buy_price: number;
+    broker_account_id?: string | null;
+    brokerAccountId?: string | null;
+  },
   matchedIpo?: {
     id?: string;
     backend_ipo_id?: string | null;
@@ -250,9 +289,12 @@ export function resolveEffectiveHoldingPrice(
 /**
  * Enriches a list of applications with broker data:
  * - Holding applications get authoritative broker LTP as current holding price (Priority 1: Broker LTP > Priority 2: Stored Current Price > Priority 3: Buy Price).
- * - If matching broker sale is detected (holding sold on broker), status automatically transitions Holding -> Sold with executed sell_price (never LTP).
+ * - Family Account Isolation: If an application is explicitly linked to a brokerAccountId, check sell trades only for that exact linked account.
+ * - Automatic Holding -> Sold transition ONLY occurs when an executed sell trade is verified on the application's explicitly linked broker account.
+ * - Applications with NO linked brokerAccountId are NEVER automatically transitioned to Sold.
  * - Sold applications preserve actual executed sell_price (never market LTP).
- * - Reused identically across Dashboard, Portfolio Details, and Applications/Holdings screens.
+ * - Existing user_broker attribution is strictly preserved and never overwritten by connected broker names.
+ * - Quantity, shares_count, and buy_price are NEVER modified from broker.
  */
 export function enrichApplicationsWithBrokerData<
   T extends {
@@ -265,6 +307,8 @@ export function enrichApplicationsWithBrokerData<
     user_broker?: string | null;
     quantity: number;
     shares_count?: number | null;
+    broker_account_id?: string | null;
+    brokerAccountId?: string | null;
   },
 >(
   applications: T[],
@@ -294,57 +338,108 @@ export function enrichApplicationsWithBrokerData<
 
     let effectiveStatus = app.status;
     let effectiveSellPrice = app.sell_price;
+    // Strictly preserve existing user_broker if already set; only fallback to brokerNames if user_broker is null/empty
     let effectiveBroker = app.user_broker;
+    const targetAccountId = app.broker_account_id || app.brokerAccountId || null;
 
     if (brokerInv) {
-      const allBrokerHoldings = [
-        ...(brokerInv.brokerHoldings || []),
-        ...(brokerInv.sellTrades || []),
-      ];
-      if (allBrokerHoldings.length > 0) {
-        const brokerNames = Array.from(
-          new Set(allBrokerHoldings.map((b: any) => b.broker).filter(Boolean)),
-        ).join(', ');
-        if (brokerNames) {
-          effectiveBroker = brokerNames;
+      if (!effectiveBroker) {
+        const allBrokerHoldings = [
+          ...(brokerInv.brokerHoldings || []),
+          ...(brokerInv.sellTrades || []),
+        ];
+        if (allBrokerHoldings.length > 0) {
+          const brokerNames = Array.from(
+            new Set(allBrokerHoldings.map((b: any) => b.broker).filter(Boolean)),
+          ).join(', ');
+          if (brokerNames) {
+            effectiveBroker = brokerNames;
+          }
         }
       }
-
       if (app.status === 'Holding') {
-        const isSoldOnBroker =
-          (brokerInv.status === 'FULLY_SOLD' ||
-            (brokerInv.totalSoldQuantity > 0 &&
-              brokerInv.remainingHoldingQuantity === 0)) &&
-          typeof brokerInv.weightedSellPrice === 'number' &&
-          brokerInv.weightedSellPrice > 0;
+        let isSoldOnLinkedAccount = false;
+        let executedAccountSellPrice: number | null = null;
 
-        if (isSoldOnBroker) {
-          // Automatic sale detection: Transition Holding -> Sold with executed trade price
+        // Family-Account Isolation: Only check sale trades if the application is explicitly linked to a brokerAccountId
+        if (targetAccountId) {
+          const accountTrades = (brokerInv.sellTrades || []).filter(
+            (t) =>
+              t.brokerAccountId === targetAccountId &&
+              typeof t.price === 'number' &&
+              t.price > 0,
+          );
+          const accountHolding = (brokerInv.brokerHoldings || []).find(
+            (h) => h.brokerAccountId === targetAccountId,
+          );
+
+          if (
+            accountTrades.length > 0 &&
+            (!accountHolding || (accountHolding.quantity ?? 0) === 0)
+          ) {
+            isSoldOnLinkedAccount = true;
+            const totalQty = accountTrades.reduce(
+              (sum, t) => sum + (t.quantity || 1),
+              0,
+            );
+            const totalVal = accountTrades.reduce(
+              (sum, t) => sum + t.price * (t.quantity || 1),
+              0,
+            );
+            executedAccountSellPrice =
+              totalQty > 0
+                ? Number((totalVal / totalQty).toFixed(2))
+                : accountTrades[0].price;
+          }
+        }
+
+        if (isSoldOnLinkedAccount && executedAccountSellPrice != null) {
+          // Automatic sale detection: Transition Holding -> Sold ONLY for this linked broker account
           effectiveStatus = 'Sold';
-          effectiveSellPrice = brokerInv.weightedSellPrice;
+          effectiveSellPrice = executedAccountSellPrice;
         } else {
-          const brokerLtp = extractBrokerLtp(brokerInv);
+          // Resolve live LTP (Priority 1: Broker LTP > Priority 2: Stored current price > Priority 3: Buy price)
+          const brokerLtp = extractBrokerLtp(brokerInv, targetAccountId);
           if (brokerLtp != null && brokerLtp > 0) {
-            // Priority 1: Authoritative LTP from connected broker (MUST take priority over SQLite stored sell_price)
             effectiveSellPrice = brokerLtp;
           } else if (app.sell_price != null && app.sell_price > 0) {
-            // Priority 2: Stored/manual current price fallback
             effectiveSellPrice = app.sell_price;
           } else {
-            // Priority 3: Buy price as final fallback
             effectiveSellPrice = app.buy_price || 0;
           }
         }
       } else if (app.status === 'Sold') {
-        // Priority 1: Actual executed broker sell_price
-        if (
+        // For Sold applications: check executed trades from linked account or preserve existing executed sell price
+        if (targetAccountId) {
+          const accountTrades = (brokerInv.sellTrades || []).filter(
+            (t) =>
+              t.brokerAccountId === targetAccountId &&
+              typeof t.price === 'number' &&
+              t.price > 0,
+          );
+          if (accountTrades.length > 0) {
+            const totalQty = accountTrades.reduce(
+              (sum, t) => sum + (t.quantity || 1),
+              0,
+            );
+            const totalVal = accountTrades.reduce(
+              (sum, t) => sum + t.price * (t.quantity || 1),
+              0,
+            );
+            effectiveSellPrice =
+              totalQty > 0
+                ? Number((totalVal / totalQty).toFixed(2))
+                : accountTrades[0].price;
+          } else if (app.sell_price != null && app.sell_price > 0) {
+            effectiveSellPrice = app.sell_price;
+          }
+        } else if (app.sell_price != null && app.sell_price > 0) {
+          effectiveSellPrice = app.sell_price;
+        } else if (
           typeof brokerInv.weightedSellPrice === 'number' &&
           brokerInv.weightedSellPrice > 0
         ) {
           effectiveSellPrice = brokerInv.weightedSellPrice;
-        } else if (app.sell_price != null && app.sell_price > 0) {
-          // Priority 2: Existing stored executed sell_price
-          effectiveSellPrice = app.sell_price;
         }
         // Priority 3: Never use current broker LTP for Sold
       }
@@ -370,15 +465,17 @@ export function enrichApplicationsWithBrokerData<
 }
 
 /**
- * Persists broker LTP and auto-detected sales into SQLite:
- * 1. For 'Holding' applications:
- *    - If fully sold on broker: updates status -> 'Sold' with actual executed sell_price (never LTP).
- *    - If still held: updates sell_price to current broker LTP.
+ * Persists auto-detected broker sales into SQLite:
+ * 1. For 'Holding' applications explicitly linked to a brokerAccountId:
+ *    - If fully sold on that exact linked broker account: updates status -> 'Sold' with actual executed sell_price.
  * 2. Never modifies:
+ *    - Applications without a linked brokerAccountId (no auto-sell)
+ *    - Applications whose linked broker account still holds the stock
+ *    - Stored SQLite sell_price for Holding applications (preserves broker LTP purely as runtime data)
  *    - Already 'Sold' applications (executed sale prices are preserved)
+ *    - user_broker attribution
  *    - buy_price
  *    - quantity / shares_count
- * 3. Never overwrites a valid manual price with null/failed/0 broker data.
  */
 export async function syncBrokerHoldingPricesToLocalDb(
   applications: Array<{
@@ -390,6 +487,8 @@ export async function syncBrokerHoldingPricesToLocalDb(
     buy_price: number;
     quantity: number;
     user_broker?: string | null;
+    broker_account_id?: string | null;
+    brokerAccountId?: string | null;
   }>,
   ipos: Array<{
     id?: string;
@@ -420,6 +519,10 @@ export async function syncBrokerHoldingPricesToLocalDb(
   const now = new Date().toISOString();
 
   for (const app of holdingApps) {
+    const targetAccountId = app.broker_account_id || app.brokerAccountId;
+    // Only process automatic sale if explicitly linked to a brokerAccountId
+    if (!targetAccountId) continue;
+
     const matchedIpo = ipos.find((i) => i.id === app.ipo_id);
     const brokerInv = findMatchingBrokerInvestment(
       app,
@@ -429,55 +532,42 @@ export async function syncBrokerHoldingPricesToLocalDb(
 
     if (!brokerInv) continue;
 
-    const isSoldOnBroker =
-      (brokerInv.status === 'FULLY_SOLD' ||
-        (brokerInv.totalSoldQuantity > 0 &&
-          brokerInv.remainingHoldingQuantity === 0)) &&
-      typeof brokerInv.weightedSellPrice === 'number' &&
-      brokerInv.weightedSellPrice > 0;
+    const accountTrades = (brokerInv.sellTrades || []).filter(
+      (t) =>
+        t.brokerAccountId === targetAccountId &&
+        typeof t.price === 'number' &&
+        t.price > 0,
+    );
+    const accountHolding = (brokerInv.brokerHoldings || []).find(
+      (h) => h.brokerAccountId === targetAccountId,
+    );
 
-    let effectiveBroker: string | null = null;
-    const allBrokerHoldings = [
-      ...(brokerInv.brokerHoldings || []),
-      ...(brokerInv.sellTrades || []),
-    ];
-    if (allBrokerHoldings.length > 0) {
-      const brokerNames = Array.from(
-        new Set(allBrokerHoldings.map((b: any) => b.broker).filter(Boolean)),
-      ).join(', ');
-      if (brokerNames) {
-        effectiveBroker = brokerNames;
-      }
-    }
+    const isFullySoldOnAccount =
+      accountTrades.length > 0 &&
+      (!accountHolding || (accountHolding.quantity ?? 0) === 0);
 
-    if (isSoldOnBroker) {
-      // Automatic sale detection: Holding -> Sold with actual executed sell price
-      const executedSellPrice = brokerInv.weightedSellPrice!;
+    if (isFullySoldOnAccount) {
+      const totalQty = accountTrades.reduce(
+        (sum, t) => sum + (t.quantity || 1),
+        0,
+      );
+      const totalVal = accountTrades.reduce(
+        (sum, t) => sum + t.price * (t.quantity || 1),
+        0,
+      );
+      const executedSellPrice =
+        totalQty > 0
+          ? Number((totalVal / totalQty).toFixed(2))
+          : accountTrades[0].price;
+
       try {
         await db.runAsync(
-          "UPDATE ipo_applications SET status = 'Sold', sell_price = ?, user_broker = COALESCE(?, user_broker), updated_at = ? WHERE id = ? AND status = 'Holding' AND deleted_at IS NULL",
-          [executedSellPrice, effectiveBroker, now, app.id!],
+          "UPDATE ipo_applications SET status = 'Sold', sell_price = ?, updated_at = ? WHERE id = ? AND status = 'Holding' AND deleted_at IS NULL",
+          [executedSellPrice, now, app.id!],
         );
         updatedCount++;
       } catch {
         // Error on single row should not crash the sync
-      }
-    } else if (
-      typeof brokerInv.currentHoldingPrice === 'number' &&
-      brokerInv.currentHoldingPrice > 0
-    ) {
-      const newLtp = brokerInv.currentHoldingPrice;
-      // Only update if sell_price is different
-      if (app.sell_price !== newLtp) {
-        try {
-          await db.runAsync(
-            "UPDATE ipo_applications SET sell_price = ?, user_broker = COALESCE(?, user_broker), updated_at = ? WHERE id = ? AND status = 'Holding' AND deleted_at IS NULL",
-            [newLtp, effectiveBroker, now, app.id!],
-          );
-          updatedCount++;
-        } catch {
-          // Error on single row should not crash the sync
-        }
       }
     }
   }

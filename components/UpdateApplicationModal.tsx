@@ -22,6 +22,9 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDialog } from '@/context/DialogContext';
 import { Button } from '@/components/ui/Button';
 import { useDB, type ApplicationStatus, type ApplicationWithDetails } from '@/context/DBContext';
+import { useAuth } from '@/context/AuthContext';
+import { brokerApiService, type BrokerAccountItem } from '@/services/broker/BrokerApiService';
+import { resolveCanonicalBrokerUserId } from '@/utils/brokerMatching';
 import { StatusBadge } from './StatusBadge';
 import { formatCurrency, getResolvedLogoUrl, todayISO } from '@/utils/formatters';
 import { calcBuyValue, calcNetProfit, calcProfitLoss, calcSaleValue } from '@/utils/calculations';
@@ -54,7 +57,8 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
   const colors = useColors();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const { ipos, bankAccounts, updateApplication, partialSellApplication, deleteApplication } = useDB();
+  const { user: authUser } = useAuth();
+  const { users, ipos, bankAccounts, updateApplication, partialSellApplication, deleteApplication } = useDB();
   const { showError, showConfirm, showSuccess } = useDialog();
   const insets = useSafeAreaInsets();
 
@@ -67,9 +71,24 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
   const [soldShares, setSoldShares] = useState('');
   const [selectedBankName, setSelectedBankName] = useState('');
   const [showBankPicker, setShowBankPicker] = useState(false);
+  const [brokerAccounts, setBrokerAccounts] = useState<BrokerAccountItem[]>([]);
+  const [selectedBrokerAccountId, setSelectedBrokerAccountId] = useState<string | null>(null);
+  const [showBrokerPicker, setShowBrokerPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [logoError, setLogoError] = useState(false);
+
+  const activeUserId = React.useMemo(() => {
+    return resolveCanonicalBrokerUserId(authUser, users);
+  }, [authUser, users]);
+
+  useEffect(() => {
+    if (activeUserId) {
+      brokerApiService.getAccounts(activeUserId).then((accs) => {
+        setBrokerAccounts(accs || []);
+      }).catch(() => {});
+    }
+  }, [activeUserId]);
 
   const matchingIPO = ipos.find(
     (i) => (app?.ipo_id && i.id === app.ipo_id) || (app?.ipo_name && i.ipo_name.toLowerCase().trim() === app.ipo_name.toLowerCase().trim())
@@ -96,7 +115,9 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
       setUserCut((app.user_cut ?? 0).toString());
       setSoldShares(app.quantity?.toString() ?? '1');
       setSelectedBankName(app.user_bank_name ?? '');
+      setSelectedBrokerAccountId(app.broker_account_id ?? (app as any).brokerAccountId ?? null);
       setShowBankPicker(false);
+      setShowBrokerPicker(false);
       setConfirmDelete(false);
       setLogoError(false);
     }
@@ -143,7 +164,9 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
             sDate,
             taxVal,
             userCutVal,
-            selectedBankName.trim() || undefined
+            selectedBankName.trim() || undefined,
+            undefined,
+            selectedBrokerAccountId
           );
         } else {
           await partialSellApplication(
@@ -155,6 +178,19 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
             taxVal,
             userCutVal
           );
+          if (selectedBrokerAccountId !== undefined) {
+            await updateApplication(
+              app.id,
+              'Holding',
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              selectedBankName.trim() || undefined,
+              undefined,
+              selectedBrokerAccountId
+            );
+          }
         }
       } else {
         const effectivePrice = isHolding
@@ -168,7 +204,9 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
           null,
           tax.trim() !== '' ? parseFloat(tax) : 0,
           userCut.trim() !== '' ? parseFloat(userCut) : 0,
-          selectedBankName.trim() || undefined
+          selectedBankName.trim() || undefined,
+          undefined,
+          selectedBrokerAccountId
         );
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -325,6 +363,63 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
                     </View>
                   )}
                 </View>
+
+                {/* Connected Broker Account Selection Field */}
+                {brokerAccounts.length > 0 && (
+                  <View style={{ marginBottom: 16 }}>
+                    <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>LINKED BROKER ACCOUNT</Text>
+                    <TouchableOpacity
+                      onPress={() => setShowBrokerPicker(!showBrokerPicker)}
+                      style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={{ fontSize: 14, color: selectedBrokerAccountId ? colors.foreground : colors.mutedForeground, fontFamily: 'GoogleSansFlex_400Regular' }}>
+                        {selectedBrokerAccountId
+                          ? (brokerAccounts.find((b) => b.id === selectedBrokerAccountId)?.accountName ||
+                             brokerAccounts.find((b) => b.id === selectedBrokerAccountId)?.broker ||
+                             'Linked Account')
+                          : 'None (Unlinked)'}
+                      </Text>
+                      <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
+                    </TouchableOpacity>
+
+                    {showBrokerPicker && (
+                      <View style={{ backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, borderRadius: 12, marginTop: 6, maxHeight: 160, overflow: 'hidden' }}>
+                        <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                          <TouchableOpacity
+                            onPress={() => {
+                              setSelectedBrokerAccountId(null);
+                              setShowBrokerPicker(false);
+                            }}
+                            style={{ paddingVertical: 10, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                          >
+                            <Text style={{ fontSize: 14, color: !selectedBrokerAccountId ? colors.primary : colors.foreground, fontFamily: !selectedBrokerAccountId ? 'GoogleSansFlex_600SemiBold' : 'GoogleSansFlex_400Regular' }}>
+                              None (Unlinked)
+                            </Text>
+                          </TouchableOpacity>
+                          {brokerAccounts.map((b) => {
+                            const label = `${b.broker}${b.accountName ? ` (${b.accountName})` : ''}${b.clientId ? ` · ${b.clientId}` : ''}`;
+                            const isSelected = selectedBrokerAccountId === b.id;
+                            return (
+                              <TouchableOpacity
+                                key={b.id}
+                                onPress={() => {
+                                  setSelectedBrokerAccountId(b.id);
+                                  setShowBrokerPicker(false);
+                                }}
+                                style={{ paddingVertical: 10, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                              >
+                                <Text style={{ fontSize: 14, color: isSelected ? colors.primary : colors.foreground, fontFamily: isSelected ? 'GoogleSansFlex_600SemiBold' : 'GoogleSansFlex_400Regular' }}>
+                                  {label}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </ScrollView>
+                      </View>
+                    )}
+                  </View>
+                )}
 
                 {/* Holding fields */}
                 {isHolding ? (

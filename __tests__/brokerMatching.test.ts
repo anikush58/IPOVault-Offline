@@ -63,7 +63,7 @@ export async function runBrokerMatchingTestSuite() {
       totalSoldQuantity: 15,
       remainingHoldingQuantity: 0,
       brokerHoldings: [],
-      sellTrades: [{ broker: 'DHAN', quantity: 15, price: 85.0 }],
+      sellTrades: [{ brokerAccountId: 'acc-dhan-1', broker: 'DHAN', quantity: 15, price: 85.0 }],
     },
     {
       isin: 'INE999Z99999',
@@ -208,7 +208,7 @@ export async function runBrokerMatchingTestSuite() {
     'Unrelated broker holdings are completely ignored and not added to applications',
   );
 
-  // Test 8: SQLite Persistence: syncBrokerHoldingPricesToLocalDb (LTP update)
+  // Test 8: SQLite Non-mutation for Holdings: syncBrokerHoldingPricesToLocalDb does not write LTP into SQLite sell_price
   const mockCalls: Array<{ sql: string; params: any[] }> = [];
   const mockDb = {
     runAsync: async (sql: string, params: any[]) => {
@@ -224,17 +224,9 @@ export async function runBrokerMatchingTestSuite() {
       ipo_name: 'Tata Tech IPO',
       status: 'Holding',
       buy_price: 500,
-      sell_price: null, // needs update to 1045.5
+      sell_price: null,
       quantity: 30,
-    },
-    {
-      id: 'app-holding-already-synced',
-      ipo_id: 'ipo-1',
-      ipo_name: 'Tata Tech IPO',
-      status: 'Holding',
-      buy_price: 500,
-      sell_price: 1045.5, // already synced, should skip
-      quantity: 30,
+      broker_account_id: 'acc-zerodha-1',
     },
     {
       id: 'app-sold-1',
@@ -242,8 +234,9 @@ export async function runBrokerMatchingTestSuite() {
       ipo_name: 'Tata Tech IPO',
       status: 'Sold',
       buy_price: 500,
-      sell_price: 1200, // Sold -> MUST NOT BE TOUCHED
+      sell_price: 1200,
       quantity: 30,
+      broker_account_id: 'acc-zerodha-1',
     },
   ];
 
@@ -255,14 +248,9 @@ export async function runBrokerMatchingTestSuite() {
   );
 
   assert(
-    updatedCount === 1 && mockCalls.length === 1,
+    updatedCount === 0 && mockCalls.length === 0,
     'Test 8a',
-    'syncBrokerHoldingPricesToLocalDb updates exactly 1 Holding application and skips already-synced and Sold rows',
-  );
-  assert(
-    mockCalls[0].params[0] === 1045.5 && mockCalls[0].params[3] === 'app-holding-1',
-    'Test 8b',
-    'SQLite UPDATE writes correct LTP (1045.5) for app-holding-1',
+    'syncBrokerHoldingPricesToLocalDb preserves LTP purely as runtime data and does NOT write broker LTP to SQLite sell_price for active holdings',
   );
 
   // Test 9: Automatic sale detection: Holding application transitions to Sold when broker sold trade detected
@@ -276,6 +264,7 @@ export async function runBrokerMatchingTestSuite() {
       sell_price: null,
       quantity: 15,
       user_broker: null,
+      broker_account_id: 'acc-dhan-1',
     },
   ];
   const enrichedAutoSold = enrichApplicationsWithBrokerData(holdingAppsWithSale, mockIpos, mockBrokerInvestments);
@@ -307,7 +296,7 @@ export async function runBrokerMatchingTestSuite() {
     updatedCountAutoSale === 1 &&
     mockCallsAutoSale[0].sql.includes("status = 'Sold'") &&
     mockCallsAutoSale[0].params[0] === 85.0 &&
-    mockCallsAutoSale[0].params[3] === 'app-holding-to-sold',
+    mockCallsAutoSale[0].params[2] === 'app-holding-to-sold',
     'Test 10',
     'SQLite automatically updates status to Sold with actual executed sell price (85.0) for sold holding',
   );
@@ -477,6 +466,7 @@ export async function runBrokerMatchingTestSuite() {
       sell_price: null,
       quantity: 15,
       user_broker: null,
+      broker_account_id: 'acc-dhan-1',
     },
   ];
   const enrichedReq8 = enrichApplicationsWithBrokerData(appsReq8, mockIpos, mockBrokerInvestments);
@@ -639,8 +629,182 @@ export async function runBrokerMatchingTestSuite() {
     'Holding with no broker match + SQLite price ₹100 -> SQLite fallback ₹100',
   );
 
+  // =========================================================================
+  // MANDATORY FAMILY-ACCOUNT BROKER ARCHITECTURE TESTS
+  // =========================================================================
+
+  const ipoKanohar = [
+    {
+      id: 'ipo-kanohar-1',
+      backend_ipo_id: 'backend-kanohar-uuid',
+      isin: 'INE999K01011',
+      symbol: 'KANOHAR',
+      company_name: 'Kanohar Electricals Limited',
+      ipo_name: 'Kanohar Electricals IPO',
+    },
+  ];
+
+  const brokerInvestmentsFamily = [
+    {
+      isin: 'INE999K01011',
+      ipoId: 'backend-kanohar-uuid',
+      symbol: 'KANOHAR',
+      companyName: 'Kanohar Electricals Limited',
+      currentHoldingPrice: 150.0,
+      weightedSellPrice: 180.0,
+      totalSoldQuantity: 100,
+      remainingHoldingQuantity: 100,
+      brokerHoldings: [
+        {
+          brokerAccountId: 'acc-zerodha-a',
+          broker: 'ZERODHA',
+          quantity: 0,
+          lastPrice: 152.0,
+        },
+        {
+          brokerAccountId: 'acc-zerodha-b',
+          broker: 'ZERODHA',
+          quantity: 100,
+          lastPrice: 155.0,
+        },
+      ],
+      sellTrades: [
+        {
+          brokerAccountId: 'acc-zerodha-a',
+          broker: 'ZERODHA',
+          brokerTradeId: 'tr-1',
+          quantity: 100,
+          price: 180.0,
+          tradedAt: '2026-10-01T10:00:00Z',
+        },
+      ],
+    },
+  ] as any;
+
+  // 1. Father Kanohar linked to Zerodha A, Mother Kanohar linked to Zerodha B
+  const familyApps = [
+    {
+      id: 'app-father-kanohar',
+      user_id: 'user-father',
+      ipo_id: 'ipo-kanohar-1',
+      ipo_name: 'Kanohar Electricals IPO',
+      status: 'Holding',
+      buy_price: 120.0,
+      sell_price: 130.0,
+      quantity: 100,
+      user_broker: 'Zerodha Kite (Father)',
+      broker_account_id: 'acc-zerodha-a',
+    },
+    {
+      id: 'app-mother-kanohar',
+      user_id: 'user-mother',
+      ipo_id: 'ipo-kanohar-1',
+      ipo_name: 'Kanohar Electricals IPO',
+      status: 'Holding',
+      buy_price: 120.0,
+      sell_price: 130.0,
+      quantity: 100,
+      user_broker: 'Zerodha Kite (Mother)',
+      broker_account_id: 'acc-zerodha-b',
+    },
+  ];
+
+  const enrichedFamily = enrichApplicationsWithBrokerData(
+    familyApps,
+    ipoKanohar,
+    brokerInvestmentsFamily,
+  );
+
+  // Mandatory Test 1: Zerodha A sells Kanohar -> only Father's application becomes Sold with actual executed sell price (180.0)
+  assert(
+    enrichedFamily[0].status === 'Sold' &&
+    enrichedFamily[0].sell_price === 180.0,
+    'Family Isolation Test 1',
+    'Zerodha A sells Kanohar -> only Father application becomes Sold with actual executed sell price (180.0)',
+  );
+
+  // Mandatory Test 2: Mother's Kanohar remains Holding with Zerodha B LTP (155.0)
+  assert(
+    enrichedFamily[1].status === 'Holding' &&
+    enrichedFamily[1].sell_price === 155.0,
+    'Family Isolation Test 2',
+    'Mother Kanohar remains Holding with Zerodha B LTP (155.0)',
+  );
+
+  // Mandatory Test 3: Existing user_broker attribution is preserved
+  assert(
+    enrichedFamily[0].user_broker === 'Zerodha Kite (Father)' &&
+    enrichedFamily[1].user_broker === 'Zerodha Kite (Mother)',
+    'Preserve Broker Attribution Test',
+    'Existing user_broker strings are strictly preserved and never overwritten',
+  );
+
+  // Mandatory Test 4: Quantity and buy_price remain unchanged
+  assert(
+    enrichedFamily[0].quantity === 100 &&
+    enrichedFamily[0].buy_price === 120.0 &&
+    enrichedFamily[1].quantity === 100 &&
+    enrichedFamily[1].buy_price === 120.0,
+    'Quantity & Buy Price Invariance Test',
+    'IPOVault quantity (100) and buy_price (120.0) remain strictly unchanged',
+  );
+
+  // Mandatory Test 5: Application with no brokerAccountId -> no automatic Sold transition
+  const unlinkedApp = [
+    {
+      id: 'app-unlinked-kanohar',
+      user_id: 'user-other',
+      ipo_id: 'ipo-kanohar-1',
+      ipo_name: 'Kanohar Electricals IPO',
+      status: 'Holding',
+      buy_price: 120.0,
+      sell_price: 130.0,
+      quantity: 50,
+      user_broker: 'Angel One',
+      broker_account_id: null,
+    },
+  ];
+  const enrichedUnlinked = enrichApplicationsWithBrokerData(
+    unlinkedApp,
+    ipoKanohar,
+    brokerInvestmentsFamily,
+  );
+  assert(
+    enrichedUnlinked[0].status === 'Holding' &&
+    enrichedUnlinked[0].sell_price === 150.0 &&
+    enrichedUnlinked[0].user_broker === 'Angel One',
+    'Unlinked Application Safety Test',
+    'Application with no brokerAccountId never auto-sells, receives live market LTP (150.0), and preserves broker name',
+  );
+
+  // Mandatory Test 6: Matching security absent from linked broker -> application remains Holding with fallback price
+  const brokerInvestmentsNoMatch = [
+    {
+      isin: 'INE000000000',
+      ipoId: 'other-uuid',
+      symbol: 'OTHER',
+      companyName: 'Other Company',
+      currentHoldingPrice: 500.0,
+      brokerHoldings: [],
+      sellTrades: [],
+    },
+  ] as any;
+  const enrichedAbsent = enrichApplicationsWithBrokerData(
+    familyApps,
+    ipoKanohar,
+    brokerInvestmentsNoMatch,
+  );
+  assert(
+    enrichedAbsent[0].status === 'Holding' &&
+    enrichedAbsent[0].sell_price === 130.0 &&
+    enrichedAbsent[1].status === 'Holding' &&
+    enrichedAbsent[1].sell_price === 130.0,
+    'Absent from Broker Safety Test',
+    'Matching security absent from linked broker -> applications remain Holding with SQLite fallback price',
+  );
+
   console.log('==================================================');
-  console.log('ALL BROKER MATCHING & IDENTITY TESTS PASSED (21/21)');
+  console.log('ALL BROKER MATCHING & FAMILY ISOLATION TESTS PASSED (27/27)');
   console.log('==================================================');
 }
 

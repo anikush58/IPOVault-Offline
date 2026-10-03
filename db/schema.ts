@@ -81,6 +81,7 @@ export async function initDB(db: SQLiteDatabase) {
       is_favorite INTEGER DEFAULT 0,
       bank_name TEXT DEFAULT '',
       upi_app TEXT DEFAULT '',
+      broker_account_id TEXT DEFAULT NULL,
       sync_version INTEGER DEFAULT 0,
       sync_status TEXT NOT NULL DEFAULT 'SYNCED',
       last_synced_at TEXT,
@@ -316,6 +317,7 @@ export async function initDB(db: SQLiteDatabase) {
       await addColumnIfNotExists('ipo_applications', 'is_favorite INTEGER DEFAULT 0');
       await addColumnIfNotExists('ipo_applications', 'bank_name TEXT DEFAULT ""');
       await addColumnIfNotExists('ipo_applications', 'upi_app TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_applications', 'broker_account_id TEXT DEFAULT NULL');
       await addColumnIfNotExists('ipo_applications', 'shares_count INTEGER DEFAULT NULL');
       await addColumnIfNotExists('ipo_applications', 'sync_version INTEGER DEFAULT 0');
       await addColumnIfNotExists('ipo_applications', 'sync_status TEXT DEFAULT "SYNCED"');
