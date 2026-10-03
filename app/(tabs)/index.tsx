@@ -40,6 +40,7 @@ import {
   brokerApiService,
   DashboardIpoHoldingItem,
   UserPortfolioSummaryResponse,
+  MarketQuotesMap,
 } from '@/services/broker/BrokerApiService';
 import {
   enrichApplicationsWithBrokerData,
@@ -47,6 +48,7 @@ import {
   getBrokerLtpForApplication,
   resolveCanonicalBrokerUserId,
   syncBrokerHoldingPricesToLocalDb,
+  extractHoldingInstrumentsForQuotes,
 } from '@/utils/brokerMatching';
 import { AllotmentSuccessModal } from '@/components/allotment/AllotmentSuccessModal';
 import { useAllotmentResultModal } from '@/hooks/useAllotmentResultModal';
@@ -130,6 +132,7 @@ export default function DashboardScreen() {
   const [brokerAccounts, setBrokerAccounts] = useState<BrokerAccountItem[]>([]);
   const [brokerPortfolio, setBrokerPortfolio] =
     useState<UserPortfolioSummaryResponse | null>(null);
+  const [marketQuotes, setMarketQuotes] = useState<MarketQuotesMap>({});
   const [brokerHoldings, setBrokerHoldings] = useState<
     DashboardIpoHoldingItem[]
   >([]);
@@ -163,13 +166,28 @@ export default function DashboardScreen() {
 
       if (connectedAccounts.length === 0) {
         setBrokerPortfolio(null);
+        setMarketQuotes({});
         return;
       }
 
+      // 1. Fetch user portfolio (holdings & sell trades for linked accounts)
       const portfolioData = await brokerApiService.getUserPortfolio(activeUserId);
       setBrokerPortfolio(portfolioData);
 
-      // Persist authoritative broker LTPs into SQLite for Holding applications
+      // 2. Fetch market quotes (LTP) for ALL holding applications via any connected broker quote capability
+      const holdingInstruments = extractHoldingInstrumentsForQuotes(applications, ipos);
+      if (holdingInstruments.length > 0) {
+        const quotes = await brokerApiService.getMarketQuotes(
+          activeUserId,
+          holdingInstruments,
+          connectedAccounts[0]?.id,
+        );
+        if (quotes && Object.keys(quotes).length > 0) {
+          setMarketQuotes(quotes);
+        }
+      }
+
+      // 3. Persist auto-detected sales into SQLite for linked Holding applications
       if (portfolioData?.investments && db) {
         syncBrokerHoldingPricesToLocalDb(
           applications,
@@ -464,8 +482,9 @@ export default function DashboardScreen() {
       applications,
       ipos,
       brokerPortfolio?.investments,
+      marketQuotes,
     );
-  }, [applications, brokerPortfolio, ipos]);
+  }, [applications, brokerPortfolio, ipos, marketQuotes]);
 
   // ── base filter (user / year / IPO) ──────────────────────────────
   const baseFilteredApps = effectiveApplications.filter((a) => {

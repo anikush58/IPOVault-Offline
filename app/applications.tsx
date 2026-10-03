@@ -31,11 +31,13 @@ import { ApplicationsOverviewCard } from '@/components/ApplicationsOverviewCard'
 import {
   brokerApiService,
   UserPortfolioSummaryResponse,
+  MarketQuotesMap,
 } from '@/services/broker/BrokerApiService';
 import {
   enrichApplicationsWithBrokerData,
   resolveCanonicalBrokerUserId,
   syncBrokerHoldingPricesToLocalDb,
+  extractHoldingInstrumentsForQuotes,
 } from '@/utils/brokerMatching';
 
 type TabKey = 'Applied' | 'Allotted' | 'Sold' | 'Holding' | 'Not Allotted';
@@ -61,6 +63,7 @@ export default function ApplicationsScreen() {
 
   const [brokerPortfolio, setBrokerPortfolio] =
     useState<UserPortfolioSummaryResponse | null>(null);
+  const [marketQuotes, setMarketQuotes] = useState<MarketQuotesMap>({});
 
   const activeUserId = React.useMemo(() => {
     return resolveCanonicalBrokerUserId(authUser, users);
@@ -81,6 +84,15 @@ export default function ApplicationsScreen() {
               portfolio.investments,
               db,
             ).catch(() => {});
+          }
+        }
+
+        // Fetch market quotes for all holding applications via any connected broker quote capability
+        const holdingInstruments = extractHoldingInstrumentsForQuotes(applications, ipos);
+        if (holdingInstruments.length > 0) {
+          const quotes = await brokerApiService.getMarketQuotes(activeUserId, holdingInstruments);
+          if (mounted && quotes && Object.keys(quotes).length > 0) {
+            setMarketQuotes(quotes);
           }
         }
       } catch {
@@ -167,8 +179,9 @@ export default function ApplicationsScreen() {
       applications,
       ipos,
       brokerPortfolio?.investments,
+      marketQuotes,
     );
-  }, [applications, ipos, brokerPortfolio]);
+  }, [applications, ipos, brokerPortfolio, marketQuotes]);
 
   // Base list of applications
   const sortedApplications = [...effectiveApplications];

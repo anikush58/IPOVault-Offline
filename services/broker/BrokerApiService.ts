@@ -111,6 +111,21 @@ export interface UserPortfolioSummaryResponse {
   investments: UserPortfolioIpoSummary[];
 }
 
+export interface MarketQuoteItem {
+  symbol?: string;
+  isin?: string;
+  exchange?: string;
+  ltp: number;
+  closePrice?: number | null;
+  change?: number | null;
+  changePercent?: number | null;
+  timestamp?: string | null;
+  error?: string | null;
+}
+
+export type MarketQuotesMap = Record<string, MarketQuoteItem>;
+
+
 export interface CanonicalBrokerInfo {
   brokerType: 'UPSTOX' | 'DHAN' | 'FYERS' | 'ZERODHA' | 'GROWW' | 'MILLIONS';
   slug: 'upstox' | 'dhan' | 'fyers' | 'zerodha' | 'groww' | 'millions';
@@ -441,6 +456,113 @@ export class BrokerApiService {
       return null;
     }
   }
+
+  /**
+   * Retrieves real-time market quotes (LTP) in bulk for arbitrary instruments.
+   * LTP is purely market data, separate from ownership holdings or trades.
+   * Uses any available connected broker's market-quote capability.
+   */
+  public async getMarketQuotes(
+    userId: string | null | undefined,
+    instruments: Array<{ symbol?: string | null; isin?: string | null; exchange?: string | null }>,
+    brokerAccountId?: string | null,
+  ): Promise<MarketQuotesMap> {
+    if (!userId || !instruments || instruments.length === 0) return {};
+    try {
+      const cleanId = userId.trim();
+      const symbols = instruments
+        .map((i) => {
+          const sym = i.symbol?.trim();
+          if (!sym) return '';
+          const ex = (i.exchange || 'NSE').trim().toUpperCase();
+          return sym.includes(':') ? sym : `${ex}:${sym}`;
+        })
+        .filter(Boolean)
+        .join(',');
+
+      const isins = instruments
+        .map((i) => i.isin?.trim().toUpperCase())
+        .filter(Boolean)
+        .join(',');
+
+      const queryParams: Record<string, string> = {};
+      if (symbols) queryParams.symbols = symbols;
+      if (isins) queryParams.isins = isins;
+
+      const endpoint = brokerAccountId
+        ? `/api/v1/broker-accounts/${brokerAccountId}/quotes`
+        : '/api/v1/broker-accounts/quotes';
+
+      const response = await this.apiClient.get<any>(
+        endpoint,
+        queryParams,
+        { 'x-user-id': cleanId },
+      );
+
+      const data = extractResponseData<any>(response);
+      const quotesMap: MarketQuotesMap = {};
+
+      if (Array.isArray(data)) {
+        for (const item of data) {
+          const ltpVal = item.ltp ?? item.lastPrice ?? item.last_price ?? item.price;
+          if (typeof ltpVal === 'number' && ltpVal > 0) {
+            const quote: MarketQuoteItem = {
+              symbol: item.symbol,
+              isin: item.isin,
+              exchange: item.exchange,
+              ltp: ltpVal,
+              closePrice: item.closePrice ?? item.close,
+              change: item.change,
+              changePercent: item.changePercent ?? item.change_percent,
+              timestamp: item.timestamp ?? item.asOf,
+            };
+            if (item.isin) quotesMap[item.isin.toUpperCase()] = quote;
+            if (item.symbol) quotesMap[item.symbol.toUpperCase()] = quote;
+            if (item.symbol && item.exchange) {
+              quotesMap[`${item.exchange.toUpperCase()}:${item.symbol.toUpperCase()}`] = quote;
+            }
+          }
+        }
+      } else if (data && typeof data === 'object') {
+        for (const [key, val] of Object.entries(data)) {
+          const v = val as any;
+          const ltpVal = typeof v === 'number' ? v : (v?.ltp ?? v?.lastPrice ?? v?.last_price ?? v?.price);
+          if (typeof ltpVal === 'number' && ltpVal > 0) {
+            const quote: MarketQuoteItem = {
+              symbol: v?.symbol || key,
+              isin: v?.isin,
+              exchange: v?.exchange,
+              ltp: ltpVal,
+              closePrice: v?.closePrice ?? v?.close,
+              change: v?.change,
+              changePercent: v?.changePercent ?? v?.change_percent,
+              timestamp: v?.timestamp ?? v?.asOf,
+            };
+            quotesMap[key.toUpperCase()] = quote;
+            if (v?.isin) quotesMap[v.isin.toUpperCase()] = quote;
+            if (v?.symbol) quotesMap[v.symbol.toUpperCase()] = quote;
+          }
+        }
+      }
+      return quotesMap;
+    } catch (err) {
+      console.warn('[BrokerApiService] getMarketQuotes failed or not supported by broker:', err);
+      return {};
+    }
+  }
+}
+
+/**
+ * Finds any available connected broker account that can provide market quotes.
+ * LTP is market data, so ANY single connected broker account can provide quotes
+ * for all family members' IPOVault holdings.
+ */
+export function findAvailableQuoteProvider(accounts: BrokerAccountItem[]): BrokerAccountItem | null {
+  if (!Array.isArray(accounts) || accounts.length === 0) return null;
+  return (
+    accounts.find((acc) => acc.connection?.status === 'CONNECTED' && acc.isActive) ||
+    null
+  );
 }
 
 export interface DashboardIpoHoldingItem {
@@ -455,3 +577,4 @@ export interface DashboardIpoHoldingItem {
 }
 
 export const brokerApiService = new BrokerApiService();
+

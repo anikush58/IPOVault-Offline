@@ -30,7 +30,9 @@ import { formatCurrency } from '@/utils/formatters';
 import {
   enrichApplicationsWithBrokerData,
   resolveCanonicalBrokerUserId,
+  extractHoldingInstrumentsForQuotes,
 } from '@/utils/brokerMatching';
+import { MarketQuotesMap } from '@/services/broker/BrokerApiService';
 
 type TabType = 'profits' | 'holding' | 'charges';
 
@@ -116,6 +118,7 @@ export default function PortfolioReportScreen() {
 
   const [brokerPortfolio, setBrokerPortfolio] =
     useState<UserPortfolioSummaryResponse | null>(null);
+  const [marketQuotes, setMarketQuotes] = useState<MarketQuotesMap>({});
   const [isFetchingBroker, setIsFetchingBroker] = useState(false);
 
   const loadBrokerPortfolio = useCallback(async () => {
@@ -124,12 +127,20 @@ export default function PortfolioReportScreen() {
       setIsFetchingBroker(true);
       const data = await brokerApiService.getUserPortfolio(activeUserId);
       setBrokerPortfolio(data);
+
+      const holdingInstruments = extractHoldingInstrumentsForQuotes(applications, ipos);
+      if (holdingInstruments.length > 0) {
+        const quotes = await brokerApiService.getMarketQuotes(activeUserId, holdingInstruments);
+        if (quotes && Object.keys(quotes).length > 0) {
+          setMarketQuotes(quotes);
+        }
+      }
     } catch (err) {
       console.warn('[PortfolioReport] Failed to fetch broker portfolio:', err);
     } finally {
       setIsFetchingBroker(false);
     }
-  }, [activeUserId]);
+  }, [activeUserId, applications, ipos]);
 
   useEffect(() => {
     loadBrokerPortfolio();
@@ -141,8 +152,9 @@ export default function PortfolioReportScreen() {
       applications,
       ipos,
       brokerPortfolio?.investments,
+      marketQuotes,
     );
-  }, [applications, brokerPortfolio, ipos]);
+  }, [applications, brokerPortfolio, ipos, marketQuotes]);
 
   // Compute tab counts based on current period filter
   const tabCounts = useMemo(() => {

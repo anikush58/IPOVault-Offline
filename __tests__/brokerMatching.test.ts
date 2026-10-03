@@ -5,6 +5,7 @@ import {
   resolveCanonicalBrokerUserId,
   resolveEffectiveHoldingPrice,
   syncBrokerHoldingPricesToLocalDb,
+  extractHoldingInstrumentsForQuotes,
 } from '../utils/brokerMatching';
 
 function assert(condition: boolean, testName: string, detail: string) {
@@ -803,8 +804,114 @@ export async function runBrokerMatchingTestSuite() {
     'Matching security absent from linked broker -> applications remain Holding with SQLite fallback price',
   );
 
+  // ── INDEPENDENT MARKET LTP & FAMILY ISOLATION TEST SUITE ───────────────
+
+  // Test 28: 5 IPOVault Holdings + 1 connected broker that owns only 1 of them -> market LTP provides LTP for ALL 5
+  const fiveIpos = [
+    { id: 'ipo-tata', isin: 'INE142Z01019', symbol: 'TATATECH', company_name: 'Tata Technologies Ltd', ipo_name: 'Tata Tech IPO' },
+    { id: 'ipo-belrise', isin: 'INE000000001', symbol: 'BELRISE', company_name: 'Belrise Industries Ltd', ipo_name: 'Belrise IPO' },
+    { id: 'ipo-kross', isin: 'INE000000002', symbol: 'KROSS', company_name: 'Kross Limited', ipo_name: 'Kross IPO' },
+    { id: 'ipo-orient', isin: 'INE000000003', symbol: 'ORIENT', company_name: 'Orient Technologies Ltd', ipo_name: 'Orient Tech IPO' },
+    { id: 'ipo-ola', isin: 'INE080X01014', symbol: 'OLA', company_name: 'Ola Electric Ltd', ipo_name: 'Ola IPO' },
+  ];
+
+  const fiveApps = [
+    { id: 'app-1', ipo_id: 'ipo-tata', status: 'Holding', buy_price: 500.0, sell_price: null, quantity: 30, user_broker: 'Zerodha Kite' },
+    { id: 'app-2', ipo_id: 'ipo-belrise', status: 'Holding', buy_price: 191.7, sell_price: null, quantity: 75, user_broker: 'Zerodha Kite' },
+    { id: 'app-3', ipo_id: 'ipo-kross', status: 'Holding', buy_price: 240.0, sell_price: null, quantity: 62, user_broker: 'Upstox (Father)' },
+    { id: 'app-4', ipo_id: 'ipo-orient', status: 'Holding', buy_price: 206.0, sell_price: null, quantity: 72, user_broker: 'Dhan (Mother)' },
+    { id: 'app-5', ipo_id: 'ipo-ola', status: 'Holding', buy_price: 76.0, sell_price: null, quantity: 195, user_broker: 'Groww (Brother)' },
+  ];
+
+  // Connected Zerodha account only holds Belrise in its portfolio
+  const brokerPortfolioOwnsOnlyOne = [
+    {
+      isin: 'INE000000001',
+      ipoId: 'ipo-belrise',
+      symbol: 'BELRISE',
+      companyName: 'Belrise Industries Ltd',
+      currentHoldingPrice: 237.0,
+      brokerHoldings: [{ broker: 'ZERODHA', quantity: 75, lastPrice: 237.0 }],
+      sellTrades: [],
+    },
+  ] as any;
+
+  // 1. extractHoldingInstrumentsForQuotes extracts all 5 distinct holding instruments
+  const extractedInstruments = extractHoldingInstrumentsForQuotes(fiveApps, fiveIpos);
+  assert(
+    extractedInstruments.length === 5,
+    'Market Quote Instrument Extraction',
+    `Extracted all 5 instruments for quote fetching (${extractedInstruments.map(i => i.symbol).join(', ')})`,
+  );
+
+  // 2. Market quotes returned from any connected broker market-quote API
+  const marketQuotesMap = {
+    'INE142Z01019': { symbol: 'TATATECH', isin: 'INE142Z01019', ltp: 1045.5 },
+    'INE000000001': { symbol: 'BELRISE', isin: 'INE000000001', ltp: 242.0 },
+    'INE000000002': { symbol: 'KROSS', isin: 'INE000000002', ltp: 185.0 },
+    'INE000000003': { symbol: 'ORIENT', isin: 'INE000000003', ltp: 310.0 },
+    'INE080X01014': { symbol: 'OLA', isin: 'INE080X01014', ltp: 78.5 },
+  };
+
+  const enrichedAllFive = enrichApplicationsWithBrokerData(
+    fiveApps,
+    fiveIpos,
+    brokerPortfolioOwnsOnlyOne,
+    marketQuotesMap,
+  );
+
+  assert(
+    enrichedAllFive[0].sell_price === 1045.5 &&
+    enrichedAllFive[1].sell_price === 242.0 &&
+    enrichedAllFive[2].sell_price === 185.0 &&
+    enrichedAllFive[3].sell_price === 310.0 &&
+    enrichedAllFive[4].sell_price === 78.5,
+    'Market LTP Independence Test',
+    'Market quote capability provides LTP for all 5 IPOVault holdings even though broker only holds 1',
+  );
+
+  assert(
+    enrichedAllFive.every(a => a.status === 'Holding') &&
+    enrichedAllFive[0].quantity === 30 &&
+    enrichedAllFive[1].quantity === 75 &&
+    enrichedAllFive[2].quantity === 62 &&
+    enrichedAllFive[3].quantity === 72 &&
+    enrichedAllFive[4].quantity === 195,
+    'Holding Invariance Test',
+    'All applications remain Holding with intact quantity and buy price',
+  );
+
+  // Test 29: Holding absent from broker portfolio still receives LTP via market quote
+  const singleAbsentApp = [
+    { id: 'app-absent', ipo_id: 'ipo-orient', status: 'Holding', buy_price: 206.0, sell_price: 210.0, quantity: 72 },
+  ];
+  const enrichedSingleAbsent = enrichApplicationsWithBrokerData(
+    singleAbsentApp,
+    fiveIpos,
+    [], // empty broker portfolio
+    { 'ORIENT': { symbol: 'ORIENT', ltp: 310.0 } },
+  );
+  assert(
+    enrichedSingleAbsent[0].sell_price === 310.0,
+    'Absent from Portfolio Quote Test',
+    'Security absent from broker portfolio receives live LTP (310.0) from market quote',
+  );
+
+  // Test 30: No market quote capability -> existing fallback price is used
+  const enrichedNoQuotes = enrichApplicationsWithBrokerData(
+    singleAbsentApp,
+    fiveIpos,
+    [],
+    null, // no quotes available
+  );
+  assert(
+    enrichedNoQuotes[0].sell_price === 210.0,
+    'No Quote Fallback Test',
+    'No market quotes available -> falls back to SQLite stored current price (210.0)',
+  );
+
   console.log('==================================================');
-  console.log('ALL BROKER MATCHING & FAMILY ISOLATION TESTS PASSED (27/27)');
+  console.log('ALL BROKER MATCHING, MARKET LTP & FAMILY ISOLATION TESTS PASSED (32/32)');
   console.log('==================================================');
 }
 
@@ -814,3 +921,4 @@ if (require.main === module) {
     process.exit(1);
   });
 }
+
