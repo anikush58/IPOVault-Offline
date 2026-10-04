@@ -420,7 +420,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
     const appRows = await db.getAllAsync<ApplicationWithDetails>(`
       SELECT a.id, a.user_id, a.ipo_id, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
-             a.shares_count, a.is_favorite, a.created_at, a.updated_at,
+             a.shares_count, a.is_favorite, a.broker_account_id, a.created_at, a.updated_at,
              u.name        AS user_name,
              u.broker      AS user_broker,
              u.client_id   AS user_client_id,

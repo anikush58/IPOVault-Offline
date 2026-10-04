@@ -8,12 +8,12 @@ import {
   IPOVaultExportData,
   CloudSyncMetadata,
 } from './firestoreSyncService';
+import { CURRENT_SCHEMA_VERSION } from '@/db/schema';
 
-export { LAST_CLOUD_BACKUP_KEY };
+export { LAST_CLOUD_BACKUP_KEY, CURRENT_SCHEMA_VERSION };
 
 export const BACKUP_FILE_NAME = 'ipovault_backup.json';
 export const SUPPORTED_BACKUP_VERSION = 1;
-export const CURRENT_SCHEMA_VERSION = 3;
 export const CURRENT_APP_VERSION = '2.0.2';
 
 export type CloudBackupMetadata = CloudSyncMetadata;

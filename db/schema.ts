@@ -1,7 +1,7 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { retryOnLock } from '@/utils/sqliteDebug';
 
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 export async function initDB(db: SQLiteDatabase) {
   // Set generous busy timeout first so any lock contention waits for up to 30s instead of throwing immediately
@@ -274,9 +274,17 @@ export async function initDB(db: SQLiteDatabase) {
       // Helper function to safely add missing columns without failing
       const addColumnIfNotExists = async (table: string, columnDef: string) => {
         try {
-          await retryOnLock(() => db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${columnDef}`));
+          const columnName = columnDef.trim().split(/\s+/)[0];
+          const tableInfo = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+          const hasColumn = tableInfo?.some((col) => col.name.toLowerCase() === columnName.toLowerCase());
+          if (!hasColumn) {
+            await retryOnLock(() => db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${columnDef}`));
+          }
         } catch {
-          // Column already exists or error handled
+          // Table might not exist yet or direct fallback
+          try {
+            await retryOnLock(() => db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${columnDef}`));
+          } catch {}
         }
       };
 

@@ -697,8 +697,8 @@ export async function applyDeltaToSQLite(
             db,
             `INSERT INTO ipo_applications (
               id, user_id, ipo_id, status, shares_count, sell_price, sale_date, tax,
-              user_cut, is_favorite, bank_name, upi_app, owner_id, created_at, updated_at, deleted_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)
+              user_cut, is_favorite, bank_name, upi_app, broker_account_id, owner_id, created_at, updated_at, deleted_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)
             ON CONFLICT(id) DO UPDATE SET
               user_id=excluded.user_id,
               ipo_id=excluded.ipo_id,
@@ -711,6 +711,7 @@ export async function applyDeltaToSQLite(
               is_favorite=excluded.is_favorite,
               bank_name=excluded.bank_name,
               upi_app=excluded.upi_app,
+              broker_account_id=COALESCE(excluded.broker_account_id, ipo_applications.broker_account_id),
               owner_id=excluded.owner_id,
               updated_at=excluded.updated_at,
               deleted_at=NULL`,
@@ -727,6 +728,7 @@ export async function applyDeltaToSQLite(
               app.is_favorite ? 1 : 0,
               app.bank_name || '',
               app.upi_app || '',
+              app.broker_account_id || app.brokerAccountId || null,
               uid,
               app.created_at || nowIso,
               app.updated_at || nowIso,
