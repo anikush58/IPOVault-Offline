@@ -65,7 +65,11 @@ export function IPOsTab({
   }, [allIpos, includeSme]);
 
   const openIpos = useMemo(
-    () => activeIPOs.filter((r) => calculateNormalizedIPOStatus(r) === 'OPEN'),
+    () =>
+      activeIPOs.filter((r) => {
+        const st = calculateNormalizedIPOStatus(r);
+        return st === 'OPEN' || st === 'CLOSING_TODAY';
+      }),
     [activeIPOs]
   );
 

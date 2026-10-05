@@ -544,9 +544,22 @@ export class BrokerApiService {
           }
         }
       }
+      if (__DEV__ && Object.keys(quotesMap).length > 0) {
+        console.log(
+          `[BrokerMarketQuote] Requested ${instruments.length} instruments (ISINs: ${isins || 'none'}, Symbols: ${symbols || 'none'}) at ${endpoint} -> Resolved ${Object.keys(quotesMap).length} quote entries`,
+        );
+        for (const [k, q] of Object.entries(quotesMap)) {
+          console.log(
+            `[BrokerMarketQuote] Instrument ${k} -> Resolved LTP: ₹${q.ltp} (ISIN: ${q.isin || 'N/A'}, Symbol: ${q.symbol || 'N/A'}, Exchange: ${q.exchange || 'N/A'})`,
+          );
+        }
+      }
       return quotesMap;
-    } catch (err) {
-      console.warn('[BrokerApiService] getMarketQuotes failed or not supported by broker:', err);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (__DEV__) {
+        console.warn(`[BrokerApiService] getMarketQuotes failed (${msg}) -> preserving safe offline/stored LTP fallback`);
+      }
       return {};
     }
   }

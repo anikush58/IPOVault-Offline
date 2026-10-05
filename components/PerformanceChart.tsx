@@ -14,11 +14,9 @@ import Svg, { Path, Circle, Line, Defs, LinearGradient as SvgLinearGradient, Sto
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { type ApplicationWithDetails } from '@/context/DBContext';
-import { Tabs } from '@/components/ui/Tabs';
 import { calcBuyValue, calcNetProfit, calcProfitLoss, calcSaleValue } from '@/utils/calculations';
 import { formatCurrency } from '@/utils/formatters';
 
@@ -39,6 +37,7 @@ type DropdownOption = {
   id: string;
   label: string;
   sub: string;
+  mode: FilterMode;
   type: 'range' | 'date';
   refDate?: Date;
 };
@@ -48,12 +47,6 @@ type DropdownOption = {
 const CHART_H = 170;
 const LABEL_H = 18;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-const PERIOD_TABS: { value: PeriodTab; label: string; count: number }[] = [
-  { value: 'weekly',    label: 'Weekly',    count: 7 },
-  { value: 'monthly',   label: 'Monthly',   count: 12 },
-  { value: 'yearly',    label: 'Yearly',    count: 5 },
-];
 
 // ── Bucket helpers ────────────────────────────────────────────────────────────
 
@@ -203,44 +196,6 @@ function formatYLabel(val: number): string {
   return `${sign}₹${abs}`;
 }
 
-// ── Sub-components ────────────────────────────────────────────────────────────
-
-function PeriodTabs({
-  period,
-  onChange,
-}: {
-  period: PeriodTab;
-  onChange: (p: PeriodTab) => void;
-}) {
-  return (
-    <Tabs
-      variant="pills"
-      height={36}
-      tabs={PERIOD_TABS.map((t) => ({ key: t.value, label: t.label }))}
-      activeTab={period}
-      onChange={onChange}
-    />
-  );
-}
-
-const tabStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 4,
-    gap: 3,
-  },
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 9,
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
-  label: { fontSize: 12, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 0.1 },
-});
-
 // ── Main component ────────────────────────────────────────────────────────────
 
 type Props = { applications: ApplicationWithDetails[] };
@@ -249,9 +204,7 @@ export function PerformanceChart({ applications }: Props) {
   const colors = useColors();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
 
-  const [tabPeriod, setTabPeriod] = useState<PeriodTab>('monthly');
   const [filterMode, setFilterMode] = useState<FilterMode>('monthly');
   const [customDate, setCustomDate] = useState<Date>(new Date());
   const [selectedRefDate, setSelectedRefDate] = useState<Date | undefined>(undefined);
@@ -263,14 +216,6 @@ export function PerformanceChart({ applications }: Props) {
 
   const cfgCount = filterMode === 'weekly' || filterMode === 'custom_date' ? 7 : filterMode === 'monthly' ? 12 : 5;
 
-  const handleTabChange = (p: PeriodTab) => {
-    setTabPeriod(p);
-    setFilterMode(p);
-    setSelectedRefDate(undefined);
-    setSelectedLabel(null);
-    setSelectedIdx(null);
-  };
-
   // Helper for formatting date strings
   const formatDateShort = (d: Date) => {
     const day = String(d.getDate()).padStart(2, '0');
@@ -279,72 +224,87 @@ export function PerformanceChart({ applications }: Props) {
     return `${day} ${month} ${year}`;
   };
 
-  // Build options based on current active tab
+  // Build options for performance period selector
   const dropdownOptions = useMemo((): DropdownOption[] => {
     const now = new Date();
     const options: DropdownOption[] = [];
 
-    if (tabPeriod === 'weekly') {
-      // Generate last 5 weeks options
-      for (let i = 0; i < 5; i++) {
-        const d = new Date(now);
-        d.setDate(now.getDate() - i * 7);
-        const monday = getMonday(d);
-        const sunday = new Date(monday);
-        sunday.setDate(monday.getDate() + 6);
+    // 1. Financial Years (Monthly view)
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth(); // 0-indexed, 3 is April
+    const startFYYear = currentMonth >= 3 ? currentYear : currentYear - 1;
 
-        const mName = MONTHS[monday.getMonth()];
-        const sName = MONTHS[sunday.getMonth()];
-        const rangeText = mName === sName
-          ? `${mName} ${monday.getDate()} - ${sunday.getDate()}`
-          : `${mName} ${monday.getDate()} - ${sName} ${sunday.getDate()}`;
-
-        options.push({
-          id: `week_${i}`,
-          label: i === 0 ? `Current Week (${rangeText})` : i === 1 ? `Last Week (${rangeText})` : `${i} Weeks Ago (${rangeText})`,
-          sub: `${formatDateShort(monday)} to ${formatDateShort(sunday)}`,
-          type: 'range',
-          refDate: monday,
-        });
-      }
-    } else if (tabPeriod === 'monthly') {
-      // Generate financial year options
-      const currentYear = now.getFullYear();
-      for (let i = 0; i < 4; i++) {
-        const yr = currentYear - i;
-        options.push({
-          id: `fy_${yr}`,
-          label: `FY ${yr}-${String(yr + 1).slice(2)}`,
-          sub: `Apr ${yr} - Mar ${yr + 1}`,
-          type: 'range',
-          refDate: new Date(yr, 3, 1),
-        });
-      }
-    } else {
-      // Yearly options
-      const currentYear = now.getFullYear();
-      for (let i = 0; i < 5; i++) {
-        const yr = currentYear - i;
-        options.push({
-          id: `yr_${yr}`,
-          label: `${yr}`,
-          sub: `Year ${yr} performance`,
-          type: 'range',
-          refDate: new Date(yr, 0, 1),
-        });
-      }
+    for (let i = 0; i < 4; i++) {
+      const yr = startFYYear - i;
+      options.push({
+        id: `fy_${yr}`,
+        label: `FY ${yr}-${String(yr + 1).slice(2)}`,
+        sub: `Apr ${yr} - Mar ${yr + 1}`,
+        mode: 'monthly',
+        type: 'range',
+        refDate: new Date(yr, 3, 1),
+      });
     }
 
-    // Particular Date is included in ALL modes
+    // 2. Weekly range
+    const thisMonday = getMonday(now);
+    const thisSunday = new Date(thisMonday);
+    thisSunday.setDate(thisMonday.getDate() + 6);
+    const thisMName = MONTHS[thisMonday.getMonth()];
+    const thisSName = MONTHS[thisSunday.getMonth()];
+    const thisRangeText = thisMName === thisSName
+      ? `${thisMName} ${thisMonday.getDate()} - ${thisSunday.getDate()}`
+      : `${thisMName} ${thisMonday.getDate()} - ${thisSName} ${thisSunday.getDate()}`;
+
+    options.push({
+      id: 'current_week',
+      label: `Current Week (${thisRangeText})`,
+      sub: `${formatDateShort(thisMonday)} to ${formatDateShort(thisSunday)}`,
+      mode: 'weekly',
+      type: 'range',
+      refDate: thisMonday,
+    });
+
+    const lastMonday = new Date(thisMonday);
+    lastMonday.setDate(thisMonday.getDate() - 7);
+    const lastSunday = new Date(lastMonday);
+    lastSunday.setDate(lastMonday.getDate() + 6);
+    const lastMName = MONTHS[lastMonday.getMonth()];
+    const lastSName = MONTHS[lastSunday.getMonth()];
+    const lastRangeText = lastMName === lastSName
+      ? `${lastMName} ${lastMonday.getDate()} - ${lastSunday.getDate()}`
+      : `${lastMName} ${lastMonday.getDate()} - ${lastSName} ${lastSunday.getDate()}`;
+
+    options.push({
+      id: 'last_week',
+      label: `Last Week (${lastRangeText})`,
+      sub: `${formatDateShort(lastMonday)} to ${formatDateShort(lastSunday)}`,
+      mode: 'weekly',
+      type: 'range',
+      refDate: lastMonday,
+    });
+
+    // 3. Yearly range (5 Years)
+    options.push({
+      id: 'yearly_5yr',
+      label: 'Yearly Trend',
+      sub: `Past 5 Years (${currentYear - 4} - ${currentYear})`,
+      mode: 'yearly',
+      type: 'range',
+      refDate: new Date(),
+    });
+
+    // 4. Particular Date
     options.push({
       id: 'particular_date',
       label: 'Particular Date…',
       sub: filterMode === 'custom_date' ? `Selected: ${formatDateShort(customDate)}` : 'Select a specific date from calendar',
+      mode: 'custom_date',
       type: 'date',
     });
 
     return options;
-  }, [tabPeriod, filterMode, customDate]);
+  }, [filterMode, customDate]);
 
   // ── Data ──────────────────────────────────────────────────────────────────
 
@@ -530,11 +490,11 @@ export function PerformanceChart({ applications }: Props) {
   }, [minY, maxY, cleanStep]);
 
   const points = useMemo(() => {
-    if (!chartWidth) return [];
-    const paddingX = 0;
-    const spacing = (chartWidth - 2 * paddingX) / (bars.length - 1 || 1);
+    if (!chartWidth || bars.length === 0) return [];
+    const count = bars.length;
+    const colWidth = chartWidth / count;
     return bars.map((b, i) => ({
-      x: paddingX + i * spacing,
+      x: (i + 0.5) * colWidth,
       y: getSvgY(b.value),
       data: b,
       index: i,
@@ -627,11 +587,6 @@ export function PerformanceChart({ applications }: Props) {
           </Text>
           <Feather name="chevron-down" size={13} color={colors.mutedForeground} />
         </TouchableOpacity>
-      </View>
-
-      {/* Period Tabs (Weekly | Monthly | Yearly) */}
-      <View style={styles.tabsRow}>
-        <PeriodTabs period={tabPeriod} onChange={handleTabChange} />
       </View>
 
       {!hasData && filterMode !== 'weekly' && filterMode !== 'custom_date' ? (
@@ -838,7 +793,7 @@ export function PerformanceChart({ applications }: Props) {
                       }}
                     >
                       {/* Label on X Axis */}
-                      <View style={{ position: 'absolute', bottom: 0 }}>
+                      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, alignItems: 'center' }}>
                         <Text
                           style={[
                             styles.barLabel,
@@ -868,7 +823,7 @@ export function PerformanceChart({ applications }: Props) {
           <Pressable style={[styles.pickerModalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => {}}>
             <View style={[styles.pickerModalHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
-                Select {tabPeriod === 'weekly' ? 'Week Range' : tabPeriod === 'monthly' ? 'Month / Year' : 'Year'}
+                Select Period or Financial Year
               </Text>
               <TouchableOpacity onPress={() => setShowHeaderDropdown(false)} style={styles.closeBtn} hitSlop={8}>
                 <Feather name="x" size={18} color={colors.mutedForeground} />
@@ -890,7 +845,7 @@ export function PerformanceChart({ applications }: Props) {
                       if (isParticularDate) {
                         setTimeout(() => setShowDatePicker(true), 200);
                       } else {
-                        setFilterMode(tabPeriod);
+                        setFilterMode(opt.mode);
                         setSelectedRefDate(opt.refDate);
                         setSelectedLabel(opt.label);
                         setSelectedIdx(null);
@@ -912,7 +867,7 @@ export function PerformanceChart({ applications }: Props) {
                         ]}
                       >
                         <Feather
-                          name={isParticularDate ? 'clock' : tabPeriod === 'weekly' ? 'calendar' : tabPeriod === 'monthly' ? 'bar-chart-2' : 'trending-up'}
+                          name={isParticularDate ? 'clock' : opt.mode === 'weekly' ? 'calendar' : opt.mode === 'monthly' ? 'bar-chart-2' : 'trending-up'}
                           size={16}
                           color={colors.foreground}
                         />

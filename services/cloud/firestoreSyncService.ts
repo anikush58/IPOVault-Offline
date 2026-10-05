@@ -14,10 +14,19 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { firestore } from '../auth/firebaseConfig';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { safeRunAsync, runWithTransaction } from '@/utils/sqliteDebug';
+import { saveBase64ToLocalImage } from '@/utils/imageUtils';
 
 export const LAST_FIRESTORE_SYNC_KEY = 'ipovault_last_firestore_sync_ts';
 export const FIRESTORE_MIGRATED_KEY_PREFIX = 'ipovault_migrated_to_firestore_';
 export const LOCAL_SYNC_CURSOR_PREFIX = 'ipovault_last_synced_at_';
+
+const isDev = typeof __DEV__ !== 'undefined' ? Boolean(__DEV__) : process.env.NODE_ENV !== 'production';
+
+function logDevTiming(stage: string, durationMs: number, detail?: string) {
+  if (isDev) {
+    console.log(`[CloudSync Timing] ${stage}: ${durationMs}ms${detail ? ` (${detail})` : ''}`);
+  }
+}
 
 export interface IPOVaultExportData {
   version?: number;
@@ -63,10 +72,53 @@ export interface RestoreResult {
   error?: string;
 }
 
+export interface CriticalUserData {
+  users?: any[];
+  ipos?: any[];
+  applications?: any[];
+  master_ipos?: any[];
+}
+
+export interface SecondaryUserData {
+  banks?: any[];
+  allotments?: any[];
+}
+
+export interface CriticalRestoreResult {
+  success: boolean;
+  restoredAt?: string;
+  data?: CriticalUserData | null;
+  metadata?: CloudSyncMetadata | null;
+  userCount?: number;
+  ipoCount?: number;
+  applicationCount?: number;
+  error?: string;
+}
+
+export interface SecondaryRestoreResult {
+  success: boolean;
+  restoredAt?: string;
+  data?: SecondaryUserData | null;
+  bankCount?: number;
+  allotmentCount?: number;
+  error?: string;
+}
+
 export interface DeltaChanges {
   profiles: any[];
   ipos: any[];
   applications: any[];
+  bankAccounts: any[];
+  allotments: any[];
+}
+
+export interface CriticalDeltaChanges {
+  profiles: any[];
+  ipos: any[];
+  applications: any[];
+}
+
+export interface SecondaryDeltaChanges {
   bankAccounts: any[];
   allotments: any[];
 }
@@ -77,7 +129,16 @@ export interface DeltaSyncResult {
   isFullRestore?: boolean;
   syncedAt?: string;
   changesApplied?: number;
+  stage1DurationMs?: number;
+  totalDurationMs?: number;
   error?: string;
+}
+
+export interface StagedSyncCallbacks {
+  onCriticalDataReady?: (data: CriticalUserData) => Promise<void>;
+  onSecondaryDataReady?: (data: SecondaryUserData) => Promise<void>;
+  onImageCachingComplete?: (savedCount: number) => void;
+  importJSONFallback?: (data: string | IPOVaultExportData) => Promise<any>;
 }
 
 // Concurrency mutex lock and in-flight tracking
@@ -120,7 +181,7 @@ export async function setLocalSyncCursor(uid: string, timestampIso: string): Pro
     await safeAsyncStorage.setItem(`${LOCAL_SYNC_CURSOR_PREFIX}${uid}`, timestampIso);
     await safeAsyncStorage.setItem(LAST_FIRESTORE_SYNC_KEY, timestampIso);
   } catch (err) {
-    console.warn('[firestoreSyncService] Failed to set local sync cursor:', err);
+    if (isDev) console.warn('[firestoreSyncService] Failed to set local sync cursor:', err);
   }
 }
 
@@ -130,7 +191,7 @@ export async function clearLocalSyncCursor(uid: string): Promise<void> {
     await safeAsyncStorage.removeItem(`${LOCAL_SYNC_CURSOR_PREFIX}${uid}`);
     await safeAsyncStorage.removeItem(LAST_FIRESTORE_SYNC_KEY);
   } catch (err) {
-    console.warn('[firestoreSyncService] Failed to clear local sync cursor:', err);
+    if (isDev) console.warn('[firestoreSyncService] Failed to clear local sync cursor:', err);
   }
 }
 
@@ -163,7 +224,7 @@ export async function hasCloudData(uid: string): Promise<boolean> {
 
     return false;
   } catch (err) {
-    console.warn('[firestoreSyncService] hasCloudData error:', err);
+    if (isDev) console.warn('[firestoreSyncService] hasCloudData error:', err);
     return false;
   }
 }
@@ -181,12 +242,121 @@ export async function getCloudSyncMetadata(uid: string): Promise<CloudSyncMetada
     }
     return null;
   } catch (err) {
-    console.warn('[firestoreSyncService] getCloudSyncMetadata error:', err);
+    if (isDev) console.warn('[firestoreSyncService] getCloudSyncMetadata error:', err);
     return null;
   }
 }
 
-// ── Full Synchronization ─────────────────────────────────────────────────────
+// ── Stage 1: Critical Dashboard Data Fetch ────────────────────────────────────
+
+/**
+ * Stage 1: Concurrently fetches profiles, IPOs, applications, and sync metadata.
+ * Designed to return in ~350-500ms under standard network conditions.
+ */
+export async function fetchCriticalUserDataFromFirestore(uid: string): Promise<CriticalRestoreResult> {
+  if (!uid) {
+    return { success: false, error: 'User is not authenticated.' };
+  }
+
+  const startTime = Date.now();
+  try {
+    const [profilesSnap, iposSnap, appsSnap, metaSnap] = await Promise.all([
+      getDocs(collection(firestore, `users/${uid}/profiles`)).catch(() => null),
+      getDocs(collection(firestore, `users/${uid}/ipos`)).catch(() => null),
+      getDocs(collection(firestore, `users/${uid}/applications`)).catch(() => null),
+      getDoc(doc(firestore, `users/${uid}/metadata/sync_state`)).catch(() => null),
+    ]);
+
+    let restoredUsers = profilesSnap ? profilesSnap.docs.map((d) => d.data()).filter((u) => !u.deleted_at) : [];
+    const restoredIpos = iposSnap ? iposSnap.docs.map((d) => d.data()).filter((i) => !i.deleted_at) : [];
+    const restoredApps = appsSnap ? appsSnap.docs.map((d) => d.data()).filter((a) => !a.deleted_at) : [];
+
+    // Fallback to legacy user_profiles if primary profiles collection is empty
+    if (restoredUsers.length === 0) {
+      const legacyProfilesSnap = await getDocs(collection(firestore, `users/${uid}/user_profiles`)).catch(() => null);
+      if (legacyProfilesSnap && !legacyProfilesSnap.empty) {
+        restoredUsers = legacyProfilesSnap.docs.map((d) => d.data()).filter((u) => !u.deleted_at);
+      }
+    }
+
+    const metadata = metaSnap && metaSnap.exists() ? (metaSnap.data() as CloudSyncMetadata) : null;
+    const fetchDuration = Date.now() - startTime;
+    logDevTiming('Stage 1 Firestore fetch', fetchDuration, `users: ${restoredUsers.length}, ipos: ${restoredIpos.length}, apps: ${restoredApps.length}`);
+
+    return {
+      success: true,
+      restoredAt: new Date().toISOString(),
+      data: {
+        users: restoredUsers,
+        ipos: restoredIpos,
+        applications: restoredApps,
+      },
+      metadata,
+      userCount: restoredUsers.length,
+      ipoCount: restoredIpos.length,
+      applicationCount: restoredApps.length,
+    };
+  } catch (err: any) {
+    if (isDev) console.error('[firestoreSyncService] fetchCriticalUserDataFromFirestore error:', err);
+    return {
+      success: false,
+      error: err?.message || 'Failed to fetch critical data from Firestore.',
+    };
+  }
+}
+
+// ── Stage 2: Secondary Data Fetch ─────────────────────────────────────────────
+
+/**
+ * Stage 2: Concurrently fetches bank accounts and allotments.
+ * Runs in background after or alongside Stage 1.
+ */
+export async function fetchSecondaryUserDataFromFirestore(uid: string): Promise<SecondaryRestoreResult> {
+  if (!uid) {
+    return { success: false, error: 'User is not authenticated.' };
+  }
+
+  const startTime = Date.now();
+  try {
+    const [bankAccountsSnap, allotmentsSnap] = await Promise.all([
+      getDocs(collection(firestore, `users/${uid}/bankAccounts`)).catch(() => null),
+      getDocs(collection(firestore, `users/${uid}/allotments`)).catch(() => null),
+    ]);
+
+    let restoredBanks = bankAccountsSnap ? bankAccountsSnap.docs.map((d) => d.data()).filter((b) => !b.deleted_at) : [];
+    const restoredAllotments = allotmentsSnap ? allotmentsSnap.docs.map((d) => d.data()).filter((alt) => !alt.deleted_at) : [];
+
+    // Fallback to legacy banks collection if primary is empty
+    if (restoredBanks.length === 0) {
+      const legacyBanksSnap = await getDocs(collection(firestore, `users/${uid}/banks`)).catch(() => null);
+      if (legacyBanksSnap && !legacyBanksSnap.empty) {
+        restoredBanks = legacyBanksSnap.docs.map((d) => d.data()).filter((b) => !b.deleted_at);
+      }
+    }
+
+    const fetchDuration = Date.now() - startTime;
+    logDevTiming('Stage 2 Firestore fetch', fetchDuration, `banks: ${restoredBanks.length}, allotments: ${restoredAllotments.length}`);
+
+    return {
+      success: true,
+      restoredAt: new Date().toISOString(),
+      data: {
+        banks: restoredBanks,
+        allotments: restoredAllotments,
+      },
+      bankCount: restoredBanks.length,
+      allotmentCount: restoredAllotments.length,
+    };
+  } catch (err: any) {
+    if (isDev) console.error('[firestoreSyncService] fetchSecondaryUserDataFromFirestore error:', err);
+    return {
+      success: false,
+      error: err?.message || 'Failed to fetch secondary data from Firestore.',
+    };
+  }
+}
+
+// ── Full Synchronization (Upload) ────────────────────────────────────────────
 
 /**
  * Uploads/Syncs full IPOVault user dataset to Firestore under the authenticated UID.
@@ -215,7 +385,7 @@ export async function syncUserDataToFirestore(
     const bankCount = exportData.banks?.length || 0;
     const allotmentCount = exportData.allotments?.length || 0;
 
-    // 1. Write lightweight sync metadata & bootstrap summary (NEVER the full raw payload)
+    // 1. Write lightweight sync metadata & bootstrap summary
     const metaRef = doc(firestore, `users/${uid}/metadata/sync_state`);
     const metadata: CloudSyncMetadata = {
       last_synced_at: nowIso,
@@ -232,7 +402,7 @@ export async function syncUserDataToFirestore(
       updated_at: serverTimestamp(),
     });
 
-    // Write optional lightweight snapshot header (strictly summary info, only ~200 bytes)
+    // Write optional lightweight snapshot header (~200 bytes)
     const snapshotRef = doc(firestore, `users/${uid}/metadata/snapshot`);
     await setDoc(snapshotRef, {
       version: exportData.version || 1,
@@ -249,7 +419,6 @@ export async function syncUserDataToFirestore(
     });
 
     // 2. Batch write all entity records into subcollections
-    // Firestore writeBatch has a limit of 500 operations per batch
     const MAX_OPS_PER_BATCH = 450;
     const batches = [writeBatch(firestore)];
     let opCount = 0;
@@ -349,7 +518,7 @@ export async function syncUserDataToFirestore(
       allotmentCount,
     };
   } catch (err: any) {
-    console.error('[firestoreSyncService] syncUserDataToFirestore error:', err);
+    if (isDev) console.error('[firestoreSyncService] syncUserDataToFirestore error:', err);
     return {
       success: false,
       error: err?.message || 'Failed to synchronize data to Firestore.',
@@ -361,7 +530,7 @@ export async function syncUserDataToFirestore(
 }
 
 /**
- * Fetches all user data from Firestore subcollections for full restoration
+ * Fetches all user data from Firestore subcollections for full manual restoration
  */
 export async function fetchUserDataFromFirestore(uid: string): Promise<RestoreResult> {
   if (!uid) {
@@ -375,7 +544,7 @@ export async function fetchUserDataFromFirestore(uid: string): Promise<RestoreRe
   isRestoreInProgress = true;
   const startTime = Date.now();
   try {
-    // 1. Fetch the 5 primary subcollections in parallel
+    // Fetch all 5 subcollections in parallel
     const [
       profilesSnap,
       iposSnap,
@@ -390,30 +559,33 @@ export async function fetchUserDataFromFirestore(uid: string): Promise<RestoreRe
       getDocs(collection(firestore, `users/${uid}/allotments`)).catch(() => null),
     ]);
 
-    // Handle profiles (filtering out deleted tombstones)
     let restoredUsers = profilesSnap ? profilesSnap.docs.map((d) => d.data()).filter((u) => !u.deleted_at) : [];
-    if (restoredUsers.length === 0) {
-      const legacyProfilesSnap = await getDocs(collection(firestore, `users/${uid}/user_profiles`)).catch(() => null);
+    const restoredIpos = iposSnap ? iposSnap.docs.map((d) => d.data()).filter((i) => !i.deleted_at) : [];
+    const restoredApps = appsSnap ? appsSnap.docs.map((d) => d.data()).filter((a) => !a.deleted_at) : [];
+    let restoredBanks = bankAccountsSnap ? bankAccountsSnap.docs.map((d) => d.data()).filter((b) => !b.deleted_at) : [];
+    const restoredAllotments = allotmentsSnap ? allotmentsSnap.docs.map((d) => d.data()).filter((alt) => !alt.deleted_at) : [];
+
+    // Parallel legacy fallbacks only if primary collections returned empty
+    const needsLegacyProfiles = restoredUsers.length === 0;
+    const needsLegacyBanks = restoredBanks.length === 0;
+    if (needsLegacyProfiles || needsLegacyBanks) {
+      const [legacyProfilesSnap, legacyBanksSnap] = await Promise.all([
+        needsLegacyProfiles
+          ? getDocs(collection(firestore, `users/${uid}/user_profiles`)).catch(() => null)
+          : Promise.resolve(null),
+        needsLegacyBanks
+          ? getDocs(collection(firestore, `users/${uid}/banks`)).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+
       if (legacyProfilesSnap && !legacyProfilesSnap.empty) {
         restoredUsers = legacyProfilesSnap.docs.map((d) => d.data()).filter((u) => !u.deleted_at);
       }
-    }
-
-    const restoredIpos = iposSnap ? iposSnap.docs.map((d) => d.data()).filter((i) => !i.deleted_at) : [];
-    const restoredApps = appsSnap ? appsSnap.docs.map((d) => d.data()).filter((a) => !a.deleted_at) : [];
-
-    // Handle bankAccounts (filtering out deleted tombstones)
-    let restoredBanks = bankAccountsSnap ? bankAccountsSnap.docs.map((d) => d.data()).filter((b) => !b.deleted_at) : [];
-    if (restoredBanks.length === 0) {
-      const legacyBanksSnap = await getDocs(collection(firestore, `users/${uid}/banks`)).catch(() => null);
       if (legacyBanksSnap && !legacyBanksSnap.empty) {
         restoredBanks = legacyBanksSnap.docs.map((d) => d.data()).filter((b) => !b.deleted_at);
       }
     }
 
-    const restoredAllotments = allotmentsSnap ? allotmentsSnap.docs.map((d) => d.data()).filter((alt) => !alt.deleted_at) : [];
-
-    // Check if cloud has any user-owned data
     const totalRecords =
       restoredUsers.length +
       restoredIpos.length +
@@ -422,10 +594,9 @@ export async function fetchUserDataFromFirestore(uid: string): Promise<RestoreRe
       restoredAllotments.length;
 
     const fetchDuration = Date.now() - startTime;
-    console.log(`[firestoreSyncService] Fetched ${totalRecords} cloud documents in ${fetchDuration}ms for user ${uid}`);
+    logDevTiming('Full manual Firestore fetch', fetchDuration, `total documents: ${totalRecords}`);
 
     if (totalRecords === 0) {
-      // Check if there was an old snapshot document with data
       const snapshotRef = doc(firestore, `users/${uid}/metadata/snapshot`);
       const snapshotSnap = await getDoc(snapshotRef).catch(() => null);
       if (snapshotSnap && snapshotSnap.exists()) {
@@ -476,7 +647,7 @@ export async function fetchUserDataFromFirestore(uid: string): Promise<RestoreRe
       allotmentCount: restoredAllotments.length,
     };
   } catch (err: any) {
-    console.error('[firestoreSyncService] fetchUserDataFromFirestore error:', err);
+    if (isDev) console.error('[firestoreSyncService] fetchUserDataFromFirestore error:', err);
     return {
       success: false,
       error: err?.message || 'Failed to fetch data from Firestore.',
@@ -489,7 +660,61 @@ export async function fetchUserDataFromFirestore(uid: string): Promise<RestoreRe
 // ── Incremental Delta Synchronization ────────────────────────────────────────
 
 /**
- * Fetches delta changes (new, updated, or tombstoned records) from Firestore since lastSyncedAt
+ * Stage 1: Fetches delta changes for profiles, IPOs, applications since lastSyncedAt
+ */
+export async function fetchCriticalDeltaFromFirestore(
+  uid: string,
+  lastSyncedAt: string,
+): Promise<{ success: boolean; changes?: CriticalDeltaChanges; error?: string }> {
+  if (!uid) return { success: false, error: 'User is not authenticated.' };
+  try {
+    const [profilesSnap, iposSnap, appsSnap] = await Promise.all([
+      getDocs(query(collection(firestore, `users/${uid}/profiles`), where('updated_at', '>', lastSyncedAt))).catch(() => null),
+      getDocs(query(collection(firestore, `users/${uid}/ipos`), where('updated_at', '>', lastSyncedAt))).catch(() => null),
+      getDocs(query(collection(firestore, `users/${uid}/applications`), where('updated_at', '>', lastSyncedAt))).catch(() => null),
+    ]);
+
+    const changes: CriticalDeltaChanges = {
+      profiles: profilesSnap ? profilesSnap.docs.map((d) => d.data()) : [],
+      ipos: iposSnap ? iposSnap.docs.map((d) => d.data()) : [],
+      applications: appsSnap ? appsSnap.docs.map((d) => d.data()) : [],
+    };
+
+    return { success: true, changes };
+  } catch (err: any) {
+    if (isDev) console.error('[firestoreSyncService] fetchCriticalDeltaFromFirestore error:', err);
+    return { success: false, error: err?.message || 'Failed to query critical delta changes.' };
+  }
+}
+
+/**
+ * Stage 2: Fetches delta changes for bankAccounts and allotments since lastSyncedAt
+ */
+export async function fetchSecondaryDeltaFromFirestore(
+  uid: string,
+  lastSyncedAt: string,
+): Promise<{ success: boolean; changes?: SecondaryDeltaChanges; error?: string }> {
+  if (!uid) return { success: false, error: 'User is not authenticated.' };
+  try {
+    const [banksSnap, allotmentsSnap] = await Promise.all([
+      getDocs(query(collection(firestore, `users/${uid}/bankAccounts`), where('updated_at', '>', lastSyncedAt))).catch(() => null),
+      getDocs(query(collection(firestore, `users/${uid}/allotments`), where('updated_at', '>', lastSyncedAt))).catch(() => null),
+    ]);
+
+    const changes: SecondaryDeltaChanges = {
+      bankAccounts: banksSnap ? banksSnap.docs.map((d) => d.data()) : [],
+      allotments: allotmentsSnap ? allotmentsSnap.docs.map((d) => d.data()) : [],
+    };
+
+    return { success: true, changes };
+  } catch (err: any) {
+    if (isDev) console.error('[firestoreSyncService] fetchSecondaryDeltaFromFirestore error:', err);
+    return { success: false, error: err?.message || 'Failed to query secondary delta changes.' };
+  }
+}
+
+/**
+ * Legacy full delta fetch
  */
 export async function fetchDeltaFromFirestore(
   uid: string,
@@ -497,62 +722,63 @@ export async function fetchDeltaFromFirestore(
 ): Promise<{ success: boolean; changes?: DeltaChanges; error?: string }> {
   if (!uid) return { success: false, error: 'User is not authenticated.' };
   try {
-    const [profilesSnap, iposSnap, appsSnap, banksSnap, allotmentsSnap] = await Promise.all([
-      getDocs(query(collection(firestore, `users/${uid}/profiles`), where('updated_at', '>', lastSyncedAt))).catch(() => null),
-      getDocs(query(collection(firestore, `users/${uid}/ipos`), where('updated_at', '>', lastSyncedAt))).catch(() => null),
-      getDocs(query(collection(firestore, `users/${uid}/applications`), where('updated_at', '>', lastSyncedAt))).catch(() => null),
-      getDocs(query(collection(firestore, `users/${uid}/bankAccounts`), where('updated_at', '>', lastSyncedAt))).catch(() => null),
-      getDocs(query(collection(firestore, `users/${uid}/allotments`), where('updated_at', '>', lastSyncedAt))).catch(() => null),
+    const [criticalRes, secondaryRes] = await Promise.all([
+      fetchCriticalDeltaFromFirestore(uid, lastSyncedAt),
+      fetchSecondaryDeltaFromFirestore(uid, lastSyncedAt),
     ]);
 
+    if (!criticalRes.success || !criticalRes.changes || !secondaryRes.success || !secondaryRes.changes) {
+      return { success: false, error: criticalRes.error || secondaryRes.error || 'Failed to query delta changes.' };
+    }
+
     const changes: DeltaChanges = {
-      profiles: profilesSnap ? profilesSnap.docs.map((d) => d.data()) : [],
-      ipos: iposSnap ? iposSnap.docs.map((d) => d.data()) : [],
-      applications: appsSnap ? appsSnap.docs.map((d) => d.data()) : [],
-      bankAccounts: banksSnap ? banksSnap.docs.map((d) => d.data()) : [],
-      allotments: allotmentsSnap ? allotmentsSnap.docs.map((d) => d.data()) : [],
+      profiles: criticalRes.changes.profiles,
+      ipos: criticalRes.changes.ipos,
+      applications: criticalRes.changes.applications,
+      bankAccounts: secondaryRes.changes.bankAccounts,
+      allotments: secondaryRes.changes.allotments,
     };
 
     return { success: true, changes };
   } catch (err: any) {
-    console.error('[firestoreSyncService] fetchDeltaFromFirestore error:', err);
+    if (isDev) console.error('[firestoreSyncService] fetchDeltaFromFirestore error:', err);
     return { success: false, error: err?.message || 'Failed to query delta changes.' };
   }
 }
 
 /**
- * Applies a batch of delta changes to SQLite inside a single atomic transaction
+ * Stage 1 SQLite Ingestion: Applies critical changes (users, IPOs, applications)
+ * inside a single atomic SQLite transaction.
  */
-export async function applyDeltaToSQLite(
+export async function applyCriticalDeltaToSQLite(
   db: SQLiteDatabase,
-  delta: DeltaChanges,
+  delta: { profiles?: any[]; ipos?: any[]; applications?: any[] },
   uid: string,
 ): Promise<number> {
+  const t0 = Date.now();
   let count = 0;
   const nowIso = new Date().toISOString();
 
   await runWithTransaction(
     db,
     async () => {
-      // 1. Profiles
-      for (const u of delta.profiles) {
+      // 1. Profiles / Users
+      for (const u of delta.profiles || []) {
         if (!u?.id) continue;
         if (u.deleted_at) {
           await safeRunAsync(
             db,
             'UPDATE users_table SET deleted_at = ?, updated_at = ? WHERE id = ?',
             [u.deleted_at, u.updated_at || nowIso, u.id],
-            'applyDelta.deleteProfile'
+            'applyCriticalDelta.deleteProfile'
           );
         } else {
-          // Check local updated_at for conflict resolution (Last-Write-Wins)
           const local = await db.getFirstAsync<{ updated_at: string }>(
             'SELECT updated_at FROM users_table WHERE id = ?',
             [u.id]
           );
           if (local?.updated_at && u.updated_at && local.updated_at > u.updated_at) {
-            // Local is newer, skip
-            continue;
+            continue; // Local is newer (Last-Write-Wins)
           }
           await safeRunAsync(
             db,
@@ -592,21 +818,21 @@ export async function applyDeltaToSQLite(
               u.created_at || nowIso,
               u.updated_at || nowIso,
             ],
-            'applyDelta.upsertProfile'
+            'applyCriticalDelta.upsertProfile'
           );
         }
         count++;
       }
 
-      // 2. IPOs
-      for (const ipo of delta.ipos) {
+      // 2. IPO Listings
+      for (const ipo of delta.ipos || []) {
         if (!ipo?.id) continue;
         if (ipo.deleted_at) {
           await safeRunAsync(
             db,
             'UPDATE ipo_listings SET deleted_at = ?, updated_at = ? WHERE id = ?',
             [ipo.deleted_at, ipo.updated_at || nowIso, ipo.id],
-            'applyDelta.deleteIPO'
+            'applyCriticalDelta.deleteIPO'
           );
         } else {
           const local = await db.getFirstAsync<{ updated_at: string }>(
@@ -669,21 +895,21 @@ export async function applyDeltaToSQLite(
               ipo.created_at || nowIso,
               ipo.updated_at || nowIso,
             ],
-            'applyDelta.upsertIPO'
+            'applyCriticalDelta.upsertIPO'
           );
         }
         count++;
       }
 
       // 3. Applications
-      for (const app of delta.applications) {
+      for (const app of delta.applications || []) {
         if (!app?.id) continue;
         if (app.deleted_at) {
           await safeRunAsync(
             db,
             'UPDATE ipo_applications SET deleted_at = ?, updated_at = ? WHERE id = ?',
             [app.deleted_at, app.updated_at || nowIso, app.id],
-            'applyDelta.deleteApp'
+            'applyCriticalDelta.deleteApp'
           );
         } else {
           const local = await db.getFirstAsync<{ updated_at: string }>(
@@ -733,21 +959,45 @@ export async function applyDeltaToSQLite(
               app.created_at || nowIso,
               app.updated_at || nowIso,
             ],
-            'applyDelta.upsertApp'
+            'applyCriticalDelta.upsertApp'
           );
         }
         count++;
       }
+    },
+    'applyCriticalDeltaToSQLite.transaction'
+  );
 
-      // 4. Bank Accounts
-      for (const b of delta.bankAccounts) {
+  const duration = Date.now() - t0;
+  logDevTiming('Stage 1 SQLite transaction', duration, `applied ${count} critical changes`);
+  return count;
+}
+
+/**
+ * Stage 2 SQLite Ingestion: Applies secondary changes (bank accounts, allotments)
+ * and self-healing allotment status updates inside an atomic SQLite transaction.
+ */
+export async function applySecondaryDeltaToSQLite(
+  db: SQLiteDatabase,
+  delta: { bankAccounts?: any[]; allotments?: any[] },
+  uid: string,
+): Promise<number> {
+  const t0 = Date.now();
+  let count = 0;
+  const nowIso = new Date().toISOString();
+
+  await runWithTransaction(
+    db,
+    async () => {
+      // 1. Bank Accounts
+      for (const b of delta.bankAccounts || []) {
         if (!b?.id) continue;
         if (b.deleted_at) {
           await safeRunAsync(
             db,
             'UPDATE bank_accounts SET deleted_at = ?, updated_at = ? WHERE id = ?',
             [b.deleted_at, b.updated_at || nowIso, b.id],
-            'applyDelta.deleteBank'
+            'applySecondaryDelta.deleteBank'
           );
         } else {
           const local = await db.getFirstAsync<{ updated_at: string }>(
@@ -778,21 +1028,21 @@ export async function applyDeltaToSQLite(
               b.created_at || nowIso,
               b.updated_at || nowIso,
             ],
-            'applyDelta.upsertBank'
+            'applySecondaryDelta.upsertBank'
           );
         }
         count++;
       }
 
-      // 5. Allotments
-      for (const alt of delta.allotments) {
+      // 2. Allotments
+      for (const alt of delta.allotments || []) {
         if (!alt?.id) continue;
         if (alt.deleted_at) {
           await safeRunAsync(
             db,
             'DELETE FROM ipo_allotments WHERE id = ?',
             [alt.id],
-            'applyDelta.deleteAllotment'
+            'applySecondaryDelta.deleteAllotment'
           );
         } else {
           await safeRunAsync(
@@ -832,30 +1082,176 @@ export async function applyDeltaToSQLite(
               alt.created_at || nowIso,
               alt.updated_at || nowIso,
             ],
-            'applyDelta.upsertAllotment'
+            'applySecondaryDelta.upsertAllotment'
           );
         }
         count++;
       }
+
+      // 3. Self-healing allotment status synchronization for applications
+      await safeRunAsync(
+        db,
+        `UPDATE ipo_applications
+         SET status = 'Not Allotted', updated_at = ?
+         WHERE status IN ('Applied', 'Mandate Approved')
+           AND id IN (
+             SELECT application_id FROM ipo_allotments
+             WHERE UPPER(TRIM(allotment_status)) IN ('NOT_ALLOTTED', 'NOT ALLOTTED', 'REJECTED')
+           )`,
+        [nowIso],
+        'applySecondaryDelta.healNotAllotted'
+      );
+      await safeRunAsync(
+        db,
+        `UPDATE ipo_applications
+         SET status = 'Allotted', updated_at = ?
+         WHERE status IN ('Applied', 'Mandate Approved')
+           AND id IN (
+             SELECT application_id FROM ipo_allotments
+             WHERE UPPER(TRIM(allotment_status)) = 'ALLOTTED'
+           )`,
+        [nowIso],
+        'applySecondaryDelta.healAllotted'
+      );
+      await safeRunAsync(
+        db,
+        `UPDATE ipo_applications
+         SET status = 'Partially Allotted', updated_at = ?
+         WHERE status IN ('Applied', 'Mandate Approved')
+           AND id IN (
+             SELECT application_id FROM ipo_allotments
+             WHERE UPPER(TRIM(allotment_status)) IN ('PARTIALLY_ALLOTTED', 'PARTIALLY ALLOTTED')
+           )`,
+        [nowIso],
+        'applySecondaryDelta.healPartiallyAllotted'
+      );
     },
-    'applyDeltaToSQLite.transaction'
+    'applySecondaryDeltaToSQLite.transaction'
   );
 
+  const duration = Date.now() - t0;
+  logDevTiming('Stage 2 SQLite transaction', duration, `applied ${count} secondary changes`);
   return count;
 }
 
 /**
- * Executes lightweight incremental delta sync from Firestore to local SQLite
+ * Legacy full delta apply
+ */
+export async function applyDeltaToSQLite(
+  db: SQLiteDatabase,
+  delta: DeltaChanges,
+  uid: string,
+): Promise<number> {
+  const c1 = await applyCriticalDeltaToSQLite(db, delta, uid);
+  const c2 = await applySecondaryDeltaToSQLite(db, delta, uid);
+  return c1 + c2;
+}
+
+// ── Stage 3: Image / Asset Background Persistence ────────────────────────────
+
+/**
+ * Stage 3: Persists Base64 logos and avatars to local file storage asynchronously
+ * completely off the critical rendering path.
+ */
+export async function persistImagesInBackground(
+  db: SQLiteDatabase,
+  ipos?: any[],
+  users?: any[],
+): Promise<number> {
+  const startTime = Date.now();
+  let savedCount = 0;
+
+  try {
+    // 1. Process IPO Logos
+    if (ipos && ipos.length > 0) {
+      await Promise.all(
+        ipos.map(async (ipo) => {
+          if (!ipo?.id) return;
+          const logoInput =
+            ipo.logo_url || (ipo as any).companyLogo || (ipo as any).logo || (ipo as any).logo_data;
+          if (!logoInput) return;
+
+          // Only process Base64 data URLs / payloads
+          if (
+            typeof logoInput === 'string' &&
+            (logoInput.startsWith('data:') || (!logoInput.startsWith('http://') && !logoInput.startsWith('https://') && !logoInput.startsWith('file://')))
+          ) {
+            try {
+              const savedPath = await saveBase64ToLocalImage(logoInput, 'logo', ipo.id);
+              if (savedPath) {
+                await safeRunAsync(
+                  db,
+                  'UPDATE ipo_listings SET logo_url = ? WHERE id = ?',
+                  [savedPath, ipo.id],
+                  'persistImagesInBackground.updateIpoLogo'
+                );
+                savedCount++;
+              }
+            } catch (err) {
+              if (isDev) console.warn(`[firestoreSyncService] Stage 3 logo save failed for IPO ${ipo.id}:`, err);
+            }
+          }
+        })
+      );
+    }
+
+    // 2. Process User Avatars
+    if (users && users.length > 0) {
+      await Promise.all(
+        users.map(async (u) => {
+          if (!u?.id) return;
+          const avatarInput = u.avatar_url || (u as any).avatarUrl || (u as any).avatar;
+          if (!avatarInput) return;
+
+          if (
+            typeof avatarInput === 'string' &&
+            (avatarInput.startsWith('data:') || (!avatarInput.startsWith('http://') && !avatarInput.startsWith('https://') && !avatarInput.startsWith('file://')))
+          ) {
+            try {
+              const savedPath = await saveBase64ToLocalImage(avatarInput, 'avatar', u.id);
+              if (savedPath) {
+                await safeRunAsync(
+                  db,
+                  'UPDATE users_table SET avatar_url = ? WHERE id = ?',
+                  [savedPath, u.id],
+                  'persistImagesInBackground.updateUserAvatar'
+                );
+                savedCount++;
+              }
+            } catch (err) {
+              if (isDev) console.warn(`[firestoreSyncService] Stage 3 avatar save failed for user ${u.id}:`, err);
+            }
+          }
+        })
+      );
+    }
+
+    const duration = Date.now() - startTime;
+    logDevTiming('Stage 3 image persistence', duration, `saved ${savedCount} local image files in background`);
+    return savedCount;
+  } catch (err) {
+    if (isDev) console.warn('[firestoreSyncService] Stage 3 persistImagesInBackground warning:', err);
+    return savedCount;
+  }
+}
+
+// ── 3-Stage / Lazy Cloud Sync Pipeline ────────────────────────────────────────
+
+/**
+ * Executes the 3-Stage / Lazy post-login cloud sync:
+ * - Stage 1 (Critical Dashboard Data): Profiles, IPOs, Applications, Metadata (~450-650ms target)
+ * - Stage 2 (Secondary Data): Bank Accounts, Allotments, Self-Healing (Background)
+ * - Stage 3 (Image / File Cache): Background Local File I/O
  */
 export async function syncDeltaFromFirestore(
   uid: string,
   db: SQLiteDatabase,
-  importJSONFallback?: (json: string) => Promise<any>,
+  callbacks?: StagedSyncCallbacks | ((data: string | IPOVaultExportData) => Promise<any>),
 ): Promise<DeltaSyncResult> {
   if (!uid) return { success: false, error: 'User is not authenticated.' };
 
   if (activeSyncsByUid.has(uid) || isSyncInProgress) {
-    console.log(`[firestoreSyncService] Sync already active for user ${uid}, skipping duplicate execution.`);
+    if (isDev) console.log(`[firestoreSyncService] Sync already active for user ${uid}, skipping duplicate execution.`);
     return { success: true, upToDate: true, changesApplied: 0 };
   }
 
@@ -863,70 +1259,222 @@ export async function syncDeltaFromFirestore(
   isSyncInProgress = true;
   setSuppressCloudSync(true);
 
+  const totalStartTime = Date.now();
+  const stagedCallbacks: StagedSyncCallbacks =
+    typeof callbacks === 'function'
+      ? { importJSONFallback: callbacks }
+      : callbacks || {};
+
   try {
-    // 1. Check cloud metadata
-    const cloudMeta = await getCloudSyncMetadata(uid);
-    if (!cloudMeta || !cloudMeta.last_synced_at) {
-      return { success: true, upToDate: true, changesApplied: 0 };
+    // 1. Check local sync cursor & inspect local SQLite active records
+    const localCursor = await getLocalSyncCursor(uid);
+    let hasLocalData = false;
+    try {
+      const localCheck = await db.getFirstAsync<{ count: number }>(
+        'SELECT (SELECT COUNT(*) FROM users_table WHERE deleted_at IS NULL) + (SELECT COUNT(*) FROM ipo_applications WHERE deleted_at IS NULL) as count'
+      );
+      hasLocalData = (localCheck?.count || 0) > 0;
+    } catch {
+      hasLocalData = false;
     }
 
-    // 2. Check local sync cursor
-    const localCursor = await getLocalSyncCursor(uid);
-
-    // If device has never synced with this UID, do full restore
-    if (!localCursor) {
-      console.log(`[firestoreSyncService] First sync for user ${uid}, performing full restore.`);
-      const fullRestore = await fetchUserDataFromFirestore(uid);
-      if (fullRestore.success && fullRestore.data && importJSONFallback) {
-        await importJSONFallback(JSON.stringify(fullRestore.data));
+    // ──────────────────────────────────────────────────────────────────────────
+    // BRANCH A: EMPTY / INITIAL LOCAL DATABASE -> STAGED FULL RESTORE
+    // ──────────────────────────────────────────────────────────────────────────
+    if (!localCursor || !hasLocalData) {
+      if (isDev) {
+        console.log(`[firestoreSyncService] Local DB empty/uninitialized, launching Staged Sync for user ${uid}.`);
       }
-      await setLocalSyncCursor(uid, cloudMeta.last_synced_at);
+
+      // Stage 1 & Stage 2 Network Requests launched concurrently!
+      const stage1FetchPromise = fetchCriticalUserDataFromFirestore(uid);
+      const stage2FetchPromise = fetchSecondaryUserDataFromFirestore(uid);
+
+      // Await Stage 1 Critical Data
+      const stage1Res = await stage1FetchPromise;
+      if (!stage1Res.success || !stage1Res.data) {
+        return { success: false, error: stage1Res.error || 'Failed to fetch critical data.' };
+      }
+
+      const stage1DurationMs = Date.now() - totalStartTime;
+
+      // Ingest Stage 1 Atomically into SQLite
+      if (stagedCallbacks.onCriticalDataReady) {
+        await stagedCallbacks.onCriticalDataReady(stage1Res.data);
+      } else if (stagedCallbacks.importJSONFallback) {
+        await stagedCallbacks.importJSONFallback({
+          users: stage1Res.data.users,
+          ipos: stage1Res.data.ipos,
+          applications: stage1Res.data.applications,
+        });
+      } else {
+        await applyCriticalDeltaToSQLite(
+          db,
+          {
+            profiles: stage1Res.data.users,
+            ipos: stage1Res.data.ipos,
+            applications: stage1Res.data.applications,
+          },
+          uid
+        );
+      }
+
+      // STAGE 1 COMPLETE: Dashboard is now populated with critical cloud data!
+
+      // Continue Stage 2 (Secondary Data) in the background
+      const stage2Res = await stage2FetchPromise;
+      if (stage2Res.success && stage2Res.data) {
+        if (stagedCallbacks.onSecondaryDataReady) {
+          await stagedCallbacks.onSecondaryDataReady(stage2Res.data);
+        } else if (stagedCallbacks.importJSONFallback) {
+          await stagedCallbacks.importJSONFallback({
+            banks: stage2Res.data.banks,
+            allotments: stage2Res.data.allotments,
+          });
+        } else {
+          await applySecondaryDeltaToSQLite(
+            db,
+            {
+              bankAccounts: stage2Res.data.banks,
+              allotments: stage2Res.data.allotments,
+            },
+            uid
+          );
+        }
+      }
+
+      // Continue Stage 3 (Image persistence) asynchronously in background
+      persistImagesInBackground(db, stage1Res.data.ipos, stage1Res.data.users).then((count) => {
+        stagedCallbacks.onImageCachingComplete?.(count);
+      });
+
+      // Advance local cursor
+      const syncTs = stage1Res.metadata?.last_synced_at || stage1Res.restoredAt || new Date().toISOString();
+      await setLocalSyncCursor(uid, syncTs);
+
+      const totalDurationMs = Date.now() - totalStartTime;
+      logDevTiming('Total Staged Initial Sync', totalDurationMs, `Stage 1: ${stage1DurationMs}ms`);
+
+      return {
+        success: true,
+        isFullRestore: true,
+        changesApplied:
+          (stage1Res.userCount || 0) +
+          (stage1Res.ipoCount || 0) +
+          (stage1Res.applicationCount || 0) +
+          (stage2Res.bankCount || 0) +
+          (stage2Res.allotmentCount || 0),
+        syncedAt: syncTs,
+        stage1DurationMs,
+        totalDurationMs,
+      };
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // BRANCH B: POPULATED LOCAL DATABASE -> INCREMENTAL OR UP-TO-DATE
+    // ──────────────────────────────────────────────────────────────────────────
+    const cloudMeta = await getCloudSyncMetadata(uid);
+
+    // If cloud metadata is missing, fall back to full restore
+    if (!cloudMeta || !cloudMeta.last_synced_at) {
+      if (isDev) console.log(`[firestoreSyncService] Cloud metadata missing, falling back to full restore for user ${uid}.`);
+      const fullRestore = await fetchUserDataFromFirestore(uid);
+      if (fullRestore.success && fullRestore.data && stagedCallbacks.importJSONFallback) {
+        await stagedCallbacks.importJSONFallback(fullRestore.data);
+      }
+      const syncTs = fullRestore.restoredAt || new Date().toISOString();
+      await setLocalSyncCursor(uid, syncTs);
       return {
         success: true,
         isFullRestore: true,
         changesApplied:
           (fullRestore.userCount || 0) +
           (fullRestore.ipoCount || 0) +
-          (fullRestore.applicationCount || 0),
-        syncedAt: cloudMeta.last_synced_at,
+          (fullRestore.applicationCount || 0) +
+          (fullRestore.bankCount || 0) +
+          (fullRestore.allotmentCount || 0),
+        syncedAt: syncTs,
       };
     }
 
-    // 3. Compare cursors
+    // If local cursor is current with cloud cursor: ZERO document reads!
     if (localCursor >= cloudMeta.last_synced_at) {
-      // Local database is fully up to date with cloud! Zero document reads.
       return { success: true, upToDate: true, changesApplied: 0, syncedAt: localCursor };
     }
 
-    // 4. Query only changed documents since localCursor
-    console.log(`[firestoreSyncService] Syncing delta since ${localCursor} for user ${uid}`);
-    const deltaRes = await fetchDeltaFromFirestore(uid, localCursor);
-    if (!deltaRes.success || !deltaRes.changes) {
-      return { success: false, error: deltaRes.error || 'Failed to fetch delta changes.' };
+    // Cloud has newer changes -> Staged Incremental Delta Sync
+    if (isDev) console.log(`[firestoreSyncService] Syncing staged delta since ${localCursor} for user ${uid}`);
+
+    // Concurrently query Stage 1 & Stage 2 deltas
+    const stage1DeltaPromise = fetchCriticalDeltaFromFirestore(uid, localCursor);
+    const stage2DeltaPromise = fetchSecondaryDeltaFromFirestore(uid, localCursor);
+
+    // Process Stage 1 Critical Delta
+    const stage1DeltaRes = await stage1DeltaPromise;
+    if (!stage1DeltaRes.success || !stage1DeltaRes.changes) {
+      return { success: false, error: stage1DeltaRes.error || 'Failed to fetch critical delta changes.' };
     }
 
-    const totalChanged =
-      deltaRes.changes.profiles.length +
-      deltaRes.changes.ipos.length +
-      deltaRes.changes.applications.length +
-      deltaRes.changes.bankAccounts.length +
-      deltaRes.changes.allotments.length;
+    const stage1Changed =
+      stage1DeltaRes.changes.profiles.length +
+      stage1DeltaRes.changes.ipos.length +
+      stage1DeltaRes.changes.applications.length;
 
-    if (totalChanged > 0) {
-      await applyDeltaToSQLite(db, deltaRes.changes, uid);
+    if (stage1Changed > 0) {
+      await applyCriticalDeltaToSQLite(db, stage1DeltaRes.changes, uid);
+      if (stagedCallbacks.onCriticalDataReady) {
+        await stagedCallbacks.onCriticalDataReady({
+          users: stage1DeltaRes.changes.profiles,
+          ipos: stage1DeltaRes.changes.ipos,
+          applications: stage1DeltaRes.changes.applications,
+        });
+      }
     }
 
-    // Advance local cursor to the cloud's last synced timestamp
+    const stage1DurationMs = Date.now() - totalStartTime;
+
+    // Process Stage 2 Secondary Delta in background
+    const stage2DeltaRes = await stage2DeltaPromise;
+    let stage2Changed = 0;
+    if (stage2DeltaRes.success && stage2DeltaRes.changes) {
+      stage2Changed =
+        stage2DeltaRes.changes.bankAccounts.length +
+        stage2DeltaRes.changes.allotments.length;
+
+      if (stage2Changed > 0) {
+        await applySecondaryDeltaToSQLite(db, stage2DeltaRes.changes, uid);
+        if (stagedCallbacks.onSecondaryDataReady) {
+          await stagedCallbacks.onSecondaryDataReady({
+            banks: stage2DeltaRes.changes.bankAccounts,
+            allotments: stage2DeltaRes.changes.allotments,
+          });
+        }
+      }
+    }
+
+    // Process Stage 3 image persistence for updated records
+    if (stage1Changed > 0) {
+      persistImagesInBackground(db, stage1DeltaRes.changes.ipos, stage1DeltaRes.changes.profiles).then((count) => {
+        stagedCallbacks.onImageCachingComplete?.(count);
+      });
+    }
+
+    // Advance local cursor to cloud metadata timestamp
     await setLocalSyncCursor(uid, cloudMeta.last_synced_at);
+
+    const totalDurationMs = Date.now() - totalStartTime;
+    logDevTiming('Total Incremental Delta Sync', totalDurationMs, `Stage 1: ${stage1DurationMs}ms, changed: ${stage1Changed + stage2Changed}`);
 
     return {
       success: true,
       upToDate: false,
-      changesApplied: totalChanged,
+      changesApplied: stage1Changed + stage2Changed,
       syncedAt: cloudMeta.last_synced_at,
+      stage1DurationMs,
+      totalDurationMs,
     };
   } catch (err: any) {
-    console.error('[firestoreSyncService] syncDeltaFromFirestore error:', err);
+    if (isDev) console.error('[firestoreSyncService] syncDeltaFromFirestore error:', err);
     return { success: false, error: err?.message || 'Delta sync error.' };
   } finally {
     setSuppressCloudSync(false);
@@ -985,7 +1533,7 @@ export async function syncSingleDocUpsert(
     // Advance local cursor
     await setLocalSyncCursor(uid, nowIso);
   } catch (err) {
-    console.warn(`[firestoreSyncService] syncSingleDocUpsert (${collectionName}/${docId}) failed:`, err);
+    if (isDev) console.warn(`[firestoreSyncService] syncSingleDocUpsert (${collectionName}/${docId}) failed:`, err);
   }
 }
 
@@ -1036,7 +1584,7 @@ export async function syncSingleDocDelete(
     // Advance local cursor
     await setLocalSyncCursor(uid, nowIso);
   } catch (err) {
-    console.warn(`[firestoreSyncService] syncSingleDocDelete (${collectionName}/${docId}) failed:`, err);
+    if (isDev) console.warn(`[firestoreSyncService] syncSingleDocDelete (${collectionName}/${docId}) failed:`, err);
   }
 }
 
@@ -1062,8 +1610,7 @@ export function scheduleDebouncedFirestoreSync(
       const data = JSON.parse(jsonStr) as IPOVaultExportData;
       await syncUserDataToFirestore(uid, data);
     } catch (err) {
-      console.warn('[firestoreSyncService] Debounced sync error:', err);
+      if (isDev) console.warn('[firestoreSyncService] Debounced sync error:', err);
     }
   }, delayMs);
 }
-

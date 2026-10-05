@@ -129,10 +129,9 @@ export async function ensureBase64DataUrl(uri?: string | null): Promise<string> 
   // Check Web platform safely
   let isWeb = false;
   try {
-    const { Platform } = require('react-native');
-    isWeb = Platform.OS === 'web';
-  } catch {
     isWeb = typeof window !== 'undefined' && typeof document !== 'undefined';
+  } catch {
+    isWeb = false;
   }
 
   if (isWeb) {

@@ -23,6 +23,8 @@ import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 
+import * as SplashScreen from 'expo-splash-screen';
+
 export default function AuthScreen() {
   const colors = useColors();
   const { resolvedScheme } = useTheme();
@@ -30,25 +32,28 @@ export default function AuthScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ returnTo?: string }>();
   const { user, signInWithEmail, signUpWithEmail, signInWithGoogle, resetPassword } = useAuth();
+  const { restoreCloudData } = useDB();
   const insets = useSafeAreaInsets();
   const { showError, showSuccess } = useDialog();
 
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
-  const [authSuccess, setAuthSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Dismiss native splash as soon as Auth screen is rendered
+  useEffect(() => {
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
 
   // Forgot password modal
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
-
-  const { restoreCloudData, users, applications } = useDB();
-  const [isRestoringData, setIsRestoringData] = useState(false);
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const hasNavigatedRef = React.useRef(false);
@@ -62,40 +67,18 @@ export default function AuthScreen() {
 
   useEffect(() => {
     if (!user || hasNavigatedRef.current) return;
-
-    let isMounted = true;
-    const restoreAndNavigate = async () => {
-      // If local database is empty, restore from cloud before transitioning
-      if (users.length === 0 && applications.length === 0) {
-        setIsRestoringData(true);
-        try {
-          await restoreCloudData(user.id);
-        } catch (e) {
-          console.warn('[AuthScreen] Restore warning on auth state change:', e);
-        } finally {
-          if (isMounted) setIsRestoringData(false);
-        }
-      }
-
-      if (isMounted) {
-        setAuthSuccess(true);
-        try {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        } catch {}
-        setTimeout(() => {
-          if (isMounted) handleNavigateReturn();
-        }, 400);
-      }
-    };
-
-    restoreAndNavigate();
-    return () => {
-      isMounted = false;
-    };
-  }, [user, users.length, applications.length, restoreCloudData, handleNavigateReturn]);
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {}
+    handleNavigateReturn();
+  }, [user, handleNavigateReturn]);
 
   const handleEmailAuth = async () => {
     setErrorMessage(null);
+    if (mode === 'signup' && !fullName.trim()) {
+      setErrorMessage('Please enter your full name.');
+      return;
+    }
     if (!email.trim()) {
       setErrorMessage('Please enter your email address.');
       return;
@@ -118,11 +101,13 @@ export default function AuthScreen() {
       const res =
         mode === 'signin'
           ? await signInWithEmail(email.trim(), password)
-          : await signUpWithEmail(email.trim(), password);
+          : await signUpWithEmail(email.trim(), password, fullName.trim());
 
       if (res.error) {
         setErrorMessage(res.error);
         showError(mode === 'signin' ? 'Sign In Failed' : 'Registration Failed', res.error);
+      } else {
+        handleNavigateReturn();
       }
     } catch (err: any) {
       const msg = err?.message || 'Authentication failed. Please try again.';
@@ -147,6 +132,8 @@ export default function AuthScreen() {
           setErrorMessage(res.error);
           showError('Google Sign-In Failed', res.error);
         }
+      } else {
+        handleNavigateReturn();
       }
     } catch (err: any) {
       const msg = err?.message || 'Google Sign-In failed.';
@@ -217,50 +204,7 @@ export default function AuthScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {authSuccess || user ? (
-          <View style={styles.stateCenterContainer}>
-            <View
-              style={[
-                styles.stateCard,
-                { backgroundColor: colors.card, borderColor: '#10B98150' },
-              ]}
-            >
-              <View style={styles.successBadge}>
-                {isRestoringData ? (
-                  <ActivityIndicator size="large" color="#FFFFFF" />
-                ) : (
-                  <Feather name="check" size={36} color="#FFFFFF" />
-                )}
-              </View>
-              <Text style={[styles.successTitle, { color: colors.foreground }]}>
-                {isRestoringData ? 'Restoring Cloud Data…' : 'Authentication Successful!'}
-              </Text>
-              {user?.email ? (
-                <Text style={[styles.userEmailText, { color: colors.primary }]}>
-                  Signed in as {user.email}
-                </Text>
-              ) : null}
-              <Text style={[styles.returningText, { color: colors.mutedForeground }]}>
-                {isRestoringData
-                  ? 'Syncing your applications, users, and allotments from Cloud Firestore…'
-                  : 'Opening your dashboard…'}
-              </Text>
-
-              {!isRestoringData && (
-                <TouchableOpacity
-                  style={[styles.submitButton, { backgroundColor: colors.primary, marginTop: 20 }]}
-                  onPress={handleNavigateReturn}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.submitButtonText, { color: colors.primaryForeground }]}>
-                    Continue to App
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        ) : (
-          <View style={styles.formContainer}>
+        <View style={styles.formContainer}>
             {/* Mode Switcher Tabs */}
             <View
               style={[
@@ -384,6 +328,35 @@ export default function AuthScreen() {
               <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
             </View>
 
+            {/* Full Name Field (Sign Up) */}
+            {mode === 'signup' && (
+              <View style={styles.fieldGroup}>
+                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
+                  FULL NAME
+                </Text>
+                <View
+                  style={[
+                    styles.inputWrap,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <Feather name="user" size={18} color={colors.mutedForeground} style={styles.inputIcon} />
+                  <TextInput
+                    style={[styles.textInput, { color: colors.foreground }]}
+                    placeholder="Enter your full name"
+                    placeholderTextColor={colors.mutedForeground}
+                    value={fullName}
+                    onChangeText={setFullName}
+                    autoCapitalize="words"
+                    autoComplete="name"
+                  />
+                </View>
+              </View>
+            )}
+
             {/* Email Field */}
             <View style={styles.fieldGroup}>
               <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
@@ -485,7 +458,6 @@ export default function AuthScreen() {
               Secured by Firebase Authentication & Google Identity Services
             </Text>
           </View>
-        )}
       </ScrollView>
 
       {/* Forgot Password Modal */}

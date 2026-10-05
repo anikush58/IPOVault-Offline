@@ -19,6 +19,7 @@ import { PrimaryButton } from '@/components/onboarding/PrimaryButton';
 import { ThemeToggle } from '@/components/onboarding/ThemeToggle';
 
 import { useAuth } from '@/context/AuthContext';
+import * as SplashScreen from 'expo-splash-screen';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -28,6 +29,10 @@ export function OnboardingScreenView() {
   const { isDark, getSlideImage } = useColorSchemeAssets();
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
+
+  React.useEffect(() => {
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = event.nativeEvent.contentOffset.x;

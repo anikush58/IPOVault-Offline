@@ -262,20 +262,26 @@ const NewIpoCardItem = React.memo(
     const gmpColor = hasGmp ? ((gmpAmt || gmpPct || 0) >= 0 ? '#10B981' : '#EF4444') : colors.mutedForeground;
 
     const normStatus = (item.status || '').toUpperCase().trim();
+    const isItemClosingToday =
+      normStatus === 'CLOSING_TODAY' ||
+      normStatus === 'CLOSING TODAY' ||
+      normStatus === 'CLOSES TODAY' ||
+      normStatus === 'CLOSING' ||
+      isClosingToday(item);
     const isClosedOrListed =
       normStatus === 'CLOSED' ||
       normStatus === 'LISTED' ||
       normStatus === 'ALLOTTED' ||
       normStatus === 'ALLOTMENT_OUT' ||
       normStatus === 'ALLOTMENT_COMPLETED' ||
-      (normStatus.includes('CLOSED') && normStatus !== 'CLOSING_TODAY') ||
+      (normStatus.includes('CLOSED') && !isItemClosingToday) ||
       normStatus.includes('ALLOT') ||
       normStatus.includes('LIST');
     const isListed = normStatus === 'LISTED' || tab === 'listed';
     const isUpcoming = normStatus === 'UPCOMING' || tab === 'upcoming';
     const isOpen =
+      !isItemClosingToday &&
       (normStatus === 'OPEN' ||
-        normStatus === 'CLOSING_TODAY' ||
         normStatus === 'LIVE' ||
         normStatus === 'BIDDING' ||
         normStatus === 'ACTIVE' ||
@@ -458,7 +464,12 @@ const NewIpoCardItem = React.memo(
             <View
               style={[
                 styles.statusPillNew,
-                isOpen
+                isItemClosingToday
+                  ? {
+                      backgroundColor: isDark ? 'rgba(245,158,11,0.12)' : '#FFFBEB',
+                      borderColor: isDark ? 'rgba(251,191,36,0.4)' : '#FDE68A',
+                    }
+                  : isOpen
                   ? {
                       backgroundColor: isDark ? 'rgba(34,197,94,0.12)' : '#F0FDF4',
                       borderColor: isDark ? 'rgba(134,239,172,0.4)' : '#86EFAC',
@@ -484,6 +495,14 @@ const NewIpoCardItem = React.memo(
                     },
               ]}
             >
+              {isItemClosingToday && (
+                <Feather
+                  name="clock"
+                  size={11.5}
+                  color={isDark ? '#FBBF24' : '#D97706'}
+                  style={{ marginRight: 2 }}
+                />
+              )}
               {isOpen && (
                 <Feather
                   name="zap"
@@ -496,7 +515,9 @@ const NewIpoCardItem = React.memo(
                 style={[
                   styles.statusTextNew,
                   {
-                    color: isOpen
+                    color: isItemClosingToday
+                      ? (isDark ? '#FBBF24' : '#D97706')
+                      : isOpen
                       ? (isDark ? '#4ADE80' : '#15803D')
                       : isUpcoming
                       ? (isDark ? '#60A5FA' : '#1D4ED8')
@@ -508,7 +529,9 @@ const NewIpoCardItem = React.memo(
                   },
                 ]}
               >
-                {isOpen
+                {isItemClosingToday
+                  ? 'Closing Today'
+                  : isOpen
                   ? 'Live Now'
                   : isUpcoming
                   ? 'Upcoming'

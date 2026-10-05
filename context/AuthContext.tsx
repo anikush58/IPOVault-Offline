@@ -15,9 +15,9 @@ export type AuthContextType = {
   user: AuthUser | null;
   session: { user: AuthUser } | null;
   isLoading: boolean;
-  signInWithEmail: (email: string, pass: string) => Promise<{ error: string | null }>;
-  signUpWithEmail: (email: string, pass: string) => Promise<{ error: string | null }>;
-  signInWithGoogle: () => Promise<{ error: string | null }>;
+  signInWithEmail: (email: string, pass: string) => Promise<{ user?: AuthUser | null; error: string | null }>;
+  signUpWithEmail: (email: string, pass: string, fullName?: string) => Promise<{ user?: AuthUser | null; error: string | null }>;
+  signInWithGoogle: () => Promise<{ user?: AuthUser | null; error: string | null }>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 };
@@ -28,9 +28,9 @@ const DEFAULT_AUTH_VALUE: AuthContextType = {
   user: null,
   session: null,
   isLoading: false,
-  signInWithEmail: async () => ({ error: 'Auth not initialized' }),
-  signUpWithEmail: async () => ({ error: 'Auth not initialized' }),
-  signInWithGoogle: async () => ({ error: 'Auth not initialized' }),
+  signInWithEmail: async () => ({ user: null, error: 'Auth not initialized' }),
+  signUpWithEmail: async () => ({ user: null, error: 'Auth not initialized' }),
+  signInWithGoogle: async () => ({ user: null, error: 'Auth not initialized' }),
   resetPassword: async () => ({ error: 'Auth not initialized' }),
   signOut: async () => {},
 };
@@ -53,19 +53,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithEmail = async (email: string, pass: string) => {
     const res = await loginWithEmailPassword(email, pass);
     if (res.user) setUser(res.user);
-    return { error: res.error };
+    return { user: res.user, error: res.error };
   };
 
-  const signUpWithEmail = async (email: string, pass: string) => {
-    const res = await registerWithEmailPassword(email, pass);
+  const signUpWithEmail = async (email: string, pass: string, fullName?: string) => {
+    const res = await registerWithEmailPassword(email, pass, fullName);
     if (res.user) setUser(res.user);
-    return { error: res.error };
+    return { user: res.user, error: res.error };
   };
 
   const signInWithGoogle = async () => {
     const res = await signInWithGoogleNative();
     if (res.user) setUser(res.user);
-    return { error: res.error };
+    return { user: res.user, error: res.error };
   };
 
   const resetPassword = async (email: string) => {

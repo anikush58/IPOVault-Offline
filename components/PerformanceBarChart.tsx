@@ -1,0 +1,1080 @@
+import React, { useMemo, useState, useEffect, useRef } from 'react';
+import {
+  Animated,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import Svg, { Rect, Line, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
+import { Feather } from '@expo/vector-icons';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useColors } from '@/hooks/useColors';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { type ApplicationWithDetails } from '@/context/DBContext';
+import { Tabs } from '@/components/ui/Tabs';
+import { calcBuyValue, calcNetProfit, calcProfitLoss, calcSaleValue } from '@/utils/calculations';
+import { formatCurrency } from '@/utils/formatters';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type PeriodTab = 'weekly' | 'monthly' | 'yearly';
+type FilterMode = PeriodTab | 'custom_date';
+
+type BarData = {
+  key: string;
+  label: string;
+  shortLabel: string;
+  value: number;
+  count: number;
+};
+
+type DropdownOption = {
+  id: string;
+  label: string;
+  sub: string;
+  type: 'range' | 'date';
+  refDate?: Date;
+};
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const CHART_H = 170;
+const LABEL_H = 18;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const PERIOD_TABS: { value: PeriodTab; label: string; count: number }[] = [
+  { value: 'weekly',    label: 'Weekly',    count: 7 },
+  { value: 'monthly',   label: 'Monthly',   count: 12 },
+  { value: 'yearly',    label: 'Yearly',    count: 5 },
+];
+
+// ── Bucket helpers ────────────────────────────────────────────────────────────
+
+function parseDateParts(dateStr: string | null | undefined): { year: number; month: number; day: number } | null {
+  if (!dateStr) return null;
+  const str = dateStr.trim();
+  const parts = str.split(/[-/ T]/);
+  if (parts.length >= 3) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const day = parseInt(parts[2], 10);
+    if (!isNaN(year) && !isNaN(month) && !isNaN(day) && year > 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return { year, month, day };
+    }
+  }
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() };
+  }
+  return null;
+}
+
+function getMonday(d: Date): Date {
+  const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+  return new Date(date.setDate(diff));
+}
+
+function formatDateKey(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const dateVal = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${dateVal}`;
+}
+
+function buildBuckets(
+  mode: FilterMode,
+  count: number,
+  applications?: ApplicationWithDetails[],
+  refDate?: Date
+): Omit<BarData, 'value' | 'count'>[] {
+  const now = refDate || new Date();
+  const result: Omit<BarData, 'value' | 'count'>[] = [];
+
+  if (mode === 'weekly' || mode === 'custom_date') {
+    const monday = getMonday(now);
+    const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+      const key = formatDateKey(d);
+      const monthName = MONTHS[d.getMonth()];
+      const dayNum = d.getDate();
+      const label = `${DAYS[i]}, ${monthName} ${dayNum}`;
+      const shortLabel = DAYS[i];
+      result.push({ key, label, shortLabel });
+    }
+    return result;
+  }
+
+  if (mode === 'monthly') {
+    let startYear = now.getFullYear();
+    if (!refDate && applications && applications.length > 0) {
+      const saleYears = applications
+        .map((a) => {
+          if (a.status !== 'Sold') return null;
+          const dateStr = a.sale_date || a.updated_at || a.created_at;
+          const p = parseDateParts(dateStr);
+          return p ? p.year : null;
+        })
+        .filter(Boolean) as number[];
+      if (saleYears.length > 0) {
+        startYear = Math.max(...saleYears);
+      } else {
+        const openYears = applications
+          .map((a) => {
+            const p = parseDateParts(a.open_date);
+            return p ? p.year : null;
+          })
+          .filter(Boolean) as number[];
+        if (openYears.length > 0) {
+          startYear = Math.max(...openYears);
+        }
+      }
+    }
+
+    const monthsOrder = [3, 4, 5, 6, 7, 8, 9, 10, 11, 0, 1, 2]; // Apr to Mar
+    for (const mIdx of monthsOrder) {
+      const year = mIdx < 3 ? startYear + 1 : startYear;
+      const key = `${year}-${String(mIdx + 1).padStart(2, '0')}`;
+      const yr = String(year).slice(2);
+      const label = `${MONTHS[mIdx]} '${yr}`;
+      const shortLabel = MONTHS[mIdx]!;
+      result.push({ key, label, shortLabel });
+    }
+    return result;
+  }
+
+  for (let i = count - 1; i >= 0; i--) {
+    const year = now.getFullYear() - i;
+    const key = `${year}`;
+    result.push({ key, label: `${year}`, shortLabel: `${year}` });
+  }
+  return result;
+}
+
+function saleKey(mode: FilterMode, dateStr: string): string {
+  const p = parseDateParts(dateStr);
+  if (!p) return dateStr;
+  const yearStr = String(p.year);
+  const monthStr = String(p.month).padStart(2, '0');
+  const dayStr = String(p.day).padStart(2, '0');
+
+  if (mode === 'weekly' || mode === 'custom_date') {
+    return `${yearStr}-${monthStr}-${dayStr}`;
+  }
+  if (mode === 'monthly') {
+    return `${yearStr}-${monthStr}`;
+  }
+  return yearStr;
+}
+
+function formatYLabel(val: number): string {
+  const sign = val < 0 ? '-' : '';
+  const abs = Math.abs(val);
+  if (abs === 0) return '₹0';
+  if (abs >= 1000) {
+    return `${sign}₹${(abs / 1000).toFixed(0)}K`;
+  }
+  return `${sign}₹${abs}`;
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function PeriodTabs({
+  period,
+  onChange,
+}: {
+  period: PeriodTab;
+  onChange: (p: PeriodTab) => void;
+}) {
+  return (
+    <Tabs
+      variant="pills"
+      height={36}
+      tabs={PERIOD_TABS.map((t) => ({ key: t.value, label: t.label }))}
+      activeTab={period}
+      onChange={onChange}
+    />
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+
+type Props = { applications: ApplicationWithDetails[] };
+
+export function PerformanceBarChart({ applications }: Props) {
+  const colors = useColors();
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
+  const [tabPeriod, setTabPeriod] = useState<PeriodTab>('monthly');
+  const [filterMode, setFilterMode] = useState<FilterMode>('monthly');
+  const [customDate, setCustomDate] = useState<Date>(new Date());
+  const [selectedRefDate, setSelectedRefDate] = useState<Date | undefined>(undefined);
+  const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
+
+  const [showHeaderDropdown, setShowHeaderDropdown] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+
+  const cfgCount = filterMode === 'weekly' || filterMode === 'custom_date' ? 7 : filterMode === 'monthly' ? 12 : 5;
+
+  const handleTabChange = (p: PeriodTab) => {
+    setTabPeriod(p);
+    setFilterMode(p);
+    setSelectedRefDate(undefined);
+    setSelectedLabel(null);
+    setSelectedIdx(null);
+  };
+
+  const formatDateShort = (d: Date) => {
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = MONTHS[d.getMonth()];
+    const year = d.getFullYear();
+    return `${day} ${month} ${year}`;
+  };
+
+  const dropdownOptions = useMemo((): DropdownOption[] => {
+    const now = new Date();
+    const options: DropdownOption[] = [];
+
+    if (tabPeriod === 'weekly') {
+      for (let i = 0; i < 5; i++) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i * 7);
+        const monday = getMonday(d);
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+
+        const mName = MONTHS[monday.getMonth()];
+        const sName = MONTHS[sunday.getMonth()];
+        const rangeText = mName === sName
+          ? `${mName} ${monday.getDate()} - ${sunday.getDate()}`
+          : `${mName} ${monday.getDate()} - ${sName} ${sunday.getDate()}`;
+
+        options.push({
+          id: `week_${i}`,
+          label: i === 0 ? `Current Week (${rangeText})` : i === 1 ? `Last Week (${rangeText})` : `${i} Weeks Ago (${rangeText})`,
+          sub: `${formatDateShort(monday)} to ${formatDateShort(sunday)}`,
+          type: 'range',
+          refDate: monday,
+        });
+      }
+    } else if (tabPeriod === 'monthly') {
+      const currentYear = now.getFullYear();
+      for (let i = 0; i < 4; i++) {
+        const yr = currentYear - i;
+        options.push({
+          id: `fy_${yr}`,
+          label: `FY ${yr}-${String(yr + 1).slice(2)}`,
+          sub: `Apr ${yr} - Mar ${yr + 1}`,
+          type: 'range',
+          refDate: new Date(yr, 3, 1),
+        });
+      }
+    } else {
+      const currentYear = now.getFullYear();
+      for (let i = 0; i < 5; i++) {
+        const yr = currentYear - i;
+        options.push({
+          id: `yr_${yr}`,
+          label: `${yr}`,
+          sub: `Year ${yr} performance`,
+          type: 'range',
+          refDate: new Date(yr, 0, 1),
+        });
+      }
+    }
+
+    options.push({
+      id: 'particular_date',
+      label: 'Particular Date…',
+      sub: filterMode === 'custom_date' ? `Selected: ${formatDateShort(customDate)}` : 'Select a specific date from calendar',
+      type: 'date',
+    });
+
+    return options;
+  }, [tabPeriod, filterMode, customDate]);
+
+  // ── Aggregation ───────────────────────────────────────────────────────────
+
+  const bars: BarData[] = useMemo(() => {
+    const agg: Record<string, { value: number; count: number }> = {};
+    for (const a of applications) {
+      if (a.status !== 'Sold') continue;
+      const dateStr = a.sale_date || a.updated_at || a.created_at;
+      if (!dateStr) continue;
+      const key = saleKey(filterMode, dateStr);
+      const bv = calcBuyValue(a.buy_price, a.quantity);
+      const sv = calcSaleValue(a.sell_price ?? 0, a.quantity);
+      const net = calcNetProfit(calcProfitLoss(sv, bv), a.tax ?? 0, a.user_cut ?? 0);
+      if (!agg[key]) agg[key] = { value: 0, count: 0 };
+      agg[key].value += net;
+      agg[key].count += 1;
+    }
+    const targetRef = filterMode === 'custom_date' ? customDate : selectedRefDate;
+    return buildBuckets(filterMode, cfgCount, applications, targetRef).map(b => ({
+      ...b,
+      value: agg[b.key]?.value ?? 0,
+      count: agg[b.key]?.count ?? 0,
+    }));
+  }, [applications, filterMode, cfgCount, customDate, selectedRefDate]);
+
+  useEffect(() => {
+    if (filterMode === 'custom_date' && customDate && bars.length > 0) {
+      const targetKey = formatDateKey(customDate);
+      const idx = bars.findIndex(b => b.key === targetKey);
+      if (idx !== -1) {
+        setSelectedIdx(idx);
+      }
+    }
+  }, [filterMode, customDate, bars]);
+
+  // ── Scale calculations ────────────────────────────────────────────────────
+
+  const values = bars.map(b => b.value);
+  const rawMax = Math.max(...values, 0);
+  const rawMin = Math.min(...values, 0);
+
+  const getCleanStep = (raw: number): number => {
+    const cleanSteps = [1000, 2000, 5000, 10000, 20000, 25000, 50000, 100000, 200000, 250000, 500000];
+    for (const s of cleanSteps) {
+      if (s >= raw) return s;
+    }
+    return Math.ceil(raw / 500000) * 500000 || 100000;
+  };
+
+  let minY = 0;
+  let maxY = 20000;
+  let cleanStep = 5000;
+
+  if (rawMin >= 0) {
+    minY = 0;
+    const limit = Math.max(rawMax, 20000);
+    const rawStep = limit / 4;
+    cleanStep = getCleanStep(rawStep);
+    maxY = cleanStep * 4;
+  } else {
+    const absMin = Math.abs(rawMin);
+    const totalSpan = rawMax + absMin;
+    const rawStep = totalSpan / 5;
+    cleanStep = getCleanStep(rawStep);
+    minY = Math.floor(rawMin / cleanStep) * cleanStep;
+    maxY = Math.ceil(rawMax / cleanStep) * cleanStep;
+  }
+
+  const totalRange = maxY - minY || 1;
+  const PADDING_Y = 6;
+  const plotHeight = CHART_H - 2 * PADDING_Y;
+  const zeroBase = (CHART_H - PADDING_Y) - ((-minY) / totalRange) * plotHeight;
+
+  const [animProgress, setAnimProgress] = useState(0);
+
+  useEffect(() => {
+    setAnimProgress(0);
+    let startTime = Date.now();
+    const duration = 600;
+    let frameId: number;
+
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setAnimProgress(eased);
+
+      if (progress < 1) {
+        frameId = requestAnimationFrame(animate);
+      }
+    };
+
+    frameId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frameId);
+  }, [filterMode, customDate, selectedRefDate]);
+
+  const getSvgY = (v: number) => {
+    const finalY = zeroBase - (v / totalRange) * plotHeight;
+    return zeroBase + (finalY - zeroBase) * animProgress;
+  };
+
+  const hasData = bars.some(b => b.count > 0);
+
+  const getHeaderDropdownLabel = () => {
+    if (selectedLabel) return selectedLabel;
+    if (filterMode === 'custom_date') return formatDateShort(customDate);
+
+    if (selectedIdx !== null && bars[selectedIdx]) {
+      const item = bars[selectedIdx];
+      if (filterMode === 'weekly') {
+        const d = new Date(item.key);
+        const sun = new Date(d);
+        sun.setDate(d.getDate() + 6);
+        const startM = MONTHS[d.getMonth()];
+        const endM = MONTHS[sun.getMonth()];
+        const startD = d.getDate();
+        const endD = sun.getDate();
+        const startY = d.getFullYear();
+        if (startM === endM) return `${startM} ${startD}-${endD}, ${startY}`;
+        return `${startM} ${startD} - ${endM} ${endD}, ${startY}`;
+      }
+      if (filterMode === 'monthly') {
+        const [y, m] = item.key.split('-').map(Number);
+        return `${MONTHS[m - 1]} ${y}`;
+      }
+      return item.key;
+    }
+
+    if (filterMode === 'weekly') {
+      const ref = selectedRefDate || new Date();
+      const d = getMonday(ref);
+      const sun = new Date(d);
+      sun.setDate(d.getDate() + 6);
+      const startM = MONTHS[d.getMonth()];
+      const endM = MONTHS[sun.getMonth()];
+      const startD = d.getDate();
+      const endD = sun.getDate();
+      if (startM === endM) return `${startM} ${startD}-${endD}`;
+      return `${startM} ${startD} - ${endM} ${endD}`;
+    }
+
+    if (filterMode === 'monthly') {
+      const ref = selectedRefDate || new Date();
+      return `FY ${ref.getFullYear()}-${String(ref.getFullYear() + 1).slice(2)}`;
+    }
+
+    const ref = selectedRefDate || new Date();
+    return String(ref.getFullYear());
+  };
+
+  const [chartWidth, setChartWidth] = useState(0);
+
+  // ── Animated Tooltip position ──
+  const tooltipX = useRef(new Animated.Value(0)).current;
+  const tooltipY = useRef(new Animated.Value(0)).current;
+  const tooltipOpacity = useRef(new Animated.Value(0)).current;
+  const isTooltipVisible = useRef(false);
+
+  const tooltipWidth = 90;
+  const tooltipHeight = 52;
+
+  const yTicks = useMemo(() => {
+    const ticks: number[] = [];
+    for (let val = maxY; val >= minY; val -= cleanStep) {
+      ticks.push(val);
+    }
+    return ticks;
+  }, [minY, maxY, cleanStep]);
+
+  // Bar dimensions & coordinates
+  const barLayouts = useMemo(() => {
+    if (!chartWidth || bars.length === 0) return [];
+    const colWidth = chartWidth / bars.length;
+    const barWidth = Math.max(8, Math.min(22, colWidth * 0.52));
+
+    return bars.map((b, i) => {
+      const colCenterX = (i + 0.5) * colWidth;
+      const x = colCenterX - barWidth / 2;
+      const targetY = getSvgY(b.value);
+
+      let y = zeroBase;
+      let height = 0;
+
+      if (b.value > 0) {
+        y = targetY;
+        height = Math.max(3, zeroBase - targetY);
+      } else if (b.value < 0) {
+        y = zeroBase;
+        height = Math.max(3, targetY - zeroBase);
+      } else {
+        // Zero value / no data
+        y = zeroBase - 1;
+        height = 2;
+      }
+
+      return {
+        data: b,
+        index: i,
+        colCenterX,
+        colWidth,
+        x,
+        y,
+        width: barWidth,
+        height,
+        targetY,
+      };
+    });
+  }, [bars, chartWidth, zeroBase, totalRange, animProgress]);
+
+  useEffect(() => {
+    if (selectedIdx !== null && barLayouts[selectedIdx]) {
+      const bLayout = barLayouts[selectedIdx]!;
+      const targetX = bLayout.colCenterX - tooltipWidth / 2;
+      const topY = bLayout.data.value >= 0 ? bLayout.y : zeroBase;
+      const targetY = topY - tooltipHeight - 8;
+      const clampedX = Math.max(8, Math.min(targetX, chartWidth - tooltipWidth - 8));
+      const finalY = targetY < 4 ? bLayout.y + bLayout.height + 8 : targetY;
+
+      if (!isTooltipVisible.current) {
+        isTooltipVisible.current = true;
+        tooltipX.setValue(clampedX);
+        tooltipY.setValue(finalY);
+        Animated.timing(tooltipOpacity, {
+          toValue: 1,
+          duration: 150,
+          useNativeDriver: true,
+        }).start();
+      } else {
+        Animated.parallel([
+          Animated.spring(tooltipX, {
+            toValue: clampedX,
+            tension: 80,
+            friction: 12,
+            useNativeDriver: true,
+          }),
+          Animated.spring(tooltipY, {
+            toValue: finalY,
+            tension: 80,
+            friction: 12,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      }
+    } else {
+      isTooltipVisible.current = false;
+      Animated.timing(tooltipOpacity, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [selectedIdx, barLayouts, chartWidth, zeroBase]);
+
+  return (
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      {/* Header row with Title on Left & Small Dropdown on Top-Right */}
+      <View style={styles.header}>
+        <View>
+          <Text style={[styles.title, { color: colors.foreground }]}>Performance — Bar</Text>
+        </View>
+
+        <TouchableOpacity
+          onPress={() => setShowHeaderDropdown(true)}
+          style={[
+            styles.headerDropdownBtn,
+            {
+              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : colors.card,
+              borderColor: colors.border,
+            },
+          ]}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.headerDropdownText, { color: colors.foreground }]}>
+            {getHeaderDropdownLabel()}
+          </Text>
+          <Feather name="chevron-down" size={13} color={colors.mutedForeground} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Period Tabs (Weekly | Monthly | Yearly) */}
+      <View style={styles.tabsRow}>
+        <PeriodTabs period={tabPeriod} onChange={handleTabChange} />
+      </View>
+
+      {!hasData && filterMode !== 'weekly' && filterMode !== 'custom_date' ? (
+        <View style={styles.empty}>
+          <View style={[styles.emptyIcon, { backgroundColor: colors.surface }]}>
+            <Feather name="bar-chart" size={22} color={colors.mutedForeground} />
+          </View>
+          <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No data yet</Text>
+          <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
+            Performance appears once you mark applications as Sold
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.chartWrap}>
+          <Text style={[styles.yTitle, { color: colors.foreground }]} numberOfLines={1}>IPO Profits (₹)</Text>
+
+          {/* Y-axis labels */}
+          <View style={styles.yAxis}>
+            <View style={styles.yTicksContainer}>
+              {yTicks.map((val) => (
+                <Text key={val} style={[styles.yLabel, { color: colors.mutedForeground }]}>
+                  {formatYLabel(val)}
+                </Text>
+              ))}
+            </View>
+          </View>
+
+          {/* Plotting area */}
+          <View style={styles.barsOuter} onLayout={(e) => setChartWidth(e.nativeEvent.layout.width)}>
+            {chartWidth > 0 && (
+              <Svg width={chartWidth} height={CHART_H} style={{ position: 'absolute', top: 0, left: 0 }}>
+                {/* Horizontal Grid lines */}
+                {yTicks.map((val) => {
+                  const y = getSvgY(val);
+                  return (
+                    <Line
+                      key={val}
+                      x1={0}
+                      y1={y}
+                      x2={chartWidth}
+                      y2={y}
+                      stroke={colors.border}
+                      strokeWidth={1}
+                      strokeDasharray="2 2"
+                      opacity={0.25}
+                    />
+                  );
+                })}
+
+                {/* Left vertical Y-axis boundary line */}
+                <Line
+                  x1={0}
+                  y1={PADDING_Y}
+                  x2={0}
+                  y2={CHART_H - PADDING_Y}
+                  stroke={colors.border}
+                  strokeWidth={1}
+                  strokeDasharray="2 2"
+                />
+
+                {/* Zero baseline */}
+                <Line
+                  x1={0}
+                  y1={zeroBase}
+                  x2={chartWidth}
+                  y2={zeroBase}
+                  stroke={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)'}
+                  strokeWidth={1.2}
+                />
+
+                {/* Selected column highlight guide */}
+                {selectedIdx !== null && barLayouts[selectedIdx] && (
+                  <Rect
+                    x={barLayouts[selectedIdx].colCenterX - barLayouts[selectedIdx].colWidth * 0.44}
+                    y={PADDING_Y}
+                    width={barLayouts[selectedIdx].colWidth * 0.88}
+                    height={CHART_H - 2 * PADDING_Y}
+                    fill={isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'}
+                    rx={6}
+                  />
+                )}
+
+                {/* Bars */}
+                {barLayouts.map((b) => {
+                  const isSelected = selectedIdx === b.index;
+                  const isPos = b.data.value > 0;
+                  const isNeg = b.data.value < 0;
+
+                  if (!isPos && !isNeg) {
+                    return (
+                      <Rect
+                        key={b.data.key}
+                        x={b.x}
+                        y={zeroBase - 1}
+                        width={b.width}
+                        height={2}
+                        fill={isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)'}
+                        rx={1}
+                      />
+                    );
+                  }
+
+                  const fillColor = isPos ? colors.positive : colors.negative;
+
+                  return (
+                    <Rect
+                      key={b.data.key}
+                      x={b.x}
+                      y={b.y}
+                      width={b.width}
+                      height={b.height}
+                      fill={fillColor}
+                      rx={3}
+                      ry={3}
+                      opacity={isSelected ? 1 : 0.88}
+                    />
+                  );
+                })}
+              </Svg>
+            )}
+
+            {/* Floating Tooltip */}
+            {selectedIdx !== null && barLayouts[selectedIdx] && (
+              <Animated.View
+                style={[
+                  styles.floatingTooltip,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    transform: [
+                      { translateX: tooltipX },
+                      { translateY: tooltipY },
+                    ],
+                    opacity: tooltipOpacity,
+                  },
+                ]}
+                pointerEvents="none"
+              >
+                <Text style={[styles.tooltipPeriod, { color: colors.mutedForeground }]} numberOfLines={1}>
+                  {barLayouts[selectedIdx].data.label}
+                </Text>
+                <Text
+                  style={[
+                    styles.tooltipProfit,
+                    {
+                      color:
+                        barLayouts[selectedIdx].data.value >= 0
+                          ? colors.positive
+                          : colors.negative,
+                    },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {barLayouts[selectedIdx].data.value >= 0 ? '+' : ''}
+                  {formatCurrency(barLayouts[selectedIdx].data.value, false)}
+                </Text>
+                <Text style={[styles.tooltipSales, { color: colors.foreground }]} numberOfLines={1}>
+                  {barLayouts[selectedIdx].data.count}{' '}
+                  {barLayouts[selectedIdx].data.count === 1 ? 'sale' : 'sales'}
+                </Text>
+              </Animated.View>
+            )}
+
+            {/* Touch Area Overlay */}
+            <View style={styles.barsRow}>
+              {bars.map((bar, idx) => {
+                const isSelected = selectedIdx === idx;
+
+                return (
+                  <TouchableOpacity
+                    key={bar.key}
+                    style={styles.barCol}
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      setSelectedIdx(isSelected ? null : idx);
+                    }}
+                  >
+                    <View style={{ position: 'absolute', bottom: 0 }}>
+                      <Text
+                        style={[
+                          styles.barLabel,
+                          {
+                            color: isSelected ? colors.primary : colors.mutedForeground,
+                            fontFamily: isSelected ? 'GoogleSansFlex_700Bold' : 'GoogleSansFlex_500Medium',
+                          },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {bar.shortLabel}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Centered Dropdown Modal */}
+      <Modal visible={showHeaderDropdown} transparent animationType="fade" onRequestClose={() => setShowHeaderDropdown(false)}>
+        <Pressable style={styles.centerModalOverlay} onPress={() => setShowHeaderDropdown(false)}>
+          <Pressable style={[styles.pickerModalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => {}}>
+            <View style={[styles.pickerModalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
+                Select {tabPeriod === 'weekly' ? 'Week Range' : tabPeriod === 'monthly' ? 'Month / Year' : 'Year'}
+              </Text>
+              <TouchableOpacity onPress={() => setShowHeaderDropdown(false)} style={styles.closeBtn} hitSlop={8}>
+                <Feather name="x" size={18} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 380 }}>
+              {dropdownOptions.map((opt, idx) => {
+                const isParticularDate = opt.type === 'date';
+                const isSelected = isParticularDate
+                  ? filterMode === 'custom_date'
+                  : filterMode !== 'custom_date' && (selectedLabel ? selectedLabel === opt.label : idx === 0);
+
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    onPress={() => {
+                      setShowHeaderDropdown(false);
+                      if (isParticularDate) {
+                        setTimeout(() => setShowDatePicker(true), 200);
+                      } else {
+                        setFilterMode(tabPeriod);
+                        setSelectedRefDate(opt.refDate);
+                        setSelectedLabel(opt.label);
+                        setSelectedIdx(null);
+                      }
+                    }}
+                    style={[
+                      styles.modalOption,
+                      {
+                        borderBottomColor: colors.border,
+                        backgroundColor: isSelected ? (isDark ? '#27272A' : '#F1F5F9') : 'transparent',
+                      },
+                    ]}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                      <View
+                        style={[
+                          styles.modalOptionIcon,
+                          { backgroundColor: isSelected ? (isDark ? '#374151' : '#E2E8F0') : colors.surface },
+                        ]}
+                      >
+                        <Feather
+                          name={isParticularDate ? 'clock' : tabPeriod === 'weekly' ? 'calendar' : tabPeriod === 'monthly' ? 'bar-chart-2' : 'trending-up'}
+                          size={16}
+                          color={colors.foreground}
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.modalOptionTitle, { color: colors.foreground }]}>
+                          {opt.label}
+                        </Text>
+                        <Text style={[styles.modalOptionSub, { color: colors.mutedForeground }]}>
+                          {opt.sub}
+                        </Text>
+                      </View>
+                    </View>
+                    {isSelected && <Feather name="check" size={18} color={colors.foreground} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Date Picker */}
+      {showDatePicker && (
+        <DateTimePicker
+          value={customDate}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(event: DateTimePickerEvent, selected?: Date) => {
+            setShowDatePicker(false);
+            if (selected) {
+              setCustomDate(selected);
+              setFilterMode('custom_date');
+              setSelectedRefDate(selected);
+              setSelectedLabel(formatDateShort(selected));
+              setSelectedIdx(null);
+            }
+          }}
+        />
+      )}
+    </View>
+  );
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  card: {
+    marginHorizontal: 16,
+    marginBottom: 20,
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingTop: 18,
+    paddingBottom: 10,
+    overflow: 'hidden',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    marginBottom: 12,
+    gap: 12,
+  },
+  headerDropdownBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  headerDropdownText: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  title: {
+    fontSize: 18,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
+  },
+  tabsRow: {
+    paddingHorizontal: 18,
+    marginBottom: 14,
+  },
+  floatingTooltip: {
+    position: 'absolute',
+    width: 90,
+    height: 52,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    justifyContent: 'center',
+    zIndex: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  tooltipPeriod: {
+    fontSize: 9,
+    fontFamily: 'GoogleSansFlex_500Medium',
+    lineHeight: 11,
+    marginBottom: 1,
+  },
+  tooltipProfit: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    lineHeight: 13,
+  },
+  tooltipSales: {
+    fontSize: 9,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+    lineHeight: 11,
+    marginTop: 1,
+  },
+  chartWrap: {
+    flexDirection: 'row',
+    paddingLeft: 18,
+    paddingRight: 24,
+    marginBottom: 8,
+  },
+  yAxis: {
+    width: 28,
+    height: CHART_H + 24,
+    justifyContent: 'flex-end',
+    marginRight: 2,
+  },
+  yTitle: {
+    position: 'absolute',
+    top: 0,
+    left: 18,
+    width: 200,
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+    letterSpacing: 0.1,
+    textAlign: 'left',
+  },
+  yTicksContainer: {
+    height: CHART_H,
+    justifyContent: 'space-between',
+  },
+  yLabel: {
+    fontSize: 8.5,
+    fontFamily: 'GoogleSansFlex_500Medium',
+    textAlign: 'left',
+    letterSpacing: 0.1,
+  },
+  barsOuter: {
+    flex: 1,
+    height: CHART_H + LABEL_H,
+    marginTop: 24,
+    position: 'relative',
+  },
+  barsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  },
+  barCol: {
+    flex: 1,
+    alignItems: 'center',
+    height: CHART_H + LABEL_H,
+  },
+  barLabel: {
+    fontSize: 9,
+    textAlign: 'center',
+    marginTop: 5,
+    letterSpacing: 0.2,
+  },
+  empty: { alignItems: 'center', paddingVertical: 32, paddingHorizontal: 24, gap: 8 },
+  emptyIcon: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  emptyTitle: { fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
+  emptySub: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', textAlign: 'center', lineHeight: 18 },
+  centerModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  pickerModalCard: {
+    width: '92%',
+    maxWidth: 400,
+    borderRadius: 22,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  pickerModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  sheetTitle: {
+    fontSize: 16,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
+  },
+  closeBtn: {
+    minWidth: 36,
+    minHeight: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderBottomWidth: 0.5,
+  },
+  modalOptionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalOptionTitle: {
+    fontSize: 15,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  modalOptionSub: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 2,
+  },
+});

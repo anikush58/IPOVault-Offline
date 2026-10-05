@@ -22,6 +22,7 @@ import { useDB, type User } from '@/context/DBContext';
 import { IconButton } from '@/components/ui/IconButton';
 import { UserCard } from '@/components/UserCard';
 import { AddUserModal } from '@/components/AddUserModal';
+import { BrokerConnectSuccessModal } from '@/components/BrokerConnectSuccessModal';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { Tabs } from '@/components/ui/Tabs';
 import {
@@ -61,6 +62,10 @@ export default function UsersScreen() {
   const [brokerActionUserId, setBrokerActionUserId] = useState<string | null>(
     null,
   );
+  const [connectedBrokerSuccess, setConnectedBrokerSuccess] = useState<{
+    brokerName: string;
+    accountName?: string;
+  } | null>(null);
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
   // Active user ID for backend scoping
@@ -366,6 +371,10 @@ export default function UsersScreen() {
               );
             }
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            setConnectedBrokerSuccess({
+              brokerName: canonical.displayName,
+              accountName: targetUser.name,
+            });
           }
         }
       }
@@ -586,6 +595,12 @@ export default function UsersScreen() {
           setShowModal(false);
           setEditingUser(null);
         }}
+      />
+
+      <BrokerConnectSuccessModal
+        visible={!!connectedBrokerSuccess}
+        brokerName={connectedBrokerSuccess?.brokerName || 'Broker'}
+        onClose={() => setConnectedBrokerSuccess(null)}
       />
     </View>
   );

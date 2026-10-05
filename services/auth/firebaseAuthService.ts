@@ -4,6 +4,7 @@ import {
   signInWithCredential,
   signOut,
   sendPasswordResetEmail,
+  updateProfile,
   onAuthStateChanged,
   GoogleAuthProvider,
   User as FirebaseUser,
@@ -184,6 +185,7 @@ async function signInWithGoogleAuthSession(): Promise<{
 export async function registerWithEmailPassword(
   email: string,
   pass: string,
+  fullName?: string,
 ): Promise<{ user: AuthUserProfile | null; error: string | null }> {
   try {
     const cred = await createUserWithEmailAndPassword(
@@ -191,7 +193,18 @@ export async function registerWithEmailPassword(
       email.trim(),
       pass,
     );
-    return { user: mapFirebaseUser(cred.user), error: null };
+    if (fullName && fullName.trim()) {
+      try {
+        await updateProfile(cred.user, { displayName: fullName.trim() });
+      } catch (e) {
+        console.warn('[firebaseAuthService] Could not set displayName:', e);
+      }
+    }
+    const profile = mapFirebaseUser(cred.user);
+    if (profile && fullName && fullName.trim()) {
+      profile.displayName = fullName.trim();
+    }
+    return { user: profile, error: null };
   } catch (err: any) {
     return { user: null, error: formatAuthError(err) };
   }

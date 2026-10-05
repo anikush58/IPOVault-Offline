@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -36,19 +37,17 @@ const queryClient = new QueryClient();
 
 function RootLayoutNav() {
   const { resolvedScheme } = useTheme();
-  const { user, isLoading } = useAuth();
+  const { user } = useAuth();
   const router = useRouter();
+  const prevUserRef = useRef<typeof user>(undefined);
 
+  // Handle subsequent logout transition cleanly
   useEffect(() => {
-    if (isLoading) return;
-    safeAsyncStorage.getItem(ONBOARDING_STORAGE_KEY).then((value) => {
-      if (!value) {
-        router.replace('/onboarding');
-      } else if (!user) {
-        router.replace('/auth');
-      }
-    });
-  }, [isLoading, user, router]);
+    if (prevUserRef.current && !user) {
+      router.replace('/auth');
+    }
+    prevUserRef.current = user;
+  }, [user, router]);
 
   useEffect(() => {
     setupNotificationPresentation();
@@ -66,18 +65,20 @@ function RootLayoutNav() {
     }
   }, [user?.id]);
 
+  const bgColor = resolvedScheme === 'dark' ? '#121212' : '#F8F9FA';
+
   return (
     <>
       <StatusBar style={resolvedScheme === 'dark' ? 'light' : 'dark'} />
       <Stack
-        initialRouteName="(tabs)"
         screenOptions={{
           headerShown: false,
           animation: 'fade',
           animationDuration: 200,
-          contentStyle: { backgroundColor: resolvedScheme === 'dark' ? '#121212' : '#F8F9FA' },
+          contentStyle: { backgroundColor: bgColor },
         }}
       >
+        <Stack.Screen name="index" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="onboarding" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="applications" options={{ headerShown: false, animation: 'fade' }} />
@@ -100,8 +101,8 @@ function RootLayoutNav() {
         <Stack.Screen name="privacy-security" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="privacy-policy" options={{ headerShown: false, animation: 'fade' }} />
         <Stack.Screen name="help-center" options={{ headerShown: false, animation: 'fade' }} />
+        <Stack.Screen name="broker-callback" options={{ headerShown: false, animation: 'fade' }} />
       </Stack>
-
     </>
   );
 }
@@ -118,12 +119,6 @@ export default function RootLayout() {
   });
 
   const ready = fontsLoaded || !!fontsError;
-
-  useEffect(() => {
-    if (ready) {
-      SplashScreen.hideAsync().catch(() => {});
-    }
-  }, [ready]);
 
   if (!ready) {
     return null;

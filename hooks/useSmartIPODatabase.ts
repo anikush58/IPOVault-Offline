@@ -35,7 +35,7 @@ export function useSmartIPODatabase(options?: IPOFilterOptions) {
   }, [fetchIPOs]);
 
   const openIPOs = useMemo(
-    () => ipos.filter((i) => i.lifecycle_status === 'OPEN'),
+    () => ipos.filter((i) => i.lifecycle_status === 'OPEN' || i.lifecycle_status === 'CLOSING_TODAY'),
     [ipos]
   );
 

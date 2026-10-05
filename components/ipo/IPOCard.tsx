@@ -9,6 +9,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IPOMasterRecord } from '@/services/ipo/types';
 import { formatIssueSize, getResolvedLogoUrl } from '@/utils/formatters';
 import { useCompare } from '@/context/CompareContext';
+import { calculateNormalizedIPOStatus, getLifecycleStatusLabel } from '@/services/ipo/statusNormalizer';
 
 const AVATAR_PALETTES: [string, string][] = [
   ['#8B5CF6', '#6D28D9'], // Purple
@@ -177,17 +178,14 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
   };
 
   // Status computation
-  const normStatus = (ipo.status || ipo.lifecycle_status || '').toUpperCase().trim();
-  const isOpen = normStatus === 'OPEN' || normStatus === 'LIVE' || normStatus === 'LIVE NOW' || normStatus === 'LIVE BID';
-  const isAllotmentOut =
-    normStatus === 'ALLOTTED_AVAILABLE' ||
-    normStatus === 'ALLOTMENT_OUT' ||
-    normStatus === 'ALLOTMENT_COMPLETED' ||
-    (ipo.status || '').toUpperCase() === 'ALLOTMENT_COMPLETED' ||
-    (ipo.status || '').toUpperCase() === 'ALLOTMENT_OUT';
-  const isListed = normStatus === 'LISTED' || normStatus === 'LISTING_PENDING';
-  const isClosed = normStatus === 'CLOSED' || normStatus.includes('ALLOT') || normStatus.includes('AWAIT');
-  const isUpcoming = !isOpen && !isClosed && !isListed && !isAllotmentOut;
+  const normStatus = calculateNormalizedIPOStatus(ipo);
+  const isClosingToday = normStatus === 'CLOSING_TODAY';
+  const isOpen = normStatus === 'OPEN';
+  const isAllotmentOut = normStatus === 'ALLOTTED_AVAILABLE';
+  const isListed = normStatus === 'LISTED' || normStatus === 'LISTING_UPCOMING';
+  const isAllotmentPending = normStatus === 'ALLOTTED_PENDING';
+  const isClosed = normStatus === 'CLOSED' || isAllotmentPending;
+  const isUpcoming = normStatus === 'UPCOMING';
 
   // GMP Text & Calculation
   const gmpAmt = ipo.gmp_amount != null ? Math.round(ipo.gmp_amount) : null;
@@ -382,7 +380,12 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
           <View
             style={[
               styles.statusPill,
-              isOpen
+              isClosingToday
+                ? {
+                    backgroundColor: isDark ? 'rgba(245,158,11,0.12)' : '#FFFBEB',
+                    borderColor: isDark ? 'rgba(251,191,36,0.4)' : '#FDE68A',
+                  }
+                : isOpen
                 ? {
                     backgroundColor: isDark ? 'rgba(34,197,94,0.12)' : '#F0FDF4',
                     borderColor: isDark ? 'rgba(134,239,172,0.4)' : '#86EFAC',
@@ -402,12 +405,25 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
                     backgroundColor: isDark ? 'rgba(139,92,246,0.12)' : '#F5F3FF',
                     borderColor: isDark ? 'rgba(221,214,254,0.4)' : '#DDD6FE',
                   }
+                : isAllotmentPending
+                ? {
+                    backgroundColor: isDark ? 'rgba(245,158,11,0.12)' : '#FFFBEB',
+                    borderColor: isDark ? 'rgba(251,191,36,0.4)' : '#FDE68A',
+                  }
                 : {
                     backgroundColor: isDark ? 'rgba(148,163,184,0.12)' : '#F8FAFC',
                     borderColor: isDark ? 'rgba(203,213,225,0.4)' : '#CBD5E1',
                   },
             ]}
           >
+            {isClosingToday && (
+              <Feather
+                name="clock"
+                size={11.5}
+                color={isDark ? '#FBBF24' : '#D97706'}
+                style={{ marginRight: 2 }}
+              />
+            )}
             {isOpen && (
               <Feather
                 name="zap"
@@ -420,7 +436,9 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
               style={[
                 styles.statusText,
                 {
-                  color: isOpen
+                  color: isClosingToday
+                    ? (isDark ? '#FBBF24' : '#D97706')
+                    : isOpen
                     ? (isDark ? '#4ADE80' : '#15803D')
                     : isUpcoming
                     ? (isDark ? '#60A5FA' : '#1D4ED8')
@@ -428,19 +446,13 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
                     ? (isDark ? '#4ADE80' : '#15803D')
                     : isListed
                     ? (isDark ? '#A78BFA' : '#7C3AED')
+                    : isAllotmentPending
+                    ? (isDark ? '#FBBF24' : '#D97706')
                     : (isDark ? '#94A3B8' : '#64748B'),
                 },
               ]}
             >
-              {isOpen
-                ? 'Live Now'
-                : isUpcoming
-                ? 'Upcoming'
-                : isAllotmentOut
-                ? 'Allotment Out'
-                : isListed
-                ? 'Listed'
-                : 'Closed'}
+              {getLifecycleStatusLabel(normStatus)}
             </Text>
           </View>
         </View>

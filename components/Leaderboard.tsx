@@ -1,27 +1,19 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import {
-  Modal,
-  Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { type ApplicationWithDetails } from '@/context/DBContext';
-import { Tabs } from '@/components/ui/Tabs';
-import { calcBuyValue, calcNetProfit, calcProfitLoss, calcSaleValue, calculateAppTaxAndNet } from '@/utils/calculations';
+import { calculateAppTaxAndNet } from '@/utils/calculations';
 import { formatCurrency } from '@/utils/formatters';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-type TabKey = 'user' | 'ipo';
 
 type LeaderEntry = {
   id: string;
@@ -32,18 +24,13 @@ type LeaderEntry = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const RANK_COLORS = ['#F4C231', '#A8A9AD', '#CD7F32'];
-
-function computeRankings(
-  applications: ApplicationWithDetails[],
-  by: TabKey,
-): LeaderEntry[] {
+function computeRankings(applications: ApplicationWithDetails[]): LeaderEntry[] {
   const map: Record<string, { name: string; netProfit: number; soldCount: number }> = {};
 
   for (const a of applications) {
     if (a.status !== 'Sold' && a.status !== 'Holding') continue;
-    const key = by === 'user' ? String(a.user_id) : String(a.ipo_id);
-    const name = by === 'user' ? a.user_name : (a.ipo_name ?? 'Unknown');
+    const key = String(a.user_id);
+    const name = a.user_name;
     if (!map[key]) map[key] = { name, netProfit: 0, soldCount: 0 };
     const { netPL } = calculateAppTaxAndNet(a);
     map[key].netProfit += netPL;
@@ -145,11 +132,10 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabKey>('user');
 
   const rankings = useMemo(
-    () => computeRankings(applications, activeTab),
-    [applications, activeTab],
+    () => computeRankings(applications),
+    [applications],
   );
 
   const filteredRankings = useMemo(() => {
@@ -164,11 +150,12 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
   return (
     <View style={[styles.card, { backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderColor: colors.border }]}>
 
-      {/* Header with View More matching Portfolio Details */}
+      {/* Header with View More matching Design System */}
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.foreground }]}>Leaderboard</Text>
+        
         <TouchableOpacity
-          onPress={() => router.push({ pathname: '/leaderboard', params: { tab: activeTab } })}
+          onPress={() => router.push('/leaderboard')}
           style={[
             styles.viewMoreBtn,
             {
@@ -183,20 +170,6 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
           </Text>
           <Feather name="chevron-right" size={13} color={colors.mutedForeground} />
         </TouchableOpacity>
-      </View>
-
-      {/* User / IPO chip tabs (Left aligned above user rankings) */}
-      <View style={styles.tabsRow}>
-        <Tabs
-          variant="pills"
-          height={36}
-          tabs={[
-            { key: 'user', label: 'User' },
-            { key: 'ipo', label: 'IPO' },
-          ]}
-          activeTab={activeTab}
-          onChange={(key) => setActiveTab(key as TabKey)}
-        />
       </View>
 
       {/* Content */}
@@ -248,7 +221,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: CARD_PADDING_H,
     marginBottom: 10,
   },
-  eyebrow: { fontSize: 10, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 },
   title: { fontSize: 18, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
 
   viewMoreBtn: {
@@ -265,76 +237,12 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_600SemiBold',
   },
 
-  tabsRow: {
-    paddingHorizontal: CARD_PADDING_H,
-    marginBottom: 10,
-  },
-
-  segmented: {
-    flexDirection: 'row',
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 3,
-    gap: 2,
-  },
-  segTab: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  segLabel: { fontSize: 12, fontFamily: 'GoogleSansFlex_600SemiBold' },
-
   list: { paddingTop: 2 },
 
   empty: { alignItems: 'center', paddingVertical: 32, paddingHorizontal: 24, gap: 8 },
   emptyIcon: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   emptyTitle: { fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.2 },
   emptySub: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', textAlign: 'center', lineHeight: 18 },
-
-  viewAll: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    borderTopWidth: 1,
-    paddingVertical: 14,
-    marginTop: 4,
-  },
-  viewAllText: { fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold' },
 });
 
-const modal = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderTopWidth: 1,
-    maxHeight: '85%',
-  },
-  handle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 14, marginBottom: 6 },
-  sheetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 22,
-    paddingVertical: 16,
-  },
-  sheetEyebrow: { fontSize: 10, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 },
-  sheetTitle: { fontSize: 22, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.4 },
-  closeBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  list: { paddingHorizontal: 22, paddingBottom: 12 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 13,
-    borderBottomWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 6,
-  },
-  rowName: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: -0.1 },
-  rowSub: { fontSize: 11, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 2 },
-  rowProfit: { fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.2 },
-});
+

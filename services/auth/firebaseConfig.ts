@@ -8,7 +8,6 @@ import {
 } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
 
 const firebaseConfig = {
   apiKey:
@@ -34,8 +33,20 @@ export const firebaseApp: FirebaseApp =
   getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 export const firebaseAuth: Auth = (() => {
-  if (Platform.OS === 'web') {
-    return getAuth(firebaseApp);
+  let isWeb = false;
+  try {
+    const { Platform } = require('react-native');
+    isWeb = Platform?.OS === 'web';
+  } catch {
+    isWeb = typeof window !== 'undefined' || typeof process !== 'undefined';
+  }
+
+  if (isWeb) {
+    try {
+      return getAuth(firebaseApp);
+    } catch {
+      // Fallback
+    }
   }
   try {
     return initializeAuth(firebaseApp, {
@@ -47,4 +58,3 @@ export const firebaseAuth: Auth = (() => {
 })();
 
 export const firestore: Firestore = getFirestore(firebaseApp);
-

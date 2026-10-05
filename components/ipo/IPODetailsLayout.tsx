@@ -182,24 +182,32 @@ export function IPODetailsLayout({
   const segmentLabel = isSme ? 'SME' : 'MAINBOARD';
 
   // Status mapping
-  const rawStatus = String(ipo.status || ipo.lifecycle_status || 'UPCOMING').toUpperCase();
+  const rawStatus = String(ipo.status || ipo.lifecycle_status || 'UPCOMING').toUpperCase().trim();
+  const isClosingToday =
+    rawStatus === 'CLOSING_TODAY' ||
+    rawStatus === 'CLOSING TODAY' ||
+    rawStatus === 'CLOSES TODAY' ||
+    rawStatus === 'CLOSING';
   const isOpen =
-    rawStatus === 'OPEN' || rawStatus === 'CLOSING_TODAY' || rawStatus === 'LIVE' || rawStatus === 'LIVE NOW';
+    !isClosingToday && (rawStatus === 'OPEN' || rawStatus === 'LIVE' || rawStatus === 'LIVE NOW');
   const isClosed =
-    rawStatus === 'CLOSED' ||
-    rawStatus === 'ALLOTMENT_PENDING' ||
-    rawStatus === 'ALLOTMENT_AWAITED' ||
-    rawStatus === 'ALLOTTED_PENDING' ||
-    rawStatus === 'ALLOTMENT_COMPLETED' ||
-    rawStatus === 'ALLOTMENT_OUT' ||
-    rawStatus === 'ALLOTTED' ||
-    rawStatus === 'LISTING_PENDING';
+    !isClosingToday &&
+    (rawStatus === 'CLOSED' ||
+      rawStatus === 'ALLOTMENT_PENDING' ||
+      rawStatus === 'ALLOTMENT_AWAITED' ||
+      rawStatus === 'ALLOTTED_PENDING' ||
+      rawStatus === 'ALLOTMENT_COMPLETED' ||
+      rawStatus === 'ALLOTMENT_OUT' ||
+      rawStatus === 'ALLOTTED' ||
+      rawStatus === 'LISTING_PENDING');
   const isAllotmentOut =
     rawStatus === 'ALLOTMENT_OUT' || rawStatus === 'ALLOTTED' || rawStatus === 'ALLOTMENT_COMPLETED';
   const isListed = rawStatus === 'LISTED';
-  const isUpcoming = rawStatus === 'UPCOMING' || rawStatus === 'DRAFT';
+  const isUpcoming = !isClosingToday && !isOpen && !isClosed && !isAllotmentOut && !isListed;
 
-  const statusLabel = isOpen
+  const statusLabel = isClosingToday
+    ? 'CLOSING TODAY'
+    : isOpen
     ? 'OPEN'
     : isAllotmentOut
     ? 'ALLOTMENT OUT'
@@ -265,6 +273,17 @@ export function IPODetailsLayout({
 
   // Status Banner Info with accurate Days Calculation
   const statusBannerInfo = useMemo(() => {
+    if (isClosingToday) {
+      return {
+        title: 'Open for Subscription',
+        subtitle: `Closes today, ${closeDate ? formatFullDate(closeDate) : 'Today'}`,
+        badgeText: 'Closing Today',
+        badgeColor: '#F59E0B',
+        badgeBg: isDark ? 'rgba(245, 158, 11, 0.18)' : '#FEF3C7',
+        badgeTextColor: isDark ? '#FBBF24' : '#D97706',
+      };
+    }
+
     if (isOpen) {
       if (!closeDate) {
         return {
@@ -861,13 +880,17 @@ export function IPODetailsLayout({
                   style={[
                     styles.badgePill,
                     {
-                      backgroundColor: isOpen
+                      backgroundColor: isClosingToday
+                        ? (isDark ? 'rgba(245, 158, 11, 0.18)' : '#FEF3C7')
+                        : isOpen
                         ? (isDark ? 'rgba(16, 185, 129, 0.18)' : '#DCFCE7')
                         : isAllotmentOut
                         ? (isDark ? 'rgba(59, 130, 246, 0.18)' : '#EFF6FF')
                         : isClosed
                         ? (isDark ? 'rgba(239, 68, 68, 0.18)' : '#FEE2E2')
-                        : (isDark ? 'rgba(245, 158, 11, 0.18)' : '#FEF3C7'),
+                        : isListed
+                        ? (isDark ? 'rgba(139, 92, 246, 0.18)' : '#F5F3FF')
+                        : (isDark ? 'rgba(59, 130, 246, 0.18)' : '#EFF6FF'),
                     },
                   ]}
                 >
@@ -875,13 +898,17 @@ export function IPODetailsLayout({
                     style={[
                       styles.badgePillText,
                       {
-                        color: isOpen
+                        color: isClosingToday
+                          ? (isDark ? '#FBBF24' : '#D97706')
+                          : isOpen
                           ? (isDark ? '#34D399' : '#15803D')
                           : isAllotmentOut
                           ? (isDark ? '#60A5FA' : '#2563EB')
                           : isClosed
                           ? (isDark ? '#F87171' : '#DC2626')
-                          : (isDark ? '#FBBF24' : '#D97706'),
+                          : isListed
+                          ? (isDark ? '#A78BFA' : '#7C3AED')
+                          : (isDark ? '#60A5FA' : '#2563EB'),
                       },
                     ]}
                   >

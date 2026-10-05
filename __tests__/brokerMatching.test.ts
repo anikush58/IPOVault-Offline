@@ -910,8 +910,101 @@ export async function runBrokerMatchingTestSuite() {
     'No market quotes available -> falls back to SQLite stored current price (210.0)',
   );
 
+  // Test 31: Upstox response resolution (NSE_EQ:TATATECH & instrument_token NSE_EQ|INE848E01016)
+  const tataTechApp = [
+    {
+      id: 'app-tatatech',
+      ipo_id: 'ipo-1',
+      ipo_name: 'Tata Technologies Limited',
+      status: 'Holding',
+      buy_price: 500.0,
+      sell_price: null,
+      quantity: 30,
+      broker_account_id: 'acc-father-upstox',
+    },
+  ];
+  const upstoxMarketQuotes = {
+    'INE142Z01019': { symbol: 'TATATECH', isin: 'INE142Z01019', exchange: 'NSE', ltp: 1045.50 },
+    'TATATECH': { symbol: 'TATATECH', isin: 'INE142Z01019', exchange: 'NSE', ltp: 1045.50 },
+    'NSE:TATATECH': { symbol: 'TATATECH', isin: 'INE142Z01019', exchange: 'NSE', ltp: 1045.50 },
+  };
+
+  const enrichedTataTech = enrichApplicationsWithBrokerData(
+    tataTechApp,
+    mockIpos,
+    [], // Not owned in Upstox portfolio
+    upstoxMarketQuotes,
+  );
+  assert(
+    enrichedTataTech[0].sell_price === 1045.50,
+    'Upstox Live LTP Resolution Test',
+    'Upstox live market LTP (₹1045.50) successfully enriches Tata Technologies holding regardless of portfolio ownership',
+  );
+
+  // Test 32: Precedence: Live Upstox LTP overrides stored buy/allotment price (₹500.00)
+  assert(
+    enrichedTataTech[0].sell_price !== 500.0,
+    'LTP Precedence Over Allotment Price Test',
+    'Live market LTP (₹1045.50) takes precedence over ₹500 allotment/buy price',
+  );
+
+  // Test 33: Fallback Resilience: Failed quote safely falls back to stored SQLite price
+  const tataTechStoredFallbackApp = [
+    {
+      id: 'app-tatatech-fallback',
+      ipo_id: 'ipo-1',
+      ipo_name: 'Tata Technologies Limited',
+      status: 'Holding',
+      buy_price: 500.0,
+      sell_price: 850.0, // Stored SQLite price
+      quantity: 30,
+    },
+  ];
+  const enrichedTataTechFallback = enrichApplicationsWithBrokerData(
+    tataTechStoredFallbackApp,
+    mockIpos,
+    [],
+    {}, // Empty/failed market quote
+  );
+  assert(
+    enrichedTataTechFallback[0].sell_price === 850.0,
+    'LTP Fallback Resilience Test',
+    'Failed/empty market quote safely falls back to stored SQLite price (₹850.00)',
+  );
+
+  // Test 34: Family Isolation Invariance: LTP lookup preserves broker_account_id
+  assert(
+    enrichedTataTech[0].broker_account_id === 'acc-father-upstox',
+    'Family Isolation Invariance Test',
+    'Market LTP lookup never alters broker_account_id or family ownership',
+  );
+
+  // Test 35: Sold Detection Independence: Sold status is never affected by market quote LTP
+  const soldAppWithMarketQuote = [
+    {
+      id: 'app-sold-1',
+      ipo_id: 'ipo-1',
+      ipo_name: 'Tata Tech IPO',
+      status: 'Sold',
+      buy_price: 500.0,
+      sell_price: 1200.0, // Executed historical sale price
+      quantity: 30,
+    },
+  ];
+  const enrichedSoldApp = enrichApplicationsWithBrokerData(
+    soldAppWithMarketQuote,
+    mockIpos,
+    [],
+    upstoxMarketQuotes,
+  );
+  assert(
+    enrichedSoldApp[0].sell_price === 1200.0 && enrichedSoldApp[0].status === 'Sold',
+    'Sold Detection Independence Test',
+    'Sold application retains executed sale price (₹1200.00) and is completely unaffected by market LTP (₹1045.50)',
+  );
+
   console.log('==================================================');
-  console.log('ALL BROKER MATCHING, MARKET LTP & FAMILY ISOLATION TESTS PASSED (32/32)');
+  console.log('ALL BROKER MATCHING, MARKET LTP & FAMILY ISOLATION TESTS PASSED (37/37)');
   console.log('==================================================');
 }
 
@@ -921,4 +1014,5 @@ if (require.main === module) {
     process.exit(1);
   });
 }
+
 

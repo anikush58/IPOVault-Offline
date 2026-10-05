@@ -460,18 +460,24 @@ export async function registerDevicePushTokenAsync(userId: string): Promise<stri
   if (!userId || userId.trim() === '') return null;
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const Notifications = require('expo-notifications');
+    let Notifications: any = null;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      Notifications = require('expo-notifications');
+    } catch {
+      return null;
+    }
+
+    if (!Notifications || !Notifications.getPermissionsAsync) {
+      return null;
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { Platform } = require('react-native');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { API_BASE_URL } = require('@/constants/apiConfig');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Constants = require('expo-constants').default || require('expo-constants');
-
-    if (!Notifications || !Notifications.getPermissionsAsync) {
-      return null;
-    }
 
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;

@@ -132,8 +132,18 @@ export function evaluateLifecycle(
     };
   }
 
-  // Current date between Open and Close -> OPEN
-  if (hasValidOpen && hasValidClose && today >= openDate && today <= closeDate) {
+  // Close date is today -> CLOSING_TODAY
+  if (hasValidOpen && hasValidClose && today === closeDate) {
+    return {
+      lifecycle_status: 'CLOSING_TODAY',
+      lifecycle_confidence: 'High',
+      lifecycle_source: 'Authoritative Date Range',
+      lifecycle_last_verified_at: nowIso,
+    };
+  }
+
+  // Current date between Open and Close (before close date) -> OPEN
+  if (hasValidOpen && hasValidClose && today >= openDate && today < closeDate) {
     return {
       lifecycle_status: 'OPEN',
       lifecycle_confidence: 'High',

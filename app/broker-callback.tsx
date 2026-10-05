@@ -30,10 +30,16 @@ export default function BrokerCallbackScreen() {
   const params = useLocalSearchParams<{
     status?: string;
     accountId?: string;
+    broker?: string;
     error?: string;
     error_description?: string;
     message?: string;
   }>();
+
+  const brokerName = useMemo(() => {
+    if (params.broker) return params.broker.trim();
+    return 'Upstox';
+  }, [params.broker]);
 
   const activeUserId = useMemo(() => {
     return resolveCanonicalBrokerUserId(authUser, users);
@@ -157,10 +163,10 @@ export default function BrokerCallbackScreen() {
             </View>
 
             <Text style={[styles.title, { color: colors.foreground }]}>
-              Broker Connected!
+              {brokerName} Connected!
             </Text>
             <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-              Your broker account has been securely linked. Holdings and trades are now automatically synced.
+              Your {brokerName} account has been securely linked.
             </Text>
 
             <TouchableOpacity
