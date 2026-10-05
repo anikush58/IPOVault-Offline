@@ -6,6 +6,8 @@ import { ManagedAccountAllotmentResult } from '@/components/allotment/AllotmentS
 
 export interface UnviewedAllotmentResultState {
   ipoId: string;
+  backendIpoId?: string | null;
+  listingId?: string | null;
   ipoName: string;
   companyName: string;
   results: ManagedAccountAllotmentResult[];
@@ -24,6 +26,8 @@ export function useAllotmentResultModal() {
         user_id: string;
         user_name: string;
         ipo_id: string;
+        backend_ipo_id: string | null;
+        listing_id: string | null;
         ipo_name: string;
         company_name: string;
         application_status: string;
@@ -38,6 +42,8 @@ export function useAllotmentResultModal() {
            a.user_id,
            u.name as user_name,
            a.ipo_id,
+           l.backend_ipo_id,
+           l.id as listing_id,
            COALESCE(m.ipo_name, l.ipo_name, a.ipo_id) as ipo_name,
            COALESCE(m.company_name, l.company_name, l.ipo_name, 'IPO') as company_name,
            a.status as application_status,
@@ -65,19 +71,23 @@ export function useAllotmentResultModal() {
         return;
       }
 
-      // Group rows by IPO ID
+      // Group rows by canonical IPO ID
       const ipoMap = new Map<string, {
         ipoId: string;
+        backendIpoId?: string | null;
+        listingId?: string | null;
         ipoName: string;
         companyName: string;
         results: ManagedAccountAllotmentResult[];
       }>();
 
       for (const row of rows) {
-        const ipoId = row.ipo_id;
-        if (!ipoMap.has(ipoId)) {
-          ipoMap.set(ipoId, {
-            ipoId,
+        const canonicalKey = row.backend_ipo_id || row.ipo_id;
+        if (!ipoMap.has(canonicalKey)) {
+          ipoMap.set(canonicalKey, {
+            ipoId: row.ipo_id,
+            backendIpoId: row.backend_ipo_id,
+            listingId: row.listing_id,
             ipoName: row.ipo_name,
             companyName: row.company_name,
             results: [],
@@ -97,7 +107,7 @@ export function useAllotmentResultModal() {
           normalizedStatus = 'NO_RECORD';
         }
 
-        ipoMap.get(ipoId)!.results.push({
+        ipoMap.get(canonicalKey)!.results.push({
           applicationId: row.application_id,
           userId: row.user_id,
           userName: row.user_name || 'Applicant',
@@ -110,7 +120,7 @@ export function useAllotmentResultModal() {
 
       // Check each IPO: only show if at least ONE managed account received allotment
       // and user has not already dismissed that IPO modal
-      for (const [ipoId, ipoData] of ipoMap.entries()) {
+      for (const [canonicalKey, ipoData] of ipoMap.entries()) {
         const hasAllottedAccount = ipoData.results.some(
           (r) => r.status === 'ALLOTTED' || r.status === 'PARTIALLY_ALLOTTED'
         );
@@ -120,17 +130,31 @@ export function useAllotmentResultModal() {
           continue;
         }
 
-        const storageKey = `seen_allotment_modal_${ipoId}`;
-        const seen = await safeAsyncStorage.getItem(storageKey);
+        const keysToCheck = [
+          `seen_allotment_modal_${canonicalKey}`,
+          `seen_allotment_modal_${ipoData.ipoId}`,
+          ipoData.backendIpoId ? `seen_allotment_modal_${ipoData.backendIpoId}` : null,
+          ipoData.listingId ? `seen_allotment_modal_${ipoData.listingId}` : null,
+        ].filter((k): k is string => Boolean(k));
 
-        if (!seen) {
+        const seenValues = await Promise.all(
+          keysToCheck.map((k) => safeAsyncStorage.getItem(k))
+        );
+
+        const isAlreadySeen = seenValues.some((v) => v === 'true');
+
+        if (!isAlreadySeen) {
           // First unviewed IPO with successful allotment found -> trigger modal
           setModalState(ipoData);
           setVisible(true);
           return;
         }
       }
-    } catch (err) {
+    } catch (err: any) {
+      const msg = (err?.message || String(err)).toLowerCase();
+      if (msg.includes('closed resource') || msg.includes('access to closed resource')) {
+        return;
+      }
       if (__DEV__) console.warn('[useAllotmentResultModal] Error checking unviewed results:', err);
     }
   }, [db]);
@@ -140,13 +164,20 @@ export function useAllotmentResultModal() {
   }, [checkUnviewedAllotmentResults]);
 
   const dismissModal = useCallback(async () => {
-    if (modalState?.ipoId) {
-      const storageKey = `seen_allotment_modal_${modalState.ipoId}`;
-      await safeAsyncStorage.setItem(storageKey, 'true');
+    if (modalState) {
+      const keysToMark = [
+        modalState.ipoId,
+        modalState.backendIpoId,
+        modalState.listingId,
+      ].filter((k): k is string => Boolean(k));
+
+      for (const key of keysToMark) {
+        await safeAsyncStorage.setItem(`seen_allotment_modal_${key}`, 'true');
+      }
     }
     setVisible(false);
     setModalState(null);
-  }, [modalState?.ipoId]);
+  }, [modalState]);
 
   return {
     visible,
