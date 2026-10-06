@@ -643,14 +643,6 @@ export default function PortfolioReportScreen() {
                               },
                         ]}
                       >
-                        {item.status === 'Holding' && (
-                          <Feather
-                            name="clock"
-                            size={10.5}
-                            color={isDark ? '#60A5FA' : '#1D4ED8'}
-                            style={{ marginRight: 3 }}
-                          />
-                        )}
                         <Text
                           style={[
                             styles.statusText,

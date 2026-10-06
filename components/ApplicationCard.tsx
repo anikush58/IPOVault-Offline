@@ -308,7 +308,7 @@ export function ApplicationCard({
               )}
             </View>
 
-            {/* Status Badge & Chevron Expand Toggle */}
+            {/* Status Badge */}
             <View style={styles.statusPillWrapper}>
               <View style={[styles.statusBadgePill, { backgroundColor: badgeStyle.bg }]}>
                 <Text style={[styles.statusBadgeText, { color: badgeStyle.text }]}>
@@ -335,9 +335,17 @@ export function ApplicationCard({
             </View>
           </View>
 
-          {/* 4-Column Metrics Grid */}
-          {expanded && (
-            <View style={styles.expandedMetricsGrid}>
+          {/* 4-Column Metrics Grid (Visible for Holding, Sold or when expanded) */}
+          {(app.status === 'Sold' || app.status === 'Holding' || expanded) && (
+            <View
+              style={[
+                styles.expandedMetricsGrid,
+                {
+                  borderTopColor: isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.05)',
+                  borderTopWidth: StyleSheet.hairlineWidth,
+                },
+              ]}
+            >
               {/* Column 1: BUY PRICE */}
               <View style={styles.gridCellLeft}>
                 <Text style={[styles.gridLabel, { color: colors.mutedForeground }]}>BUY PRICE</Text>
@@ -375,11 +383,11 @@ export function ApplicationCard({
                 </Text>
                 {app.status === 'Sold' ? (
                   <Text style={[styles.gridValue, { color: isProfit ? '#16A34A' : colors.negative, fontFamily: 'GoogleSansFlex_700Bold' }]}>
-                    {formatCurrency(netProfit || 0)}
+                    {(netProfit ?? 0) >= 0 ? '+' : ''}{formatCurrency(netProfit || 0)}
                   </Text>
                 ) : app.status === 'Holding' ? (
                   <Text style={[styles.gridValue, { color: currentProfit >= 0 ? '#16A34A' : colors.negative, fontFamily: 'GoogleSansFlex_700Bold' }]}>
-                    {formatCurrency(currentProfit)}
+                    {currentProfit >= 0 ? '+' : ''}{formatCurrency(currentProfit)}
                   </Text>
                 ) : (
                   <Text style={[styles.gridValue, { color: colors.foreground }]}>
@@ -515,15 +523,15 @@ const styles = StyleSheet.create({
   statusPillWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 5,
   },
   statusBadgePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3.5,
+    borderRadius: 10,
   },
   statusBadgeText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
 
