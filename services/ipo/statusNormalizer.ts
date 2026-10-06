@@ -57,6 +57,52 @@ export function calculateDataFreshness(timestampStr: string | null | undefined):
   return { status: 'Stale', displayText: `Stale data (${days}d ago)`, diffHours };
 }
 
+export function getISTDateTime(date: Date = new Date()): {
+  istDate: string;
+  istHours: number;
+  istMinutes: number;
+  nowIso: string;
+} {
+  // Using Intl format in Asia/Kolkata timezone (UTC+05:30)
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(date);
+    const getPart = (type: string) => parts.find((p) => p.type === type)?.value || '';
+    const yyyy = getPart('year');
+    const mm = getPart('month');
+    const dd = getPart('day');
+    const hh = parseInt(getPart('hour'), 10) || 0;
+    const min = parseInt(getPart('minute'), 10) || 0;
+    return {
+      istDate: `${yyyy}-${mm}-${dd}`,
+      istHours: hh,
+      istMinutes: min,
+      nowIso: date.toISOString(),
+    };
+  } catch {
+    // Fallback: compute UTC offset for +05:30 (+330 mins)
+    const utc = date.getTime() + date.getTimezoneOffset() * 60000;
+    const istTime = new Date(utc + 3600000 * 5.5);
+    const yyyy = istTime.getFullYear();
+    const mm = String(istTime.getMonth() + 1).padStart(2, '0');
+    const dd = String(istTime.getDate()).padStart(2, '0');
+    return {
+      istDate: `${yyyy}-${mm}-${dd}`,
+      istHours: istTime.getHours(),
+      istMinutes: istTime.getMinutes(),
+      nowIso: date.toISOString(),
+    };
+  }
+}
+
 function isValidDate(dateStr: string): boolean {
   if (!dateStr || typeof dateStr !== 'string') return false;
   const clean = dateStr.trim();
@@ -71,12 +117,16 @@ export function evaluateLifecycle(
     allotment_date?: string | null;
     listing_date?: string | null;
   } | null | undefined,
-  currentDateOverride?: string
+  currentDateOverride?: string,
+  currentTimeOverride?: { hours: number; minutes: number }
 ): LifecycleEvaluation {
-  const nowIso = new Date().toISOString();
+  const ist = getISTDateTime();
+  const nowIso = ist.nowIso;
   const today = currentDateOverride && isValidDate(currentDateOverride)
     ? currentDateOverride.trim()
-    : nowIso.split('T')[0];
+    : ist.istDate;
+  const istHours = currentTimeOverride ? currentTimeOverride.hours : ist.istHours;
+  const istMinutes = currentTimeOverride ? currentTimeOverride.minutes : ist.istMinutes;
 
   if (!record) {
     return {
@@ -87,21 +137,6 @@ export function evaluateLifecycle(
     };
   }
 
-  // 1. Authoritative Backend Status is the SINGLE SOURCE OF TRUTH
-  const rawStatus = (record.status || '').trim();
-  if (rawStatus) {
-    const normalized = normalizeLifecycleStatus(rawStatus);
-    if (normalized !== 'UNKNOWN') {
-      return {
-        lifecycle_status: normalized,
-        lifecycle_confidence: 'High',
-        lifecycle_source: 'Authoritative Backend Status',
-        lifecycle_last_verified_at: nowIso,
-      };
-    }
-  }
-
-  // 2. Client-side date fallbacks (ONLY if record.status is missing or UNKNOWN)
   const openDate = record.open_date?.trim() || '';
   const closeDate = record.close_date?.trim() || '';
   const allotmentDate = record.allotment_date?.trim() || '';
@@ -112,6 +147,89 @@ export function evaluateLifecycle(
   const hasValidAllotment = isValidDate(allotmentDate);
   const hasValidListing = isValidDate(listingDate);
 
+  // 1. Authoritative Backend Status is the PRIMARY source of truth
+  const rawStatus = (record.status || '').trim();
+  if (rawStatus) {
+    const normalized = normalizeLifecycleStatus(rawStatus);
+    if (normalized !== 'UNKNOWN') {
+      // Dynamic lifecycle refinement based on authoritative IST time & date boundaries:
+      if (normalized === 'CLOSING_TODAY') {
+        // If current IST time on close date has reached or passed 17:00 IST (5 PM), market has closed
+        if (hasValidClose && today === closeDate && (istHours > 17 || (istHours === 17 && istMinutes >= 0))) {
+          return {
+            lifecycle_status: 'CLOSED',
+            lifecycle_confidence: 'High',
+            lifecycle_source: 'Authoritative Close Time (17:00 IST Passed)',
+            lifecycle_last_verified_at: nowIso,
+          };
+        }
+        if (hasValidClose && today > closeDate) {
+          return {
+            lifecycle_status: 'ALLOTTED_PENDING',
+            lifecycle_confidence: 'High',
+            lifecycle_source: 'Authoritative Date Progression',
+            lifecycle_last_verified_at: nowIso,
+          };
+        }
+      }
+
+      if (normalized === 'OPEN') {
+        if (hasValidClose && today === closeDate) {
+          if (istHours >= 17) {
+            return {
+              lifecycle_status: 'CLOSED',
+              lifecycle_confidence: 'High',
+              lifecycle_source: 'Authoritative Close Time (17:00 IST Passed)',
+              lifecycle_last_verified_at: nowIso,
+            };
+          }
+          return {
+            lifecycle_status: 'CLOSING_TODAY',
+            lifecycle_confidence: 'High',
+            lifecycle_source: 'Authoritative Date Range',
+            lifecycle_last_verified_at: nowIso,
+          };
+        }
+        if (hasValidClose && today > closeDate) {
+          return {
+            lifecycle_status: 'ALLOTTED_PENDING',
+            lifecycle_confidence: 'High',
+            lifecycle_source: 'Authoritative Close Date',
+            lifecycle_last_verified_at: nowIso,
+          };
+        }
+      }
+
+      if (normalized === 'CLOSED') {
+        // If close date has passed (subsequent day) and not yet declared/listed, progress to ALLOTTED_PENDING
+        if (hasValidClose && today > closeDate) {
+          if (hasValidListing && today >= listingDate) {
+            return {
+              lifecycle_status: 'LISTED',
+              lifecycle_confidence: 'High',
+              lifecycle_source: 'Authoritative Listing Date',
+              lifecycle_last_verified_at: nowIso,
+            };
+          }
+          return {
+            lifecycle_status: 'ALLOTTED_PENDING',
+            lifecycle_confidence: 'High',
+            lifecycle_source: 'Authoritative Post-Close Progression',
+            lifecycle_last_verified_at: nowIso,
+          };
+        }
+      }
+
+      return {
+        lifecycle_status: normalized,
+        lifecycle_confidence: 'High',
+        lifecycle_source: 'Authoritative Backend Status',
+        lifecycle_last_verified_at: nowIso,
+      };
+    }
+  }
+
+  // 2. Client-side date fallbacks (ONLY if record.status is missing or UNKNOWN)
   // Listing date passed -> LISTED
   if (hasValidListing && today >= listingDate) {
     return {
@@ -132,12 +250,21 @@ export function evaluateLifecycle(
     };
   }
 
-  // Close date is today -> CLOSING_TODAY
+  // Close date is today
   if (hasValidOpen && hasValidClose && today === closeDate) {
+    // Before 17:00 IST -> CLOSING_TODAY, At/after 17:00 IST -> CLOSED
+    if (istHours < 17) {
+      return {
+        lifecycle_status: 'CLOSING_TODAY',
+        lifecycle_confidence: 'High',
+        lifecycle_source: 'Authoritative Date Range',
+        lifecycle_last_verified_at: nowIso,
+      };
+    }
     return {
-      lifecycle_status: 'CLOSING_TODAY',
+      lifecycle_status: 'CLOSED',
       lifecycle_confidence: 'High',
-      lifecycle_source: 'Authoritative Date Range',
+      lifecycle_source: 'Authoritative Close Time (17:00 IST)',
       lifecycle_last_verified_at: nowIso,
     };
   }
@@ -178,18 +305,19 @@ export function calculateNormalizedIPOStatus(
     allotment_date?: string | null;
     listing_date?: string | null;
   } | null | undefined,
-  currentDateOverride?: string
+  currentDateOverride?: string,
+  currentTimeOverride?: { hours: number; minutes: number }
 ): NormalizedIPOStatus {
-  return evaluateLifecycle(record, currentDateOverride).lifecycle_status;
+  return evaluateLifecycle(record, currentDateOverride, currentTimeOverride).lifecycle_status;
 }
 
 /**
  * Safely normalizes raw string inputs to canonical NormalizedIPOStatus.
- * Example: "Open" -> "OPEN", "upcoming" -> "UPCOMING", "listed" -> "LISTED"
+ * Example: "Open" -> "OPEN", "upcoming" -> "UPCOMING", "listed" -> "LISTED", "ALLOTMENT_AWAITING" -> "ALLOTTED_PENDING"
  */
 export function normalizeLifecycleStatus(value: string | null | undefined): NormalizedIPOStatus {
   if (!value || typeof value !== 'string') return 'UNKNOWN';
-  const clean = value.trim().toUpperCase();
+  const clean = value.trim().toUpperCase().replace(/[\s-]+/g, '_');
 
   switch (clean) {
     case 'UPCOMING':
@@ -199,15 +327,13 @@ export function normalizeLifecycleStatus(value: string | null | undefined): Norm
 
     case 'OPEN':
     case 'LIVE_NOW':
-    case 'LIVE NOW':
     case 'ACTIVE':
     case 'LIVE':
     case 'BIDDING':
       return 'OPEN';
 
     case 'CLOSING_TODAY':
-    case 'CLOSING TODAY':
-    case 'CLOSES TODAY':
+    case 'CLOSES_TODAY':
     case 'CLOSING':
       return 'CLOSING_TODAY';
 
@@ -217,28 +343,21 @@ export function normalizeLifecycleStatus(value: string | null | undefined): Norm
     case 'ALLOTTED_PENDING':
     case 'ALLOTMENT_PENDING':
     case 'ALLOTMENT_AWAITED':
-    case 'ALLOTMENT AWAITED':
-    case 'ALLOTMENT PENDING':
+    case 'ALLOTMENT_AWAITING':
     case 'AWAITING_ALLOTMENT':
-    case 'AWAITING ALLOTMENT':
     case 'PENDING_ALLOTMENT':
-    case 'PENDING ALLOTMENT':
       return 'ALLOTTED_PENDING';
 
     case 'ALLOTTED_AVAILABLE':
     case 'ALLOTTED':
     case 'ALLOTMENT_OUT':
-    case 'ALLOTMENT OUT':
     case 'ALLOTMENT_COMPLETED':
-    case 'ALLOTMENT COMPLETED':
     case 'ALLOTMENT_SUCCESS':
-    case 'ALLOTMENT SUCCESS':
       return 'ALLOTTED_AVAILABLE';
 
     case 'LISTING_UPCOMING':
     case 'LISTING_PENDING':
     case 'PRE_LISTING':
-    case 'PRE LISTING':
       return 'LISTING_UPCOMING';
 
     case 'LISTED':
@@ -246,14 +365,14 @@ export function normalizeLifecycleStatus(value: string | null | undefined): Norm
 
     default:
       // Substring & keyword matching with strict priority:
-      // 1. Check AWAITED / PENDING first so ALLOTMENT_PENDING / ALLOTMENT_AWAITED never match ALLOT
-      if (clean.includes('AWAITED') || clean.includes('PENDING')) {
+      // 1. Check AWAIT / PENDING first so ALLOTMENT_PENDING / ALLOTMENT_AWAITING / ALLOTMENT_AWAITED never match ALLOT
+      if (clean.includes('AWAIT') || clean.includes('PENDING')) {
         if (clean.includes('LISTING')) return 'LISTING_UPCOMING';
         return 'ALLOTTED_PENDING';
       }
-      if (clean.includes('CLOSING') || clean.includes('CLOSES TODAY')) return 'CLOSING_TODAY';
+      if (clean.includes('CLOSING') || clean.includes('CLOSES_TODAY')) return 'CLOSING_TODAY';
       if (clean.includes('LISTED')) return 'LISTED';
-      if (clean.includes('PRE_LISTING') || clean.includes('PRE LISTING')) return 'LISTING_UPCOMING';
+      if (clean.includes('PRE_LISTING')) return 'LISTING_UPCOMING';
       if (clean.includes('OUT') || clean.includes('COMPLETED') || clean.includes('AVAILABLE') || clean.includes('SUCCESS')) {
         if (clean.includes('ALLOT')) return 'ALLOTTED_AVAILABLE';
       }

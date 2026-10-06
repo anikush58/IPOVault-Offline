@@ -35,6 +35,7 @@ import { useDB } from '@/context/DBContext';
 import { formatCurrency, formatIssueSize } from '@/utils/formatters';
 import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 import { triggerCentralizedIPOSync } from '@/services/ipo/centralizedSync';
+import { getISTDateTime } from '@/services/ipo/statusNormalizer';
 
 type NewIpoTab = 'live' | 'upcoming' | 'closed' | 'listed';
 type SortOption = 'DEFAULT' | 'GMP';
@@ -144,37 +145,45 @@ function hasActiveGmp(item: BackendIpo): boolean {
 
 function isClosingToday(item: BackendIpo): boolean {
   const st = (item.status || '').toUpperCase().trim();
-  if (st === 'CLOSING_TODAY' || st === 'CLOSING TODAY' || st === 'CLOSES TODAY') return true;
+  const ist = getISTDateTime();
 
-  const todayIso = new Date().toISOString().split('T')[0];
-  const now = new Date();
-  const localToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const closeDate = (item.closeDate || item.lifecycle?.closeDate || '').trim();
-  if (closeDate) {
-    if (closeDate === todayIso || closeDate === localToday) return true;
+  // If backend status has already moved to CLOSED, ALLOTMENT, LISTED, etc., it is NOT closing today
+  if (st === 'CLOSED' || st === 'LISTED' || st.includes('ALLOT') || st.includes('AWAIT')) {
+    return false;
   }
+
+  const closeDate = (item.closeDate || item.lifecycle?.closeDate || '').trim();
+  if (closeDate && closeDate === ist.istDate) {
+    // If it's closing day, check 17:00 IST cutoff
+    return ist.istHours < 17;
+  }
+
+  if (st === 'CLOSING_TODAY' || st === 'CLOSING TODAY' || st === 'CLOSES TODAY') {
+    return true;
+  }
+
   return false;
 }
 
 function getStatusBadge(status?: string, openDate?: string | null) {
-  const norm = (status || '').toUpperCase().trim();
-  if (norm === 'CLOSING_TODAY' || norm === 'CLOSING TODAY' || norm === 'CLOSES TODAY') {
+  const norm = (status || '').toUpperCase().trim().replace(/[\s-]+/g, '_');
+  if (norm === 'CLOSING_TODAY' || norm === 'CLOSES_TODAY' || norm === 'CLOSING') {
     return { text: 'Closing Today', bg: '#FEF3C7', color: '#D97706', icon: 'alert-circle' };
   }
-  if (norm === 'OPEN' || norm === 'ACTIVE' || norm === 'LIVE') {
+  if (norm === 'OPEN' || norm === 'ACTIVE' || norm === 'LIVE' || norm === 'BIDDING') {
     return { text: 'Live Now', bg: '#DCFCE7', color: '#15803D', icon: 'activity' };
   }
   if (norm === 'LISTED') {
     return { text: 'Listed', bg: '#E0E7FF', color: '#4338CA', icon: 'check-circle' };
   }
   if (
+    norm === 'ALLOTMENT_AWAITING' ||
     norm === 'ALLOTMENT_AWAITED' ||
-    norm === 'ALLOTMENT AWAITED' ||
     norm === 'ALLOTMENT_PENDING' ||
-    norm === 'ALLOTMENT PENDING' ||
     norm === 'ALLOTTED_PENDING' ||
-    norm === 'AWAITING ALLOTMENT' ||
-    norm === 'AWAITING_ALLOTMENT'
+    norm === 'AWAITING_ALLOTMENT' ||
+    norm === 'PENDING_ALLOTMENT' ||
+    norm.includes('AWAIT')
   ) {
     return { text: 'Allotment Awaited', bg: '#FEF3C7', color: '#D97706', border: 'transparent', borderWidth: 0, icon: 'clock' };
   }

@@ -49,6 +49,8 @@ export function IPOStatusChip({ status }: { status: IPOStatusType }) {
       s === 'awaiting_allotment' ||
       s === 'allotment awaited' ||
       s === 'allotment_awaited' ||
+      s === 'allotment awaiting' ||
+      s === 'allotment_awaiting' ||
       s === 'allotment pending' ||
       s === 'allotment_pending' ||
       s === 'allotted_pending'
@@ -120,6 +122,8 @@ export function IPOStatusChip({ status }: { status: IPOStatusType }) {
     if (
       s === 'allotment awaited' ||
       s === 'allotment_awaited' ||
+      s === 'allotment awaiting' ||
+      s === 'allotment_awaiting' ||
       s === 'allotment pending' ||
       s === 'allotment_pending' ||
       s === 'allotted_pending' ||

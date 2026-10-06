@@ -11,6 +11,7 @@ export class IPOParser {
       status: raw.status,
       open_date: raw.open_date,
       close_date: raw.close_date,
+      allotment_date: raw.allotment_date,
       listing_date: raw.listing_date,
     });
 

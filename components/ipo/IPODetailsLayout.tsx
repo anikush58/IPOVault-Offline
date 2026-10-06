@@ -21,6 +21,7 @@ import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconButton } from '@/components/ui/IconButton';
 import { MergeOfficialBanner } from '@/components/ipo/MergeOfficialBanner';
+import { calculateNormalizedIPOStatus } from '@/services/ipo/statusNormalizer';
 
 const TIMELINE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -182,39 +183,48 @@ export function IPODetailsLayout({
   const segmentLabel = isSme ? 'SME' : 'MAINBOARD';
 
   // Status mapping
-  const rawStatus = String(ipo.status || ipo.lifecycle_status || 'UPCOMING').toUpperCase().trim();
-  const isClosingToday =
-    rawStatus === 'CLOSING_TODAY' ||
-    rawStatus === 'CLOSING TODAY' ||
-    rawStatus === 'CLOSES TODAY' ||
-    rawStatus === 'CLOSING';
-  const isOpen =
-    !isClosingToday && (rawStatus === 'OPEN' || rawStatus === 'LIVE' || rawStatus === 'LIVE NOW');
-  const isClosed =
-    !isClosingToday &&
-    (rawStatus === 'CLOSED' ||
-      rawStatus === 'ALLOTMENT_PENDING' ||
-      rawStatus === 'ALLOTMENT_AWAITED' ||
-      rawStatus === 'ALLOTTED_PENDING' ||
-      rawStatus === 'ALLOTMENT_COMPLETED' ||
-      rawStatus === 'ALLOTMENT_OUT' ||
-      rawStatus === 'ALLOTTED' ||
-      rawStatus === 'LISTING_PENDING');
-  const isAllotmentOut =
-    rawStatus === 'ALLOTMENT_OUT' || rawStatus === 'ALLOTTED' || rawStatus === 'ALLOTMENT_COMPLETED';
-  const isListed = rawStatus === 'LISTED';
-  const isUpcoming = !isClosingToday && !isOpen && !isClosed && !isAllotmentOut && !isListed;
+  const openDate = ipo.openDate || ipo.open_date || ipo.lifecycle?.openDate || null;
+  const closeDate = ipo.closeDate || ipo.close_date || ipo.lifecycle?.closeDate || null;
+  const allotmentDate =
+    ipo.allotmentDate ||
+    ipo.allotment_date ||
+    ipo.lifecycle?.basisOfAllotmentDate ||
+    ipo.lifecycle?.allotmentDate ||
+    ipo.allotment?.expectedDate ||
+    ipo.allotment?.expectedAllotmentDate ||
+    null;
+  const refundDate = ipo.refundDate || ipo.refund_date || ipo.lifecycle?.refundInitiationDate || null;
+  const listingDate = ipo.listingDate || ipo.listing_date || ipo.lifecycle?.listingDate || null;
+
+  const rawStatus = String(ipo.status || ipo.lifecycle_status || '').toUpperCase().trim();
+  const normStatus = calculateNormalizedIPOStatus({
+    status: rawStatus,
+    open_date: openDate,
+    close_date: closeDate,
+    allotment_date: allotmentDate,
+    listing_date: listingDate,
+  });
+
+  const isClosingToday = normStatus === 'CLOSING_TODAY';
+  const isOpen = normStatus === 'OPEN';
+  const isAllotmentPending = normStatus === 'ALLOTTED_PENDING';
+  const isAllotmentOut = normStatus === 'ALLOTTED_AVAILABLE';
+  const isListed = normStatus === 'LISTED' || normStatus === 'LISTING_UPCOMING';
+  const isClosed = normStatus === 'CLOSED';
+  const isUpcoming = normStatus === 'UPCOMING';
 
   const statusLabel = isClosingToday
     ? 'CLOSING TODAY'
     : isOpen
     ? 'OPEN'
+    : isAllotmentPending
+    ? 'ALLOTMENT AWAITED'
     : isAllotmentOut
     ? 'ALLOTMENT OUT'
-    : isClosed
-    ? 'CLOSED'
     : isListed
     ? 'LISTED'
+    : isClosed
+    ? 'CLOSED'
     : 'UPCOMING';
 
   // Logo, Avatar Gradient & Initials
@@ -256,20 +266,6 @@ export function IPODetailsLayout({
     }
     return null;
   }, [ipo.minimumInvestmentAmount, priceHigh, priceLow, lotSize, isSme]);
-
-  // Dates
-  const openDate = ipo.openDate || ipo.open_date || ipo.lifecycle?.openDate || null;
-  const closeDate = ipo.closeDate || ipo.close_date || ipo.lifecycle?.closeDate || null;
-  const allotmentDate =
-    ipo.allotmentDate ||
-    ipo.allotment_date ||
-    ipo.lifecycle?.basisOfAllotmentDate ||
-    ipo.lifecycle?.allotmentDate ||
-    ipo.allotment?.expectedDate ||
-    ipo.allotment?.expectedAllotmentDate ||
-    null;
-  const refundDate = ipo.refundDate || ipo.refund_date || ipo.lifecycle?.refundInitiationDate || null;
-  const listingDate = ipo.listingDate || ipo.listing_date || ipo.lifecycle?.listingDate || null;
 
   // Status Banner Info with accurate Days Calculation
   const statusBannerInfo = useMemo(() => {
@@ -344,6 +340,17 @@ export function IPODetailsLayout({
       };
     }
 
+    if (isAllotmentPending) {
+      return {
+        title: 'Allotment Awaited',
+        subtitle: allotmentDate ? `Expected on ${formatFullDate(allotmentDate)}` : 'Allotment status pending',
+        badgeText: 'Allotment Awaited',
+        badgeColor: '#F59E0B',
+        badgeBg: isDark ? 'rgba(245, 158, 11, 0.18)' : '#FEF3C7',
+        badgeTextColor: isDark ? '#FBBF24' : '#D97706',
+      };
+    }
+
     if (isClosed) {
       return {
         title: 'Subscription Closed',
@@ -374,7 +381,7 @@ export function IPODetailsLayout({
       badgeBg: isDark ? 'rgba(245, 158, 11, 0.18)' : '#FEF3C7',
       badgeTextColor: isDark ? '#FBBF24' : '#D97706',
     };
-  }, [isOpen, isClosed, isAllotmentOut, isListed, openDate, closeDate, allotmentDate, listingDate, isDark]);
+  }, [isClosingToday, isOpen, isAllotmentPending, isAllotmentOut, isClosed, isListed, openDate, closeDate, allotmentDate, listingDate, isDark]);
 
   // Key IPO Details
   const issueSizeText = formatCroreValue(ipo.issueSize ?? ipo.issue_size);
