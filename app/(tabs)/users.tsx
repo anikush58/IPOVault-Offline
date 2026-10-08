@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
+  Animated,
   FlatList,
   Platform,
   RefreshControl,
@@ -10,6 +11,8 @@ import {
 } from 'react-native';
 import * as Linking from 'expo-linking';
 import { Feather } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -66,7 +69,6 @@ export default function UsersScreen() {
     brokerName: string;
     accountName?: string;
   } | null>(null);
-  const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
   // Active user ID for backend scoping
   const activeUserId = useMemo(() => {
@@ -477,55 +479,103 @@ export default function UsersScreen() {
     setShowModal(true);
   };
 
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerBlurOpacity = scrollY.interpolate({
+    inputRange: [0, 24],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]} {...swipeHandlers}>
-      {/* Custom Header */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
-        <IconButton
-          name="arrow-left"
-          variant="surface"
-          size="md"
-          onPress={() => {
-            if (from === 'bids') router.replace('/(tabs)/bids');
-            else if (from === 'dashboard') router.replace('/(tabs)');
-            else if (router.canGoBack()) router.back();
-            else router.replace('/(tabs)');
-          }}
-        />
+      {/* Floating Blurred Header Bar & Tabs */}
+      <View
+        style={[
+          styles.floatingHeaderContainer,
+          { paddingTop: topPad },
+        ]}
+        pointerEvents="box-none"
+      >
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: headerBlurOpacity }]}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 90 : 75}
+            tint={isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(14, 17, 23, 0.96)', 'rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.35)']
+                : ['rgba(248, 249, 250, 0.96)', 'rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.35)']
+            }
+            locations={[0, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
 
-        <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>PROFILES</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Users</Text>
+        <View style={styles.header}>
+          <IconButton
+            name="arrow-left"
+            variant="surface"
+            size="md"
+            onPress={() => {
+              if (from === 'bids') router.replace('/(tabs)/bids');
+              else if (from === 'dashboard') router.replace('/(tabs)');
+              else if (router.canGoBack()) router.back();
+              else router.replace('/(tabs)');
+            }}
+          />
+
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={[styles.headerEyebrow, { color: colors.primary }]}>PROFILES</Text>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>Users</Text>
+          </View>
+
+          <IconButton
+            name="plus"
+            variant="surface"
+            size="md"
+            onPress={openAddUser}
+          />
         </View>
 
-        <IconButton
-          name="plus"
-          variant="surface"
-          size="md"
-          onPress={openAddUser}
-        />
-      </View>
-
-      {/* Pill Style Tab Control Bar */}
-      <View style={{ paddingHorizontal: 10, marginTop: 10, marginBottom: 4 }}>
-        <Tabs
-          variant="pills"
-          height={36}
-          tabs={[
-            { key: 'active', label: 'Active', count: activeUsers.length },
-            { key: 'archived', label: 'Archived', count: archivedUsers.length },
-          ]}
-          activeTab={activeTab}
-          onChange={(newTab) => setActiveTab(newTab as 'active' | 'archived')}
-        />
+        {/* Pill Style Tab Control Bar */}
+        <View style={{ paddingHorizontal: 10, marginTop: 4, marginBottom: 8 }}>
+          <Tabs
+            variant="pills"
+            height={36}
+            tabs={[
+              { key: 'active', label: 'Active', count: activeUsers.length },
+              { key: 'archived', label: 'Archived', count: archivedUsers.length },
+            ]}
+            activeTab={activeTab}
+            onChange={(newTab) => setActiveTab(newTab as 'active' | 'archived')}
+          />
+        </View>
       </View>
 
       {/* Users list */}
-      <FlatList
+      <Animated.FlatList
         data={displayedUsers}
         keyExtractor={(item) => item.id}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
+        contentContainerStyle={{
+          paddingTop: topPad + 114,
+          paddingBottom: insets.bottom + 90,
+        }}
         refreshControl={
-          <RefreshControl refreshing={isLoading} onRefresh={handleRefresh} tintColor={colors.primary} />
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+            progressViewOffset={topPad + 110}
+          />
         }
         renderItem={({ item }) => {
           const stats = statsForUser(item.id);
@@ -585,7 +635,6 @@ export default function UsersScreen() {
             )}
           </View>
         )}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 90, paddingTop: 6 }}
       />
 
       <AddUserModal
@@ -608,7 +657,16 @@ export default function UsersScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  floatingHeaderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    overflow: 'hidden',
+  },
   header: {
+    height: 56,
     paddingHorizontal: 16,
     overflow: 'hidden',
     flexDirection: 'row',

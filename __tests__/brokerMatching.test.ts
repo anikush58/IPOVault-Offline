@@ -1003,8 +1003,73 @@ export async function runBrokerMatchingTestSuite() {
     'Sold application retains executed sale price (₹1200.00) and is completely unaffected by market LTP (₹1045.50)',
   );
 
+  // Test 36: SME Quote Fallback Resolution (when ISIN quote returns 404/empty, resolves via SME symbol keys)
+  const smeIpo = {
+    id: 'ipo-sme-1',
+    backend_ipo_id: 'b-ipo-sme-1',
+    isin: 'INE000SME999', // ISIN not yet in broker quote feed
+    symbol: 'KROSS',
+    company_name: 'Kross Limited',
+    ipo_name: 'Kross SME IPO',
+  };
+  const smeApp = [
+    {
+      id: 'app-sme-1',
+      ipo_id: 'ipo-sme-1',
+      ipo_name: 'Kross SME IPO',
+      status: 'Holding',
+      buy_price: 240.0,
+      sell_price: null,
+      quantity: 60,
+    },
+  ];
+  // Quote dictionary without ISIN key, but containing SME segment instrument keys
+  const smeMarketQuotes = {
+    'NSE_SM|KROSS': { symbol: 'KROSS', ltp: 275.5, changePercent: 14.79 },
+  };
+  const enrichedSmeApp = enrichApplicationsWithBrokerData(
+    smeApp,
+    [smeIpo],
+    [],
+    smeMarketQuotes,
+  );
+  assert(
+    enrichedSmeApp[0].sell_price === 275.5 && enrichedSmeApp[0].status === 'Holding',
+    'SME Quote Fallback Test',
+    'SME holding without ISIN quote successfully resolves live LTP (₹275.50) from NSE_SM symbol key',
+  );
+
+  // Test 37: Expired Broker Account Quote Provider Handling
+  const expiredBrokerAccounts = [
+    {
+      id: 'acc-expired-upstox',
+      profileId: 'user-1',
+      broker: 'UPSTOX',
+      accountName: 'Anish Upstox',
+      clientId: 'UP1234',
+      isActive: true,
+      connection: {
+        id: 'conn-1',
+        status: 'EXPIRED' as const,
+        connectedAt: '2026-10-07T10:00:00Z',
+        lastSyncAt: '2026-10-07T15:30:00Z',
+        lastErrorAt: null,
+        lastError: null,
+      },
+      createdAt: '2026-10-01T00:00:00Z',
+      updatedAt: '2026-10-08T00:00:00Z',
+    },
+  ];
+  const { findAvailableQuoteProvider } = require('../services/broker/BrokerApiService');
+  const availableProvider = findAvailableQuoteProvider(expiredBrokerAccounts);
+  assert(
+    availableProvider === null,
+    'Expired Account Quote Provider Safety Test',
+    'Expired broker account (status: EXPIRED) is never used as an active quote provider (returns null)',
+  );
+
   console.log('==================================================');
-  console.log('ALL BROKER MATCHING, MARKET LTP & FAMILY ISOLATION TESTS PASSED (37/37)');
+  console.log('ALL BROKER MATCHING, MARKET LTP & FAMILY ISOLATION TESTS PASSED (39/39)');
   console.log('==================================================');
 }
 

@@ -4,22 +4,27 @@ import {
   Animated,
   DeviceEventEmitter,
   FlatList,
+  LayoutAnimation,
   Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   SectionList,
+  SectionListProps,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { useTheme } from '@/context/ThemeContext';
 import { IconButton } from '@/components/ui/IconButton';
 import { useDB, type ApplicationStatus, type ApplicationWithDetails } from '@/context/DBContext';
@@ -44,15 +49,24 @@ import {
   extractHoldingInstrumentsForQuotes,
 } from '@/utils/brokerMatching';
 
-type TabKey = 'Applied' | 'Allotted' | 'Sold' | 'Holding' | 'Not Allotted';
+type TabKey = 'Allotted' | 'Holding' | 'Sold' | 'Applied' | 'Not Allotted';
 
 const TABS: { key: TabKey; label: string; flex: number }[] = [
-  { key: 'Applied',      label: 'Active',       flex: 1.0 },
   { key: 'Allotted',     label: 'Allotted',     flex: 1.1 },
-  { key: 'Sold',         label: 'Sold',         flex: 0.75 },
   { key: 'Holding',      label: 'Holding',      flex: 1.0 },
+  { key: 'Sold',         label: 'Sold',         flex: 0.75 },
+  { key: 'Applied',      label: 'Active',       flex: 1.0 },
   { key: 'Not Allotted', label: 'Not Allotted', flex: 1.45 },
 ];
+
+type AppSection = { title: string; data: ApplicationWithDetails[] };
+const AnimatedSectionList = Animated.createAnimatedComponent(
+  SectionList as unknown as React.ComponentType<SectionListProps<ApplicationWithDetails, AppSection>>
+);
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 export default function ApplicationsScreen() {
   const colors = useColors();
@@ -113,7 +127,7 @@ export default function ApplicationsScreen() {
     }, [loadBrokerPortfolio])
   );
 
-  const [activeTab, setActiveTab] = useState<TabKey>('Applied');
+  const [activeTab, setActiveTab] = useState<TabKey>('Allotted');
   const [selectedApp, setSelectedApp] = useState<ApplicationWithDetails | null>(null);
   const [filterUserIds, setFilterUserIds] = useState<string[]>([]);
   const [filterBrokers, setFilterBrokers] = useState<string[]>([]);
@@ -157,6 +171,29 @@ export default function ApplicationsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const searchAnim = useRef(new Animated.Value(0)).current;
   const searchRef = useRef<TextInput>(null);
+
+  // Smooth GPU-accelerated scroll tracking for sticky blurred tabs
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const [listHeaderHeight, setListHeaderHeight] = useState(220);
+
+  // Top header blur smoothly fades in ONLY when scrolled past top (invisible when not scrolled)
+  const headerBlurOpacity = scrollY.interpolate({
+    inputRange: [0, 24],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
+  const stickyTabsOpacity = scrollY.interpolate({
+    inputRange: [Math.max(0, listHeaderHeight - 8), Math.max(1, listHeaderHeight)],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
+  const inListTabsOpacity = scrollY.interpolate({
+    inputRange: [Math.max(0, listHeaderHeight - 8), Math.max(1, listHeaderHeight)],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
 
   const toggleSearch = () => {
     if (showSearch) {
@@ -313,46 +350,260 @@ export default function ApplicationsScreen() {
   };
 
   const handleTabChange = (key: string) => {
+    if (key === activeTabRef.current) return;
+    try { Haptics.selectionAsync(); } catch {}
+    if (Platform.OS === 'ios' || Platform.OS === 'android') {
+      LayoutAnimation.configureNext({
+        duration: 220,
+        create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+        update: { type: LayoutAnimation.Types.easeInEaseOut },
+        delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+      });
+    }
     setActiveTab(key as TabKey);
     setIsSelectionMode(false);
     setSelectedAppIds([]);
   };
 
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+
+  const handleSwipeLeft = () => {
+    const currentIdx = TABS.findIndex((t) => t.key === activeTabRef.current);
+    if (currentIdx < TABS.length - 1) {
+      handleTabChange(TABS[currentIdx + 1].key);
+    }
+  };
+
+  const handleSwipeRight = () => {
+    const currentIdx = TABS.findIndex((t) => t.key === activeTabRef.current);
+    if (currentIdx > 0) {
+      handleTabChange(TABS[currentIdx - 1].key);
+    }
+  };
+
+  const swipeHandlers = useSwipeGesture({
+    onSwipeLeft: handleSwipeLeft,
+    onSwipeRight: handleSwipeRight,
+  });
+
+  // Reusable tab pills renderer (used in both section header and sticky header)
+  const renderTabPills = () => (
+    <View style={styles.tabBarRow}>
+      <TouchableOpacity
+        onPress={() => {
+          try { Haptics.selectionAsync(); } catch {}
+          setSortOrder((prev) => (prev === 'newest' ? 'oldest' : 'newest'));
+        }}
+        style={[
+          styles.sortByBtn,
+          { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' },
+        ]}
+        hitSlop={8}
+        activeOpacity={0.75}
+      >
+        <Feather name="align-left" size={13} color={isDark ? '#F8FAFC' : '#0B132B'} />
+      </TouchableOpacity>
+
+      <View style={[styles.tabDivider, { backgroundColor: isDark ? '#334155' : '#E2E8F0' }]} />
+
+      <View
+        style={[
+          styles.tabPillsTrack,
+          {
+            backgroundColor: isDark ? '#181F2C' : '#ECEEF1',
+            borderColor: isDark ? '#2D3748' : '#DFE2E6',
+          },
+        ]}
+      >
+        {TABS.map((t) => {
+          const isActive = activeTab === t.key;
+          const count = countFor(t.key);
+          return (
+            <Pressable
+              key={t.key}
+              onPress={() => handleTabChange(t.key)}
+              style={[
+                styles.tabPill,
+                { flex: t.flex },
+                isActive && styles.tabPillActive,
+                {
+                  backgroundColor: isActive
+                    ? (isDark ? '#2B3548' : '#FFFFFF')
+                    : 'transparent',
+                },
+              ]}
+            >
+              <View style={styles.tabContentRow}>
+                <Text
+                  style={[
+                    styles.tabPillText,
+                    {
+                      color: isActive
+                        ? (isDark ? '#FFFFFF' : '#0B132B')
+                        : (isDark ? '#8A97A8' : '#6B7280'),
+                    },
+                    isActive ? styles.fontBold : styles.fontSemiBold,
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                >
+                  {t.label}
+                </Text>
+                {isActive && count != null ? (
+                  <View
+                    style={[
+                      styles.countBadgePill,
+                      { backgroundColor: '#EF4444' },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.countTextPill,
+                        { color: '#FFFFFF' },
+                      ]}
+                    >
+                      {count}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
-        <View style={{ flex: 1, justifyContent: 'center' }}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>IPO</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Applications</Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]} {...swipeHandlers}>
+      {/* Floating Blurred Header Bar */}
+      <View
+        style={[
+          styles.floatingHeaderContainer,
+          { paddingTop: topPad },
+        ]}
+        pointerEvents="box-none"
+      >
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: headerBlurOpacity }]}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 90 : 75}
+            tint={isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(14, 17, 23, 0.96)', 'rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.35)']
+                : ['rgba(248, 249, 250, 0.96)', 'rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.35)']
+            }
+            locations={[0, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+
+        <View style={styles.header}>
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <Text style={[styles.headerEyebrow, { color: colors.primary }]}>IPO</Text>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>Applications</Text>
+          </View>
+          <View style={styles.headerActions}>
+            <IconButton
+              name={showSearch ? 'x' : 'search'}
+              variant={showSearch ? 'primary' : 'surface'}
+              size="md"
+              onPress={toggleSearch}
+            />
+            <IconButton
+              name="star"
+              variant="surface"
+              size="md"
+              onPress={() => router.push('/favorite-applications')}
+            />
+            <IconButton
+              name="sliders"
+              variant={hasFilter ? 'primary' : 'surface'}
+              size="md"
+              onPress={() => setShowFilter(true)}
+            />
+          </View>
         </View>
-        <View style={styles.headerActions}>
-          <IconButton
-            name={showSearch ? 'x' : 'search'}
-            variant={showSearch ? 'primary' : 'surface'}
-            size="md"
-            onPress={toggleSearch}
-          />
-          <IconButton
-            name="star"
-            variant="surface"
-            size="md"
-            onPress={() => router.push('/favorite-applications')}
-          />
-          <IconButton
-            name="sliders"
-            variant={hasFilter ? 'primary' : 'surface'}
-            size="md"
-            onPress={() => setShowFilter(true)}
-          />
-        </View>
+
+        {/* Expandable Search Input */}
+        <Animated.View
+          style={[
+            styles.searchBar,
+            {
+              height: searchBarHeight,
+              opacity: searchBarOpacity,
+              backgroundColor: 'transparent',
+            },
+          ]}
+          pointerEvents={showSearch ? 'auto' : 'none'}
+        >
+          <View style={[styles.searchInner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Feather name="search" size={16} color={colors.mutedForeground} />
+            <TextInput
+              ref={searchRef}
+              style={[styles.searchInput, { color: colors.foreground }]}
+              placeholder="Search applications..."
+              placeholderTextColor={colors.mutedForeground}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
+                <Feather name="x-circle" size={14} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </Animated.View>
       </View>
 
-      {/* SectionList with Sticky Tab Pills Header */}
-      <SectionList
+      {/* Sticky Blurred Tab Pills Bar (GPU-accelerated smooth fade when scrolled past) */}
+      <Animated.View
+        style={[
+          styles.floatingStickyTabsBar,
+          {
+            top: topPad + 56,
+            opacity: stickyTabsOpacity,
+          },
+        ]}
+        pointerEvents="box-none"
+      >
+        <BlurView
+          intensity={Platform.OS === 'ios' ? 90 : 75}
+          tint={isDark ? 'dark' : 'light'}
+          style={StyleSheet.absoluteFill}
+        />
+        <LinearGradient
+          colors={
+            isDark
+              ? ['rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.40)']
+              : ['rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.40)']
+          }
+          style={StyleSheet.absoluteFill}
+        />
+        {renderTabPills()}
+      </Animated.View>
+
+      {/* SectionList with Smooth Blurred Stickiness */}
+      <AnimatedSectionList
+        style={{ flex: 1 }}
         sections={[{ title: 'Applications', data: filtered }]}
         keyExtractor={(item) => item.id.toString()}
-        stickySectionHeadersEnabled={true}
+        stickySectionHeadersEnabled={false}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
+        contentContainerStyle={{
+          paddingTop: topPad + 68,
+          paddingBottom: insets.bottom + (isSelectionMode ? 170 : 90),
+        }}
         refreshControl={
           <RefreshControl
             refreshing={isLoading}
@@ -360,40 +611,11 @@ export default function ApplicationsScreen() {
               await Promise.all([refresh(), loadBrokerPortfolio()]);
             }}
             tintColor={colors.primary}
+            progressViewOffset={topPad + 60}
           />
         }
         ListHeaderComponent={() => (
-          <View>
-            {/* Expandable Search Input */}
-            <Animated.View
-              style={[
-                styles.searchBar,
-                {
-                  height: searchBarHeight,
-                  opacity: searchBarOpacity,
-                  backgroundColor: colors.background,
-                },
-              ]}
-            >
-              <View style={[styles.searchInner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Feather name="search" size={16} color={colors.mutedForeground} />
-                <TextInput
-                  ref={searchRef}
-                  style={[styles.searchInput, { color: colors.foreground }]}
-                  placeholder="Search applications..."
-                  placeholderTextColor={colors.mutedForeground}
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  autoCorrect={false}
-                />
-                {searchQuery.length > 0 && (
-                  <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-                    <Feather name="x-circle" size={14} color={colors.mutedForeground} />
-                  </TouchableOpacity>
-                )}
-              </View>
-            </Animated.View>
-
+          <View onLayout={(e) => setListHeaderHeight(e.nativeEvent.layout.height)}>
             {/* Active filter chip */}
             {hasFilter && (
               <View style={[styles.filterBar, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
@@ -428,100 +650,10 @@ export default function ApplicationsScreen() {
           </View>
         )}
         renderSectionHeader={() => (
-          <View style={[styles.tabBar, { backgroundColor: colors.background }]}>
-            {/* Full width row: sort btn → divider → 5 tab pills */}
-            <View style={styles.tabBarRow}>
-              {/* Icon-only Sort button — always visible */}
-              <TouchableOpacity
-                onPress={() => {
-                  try { Haptics.selectionAsync(); } catch {}
-                  setSortOrder((prev) => (prev === 'newest' ? 'oldest' : 'newest'));
-                }}
-                style={[
-                  styles.sortByBtn,
-                  { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' },
-                ]}
-                hitSlop={8}
-                activeOpacity={0.75}
-              >
-                <Feather name="align-left" size={13} color={isDark ? '#F8FAFC' : '#0B132B'} />
-              </TouchableOpacity>
-
-              {/* Vertical divider */}
-              <View style={[styles.tabDivider, { backgroundColor: isDark ? '#334155' : '#E2E8F0' }]} />
-
-              {/* 5 Tab pills enclosed in sleek 36px pill track container filling full width */}
-              <View
-                style={[
-                  styles.tabPillsTrack,
-                  {
-                    backgroundColor: isDark ? '#181F2C' : '#ECEEF1',
-                    borderColor: isDark ? '#2D3748' : '#DFE2E6',
-                  },
-                ]}
-              >
-                {TABS.map((t) => {
-                  const isActive = activeTab === t.key;
-                  const count = countFor(t.key);
-                  return (
-                    <Pressable
-                      key={t.key}
-                      onPress={() => handleTabChange(t.key)}
-                      style={[
-                        styles.tabPill,
-                        { flex: t.flex },
-                        isActive && styles.tabPillActive,
-                        {
-                          backgroundColor: isActive
-                            ? (isDark ? '#2B3548' : '#FFFFFF')
-                            : 'transparent',
-                        },
-                      ]}
-                    >
-                      <View style={styles.tabContentRow}>
-                        <Text
-                          style={[
-                            styles.tabPillText,
-                            {
-                              color: isActive
-                                ? (isDark ? '#FFFFFF' : '#0B132B')
-                                : (isDark ? '#8A97A8' : '#6B7280'),
-                            },
-                            isActive ? styles.fontBold : styles.fontSemiBold,
-                          ]}
-                          numberOfLines={1}
-                          adjustsFontSizeToFit
-                          minimumFontScale={0.75}
-                        >
-                          {t.label}
-                        </Text>
-                        {isActive && count != null ? (
-                          <View
-                            style={[
-                              styles.countBadgePill,
-                              {
-                                backgroundColor: '#EF4444',
-                              },
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.countTextPill,
-                                {
-                                  color: '#FFFFFF',
-                                },
-                              ]}
-                            >
-                              {count}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
+          <View style={{ backgroundColor: 'transparent' }}>
+            <Animated.View style={{ opacity: inListTabsOpacity }}>
+              {renderTabPills()}
+            </Animated.View>
 
             {/* Count + sort-order row */}
             <View style={styles.listHeader}>
@@ -569,7 +701,6 @@ export default function ApplicationsScreen() {
             </Text>
           </View>
         )}
-        contentContainerStyle={{ paddingBottom: insets.bottom + (isSelectionMode ? 170 : 90), paddingTop: 8 }}
       />
 
       {/* Floating Action Bar (White Surface, Topmost Layer Above Menu) */}
@@ -684,12 +815,27 @@ export default function ApplicationsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  floatingHeaderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 110,
+    overflow: 'hidden',
+  },
+  floatingStickyTabsBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 105,
+    overflow: 'hidden',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    overflow: 'hidden',
+    height: 56,
   },
   headerEyebrow: { fontSize: 11, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 2 },
   headerTitle: { fontSize: 30, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.8, lineHeight: 34 },
@@ -721,7 +867,6 @@ const styles = StyleSheet.create({
     borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, borderWidth: 1,
   },
   filterBarText: { flex: 1, fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold' },
-  tabBar: { borderBottomWidth: 0 },
   tabBarRow: {
     flexDirection: 'row',
     alignItems: 'center',

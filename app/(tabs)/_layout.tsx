@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, DeviceEventEmitter, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -12,10 +12,10 @@ import { BulkApplySheet } from '@/components/BulkApplySheet';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
 const MAIN_BAR_TABS = [
-  { name: 'index',        title: 'Home',         icon: 'home'        },
-  { name: 'ipos',         title: 'IPO Hub',      icon: 'grid'        },
-  { name: 'applications', title: 'Applications', icon: 'file-text'   },
-  { name: 'settings',     title: 'Settings',     icon: 'settings'    },
+  { name: 'index',        title: 'Home',         iconOutline: 'layers-outline' as const,        iconFilled: 'layers' as const        },
+  { name: 'ipos',         title: 'IPO Hub',      iconOutline: 'grid-outline' as const,          iconFilled: 'grid' as const          },
+  { name: 'applications', title: 'Applications', iconOutline: 'document-text-outline' as const, iconFilled: 'document-text' as const },
+  { name: 'settings',     title: 'Settings',     iconOutline: 'settings-outline' as const,      iconFilled: 'settings' as const      },
 ] as const;
 
 const ALL_TAB_NAMES = ['index', 'applications', 'ipos', 'bids', 'settings', 'forms', 'banks', 'users', 'hub'] as const;
@@ -186,7 +186,7 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
             />
           )}
 
-          {MAIN_BAR_TABS.map(({ name, title, icon }) => {
+          {MAIN_BAR_TABS.map(({ name, title, iconOutline, iconFilled }) => {
             const isFocused = currentRouteName === name;
 
             const onPress = () => {
@@ -213,9 +213,9 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
                 activeOpacity={0.85}
                 style={styles.tabItem}
               >
-                <Feather
-                  name={icon as any}
-                  size={19}
+                <Ionicons
+                  name={isFocused ? iconFilled : iconOutline}
+                  size={20}
                   color={isFocused ? activeText : inactiveText}
                 />
                 <Text

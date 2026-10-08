@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Platform,
   RefreshControl,
   ScrollView,
@@ -10,6 +11,8 @@ import {
   View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -126,126 +129,153 @@ export default function AnalyticsDashboardScreen() {
     }
   };
 
+  const hasFilterToolbar = activeTab !== 'summary' && activeTab !== 'quality';
+  const headerOffset = topPad + (hasFilterToolbar ? 156 : 114);
+
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerBlurOpacity = scrollY.interpolate({
+    inputRange: [0, 24],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      {/* Header */}
+      {/* Floating Blurred Header Bar & Tabs */}
       <View
         style={[
-          styles.header,
-          {
-            paddingTop: topPad,
-            height: topPad + 60,
-            backgroundColor: colors.background,
-          },
+          styles.floatingHeaderContainer,
+          { paddingTop: topPad },
         ]}
+        pointerEvents="box-none"
       >
-        <IconButton
-          name="arrow-left"
-          variant="surface"
-          size="md"
-          onPress={() => router.back()}
-        />
-        <View style={{ flex: 1, marginLeft: 12, justifyContent: 'center' }}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>
-            DATA-QUALITY-AWARE INTELLIGENCE
-          </Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-            Analytics Dashboard
-          </Text>
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: headerBlurOpacity }]}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 90 : 75}
+            tint={isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(14, 17, 23, 0.96)', 'rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.35)']
+                : ['rgba(248, 249, 250, 0.96)', 'rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.35)']
+            }
+            locations={[0, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+
+        {/* Header Title Row */}
+        <View style={styles.header}>
+          <IconButton
+            name="arrow-left"
+            variant="surface"
+            size="md"
+            onPress={() => router.back()}
+          />
+          <View style={{ flex: 1, marginLeft: 12, justifyContent: 'center' }}>
+            <Text style={[styles.headerEyebrow, { color: colors.primary }]}>
+              DATA-QUALITY-AWARE INTELLIGENCE
+            </Text>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+              Analytics Dashboard
+            </Text>
+          </View>
         </View>
-      </View>
 
-      {/* Tab Navigation */}
-      <View style={styles.tabBarContainer}>
-        <Tabs
-          variant="pills"
-          scrollable
-          tabs={[
-            { key: 'summary', label: 'Summary' },
-            { key: 'market', label: 'Market' },
-            { key: 'performance', label: 'Performance' },
-            { key: 'subscription', label: 'Subscription' },
-            { key: 'allotment', label: 'Allotment' },
-            { key: 'quality', label: 'Data Quality' },
-          ]}
-          activeTab={activeTab}
-          onChange={(tab) => setActiveTab(tab as AnalyticsTab)}
-          style={{ marginHorizontal: 16 }}
-        />
-      </View>
+        {/* Tab Navigation */}
+        <View style={styles.tabBarContainer}>
+          <Tabs
+            variant="pills"
+            scrollable
+            tabs={[
+              { key: 'summary', label: 'Summary' },
+              { key: 'market', label: 'Market' },
+              { key: 'performance', label: 'Performance' },
+              { key: 'subscription', label: 'Subscription' },
+              { key: 'allotment', label: 'Allotment' },
+              { key: 'quality', label: 'Data Quality' },
+            ]}
+            activeTab={activeTab}
+            onChange={(tab) => setActiveTab(tab as AnalyticsTab)}
+            style={{ marginHorizontal: 16 }}
+          />
+        </View>
 
-      {/* Filter Toolbar (Only when not in summary tab) */}
-      {activeTab !== 'summary' && activeTab !== 'quality' && (
-        <View style={styles.filterToolbar}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-            <Text style={[styles.filterLabel, { color: colors.mutedForeground }]}>SEGMENT:</Text>
-            {(['ALL', 'MAINBOARD', 'SME'] as const).map((seg) => (
-              <TouchableOpacity
-                key={seg}
-                onPress={() => setSelectedSegment(seg)}
-                style={[
-                  styles.filterChip,
-                  {
-                    backgroundColor:
-                      selectedSegment === seg ? colors.card : colors.surface,
-                    borderColor:
-                      selectedSegment === seg ? colors.primary : colors.border,
-                  },
-                ]}
-              >
-                <Text
+        {/* Filter Toolbar (Only when not in summary tab) */}
+        {hasFilterToolbar && (
+          <View style={styles.filterToolbar}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              <Text style={[styles.filterLabel, { color: colors.mutedForeground }]}>SEGMENT:</Text>
+              {(['ALL', 'MAINBOARD', 'SME'] as const).map((seg) => (
+                <TouchableOpacity
+                  key={seg}
+                  onPress={() => setSelectedSegment(seg)}
                   style={[
-                    styles.filterChipText,
+                    styles.filterChip,
                     {
-                      color:
-                        selectedSegment === seg ? colors.primary : colors.mutedForeground,
+                      backgroundColor:
+                        selectedSegment === seg ? colors.card : colors.surface,
+                      borderColor:
+                        selectedSegment === seg ? colors.primary : colors.border,
                     },
                   ]}
                 >
-                  {seg}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      {
+                        color:
+                          selectedSegment === seg ? colors.primary : colors.mutedForeground,
+                      },
+                    ]}
+                  >
+                    {seg}
+                  </Text>
+                </TouchableOpacity>
+              ))}
 
-            <Text style={[styles.filterLabel, { color: colors.mutedForeground, marginLeft: 12 }]}>PERIOD:</Text>
-            {(
-              [
-                AnalyticsTimePeriod.MONTH,
-                AnalyticsTimePeriod.QUARTER,
-                AnalyticsTimePeriod.YEAR,
-              ] as const
-            ).map((per) => (
-              <TouchableOpacity
-                key={per}
-                onPress={() => setSelectedPeriod(per)}
-                style={[
-                  styles.filterChip,
-                  {
-                    backgroundColor:
-                      selectedPeriod === per ? colors.card : colors.surface,
-                    borderColor:
-                      selectedPeriod === per ? colors.primary : colors.border,
-                  },
-                ]}
-              >
-                <Text
+              <Text style={[styles.filterLabel, { color: colors.mutedForeground, marginLeft: 12 }]}>PERIOD:</Text>
+              {(
+                [
+                  AnalyticsTimePeriod.MONTH,
+                  AnalyticsTimePeriod.QUARTER,
+                  AnalyticsTimePeriod.YEAR,
+                ] as const
+              ).map((per) => (
+                <TouchableOpacity
+                  key={per}
+                  onPress={() => setSelectedPeriod(per)}
                   style={[
-                    styles.filterChipText,
+                    styles.filterChip,
                     {
-                      color:
-                        selectedPeriod === per ? colors.primary : colors.mutedForeground,
+                      backgroundColor:
+                        selectedPeriod === per ? colors.card : colors.surface,
+                      borderColor:
+                        selectedPeriod === per ? colors.primary : colors.border,
                     },
                   ]}
                 >
-                  {per}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      )}
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      {
+                        color:
+                          selectedPeriod === per ? colors.primary : colors.mutedForeground,
+                      },
+                    ]}
+                  >
+                    {per}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+      </View>
 
       {/* Main Content Area */}
       {loading ? (
@@ -274,18 +304,24 @@ export default function AnalyticsDashboardScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView
+        <Animated.ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{
             paddingHorizontal: 16,
-            paddingTop: 8,
+            paddingTop: headerOffset + 8,
             paddingBottom: insets.bottom + 40,
           }}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+            { useNativeDriver: true }
+          )}
+          scrollEventThrottle={16}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
               tintColor={colors.primary}
+              progressViewOffset={headerOffset}
             />
           }
         >
@@ -958,7 +994,7 @@ export default function AnalyticsDashboardScreen() {
               </View>
             </View>
           )}
-        </ScrollView>
+        </Animated.ScrollView>
       )}
     </View>
   );
@@ -966,7 +1002,16 @@ export default function AnalyticsDashboardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  floatingHeaderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    overflow: 'hidden',
+  },
   header: {
+    height: 56,
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',

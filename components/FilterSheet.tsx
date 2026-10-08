@@ -1,9 +1,20 @@
 import React, { useState, useMemo } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { useTheme } from '@/context/ThemeContext';
 import { useDB, type User, type BankAccount, type ApplicationWithDetails } from '@/context/DBContext';
+import { ScoopedBottomSheet } from '@/components/ui/ScoopedBottomSheet';
 
 type Props = {
   visible: boolean;
@@ -56,8 +67,10 @@ export function FilterSheet({
   onClose,
 }: Props) {
   const colors = useColors();
-  const { users, applications, bankAccounts } = useDB();
+  const { resolvedScheme } = useTheme();
+  const isDark = resolvedScheme === 'dark';
   const insets = useSafeAreaInsets();
+  const { users, applications, bankAccounts } = useDB();
 
   const [activePicker, setActivePicker] = useState<PickerType>(null);
   const [pickerSearch, setPickerSearch] = useState('');
@@ -106,6 +119,13 @@ export function FilterSheet({
     [applications, currentYear]
   );
 
+  const activeCount =
+    filterUserIds.length +
+    filterBrokers.length +
+    (filterYear ? 1 : 0) +
+    filterIpoNames.length +
+    filterBankNames.length;
+
   // Helper text formatters for dropdown trigger fields
   const bankLabel =
     filterBankNames.length === 0
@@ -138,473 +158,784 @@ export function FilterSheet({
       : `${filterIpoNames.length} Selected`;
 
   const openPicker = (type: PickerType) => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
     setPickerSearch('');
     setActivePicker(type);
   };
 
+  const handleClearAll = () => {
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    } catch {}
+    onFilterChange([], [], null, [], []);
+  };
+
+  const handleApply = () => {
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {}
+    onClose();
+  };
+
   return (
     <>
-      {/* Main Filter Sheet */}
-      <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-        <Pressable style={styles.overlay} onPress={onClose}>
-          <Pressable
-            style={[
-              styles.sheet,
-              {
-                backgroundColor: colors.background,
-                borderColor: colors.border,
-              },
-            ]}
-            onPress={() => {}}
-          >
-            <View style={[styles.handle, { backgroundColor: colors.border }]} />
-
-            <View style={styles.header}>
-              <Text style={[styles.title, { color: colors.foreground }]}>Filter Applications</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  onFilterChange([], [], null, [], []);
-                }}
-                style={[styles.clearBtn, { borderColor: colors.border }]}
-              >
-                <Text style={[styles.clearText, { color: colors.primary }]}>Clear All</Text>
-              </TouchableOpacity>
+      {/* Main Filter Scooped Bottom Sheet */}
+      <ScoopedBottomSheet
+        visible={visible && activePicker === null}
+        onClose={onClose}
+        maxHeight="88%"
+      >
+        {/* Sheet Header */}
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <View style={styles.headerTitleGroup}>
+            <View style={[styles.headerIconWrap, { backgroundColor: colors.primary + '18' }]}>
+              <Feather name="filter" size={16} color={colors.primary} />
             </View>
-
-            <ScrollView contentContainerStyle={{ gap: 12 }} showsVerticalScrollIndicator={false}>
-              {/* If bank and broker are both hidden (Dashboard filter) */}
-              {hideBank && hideBroker ? (
-                <View style={styles.gridRow}>
-                  <View style={styles.gridCol}>
-                    <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY USER</Text>
-                    <TouchableOpacity
-                      onPress={() => openPicker('user')}
-                      style={[
-                        styles.dropdownTrigger,
-                        {
-                          borderColor: filterUserIds.length > 0 ? colors.primary : colors.border,
-                          backgroundColor: colors.surface,
-                        },
-                      ]}
-                      activeOpacity={0.8}
-                    >
-                      <View style={styles.dropdownInner}>
-                        <Feather name="users" size={15} color={filterUserIds.length > 0 ? colors.primary : colors.mutedForeground} />
-                        <Text style={[styles.dropdownValue, { color: filterUserIds.length > 0 ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
-                          {userLabel}
-                        </Text>
-                      </View>
-                      <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
-                    </TouchableOpacity>
+            <View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={[styles.title, { color: colors.foreground }]}>Filter Records</Text>
+                {activeCount > 0 && (
+                  <View style={[styles.activeBadge, { backgroundColor: colors.primary }]}>
+                    <Text style={[styles.activeBadgeText, { color: colors.primaryForeground }]}>{activeCount}</Text>
                   </View>
+                )}
+              </View>
+              <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
+                Refine dashboard & application list
+              </Text>
+            </View>
+          </View>
 
-                  <View style={styles.gridCol}>
-                    <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY YEAR</Text>
-                    <TouchableOpacity
-                      onPress={() => openPicker('year')}
-                      style={[
-                        styles.dropdownTrigger,
-                        {
-                          borderColor: filterYear ? colors.primary : colors.border,
-                          backgroundColor: colors.surface,
-                        },
-                      ]}
-                      activeOpacity={0.8}
-                    >
-                      <View style={styles.dropdownInner}>
-                        <Feather name="calendar" size={15} color={filterYear ? colors.primary : colors.mutedForeground} />
-                        <Text style={[styles.dropdownValue, { color: filterYear ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
-                          {yearLabel}
-                        </Text>
-                      </View>
-                      <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-                <>
-                  {/* 2-Column Grid Row 1: BY BANK & BY USER */}
-                  <View style={styles.gridRow}>
-                    {!hideBank && (
-                      <View style={styles.gridCol}>
-                        <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY BANK</Text>
-                        <TouchableOpacity
-                          onPress={() => openPicker('bank')}
-                          style={[
-                            styles.dropdownTrigger,
-                            {
-                              borderColor: filterBankNames.length > 0 ? colors.primary : colors.border,
-                              backgroundColor: colors.surface,
-                            },
-                          ]}
-                          activeOpacity={0.8}
-                        >
-                          <View style={styles.dropdownInner}>
-                            <Feather name="credit-card" size={15} color={filterBankNames.length > 0 ? colors.primary : colors.mutedForeground} />
-                            <Text style={[styles.dropdownValue, { color: filterBankNames.length > 0 ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
-                              {bankLabel}
-                            </Text>
-                          </View>
-                          <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
-                        </TouchableOpacity>
-                      </View>
-                    )}
+          {activeCount > 0 && (
+            <TouchableOpacity
+              onPress={handleClearAll}
+              style={[styles.clearBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}
+              activeOpacity={0.7}
+            >
+              <Feather name="rotate-ccw" size={12} color={colors.primary} style={{ marginRight: 4 }} />
+              <Text style={[styles.clearText, { color: colors.primary }]}>Reset</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
-                    <View style={styles.gridCol}>
-                      <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY USER</Text>
-                      <TouchableOpacity
-                        onPress={() => openPicker('user')}
-                        style={[
-                          styles.dropdownTrigger,
-                          {
-                            borderColor: filterUserIds.length > 0 ? colors.primary : colors.border,
-                            backgroundColor: colors.surface,
-                          },
-                        ]}
-                        activeOpacity={0.8}
-                      >
-                        <View style={styles.dropdownInner}>
-                          <Feather name="users" size={15} color={filterUserIds.length > 0 ? colors.primary : colors.mutedForeground} />
-                          <Text style={[styles.dropdownValue, { color: filterUserIds.length > 0 ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
-                            {userLabel}
-                          </Text>
-                        </View>
-                        <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
-                  {/* 2-Column Grid Row 2: BY BROKER & BY YEAR */}
-                  <View style={styles.gridRow}>
-                    {!hideBroker && (
-                      <View style={styles.gridCol}>
-                        <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY BROKER</Text>
-                        <TouchableOpacity
-                          onPress={() => openPicker('broker')}
-                          style={[
-                            styles.dropdownTrigger,
-                            {
-                              borderColor: filterBrokers.length > 0 ? colors.primary : colors.border,
-                              backgroundColor: colors.surface,
-                            },
-                          ]}
-                          activeOpacity={0.8}
-                        >
-                          <View style={styles.dropdownInner}>
-                            <Feather name="briefcase" size={15} color={filterBrokers.length > 0 ? colors.primary : colors.mutedForeground} />
-                            <Text style={[styles.dropdownValue, { color: filterBrokers.length > 0 ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
-                              {brokerLabel}
-                            </Text>
-                          </View>
-                          <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
-                        </TouchableOpacity>
-                      </View>
-                    )}
-
-                    <View style={styles.gridCol}>
-                      <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY YEAR</Text>
-                      <TouchableOpacity
-                        onPress={() => openPicker('year')}
-                        style={[
-                          styles.dropdownTrigger,
-                          {
-                            borderColor: filterYear ? colors.primary : colors.border,
-                            backgroundColor: colors.surface,
-                          },
-                        ]}
-                        activeOpacity={0.8}
-                      >
-                        <View style={styles.dropdownInner}>
-                          <Feather name="calendar" size={15} color={filterYear ? colors.primary : colors.mutedForeground} />
-                          <Text style={[styles.dropdownValue, { color: filterYear ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
-                            {yearLabel}
-                          </Text>
-                        </View>
-                        <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </>
-              )}
-
-              {/* Full Width Row: BY IPO */}
-              <View>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY IPO</Text>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* If bank and broker are both hidden (Dashboard filter) */}
+          {hideBank && hideBroker ? (
+            <View style={styles.gridRow}>
+              <View style={styles.gridCol}>
+                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY USER</Text>
                 <TouchableOpacity
-                  onPress={() => openPicker('ipo')}
+                  onPress={() => openPicker('user')}
                   style={[
                     styles.dropdownTrigger,
                     {
-                      borderColor: filterIpoNames.length > 0 ? colors.primary : colors.border,
-                      backgroundColor: colors.surface,
+                      borderColor: filterUserIds.length > 0 ? colors.primary : colors.border,
+                      backgroundColor: filterUserIds.length > 0 ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : colors.surface,
                     },
                   ]}
-                  activeOpacity={0.8}
+                  activeOpacity={0.75}
                 >
                   <View style={styles.dropdownInner}>
-                    <Feather name="trending-up" size={15} color={filterIpoNames.length > 0 ? colors.primary : colors.mutedForeground} />
-                    <Text style={[styles.dropdownValue, { color: filterIpoNames.length > 0 ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
-                      {ipoLabel}
+                    <View
+                      style={[
+                        styles.fieldIconWrap,
+                        {
+                          backgroundColor: filterUserIds.length > 0 ? colors.primary + '20' : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                        },
+                      ]}
+                    >
+                      <Feather name="users" size={14} color={filterUserIds.length > 0 ? colors.primary : colors.mutedForeground} />
+                    </View>
+                    <Text
+                      style={[
+                        styles.dropdownValue,
+                        { color: filterUserIds.length > 0 ? (isDark ? '#818CF8' : colors.primary) : colors.foreground },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {userLabel}
                     </Text>
                   </View>
-                  <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
+                  <Feather name="chevron-down" size={15} color={colors.mutedForeground} />
                 </TouchableOpacity>
               </View>
-            </ScrollView>
 
-            <TouchableOpacity onPress={onClose} style={[styles.applyBtn, { backgroundColor: colors.primary }]} activeOpacity={0.85}>
-              <Text style={[styles.applyBtnText, { color: colors.primaryForeground }]}>Apply Filters</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* Field Option Selection Modal Dialog for All Fields */}
-      <Modal visible={activePicker !== null} transparent animationType="fade" onRequestClose={() => setActivePicker(null)}>
-        <Pressable style={styles.pickerOverlay} onPress={() => setActivePicker(null)}>
-          <Pressable
-            style={[
-              styles.pickerSheet,
-              {
-                backgroundColor: colors.background,
-                borderColor: colors.border,
-              },
-            ]}
-            onPress={() => {}}
-          >
-            <View style={[styles.pickerTitleRow, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.pickerTitle, { color: colors.foreground }]}>
-                {activePicker === 'bank' && 'Select Banks'}
-                {activePicker === 'user' && 'Select Users'}
-                {activePicker === 'broker' && 'Select Brokers'}
-                {activePicker === 'year' && 'Select Year'}
-                {activePicker === 'ipo' && 'Select IPOs'}
-              </Text>
-              <TouchableOpacity onPress={() => setActivePicker(null)} style={styles.pickerCloseBtn}>
-                <Feather name="x" size={20} color={colors.mutedForeground} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Search bar for option lists */}
-            {(activePicker === 'bank' || activePicker === 'user' || activePicker === 'broker' || activePicker === 'ipo') && (
-              <View style={[styles.searchBox, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-                <Feather name="search" size={16} color={colors.mutedForeground} />
-                <TextInput
-                  placeholder="Search..."
-                  placeholderTextColor={colors.mutedForeground}
-                  value={pickerSearch}
-                  onChangeText={setPickerSearch}
-                  style={[styles.searchInput, { color: colors.foreground }]}
-                />
-                {pickerSearch.length > 0 && (
-                  <TouchableOpacity onPress={() => setPickerSearch('')}>
-                    <Feather name="x" size={16} color={colors.mutedForeground} />
-                  </TouchableOpacity>
-                )}
+              <View style={styles.gridCol}>
+                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY YEAR</Text>
+                <TouchableOpacity
+                  onPress={() => openPicker('year')}
+                  style={[
+                    styles.dropdownTrigger,
+                    {
+                      borderColor: filterYear ? colors.primary : colors.border,
+                      backgroundColor: filterYear ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : colors.surface,
+                    },
+                  ]}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.dropdownInner}>
+                    <View
+                      style={[
+                        styles.fieldIconWrap,
+                        {
+                          backgroundColor: filterYear ? colors.primary + '20' : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                        },
+                      ]}
+                    >
+                      <Feather name="calendar" size={14} color={filterYear ? colors.primary : colors.mutedForeground} />
+                    </View>
+                    <Text
+                      style={[
+                        styles.dropdownValue,
+                        { color: filterYear ? (isDark ? '#818CF8' : colors.primary) : colors.foreground },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {yearLabel}
+                    </Text>
+                  </View>
+                  <Feather name="chevron-down" size={15} color={colors.mutedForeground} />
+                </TouchableOpacity>
               </View>
-            )}
-
-            <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 320 }} contentContainerStyle={{ paddingVertical: 4 }}>
-              {/* PICKER: BANK */}
-              {activePicker === 'bank' && (
-                <>
-                  <TouchableOpacity
-                    onPress={() => onFilterChange(filterUserIds, filterBrokers, filterYear, filterIpoNames, [])}
-                    style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: filterBankNames.length === 0 ? colors.primary + '12' : 'transparent' }]}
-                  >
-                    <Text style={[styles.pickerRowName, { color: filterBankNames.length === 0 ? colors.primary : colors.foreground }]}>
-                      All Banks
-                    </Text>
-                    {filterBankNames.length === 0 && <Feather name="check" size={18} color={colors.primary} />}
-                  </TouchableOpacity>
-                  {banks
-                    .filter((b) => b.toLowerCase().includes(pickerSearch.toLowerCase()))
-                    .map((b) => {
-                      const selected = filterBankNames.some((x) => x.trim().toLowerCase() === b.trim().toLowerCase());
-                      return (
-                        <TouchableOpacity
-                          key={b}
-                          onPress={() => {
-                            const next = selected
-                              ? filterBankNames.filter((x) => x.trim().toLowerCase() !== b.trim().toLowerCase())
-                              : [...filterBankNames, b];
-                            onFilterChange(filterUserIds, filterBrokers, filterYear, filterIpoNames, next);
-                          }}
-                          style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: selected ? colors.primary + '12' : 'transparent' }]}
+            </View>
+          ) : (
+            <>
+              {/* 2-Column Grid Row 1: BY BANK & BY USER */}
+              <View style={styles.gridRow}>
+                {!hideBank && (
+                  <View style={styles.gridCol}>
+                    <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY BANK</Text>
+                    <TouchableOpacity
+                      onPress={() => openPicker('bank')}
+                      style={[
+                        styles.dropdownTrigger,
+                        {
+                          borderColor: filterBankNames.length > 0 ? colors.primary : colors.border,
+                          backgroundColor: filterBankNames.length > 0 ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : colors.surface,
+                        },
+                      ]}
+                      activeOpacity={0.75}
+                    >
+                      <View style={styles.dropdownInner}>
+                        <View
+                          style={[
+                            styles.fieldIconWrap,
+                            {
+                              backgroundColor: filterBankNames.length > 0 ? colors.primary + '20' : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                            },
+                          ]}
                         >
-                          <Text style={[styles.pickerRowName, { color: selected ? colors.primary : colors.foreground }]}>{b}</Text>
-                          {selected && <Feather name="check" size={18} color={colors.primary} />}
-                        </TouchableOpacity>
-                      );
-                    })}
-                </>
-              )}
-
-              {/* PICKER: USER */}
-              {activePicker === 'user' && (
-                <>
-                  <TouchableOpacity
-                    onPress={() => onFilterChange([], filterBrokers, filterYear, filterIpoNames, filterBankNames)}
-                    style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: filterUserIds.length === 0 ? colors.primary + '12' : 'transparent' }]}
-                  >
-                    <Text style={[styles.pickerRowName, { color: filterUserIds.length === 0 ? colors.primary : colors.foreground }]}>
-                      All Users
-                    </Text>
-                    {filterUserIds.length === 0 && <Feather name="check" size={18} color={colors.primary} />}
-                  </TouchableOpacity>
-                  {activeUsers
-                    .filter((u) => u.name.toLowerCase().includes(pickerSearch.toLowerCase()) || (u.broker || '').toLowerCase().includes(pickerSearch.toLowerCase()))
-                    .map((u) => {
-                      const selected = filterUserIds.includes(u.id);
-                      return (
-                        <TouchableOpacity
-                          key={u.id}
-                          onPress={() => {
-                            const next = selected ? filterUserIds.filter((x) => x !== u.id) : [...filterUserIds, u.id];
-                            onFilterChange(next, filterBrokers, filterYear, filterIpoNames, filterBankNames);
-                          }}
-                          style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: selected ? colors.primary + '12' : 'transparent' }]}
+                          <Feather name="credit-card" size={14} color={filterBankNames.length > 0 ? colors.primary : colors.mutedForeground} />
+                        </View>
+                        <Text
+                          style={[
+                            styles.dropdownValue,
+                            { color: filterBankNames.length > 0 ? (isDark ? '#818CF8' : colors.primary) : colors.foreground },
+                          ]}
+                          numberOfLines={1}
                         >
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.pickerRowName, { color: selected ? colors.primary : colors.foreground }]}>{u.name}</Text>
-                            {u.broker ? <Text style={[styles.pickerRowSub, { color: colors.mutedForeground }]}>{u.broker}</Text> : null}
-                          </View>
-                          {selected && <Feather name="check" size={18} color={colors.primary} />}
-                        </TouchableOpacity>
-                      );
-                    })}
-                </>
-              )}
+                          {bankLabel}
+                        </Text>
+                      </View>
+                      <Feather name="chevron-down" size={15} color={colors.mutedForeground} />
+                    </TouchableOpacity>
+                  </View>
+                )}
 
-              {/* PICKER: BROKER */}
-              {activePicker === 'broker' && (
-                <>
+                <View style={styles.gridCol}>
+                  <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY USER</Text>
                   <TouchableOpacity
-                    onPress={() => onFilterChange(filterUserIds, [], filterYear, filterIpoNames, filterBankNames)}
-                    style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: filterBrokers.length === 0 ? colors.primary + '12' : 'transparent' }]}
+                    onPress={() => openPicker('user')}
+                    style={[
+                      styles.dropdownTrigger,
+                      {
+                        borderColor: filterUserIds.length > 0 ? colors.primary : colors.border,
+                        backgroundColor: filterUserIds.length > 0 ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : colors.surface,
+                      },
+                    ]}
+                    activeOpacity={0.75}
                   >
-                    <Text style={[styles.pickerRowName, { color: filterBrokers.length === 0 ? colors.primary : colors.foreground }]}>
-                      All Brokers
-                    </Text>
-                    {filterBrokers.length === 0 && <Feather name="check" size={18} color={colors.primary} />}
-                  </TouchableOpacity>
-                  {brokers
-                    .filter((b) => b.toLowerCase().includes(pickerSearch.toLowerCase()))
-                    .map((b) => {
-                      const selected = filterBrokers.includes(b);
-                      return (
-                        <TouchableOpacity
-                          key={b}
-                          onPress={() => {
-                            const next = selected ? filterBrokers.filter((x) => x !== b) : [...filterBrokers, b];
-                            onFilterChange(filterUserIds, next, filterYear, filterIpoNames, filterBankNames);
-                          }}
-                          style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: selected ? colors.primary + '12' : 'transparent' }]}
-                        >
-                          <Text style={[styles.pickerRowName, { color: selected ? colors.primary : colors.foreground }]}>{b}</Text>
-                          {selected && <Feather name="check" size={18} color={colors.primary} />}
-                        </TouchableOpacity>
-                      );
-                    })}
-                </>
-              )}
-
-              {/* PICKER: YEAR */}
-              {activePicker === 'year' && (
-                <>
-                  <TouchableOpacity
-                    onPress={() => onFilterChange(filterUserIds, filterBrokers, null, filterIpoNames, filterBankNames)}
-                    style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: !filterYear ? colors.primary + '12' : 'transparent' }]}
-                  >
-                    <Text style={[styles.pickerRowName, { color: !filterYear ? colors.primary : colors.foreground }]}>
-                      All Years
-                    </Text>
-                    {!filterYear && <Feather name="check" size={18} color={colors.primary} />}
-                  </TouchableOpacity>
-                  {years.map((y) => {
-                    const selected = filterYear === y;
-                    return (
-                      <TouchableOpacity
-                        key={y}
-                        onPress={() => onFilterChange(filterUserIds, filterBrokers, y, filterIpoNames, filterBankNames)}
-                        style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: selected ? colors.primary + '12' : 'transparent' }]}
+                    <View style={styles.dropdownInner}>
+                      <View
+                        style={[
+                          styles.fieldIconWrap,
+                          {
+                            backgroundColor: filterUserIds.length > 0 ? colors.primary + '20' : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                          },
+                        ]}
                       >
-                        <Text style={[styles.pickerRowName, { color: selected ? colors.primary : colors.foreground }]}>{y}</Text>
-                        {selected && <Feather name="check" size={18} color={colors.primary} />}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </>
-              )}
-
-              {/* PICKER: IPO */}
-              {activePicker === 'ipo' && (
-                <>
-                  <TouchableOpacity
-                    onPress={() => onFilterChange(filterUserIds, filterBrokers, filterYear, [], filterBankNames)}
-                    style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: filterIpoNames.length === 0 ? colors.primary + '12' : 'transparent' }]}
-                  >
-                    <Text style={[styles.pickerRowName, { color: filterIpoNames.length === 0 ? colors.primary : colors.foreground }]}>
-                      All IPOs
-                    </Text>
-                    {filterIpoNames.length === 0 && <Feather name="check" size={18} color={colors.primary} />}
+                        <Feather name="users" size={14} color={filterUserIds.length > 0 ? colors.primary : colors.mutedForeground} />
+                      </View>
+                      <Text
+                        style={[
+                          styles.dropdownValue,
+                          { color: filterUserIds.length > 0 ? (isDark ? '#818CF8' : colors.primary) : colors.foreground },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {userLabel}
+                      </Text>
+                    </View>
+                    <Feather name="chevron-down" size={15} color={colors.mutedForeground} />
                   </TouchableOpacity>
-                  {ipoNames
-                    .filter((name) => name.toLowerCase().includes(pickerSearch.toLowerCase()))
-                    .map((name) => {
-                      const selected = filterIpoNames.includes(name);
-                      return (
-                        <TouchableOpacity
-                          key={name}
-                          onPress={() => {
-                            const next = selected ? filterIpoNames.filter((x) => x !== name) : [...filterIpoNames, name];
-                            onFilterChange(filterUserIds, filterBrokers, filterYear, next, filterBankNames);
-                          }}
-                          style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: selected ? colors.primary + '12' : 'transparent' }]}
-                        >
-                          <Text style={[styles.pickerRowName, { color: selected ? colors.primary : colors.foreground }]}>{name}</Text>
-                          {selected && <Feather name="check" size={18} color={colors.primary} />}
-                        </TouchableOpacity>
-                      );
-                    })}
-                </>
-              )}
-            </ScrollView>
+                </View>
+              </View>
 
-            <TouchableOpacity onPress={() => setActivePicker(null)} style={[styles.applyBtn, { backgroundColor: colors.primary, marginTop: 14 }]} activeOpacity={0.85}>
-              <Text style={[styles.applyBtnText, { color: colors.primaryForeground }]}>Done</Text>
+              {/* 2-Column Grid Row 2: BY BROKER & BY YEAR */}
+              <View style={styles.gridRow}>
+                {!hideBroker && (
+                  <View style={styles.gridCol}>
+                    <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY BROKER</Text>
+                    <TouchableOpacity
+                      onPress={() => openPicker('broker')}
+                      style={[
+                        styles.dropdownTrigger,
+                        {
+                          borderColor: filterBrokers.length > 0 ? colors.primary : colors.border,
+                          backgroundColor: filterBrokers.length > 0 ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : colors.surface,
+                        },
+                      ]}
+                      activeOpacity={0.75}
+                    >
+                      <View style={styles.dropdownInner}>
+                        <View
+                          style={[
+                            styles.fieldIconWrap,
+                            {
+                              backgroundColor: filterBrokers.length > 0 ? colors.primary + '20' : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                            },
+                          ]}
+                        >
+                          <Feather name="briefcase" size={14} color={filterBrokers.length > 0 ? colors.primary : colors.mutedForeground} />
+                        </View>
+                        <Text
+                          style={[
+                            styles.dropdownValue,
+                            { color: filterBrokers.length > 0 ? (isDark ? '#818CF8' : colors.primary) : colors.foreground },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {brokerLabel}
+                        </Text>
+                      </View>
+                      <Feather name="chevron-down" size={15} color={colors.mutedForeground} />
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                <View style={styles.gridCol}>
+                  <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY YEAR</Text>
+                  <TouchableOpacity
+                    onPress={() => openPicker('year')}
+                    style={[
+                      styles.dropdownTrigger,
+                      {
+                        borderColor: filterYear ? colors.primary : colors.border,
+                        backgroundColor: filterYear ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : colors.surface,
+                      },
+                    ]}
+                    activeOpacity={0.75}
+                  >
+                    <View style={styles.dropdownInner}>
+                      <View
+                        style={[
+                          styles.fieldIconWrap,
+                          {
+                            backgroundColor: filterYear ? colors.primary + '20' : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                          },
+                        ]}
+                      >
+                        <Feather name="calendar" size={14} color={filterYear ? colors.primary : colors.mutedForeground} />
+                      </View>
+                      <Text
+                        style={[
+                          styles.dropdownValue,
+                          { color: filterYear ? (isDark ? '#818CF8' : colors.primary) : colors.foreground },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {yearLabel}
+                      </Text>
+                    </View>
+                    <Feather name="chevron-down" size={15} color={colors.mutedForeground} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </>
+          )}
+
+          {/* Full Width Row: BY IPO */}
+          <View>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>BY IPO NAME</Text>
+            <TouchableOpacity
+              onPress={() => openPicker('ipo')}
+              style={[
+                styles.dropdownTrigger,
+                {
+                  borderColor: filterIpoNames.length > 0 ? colors.primary : colors.border,
+                  backgroundColor: filterIpoNames.length > 0 ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : colors.surface,
+                },
+              ]}
+              activeOpacity={0.75}
+            >
+              <View style={styles.dropdownInner}>
+                <View
+                  style={[
+                    styles.fieldIconWrap,
+                    {
+                      backgroundColor: filterIpoNames.length > 0 ? colors.primary + '20' : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                    },
+                  ]}
+                >
+                  <Feather name="trending-up" size={14} color={filterIpoNames.length > 0 ? colors.primary : colors.mutedForeground} />
+                </View>
+                <Text
+                  style={[
+                    styles.dropdownValue,
+                    { color: filterIpoNames.length > 0 ? (isDark ? '#818CF8' : colors.primary) : colors.foreground },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {ipoLabel}
+                </Text>
+              </View>
+              <Feather name="chevron-down" size={15} color={colors.mutedForeground} />
             </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+          </View>
+        </ScrollView>
+
+        {/* Bottom Actions */}
+        <View style={[styles.footer, { borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 22) + 6 }]}>
+          <TouchableOpacity
+            onPress={handleApply}
+            style={[styles.applyBtn, { backgroundColor: colors.primary }]}
+            activeOpacity={0.85}
+          >
+            <Feather name="check" size={16} color={colors.primaryForeground} style={{ marginRight: 6 }} />
+            <Text style={[styles.applyBtnText, { color: colors.primaryForeground }]}>
+              {activeCount > 0 ? `Apply Filters (${activeCount})` : 'Apply Filters'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </ScoopedBottomSheet>
+
+      {/* Option Picker Scooped Bottom Sheet */}
+      <ScoopedBottomSheet
+        visible={activePicker !== null}
+        onClose={() => setActivePicker(null)}
+        maxHeight="85%"
+      >
+        <View style={[styles.pickerTitleRow, { borderBottomColor: colors.border }]}>
+          <View>
+            <Text style={[styles.pickerTitle, { color: colors.foreground }]}>
+              {activePicker === 'bank' && 'Select Banks'}
+              {activePicker === 'user' && 'Select Users'}
+              {activePicker === 'broker' && 'Select Brokers'}
+              {activePicker === 'year' && 'Select Year'}
+              {activePicker === 'ipo' && 'Select IPOs'}
+            </Text>
+            <Text style={[styles.pickerSubtitle, { color: colors.mutedForeground }]}>
+              {activePicker === 'year' ? 'Choose specific filing year' : 'Choose one or multiple items'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Search bar for option lists */}
+        {(activePicker === 'bank' || activePicker === 'user' || activePicker === 'broker' || activePicker === 'ipo') && (
+          <View style={[styles.searchBox, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+            <Feather name="search" size={15} color={colors.mutedForeground} />
+            <TextInput
+              placeholder="Search options..."
+              placeholderTextColor={colors.mutedForeground}
+              value={pickerSearch}
+              onChangeText={setPickerSearch}
+              style={[styles.searchInput, { color: colors.foreground }]}
+            />
+            {pickerSearch.length > 0 && (
+              <TouchableOpacity onPress={() => setPickerSearch('')}>
+                <Feather name="x" size={15} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          style={{ maxHeight: 320 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 4, gap: 6 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* PICKER: BANK */}
+          {activePicker === 'bank' && (
+            <>
+              <TouchableOpacity
+                onPress={() => {
+                  onFilterChange(filterUserIds, filterBrokers, filterYear, filterIpoNames, []);
+                  try { Haptics.selectionAsync(); } catch {}
+                }}
+                style={[
+                  styles.pickerRow,
+                  {
+                    borderColor: filterBankNames.length === 0 ? colors.primary : colors.border,
+                    backgroundColor: filterBankNames.length === 0 ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : colors.surface,
+                  },
+                ]}
+              >
+                <Text style={[styles.pickerRowName, { color: filterBankNames.length === 0 ? colors.primary : colors.foreground }]}>
+                  All Banks
+                </Text>
+                {filterBankNames.length === 0 && (
+                  <View style={[styles.checkCircle, { backgroundColor: colors.primary }]}>
+                    <Feather name="check" size={12} color="#FFFFFF" />
+                  </View>
+                )}
+              </TouchableOpacity>
+              {banks
+                .filter((b) => b.toLowerCase().includes(pickerSearch.toLowerCase()))
+                .map((b) => {
+                  const selected = filterBankNames.some((x) => x.trim().toLowerCase() === b.trim().toLowerCase());
+                  return (
+                    <TouchableOpacity
+                      key={b}
+                      onPress={() => {
+                        const next = selected
+                          ? filterBankNames.filter((x) => x.trim().toLowerCase() !== b.trim().toLowerCase())
+                          : [...filterBankNames, b];
+                        onFilterChange(filterUserIds, filterBrokers, filterYear, filterIpoNames, next);
+                        try { Haptics.selectionAsync(); } catch {}
+                      }}
+                      style={[
+                        styles.pickerRow,
+                        {
+                          borderColor: selected ? colors.primary : colors.border,
+                          backgroundColor: selected ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : colors.surface,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.pickerRowName, { color: selected ? colors.primary : colors.foreground }]}>{b}</Text>
+                      {selected && (
+                        <View style={[styles.checkCircle, { backgroundColor: colors.primary }]}>
+                          <Feather name="check" size={12} color="#FFFFFF" />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+            </>
+          )}
+
+          {/* PICKER: USER */}
+          {activePicker === 'user' && (
+            <>
+              <TouchableOpacity
+                onPress={() => {
+                  onFilterChange([], filterBrokers, filterYear, filterIpoNames, filterBankNames);
+                  try { Haptics.selectionAsync(); } catch {}
+                }}
+                style={[
+                  styles.pickerRow,
+                  {
+                    borderColor: filterUserIds.length === 0 ? colors.primary : colors.border,
+                    backgroundColor: filterUserIds.length === 0 ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : colors.surface,
+                  },
+                ]}
+              >
+                <Text style={[styles.pickerRowName, { color: filterUserIds.length === 0 ? colors.primary : colors.foreground }]}>
+                  All Users
+                </Text>
+                {filterUserIds.length === 0 && (
+                  <View style={[styles.checkCircle, { backgroundColor: colors.primary }]}>
+                    <Feather name="check" size={12} color="#FFFFFF" />
+                  </View>
+                )}
+              </TouchableOpacity>
+              {activeUsers
+                .filter((u) => u.name.toLowerCase().includes(pickerSearch.toLowerCase()) || (u.broker || '').toLowerCase().includes(pickerSearch.toLowerCase()))
+                .map((u) => {
+                  const selected = filterUserIds.includes(u.id);
+                  return (
+                    <TouchableOpacity
+                      key={u.id}
+                      onPress={() => {
+                        const next = selected ? filterUserIds.filter((x) => x !== u.id) : [...filterUserIds, u.id];
+                        onFilterChange(next, filterBrokers, filterYear, filterIpoNames, filterBankNames);
+                        try { Haptics.selectionAsync(); } catch {}
+                      }}
+                      style={[
+                        styles.pickerRow,
+                        {
+                          borderColor: selected ? colors.primary : colors.border,
+                          backgroundColor: selected ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : colors.surface,
+                        },
+                      ]}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.pickerRowName, { color: selected ? colors.primary : colors.foreground }]}>{u.name}</Text>
+                        {u.broker ? <Text style={[styles.pickerRowSub, { color: colors.mutedForeground }]}>{u.broker}</Text> : null}
+                      </View>
+                      {selected && (
+                        <View style={[styles.checkCircle, { backgroundColor: colors.primary }]}>
+                          <Feather name="check" size={12} color="#FFFFFF" />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+            </>
+          )}
+
+          {/* PICKER: BROKER */}
+          {activePicker === 'broker' && (
+            <>
+              <TouchableOpacity
+                onPress={() => {
+                  onFilterChange(filterUserIds, [], filterYear, filterIpoNames, filterBankNames);
+                  try { Haptics.selectionAsync(); } catch {}
+                }}
+                style={[
+                  styles.pickerRow,
+                  {
+                    borderColor: filterBrokers.length === 0 ? colors.primary : colors.border,
+                    backgroundColor: filterBrokers.length === 0 ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : colors.surface,
+                  },
+                ]}
+              >
+                <Text style={[styles.pickerRowName, { color: filterBrokers.length === 0 ? colors.primary : colors.foreground }]}>
+                  All Brokers
+                </Text>
+                {filterBrokers.length === 0 && (
+                  <View style={[styles.checkCircle, { backgroundColor: colors.primary }]}>
+                    <Feather name="check" size={12} color="#FFFFFF" />
+                  </View>
+                )}
+              </TouchableOpacity>
+              {brokers
+                .filter((b) => b.toLowerCase().includes(pickerSearch.toLowerCase()))
+                .map((b) => {
+                  const selected = filterBrokers.includes(b);
+                  return (
+                    <TouchableOpacity
+                      key={b}
+                      onPress={() => {
+                        const next = selected ? filterBrokers.filter((x) => x !== b) : [...filterBrokers, b];
+                        onFilterChange(filterUserIds, next, filterYear, filterIpoNames, filterBankNames);
+                        try { Haptics.selectionAsync(); } catch {}
+                      }}
+                      style={[
+                        styles.pickerRow,
+                        {
+                          borderColor: selected ? colors.primary : colors.border,
+                          backgroundColor: selected ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : colors.surface,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.pickerRowName, { color: selected ? colors.primary : colors.foreground }]}>{b}</Text>
+                      {selected && (
+                        <View style={[styles.checkCircle, { backgroundColor: colors.primary }]}>
+                          <Feather name="check" size={12} color="#FFFFFF" />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+            </>
+          )}
+
+          {/* PICKER: YEAR */}
+          {activePicker === 'year' && (
+            <>
+              <TouchableOpacity
+                onPress={() => {
+                  onFilterChange(filterUserIds, filterBrokers, null, filterIpoNames, filterBankNames);
+                  try { Haptics.selectionAsync(); } catch {}
+                }}
+                style={[
+                  styles.pickerRow,
+                  {
+                    borderColor: !filterYear ? colors.primary : colors.border,
+                    backgroundColor: !filterYear ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : colors.surface,
+                  },
+                ]}
+              >
+                <Text style={[styles.pickerRowName, { color: !filterYear ? colors.primary : colors.foreground }]}>
+                  All Years
+                </Text>
+                {!filterYear && (
+                  <View style={[styles.checkCircle, { backgroundColor: colors.primary }]}>
+                    <Feather name="check" size={12} color="#FFFFFF" />
+                  </View>
+                )}
+              </TouchableOpacity>
+              {years.map((y) => {
+                const selected = filterYear === y;
+                return (
+                  <TouchableOpacity
+                    key={y}
+                    onPress={() => {
+                      onFilterChange(filterUserIds, filterBrokers, y, filterIpoNames, filterBankNames);
+                      try { Haptics.selectionAsync(); } catch {}
+                    }}
+                    style={[
+                      styles.pickerRow,
+                      {
+                        borderColor: selected ? colors.primary : colors.border,
+                        backgroundColor: selected ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : colors.surface,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.pickerRowName, { color: selected ? colors.primary : colors.foreground }]}>{y}</Text>
+                    {selected && (
+                      <View style={[styles.checkCircle, { backgroundColor: colors.primary }]}>
+                        <Feather name="check" size={12} color="#FFFFFF" />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </>
+          )}
+
+          {/* PICKER: IPO */}
+          {activePicker === 'ipo' && (
+            <>
+              <TouchableOpacity
+                onPress={() => {
+                  onFilterChange(filterUserIds, filterBrokers, filterYear, [], filterBankNames);
+                  try { Haptics.selectionAsync(); } catch {}
+                }}
+                style={[
+                  styles.pickerRow,
+                  {
+                    borderColor: filterIpoNames.length === 0 ? colors.primary : colors.border,
+                    backgroundColor: filterIpoNames.length === 0 ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : colors.surface,
+                  },
+                ]}
+              >
+                <Text style={[styles.pickerRowName, { color: filterIpoNames.length === 0 ? colors.primary : colors.foreground }]}>
+                  All IPOs
+                </Text>
+                {filterIpoNames.length === 0 && (
+                  <View style={[styles.checkCircle, { backgroundColor: colors.primary }]}>
+                    <Feather name="check" size={12} color="#FFFFFF" />
+                  </View>
+                )}
+              </TouchableOpacity>
+              {ipoNames
+                .filter((name) => name.toLowerCase().includes(pickerSearch.toLowerCase()))
+                .map((name) => {
+                  const selected = filterIpoNames.includes(name);
+                  return (
+                    <TouchableOpacity
+                      key={name}
+                      onPress={() => {
+                        const next = selected ? filterIpoNames.filter((x) => x !== name) : [...filterIpoNames, name];
+                        onFilterChange(filterUserIds, filterBrokers, filterYear, next, filterBankNames);
+                        try { Haptics.selectionAsync(); } catch {}
+                      }}
+                      style={[
+                        styles.pickerRow,
+                        {
+                          borderColor: selected ? colors.primary : colors.border,
+                          backgroundColor: selected ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF') : colors.surface,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.pickerRowName, { color: selected ? colors.primary : colors.foreground }]}>{name}</Text>
+                      {selected && (
+                        <View style={[styles.checkCircle, { backgroundColor: colors.primary }]}>
+                          <Feather name="check" size={12} color="#FFFFFF" />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+            </>
+          )}
+        </ScrollView>
+
+        <View style={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: Math.max(insets.bottom, 22) + 6 }}>
+          <TouchableOpacity
+            onPress={() => setActivePicker(null)}
+            style={[styles.applyBtn, { backgroundColor: colors.primary }]}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.applyBtnText, { color: colors.primaryForeground }]}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </ScoopedBottomSheet>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center', padding: 16 },
-  sheet: {
-    width: '92%',
-    maxWidth: 440,
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    maxHeight: '85%',
-  },
-  handle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 18 },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 18,
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
   },
-  title: { fontSize: 20, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
-  clearBtn: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6 },
-  clearText: { fontSize: 13, fontFamily: 'GoogleSansFlex_500Medium' },
-  fieldLabel: {
+  headerTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  headerIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    fontSize: 17,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.2,
+  },
+  subtitle: {
+    fontSize: 11.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 1,
+  },
+  activeBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+    borderRadius: 10,
+  },
+  activeBadgeText: {
     fontSize: 10,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  clearBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  clearText: {
+    fontSize: 12,
     fontFamily: 'GoogleSansFlex_600SemiBold',
-    letterSpacing: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 10,
+    gap: 14,
+  },
+  fieldLabel: {
+    fontSize: 10.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.8,
     marginBottom: 6,
     textTransform: 'uppercase',
   },
@@ -622,7 +953,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderRadius: 14,
     paddingHorizontal: 12,
-    height: 48,
+    height: 50,
   },
   dropdownInner: {
     flexDirection: 'row',
@@ -630,51 +961,51 @@ const styles = StyleSheet.create({
     gap: 8,
     flex: 1,
   },
+  fieldIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   dropdownValue: {
     fontSize: 13,
-    fontFamily: 'GoogleSansFlex_500Medium',
+    fontFamily: 'GoogleSansFlex_600SemiBold',
     flex: 1,
+  },
+  footer: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: 1,
   },
   applyBtn: {
     borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 18,
-  },
-  applyBtnText: { color: '#fff', fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 0.2 },
-
-  // Centered Modal Dialog Styles for All Option Pickers
-  pickerOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 40,
-  },
-  pickerSheet: {
-    width: '100%',
-    maxWidth: 420,
-    borderRadius: 24,
-    borderWidth: 1,
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 18,
-  },
-  pickerTitleRow: {
+    height: 48,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  applyBtnText: {
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.2,
+  },
+
+  // Picker Styles
+  pickerTitleRow: {
+    paddingHorizontal: 20,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   pickerTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
-  pickerCloseBtn: {
-    padding: 4,
+  pickerSubtitle: {
+    fontSize: 11.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 1,
   },
   searchBox: {
     flexDirection: 'row',
@@ -683,12 +1014,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 12,
-    height: 42,
+    marginHorizontal: 20,
+    height: 40,
     marginBottom: 10,
   },
   searchInput: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 13.5,
     fontFamily: 'GoogleSansFlex_400Regular',
     padding: 0,
   },
@@ -696,18 +1028,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderBottomWidth: 1,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
   },
   pickerRowName: {
-    fontSize: 15,
-    fontFamily: 'GoogleSansFlex_500Medium',
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
   },
   pickerRowSub: {
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: 'GoogleSansFlex_400Regular',
-    marginTop: 2,
+    marginTop: 1,
+  },
+  checkCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

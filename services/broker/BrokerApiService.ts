@@ -1,5 +1,5 @@
 import { ApiClient } from '../api/ApiClient';
-import { API_BASE_URL } from '@/constants/apiConfig';
+import { API_BASE_URL } from '../../constants/apiConfig';
 
 export interface BrokerAccountConnection {
   id: string;
@@ -519,7 +519,11 @@ export class BrokerApiService {
             if (item.isin) quotesMap[item.isin.toUpperCase()] = quote;
             if (item.symbol) quotesMap[item.symbol.toUpperCase()] = quote;
             if (item.symbol && item.exchange) {
-              quotesMap[`${item.exchange.toUpperCase()}:${item.symbol.toUpperCase()}`] = quote;
+              const exUpper = item.exchange.toUpperCase();
+              const symUpper = item.symbol.toUpperCase();
+              quotesMap[`${exUpper}:${symUpper}`] = quote;
+              quotesMap[`${exUpper}_EQ|${symUpper}`] = quote;
+              quotesMap[`${exUpper}_SM|${symUpper}`] = quote;
             }
           }
         }
@@ -538,9 +542,21 @@ export class BrokerApiService {
               changePercent: v?.changePercent ?? v?.change_percent,
               timestamp: v?.timestamp ?? v?.asOf,
             };
-            quotesMap[key.toUpperCase()] = quote;
+            const upperKey = key.toUpperCase();
+            quotesMap[upperKey] = quote;
             if (v?.isin) quotesMap[v.isin.toUpperCase()] = quote;
             if (v?.symbol) quotesMap[v.symbol.toUpperCase()] = quote;
+            if (v?.exchange && v?.symbol) {
+              const exUpper = v.exchange.toUpperCase();
+              const symUpper = v.symbol.toUpperCase();
+              quotesMap[`${exUpper}:${symUpper}`] = quote;
+              quotesMap[`${exUpper}_EQ|${symUpper}`] = quote;
+              quotesMap[`${exUpper}_SM|${symUpper}`] = quote;
+            }
+            if (upperKey.includes('|') || upperKey.includes(':')) {
+              const symbolPart = upperKey.split(/[|:]/)[1];
+              if (symbolPart) quotesMap[symbolPart] = quote;
+            }
           }
         }
       }

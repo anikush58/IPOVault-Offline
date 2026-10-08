@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 
 export default function PrivacyPolicyScreen() {
   const colors = useColors();
@@ -19,7 +20,7 @@ export default function PrivacyPolicyScreen() {
   const isDark = resolvedScheme === 'dark';
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const topPad = Platform.OS === 'web' ? 24 : insets.top;
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
   const [expandedSection, setExpandedSection] = useState<number | null>(null);
 
@@ -74,25 +75,20 @@ export default function PrivacyPolicyScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: topPad, backgroundColor: colors.background }]}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={[styles.backBtn, { backgroundColor: isDark ? '#262C36' : '#F3F4F6' }]}
-          activeOpacity={0.7}
-        >
-          <Feather name="arrow-left" size={18} color={colors.foreground} />
-        </TouchableOpacity>
-
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.headerEyebrow, { color: colors.mutedForeground }]}>LEGAL</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Privacy Policy</Text>
-        </View>
-      </View>
+      <ScreenHeader
+        eyebrow="LEGAL"
+        title="Privacy Policy"
+        centerTitle
+        showBack
+      />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 40, paddingTop: 6 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: topPad + 60 + 12,
+          paddingBottom: insets.bottom + 40,
+        }}
       >
         {/* Effective Date & Overview Card */}
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 18, marginBottom: 14 }]}>

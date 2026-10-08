@@ -23,6 +23,7 @@ import { useDialog } from '@/context/DialogContext';
 import { useDB } from '@/context/DBContext';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { IPORepository } from '@/services/ipo/ipoRepository';
 import { IPOMasterRecord } from '@/services/ipo/types';
 import { formatCurrency, formatDate } from '@/utils/formatters';
@@ -80,7 +81,7 @@ export default function ApplyIPOScreen() {
   const { showSuccess, showError } = useDialog();
   const { users, ipos, applications, bankAccounts, addBulkApplications } = useDB();
 
-  const topPad = Platform.OS === 'web' ? 67 : insets.top;
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
   const targetParamId = params.ipoId || params.id || params.name || params.ipo_name || params.company_name || null;
   const [selectedIpoId, setSelectedIpoId] = useState<string | null>(targetParamId);
@@ -501,27 +502,23 @@ export default function ApplyIPOScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* ── App Bar Header ── */}
-      <View
-        style={[
-          styles.header,
+      <ScreenHeader
+        eyebrow="DIRECT BID ENGINE"
+        title="Apply IPO"
+        centerTitle
+        showBack
+      />
+
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
           {
-            paddingTop: topPad,
-            height: topPad + 60,
-            backgroundColor: colors.background,
+            paddingTop: topPad + 60 + 12,
+            paddingBottom: insets.bottom + 120,
           },
         ]}
+        showsVerticalScrollIndicator={false}
       >
-        <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
-
-        <View style={styles.headerCenter}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>DIRECT BID ENGINE</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Apply IPO</Text>
-        </View>
-
-        <View style={{ width: 44, height: 44 }} />
-      </View>
-
-      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 120 }]} showsVerticalScrollIndicator={false}>
         {/* ── Step Progress Indicator ── */}
         <View style={[styles.stepBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.stepItem}>

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
+  Animated,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -14,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -324,12 +326,14 @@ function BankCard({
 
 export default function BanksScreen() {
   const colors = useColors();
+  const { resolvedScheme } = useTheme();
+  const isDark = resolvedScheme === 'dark';
   const router = useRouter();
   const { from } = useLocalSearchParams<{ from?: string }>();
   const { bankAccounts, ipos, applications, isLoading, refresh, addBankAccount, updateBankBalance, deleteBankAccount } = useDB();
   const { showConfirm, showError } = useDialog();
   const insets = useSafeAreaInsets();
-  const topPad = Platform.OS === 'web' ? 67 : insets.top;
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
   const [modalVisible, setModalVisible] = useState(false);
   const [editingBank, setEditingBank] = useState<BankAccount | null>(null);
@@ -403,39 +407,87 @@ export default function BanksScreen() {
     }
   };
 
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerBlurOpacity = scrollY.interpolate({
+    inputRange: [0, 24],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
-        <IconButton
-          name="chevron-left"
-          variant="surface"
-          size="md"
-          onPress={() => {
-            if (from === 'bids') router.replace('/(tabs)/bids');
-            else if (from === 'dashboard') router.replace('/(tabs)');
-            else if (router.canGoBack()) router.back();
-            else router.replace('/(tabs)');
-          }}
-        />
+      {/* Floating Blurred Header Bar */}
+      <View
+        style={[
+          styles.floatingHeaderContainer,
+          { paddingTop: topPad, height: topPad + 60 },
+        ]}
+        pointerEvents="box-none"
+      >
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: headerBlurOpacity }]}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 90 : 75}
+            tint={isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(14, 17, 23, 0.96)', 'rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.35)']
+                : ['rgba(248, 249, 250, 0.96)', 'rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.35)']
+            }
+            locations={[0, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
 
-        <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>CAPITAL</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Banks</Text>
+        <View style={styles.header}>
+          <IconButton
+            name="arrow-left"
+            variant="surface"
+            size="md"
+            onPress={() => {
+              if (from === 'bids') router.replace('/(tabs)/bids');
+              else if (from === 'dashboard') router.replace('/(tabs)');
+              else if (router.canGoBack()) router.back();
+              else router.replace('/(tabs)');
+            }}
+          />
+
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={[styles.headerEyebrow, { color: colors.primary }]}>CAPITAL</Text>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>Banks</Text>
+          </View>
+
+          <IconButton
+            name="plus"
+            variant="surface"
+            size="md"
+            onPress={openAdd}
+          />
         </View>
-
-        <IconButton
-          name="plus"
-          variant="surface"
-          size="md"
-          onPress={openAdd}
-        />
       </View>
 
-      <FlatList
+      <Animated.FlatList
         data={bankAccounts}
         keyExtractor={(b) => b.id.toString()}
-        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refresh} tintColor={colors.primary} />}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={refresh}
+            tintColor={colors.primary}
+            progressViewOffset={topPad + 60}
+          />
+        }
+        contentContainerStyle={{
+          paddingTop: topPad + 60 + 8,
+          paddingBottom: insets.bottom + 90,
+        }}
         ListHeaderComponent={() => (
           <>
             <BanksOverviewCard
@@ -477,7 +529,6 @@ export default function BanksScreen() {
             </TouchableOpacity>
           </View>
         )}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 90 }}
       />
 
       <BankModal
@@ -494,7 +545,16 @@ export default function BanksScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  floatingHeaderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    overflow: 'hidden',
+  },
   header: {
+    height: 56,
     paddingHorizontal: 16,
     overflow: 'hidden',
     flexDirection: 'row',

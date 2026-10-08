@@ -18,6 +18,7 @@ import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import * as Haptics from 'expo-haptics';
 import { IconButton } from '@/components/ui/IconButton';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 
 interface GuideArticle {
   id: string;
@@ -255,21 +256,18 @@ export default function HelpCenterScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header Bar */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 56, backgroundColor: colors.background }]}>
-        <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
-        <View style={styles.headerCenter}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>SETTINGS</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Help Center</Text>
-        </View>
-        <View style={{ width: 40 }} />
-      </View>
+      <ScreenHeader
+        eyebrow="SETTINGS"
+        title="Help Center"
+        centerTitle
+        showBack
+      />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
           paddingHorizontal: 16,
-          paddingTop: 10,
+          paddingTop: topPad + 60 + 12,
           paddingBottom: insets.bottom + 40,
         }}
       >

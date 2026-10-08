@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
+  Animated,
   Modal,
   Platform,
   Pressable,
@@ -10,6 +11,8 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,6 +23,7 @@ import { useDialog } from '@/context/DialogContext';
 import { useDB } from '@/context/DBContext';
 import { ThemeToggleSwitch } from '@/components/ui/ThemeToggleSwitch';
 import { IOSToggle } from '@/components/ui/IOSToggle';
+import { AnimatedEntrance } from '@/components/ui/AnimatedEntrance';
 
 export interface SettingRowProps {
   icon: string;
@@ -187,230 +191,277 @@ export default function SettingsScreen() {
     });
   };
 
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerBlurOpacity = scrollY.interpolate({
+    inputRange: [0, 24],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header Bar */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
-        <View style={{ flex: 1, justifyContent: 'center' }}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>PREFERENCES</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Settings</Text>
-        </View>
+      {/* Floating Blurred Header Bar */}
+      <View
+        style={[
+          styles.floatingHeaderContainer,
+          { paddingTop: topPad },
+        ]}
+        pointerEvents="box-none"
+      >
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: headerBlurOpacity }]}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 90 : 75}
+            tint={isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(14, 17, 23, 0.96)', 'rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.35)']
+                : ['rgba(248, 249, 250, 0.96)', 'rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.35)']
+            }
+            locations={[0, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
 
-        <ThemeToggleSwitch />
+        <View style={styles.header}>
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <Text style={[styles.headerEyebrow, { color: colors.primary }]}>PREFERENCES</Text>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>Settings</Text>
+          </View>
+
+          <ThemeToggleSwitch />
+        </View>
       </View>
 
-      <ScrollView
+      <Animated.ScrollView
         showsVerticalScrollIndicator={false}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
         contentContainerStyle={{
-          paddingTop: 14,
+          paddingTop: topPad + 68,
           paddingBottom: insets.bottom + 100,
           paddingHorizontal: 16,
         }}
       >
         {/* ACCOUNT SECTION: Email details, Reset Password, Log Out */}
-        <View style={styles.sectionWrap}>
-          <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>ACCOUNT</Text>
-          <View
-            style={[
-              styles.cardGroup,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            {/* User Profile / Email Details */}
+        <AnimatedEntrance delay={0} distance={12}>
+          <View style={styles.sectionWrap}>
+            <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>ACCOUNT</Text>
             <View
               style={[
-                styles.accountCardRow,
-                { borderBottomWidth: 1, borderBottomColor: isDark ? '#1F2937' : '#F3F4F6' },
+                styles.cardGroup,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                },
               ]}
             >
+              {/* User Profile / Email Details */}
               <View
                 style={[
-                  styles.avatarCircle,
-                  {
-                    backgroundColor: isDark ? 'rgba(59, 130, 246, 0.2)' : '#EFF6FF',
-                    borderColor: isDark ? '#3B82F644' : '#BFDBFE',
-                  },
+                  styles.accountCardRow,
+                  { borderBottomWidth: 1, borderBottomColor: isDark ? '#1F2937' : '#F3F4F6' },
                 ]}
               >
-                <Text style={[styles.avatarInitial, { color: colors.primary }]}>{initial}</Text>
+                <View
+                  style={[
+                    styles.avatarCircle,
+                    {
+                      backgroundColor: isDark ? 'rgba(59, 130, 246, 0.2)' : '#EFF6FF',
+                      borderColor: isDark ? '#3B82F644' : '#BFDBFE',
+                    },
+                  ]}
+                >
+                  <Text style={[styles.avatarInitial, { color: colors.primary }]}>{initial}</Text>
+                </View>
+
+                <View style={styles.accountTextWrap}>
+                  <Text style={[styles.accountName, { color: colors.foreground }]} numberOfLines={1}>
+                    {nameStr}
+                  </Text>
+                  <Text style={[styles.accountEmail, { color: colors.mutedForeground }]} numberOfLines={1}>
+                    {emailStr}
+                  </Text>
+                </View>
               </View>
 
-              <View style={styles.accountTextWrap}>
-                <Text style={[styles.accountName, { color: colors.foreground }]} numberOfLines={1}>
-                  {nameStr}
-                </Text>
-                <Text style={[styles.accountEmail, { color: colors.mutedForeground }]} numberOfLines={1}>
-                  {emailStr}
-                </Text>
-              </View>
+              {/* Reset Password */}
+              <SettingRow
+                icon="lock"
+                iconColor="#F59E0B"
+                iconBg={isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7'}
+                title="Change Password"
+                subtitle="Update your account password"
+                onPress={handleResetPassword}
+                disabled={busy}
+              />
+
+              {/* Log Out */}
+              <SettingRow
+                icon="log-out"
+                iconColor="#EF4444"
+                iconBg={isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2'}
+                title="Log Out"
+                subtitle="Sign out from this device"
+                danger
+                isLast
+                onPress={handleLogout}
+                disabled={busy}
+              />
             </View>
-
-            {/* Reset Password */}
-            <SettingRow
-              icon="lock"
-              iconColor="#F59E0B"
-              iconBg={isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7'}
-              title="Change Password"
-              subtitle="Update your account password"
-              onPress={handleResetPassword}
-              disabled={busy}
-            />
-
-            {/* Log Out */}
-            <SettingRow
-              icon="log-out"
-              iconColor="#EF4444"
-              iconBg={isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2'}
-              title="Log Out"
-              subtitle="Sign out from this device"
-              danger
-              isLast
-              onPress={handleLogout}
-              disabled={busy}
-            />
           </View>
-        </View>
+        </AnimatedEntrance>
 
         {/* PREFERENCES SECTION */}
-        <View style={styles.sectionWrap}>
-          <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>PREFERENCES</Text>
-          <View
-            style={[
-              styles.cardGroup,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            {/* Notifications Row -> Opens Modal */}
-            <SettingRow
-              icon="bell"
-              iconColor="#8B5CF6"
-              iconBg={isDark ? 'rgba(139, 92, 246, 0.15)' : '#EDE9FE'}
-              title="Notifications"
-              subtitle="IPO updates, alerts & sounds"
-              isLast
-              onPress={() => setShowNotificationsModal(true)}
-            />
+        <AnimatedEntrance delay={60} distance={12}>
+          <View style={styles.sectionWrap}>
+            <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>PREFERENCES</Text>
+            <View
+              style={[
+                styles.cardGroup,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              {/* Notifications Row -> Opens Modal */}
+              <SettingRow
+                icon="bell"
+                iconColor="#8B5CF6"
+                iconBg={isDark ? 'rgba(139, 92, 246, 0.15)' : '#EDE9FE'}
+                title="Notifications"
+                subtitle="IPO updates, alerts & sounds"
+                isLast
+                onPress={() => setShowNotificationsModal(true)}
+              />
+            </View>
           </View>
-        </View>
+        </AnimatedEntrance>
 
         {/* DATA & BACKUP SECTION */}
-        <View style={styles.sectionWrap}>
-          <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>DATA & BACKUP</Text>
-          <View
-            style={[
-              styles.cardGroup,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <SettingRow
-              icon="database"
-              iconColor="#3B82F6"
-              iconBg={isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF'}
-              title="Data & Backup"
-              subtitle="Local & cloud data"
-              isLast
-              onPress={() => navigateTo('/settings-data-backup')}
-            />
+        <AnimatedEntrance delay={120} distance={12}>
+          <View style={styles.sectionWrap}>
+            <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>DATA & BACKUP</Text>
+            <View
+              style={[
+                styles.cardGroup,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <SettingRow
+                icon="database"
+                iconColor="#3B82F6"
+                iconBg={isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF'}
+                title="Data & Backup"
+                subtitle="Local & cloud data"
+                isLast
+                onPress={() => navigateTo('/settings-data-backup')}
+              />
+            </View>
           </View>
-        </View>
+        </AnimatedEntrance>
 
         {/* HELP & LEGAL SECTION (Combined Help, Support, Privacy, Terms, Licenses) */}
-        <View style={styles.sectionWrap}>
-          <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>HELP & LEGAL</Text>
-          <View
-            style={[
-              styles.cardGroup,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <SettingRow
-              icon="help-circle"
-              iconColor="#8B5CF6"
-              iconBg={isDark ? 'rgba(139, 92, 246, 0.15)' : '#EDE9FE'}
-              title="Help Center"
-              subtitle="FAQs & guides"
-              onPress={() => navigateTo('/help-center')}
-            />
-            <SettingRow
-              icon="message-square"
-              iconColor="#10B981"
-              iconBg={isDark ? 'rgba(16, 185, 129, 0.15)' : '#D1FAE5'}
-              title="Contact Support"
-              subtitle="Get help from our team"
-              onPress={() => navigateTo('/settings-contact-support')}
-            />
-            <SettingRow
-              icon="shield"
-              iconColor="#3B82F6"
-              iconBg={isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF'}
-              title="Privacy Policy"
-              subtitle="How we protect your data"
-              onPress={() => setShowPrivacyModal(true)}
-            />
-            <SettingRow
-              icon="file-text"
-              iconColor="#F59E0B"
-              iconBg={isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7'}
-              title="Terms of Service"
-              subtitle="Usage terms and conditions"
-              onPress={() => setShowTermsModal(true)}
-            />
-            <SettingRow
-              icon="code"
-              iconColor="#6366F1"
-              iconBg={isDark ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF'}
-              title="Open Source Licenses"
-              subtitle="Third-party packages & licenses"
-              isLast
-              onPress={() => setShowLicensesModal(true)}
-            />
+        <AnimatedEntrance delay={180} distance={12}>
+          <View style={styles.sectionWrap}>
+            <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>HELP & LEGAL</Text>
+            <View
+              style={[
+                styles.cardGroup,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <SettingRow
+                icon="help-circle"
+                iconColor="#8B5CF6"
+                iconBg={isDark ? 'rgba(139, 92, 246, 0.15)' : '#EDE9FE'}
+                title="Help Center"
+                subtitle="FAQs & guides"
+                onPress={() => navigateTo('/help-center')}
+              />
+              <SettingRow
+                icon="message-square"
+                iconColor="#10B981"
+                iconBg={isDark ? 'rgba(16, 185, 129, 0.15)' : '#D1FAE5'}
+                title="Contact Support"
+                subtitle="Get help from our team"
+                onPress={() => navigateTo('/settings-contact-support')}
+              />
+              <SettingRow
+                icon="shield"
+                iconColor="#3B82F6"
+                iconBg={isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF'}
+                title="Privacy Policy"
+                subtitle="How we protect your data"
+                onPress={() => setShowPrivacyModal(true)}
+              />
+              <SettingRow
+                icon="file-text"
+                iconColor="#F59E0B"
+                iconBg={isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7'}
+                title="Terms of Service"
+                subtitle="Usage terms and conditions"
+                onPress={() => setShowTermsModal(true)}
+              />
+              <SettingRow
+                icon="code"
+                iconColor="#6366F1"
+                iconBg={isDark ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF'}
+                title="Open Source Licenses"
+                subtitle="Third-party packages & licenses"
+                isLast
+                onPress={() => setShowLicensesModal(true)}
+              />
+            </View>
           </View>
-        </View>
+        </AnimatedEntrance>
 
         {/* ABOUT SECTION: App version & What's New on tap */}
-        <View style={styles.sectionWrap}>
-          <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>ABOUT</Text>
-          <View
-            style={[
-              styles.cardGroup,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <SettingRow
-              icon="trending-up"
-              iconColor="#3B82F6"
-              iconBg={isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF'}
-              title="IPOVault"
-              subtitle="Version 2.3.0"
-              isLast
-              onPress={() => setShowWhatsNewModal(true)}
-              rightElement={
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={{ fontSize: 12, fontFamily: 'GoogleSansFlex_500Medium', color: colors.mutedForeground }}>
-                    What's New
-                  </Text>
-                  <Feather name="chevron-right" size={18} color={isDark ? '#4B5563' : '#9CA3AF'} />
-                </View>
-              }
-            />
+        <AnimatedEntrance delay={240} distance={12}>
+          <View style={styles.sectionWrap}>
+            <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>ABOUT</Text>
+            <View
+              style={[
+                styles.cardGroup,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <SettingRow
+                icon="trending-up"
+                iconColor="#3B82F6"
+                iconBg={isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF'}
+                title="IPOVault"
+                subtitle="Version 2.3.0"
+                isLast
+                onPress={() => setShowWhatsNewModal(true)}
+                rightElement={
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 12, fontFamily: 'GoogleSansFlex_500Medium', color: colors.mutedForeground }}>
+                      What's New
+                    </Text>
+                    <Feather name="chevron-right" size={18} color={isDark ? '#4B5563' : '#9CA3AF'} />
+                  </View>
+                }
+              />
+            </View>
           </View>
-        </View>
-      </ScrollView>
+        </AnimatedEntrance>
+      </Animated.ScrollView>
 
       {/* ── NOTIFICATIONS MODAL ── */}
       <Modal visible={showNotificationsModal} transparent animationType="fade" onRequestClose={() => setShowNotificationsModal(false)}>
@@ -704,8 +755,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  floatingHeaderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    overflow: 'hidden',
+  },
   header: {
     paddingHorizontal: 16,
+    height: 56,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

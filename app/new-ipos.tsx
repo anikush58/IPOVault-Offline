@@ -21,6 +21,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import * as Haptics from 'expo-haptics';
@@ -28,6 +29,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconButton } from '@/components/ui/IconButton';
+import { ScoopedBottomSheet } from '@/components/ui/ScoopedBottomSheet';
 import { Tabs } from '@/components/ui/Tabs';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { BackendIpo } from '@/types/backend-ipo';
@@ -39,6 +41,8 @@ import { getISTDateTime } from '@/services/ipo/statusNormalizer';
 
 type NewIpoTab = 'live' | 'upcoming' | 'closed' | 'listed';
 type SortOption = 'DEFAULT' | 'GMP';
+
+const AnimatedFlatList = Animated.createAnimatedComponent(FlatList as any);
 
 const AVATAR_PALETTES: [string, string][] = [
   ['#8B5CF6', '#6D28D9'],
@@ -682,6 +686,13 @@ export default function NewIposScreen() {
   const searchAnim = useRef(new Animated.Value(0)).current;
   const searchRef = useRef<TextInput>(null);
 
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerBlurOpacity = scrollY.interpolate({
+    inputRange: [0, 24],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
   const toggleSearch = useCallback(() => {
     if (showSearch) {
       Animated.timing(searchAnim, { toValue: 0, duration: 180, useNativeDriver: false }).start();
@@ -719,6 +730,27 @@ export default function NewIposScreen() {
   const [showFilterModal, setShowFilterModal] = useState(false);
 
   const hasActiveFilter = !includeSme || onlyActiveGmp || onlyClosingToday || sortBy !== 'DEFAULT';
+
+  const filterChipLabel = useMemo(() => {
+    const labels: string[] = [];
+    if (!includeSme) labels.push('Mainboard Only');
+    if (onlyActiveGmp) labels.push('Active GMP');
+    if (onlyClosingToday) labels.push('Closing Today');
+    if (sortBy === 'GMP') labels.push('GMP: Highest');
+    return labels.join(' · ');
+  }, [includeSme, onlyActiveGmp, onlyClosingToday, sortBy]);
+
+  const handleQuickClearFilters = useCallback(() => {
+    setIncludeSme(true);
+    setOnlyActiveGmp(false);
+    setOnlyClosingToday(false);
+    setSortBy('DEFAULT');
+    setTempIncludeSme(true);
+    setTempOnlyActiveGmp(false);
+    setTempOnlyClosingToday(false);
+    setTempSortBy('DEFAULT');
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+  }, []);
 
   const openFilterModal = useCallback(() => {
     setTempIncludeSme(includeSme);
@@ -973,90 +1005,132 @@ export default function NewIposScreen() {
     [liveList.length, upcomingList.length, closedList.length, listedList.length]
   );
 
+  const listTopPad = topPad + (showSearch ? 168 : 120) + (hasActiveFilter ? 44 : 0);
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      {/* App Bar Header */}
+      {/* Floating Blurred App Bar & Sub-Tabs Header */}
       <View
         style={[
-          styles.header,
+          styles.floatingHeaderContainer,
           {
             paddingTop: topPad,
-            height: topPad + 60,
-            backgroundColor: colors.background,
           },
         ]}
+        pointerEvents="box-none"
       >
-        <View style={{ flex: 1, justifyContent: 'center' }}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>
-            PRIMARY MARKET
-          </Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-            IPO Hub
-          </Text>
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: headerBlurOpacity }]}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 90 : 75}
+            tint={isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(14, 17, 23, 0.96)', 'rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.35)']
+                : ['rgba(248, 249, 250, 0.96)', 'rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.35)']
+            }
+            locations={[0, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+
+        {/* App Bar Header */}
+        <View style={styles.header}>
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <Text style={[styles.headerEyebrow, { color: colors.primary }]}>
+              PRIMARY MARKET
+            </Text>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+              IPO Hub
+            </Text>
+          </View>
+
+          <View style={styles.headerRightActions}>
+            <IconButton
+              name={showSearch ? 'x' : 'search'}
+              variant={showSearch ? 'primary' : 'surface'}
+              size="md"
+              onPress={toggleSearch}
+            />
+            <IconButton
+              name="sliders"
+              variant={hasActiveFilter ? 'primary' : 'surface'}
+              size="md"
+              onPress={openFilterModal}
+            />
+          </View>
         </View>
 
-        <View style={styles.headerRightActions}>
-          <IconButton
-            name={showSearch ? 'x' : 'search'}
-            variant={showSearch ? 'primary' : 'surface'}
-            size="md"
-            onPress={toggleSearch}
-          />
-          <IconButton
-            name="sliders"
-            variant={hasActiveFilter ? 'primary' : 'surface'}
-            size="md"
-            onPress={openFilterModal}
-          />
-        </View>
-      </View>
-
-      {/* Expandable Search Input */}
-      <Animated.View
-        style={[
-          styles.searchWrap,
-          {
-            height: searchBarHeight,
-            opacity: searchBarOpacity,
-            overflow: 'hidden',
-          },
-        ]}
-      >
-        <View
+        {/* Expandable Search Input */}
+        <Animated.View
           style={[
-            styles.searchInputWrap,
-            { backgroundColor: colors.surface, borderColor: colors.border },
+            styles.searchWrap,
+            {
+              height: searchBarHeight,
+              opacity: searchBarOpacity,
+              overflow: 'hidden',
+            },
           ]}
         >
-          <Feather name="search" size={16} color={colors.mutedForeground} />
-          <TextInput
-            ref={searchRef}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search IPOs..."
-            placeholderTextColor={colors.mutedForeground}
-            style={[styles.searchInput, { color: colors.foreground }]}
-            autoCorrect={false}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-              <Feather name="x-circle" size={14} color={colors.mutedForeground} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </Animated.View>
+          <View
+            style={[
+              styles.searchInputWrap,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <Feather name="search" size={16} color={colors.mutedForeground} />
+            <TextInput
+              ref={searchRef}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search IPOs..."
+              placeholderTextColor={colors.mutedForeground}
+              style={[styles.searchInput, { color: colors.foreground }]}
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
+                <Feather name="x-circle" size={14} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </Animated.View>
 
-      {/* Sub-Tab Bar matching Manage Users spacing & badge pills */}
-      <View style={{ paddingHorizontal: 16, marginTop: 8, marginBottom: 12 }}>
-        <Tabs
-          variant="pills"
-          height={36}
-          tabs={tabsConfig}
-          activeTab={activeTab}
-          onChange={(newTab) => handleTabPress(newTab as NewIpoTab)}
-        />
+        {/* Sub-Tab Bar matching Manage Users spacing & badge pills */}
+        <View style={{ paddingHorizontal: 16, marginTop: 4, marginBottom: hasActiveFilter ? 8 : 12 }}>
+          <Tabs
+            variant="pills"
+            height={36}
+            tabs={tabsConfig}
+            activeTab={activeTab}
+            onChange={(newTab) => handleTabPress(newTab as NewIpoTab)}
+          />
+        </View>
+
+        {/* Active Quick-Clear Filter Bar (Dashboard style) */}
+        {hasActiveFilter && (
+          <View
+            style={[
+              styles.filterBar,
+              {
+                backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : colors.primary + '15',
+                borderColor: isDark ? 'rgba(99, 102, 241, 0.35)' : colors.primary + '30',
+              },
+            ]}
+          >
+            <Feather name="filter" size={12} color={colors.primary} />
+            <Text style={[styles.filterBarText, { color: colors.primary }]} numberOfLines={1}>
+              {filterChipLabel}
+            </Text>
+            <TouchableOpacity onPress={handleQuickClearFilters} hitSlop={8}>
+              <Feather name="x" size={14} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {/* Main Catalog Feed List with Horizontal Swiping between Tabs */}
@@ -1099,7 +1173,7 @@ export default function NewIposScreen() {
               <View key={tab} style={{ width: screenWidth, flex: 1 }}>
                 {listData.length === 0 ? (
                   <ScrollView
-                    contentContainerStyle={styles.emptyCenter}
+                    contentContainerStyle={[styles.emptyCenter, { paddingTop: listTopPad }]}
                     refreshControl={
                       <RefreshControl
                         refreshing={refreshing}
@@ -1119,12 +1193,12 @@ export default function NewIposScreen() {
                     </Text>
                   </ScrollView>
                 ) : (
-                  <FlatList
+                  <AnimatedFlatList
                     data={listData}
-                    keyExtractor={(item) => item.id}
+                    keyExtractor={(item: any) => item.id}
                     renderItem={renderTabCard(tab)}
                     contentContainerStyle={{
-                      paddingTop: 12,
+                      paddingTop: listTopPad,
                       paddingBottom: Math.max(insets.bottom + 85, 100),
                     }}
                     showsVerticalScrollIndicator={false}
@@ -1132,11 +1206,17 @@ export default function NewIposScreen() {
                     maxToRenderPerBatch={6}
                     windowSize={5}
                     removeClippedSubviews={Platform.OS !== 'web'}
+                    onScroll={Animated.event(
+                      [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+                      { useNativeDriver: true }
+                    )}
+                    scrollEventThrottle={16}
                     refreshControl={
                       <RefreshControl
                         refreshing={refreshing}
                         onRefresh={onRefresh}
                         tintColor={colors.primary}
+                        progressViewOffset={listTopPad - 4}
                       />
                     }
                   />
@@ -1147,252 +1227,390 @@ export default function NewIposScreen() {
         </ScrollView>
       )}
 
-      {/* Filter & Sort Modal */}
-      <Modal visible={showFilterModal} transparent animationType="fade" onRequestClose={() => setShowFilterModal(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setShowFilterModal(false)}>
-          <Pressable style={[styles.filterModalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={(e) => e.stopPropagation()}>
-            {/* Drag handle */}
-            <View style={styles.modalHandleWrap}>
-              <View style={[styles.modalHandle, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.15)' }]} />
+      {/* Filter & Sort Scooped Bottom Sheet */}
+      <ScoopedBottomSheet
+        visible={showFilterModal}
+        onClose={() => setShowFilterModal(false)}
+        maxHeight="90%"
+      >
+        {/* Modal Header */}
+        <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+          <View style={styles.headerTitleGroup}>
+            <View style={[styles.headerIconWrap, { backgroundColor: colors.primary + '18' }]}>
+              <Feather name="sliders" size={16} color={colors.primary} />
+            </View>
+            <View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={[styles.modalTitle, { color: colors.foreground }]}>Filter & Sort</Text>
+                {hasActiveFilter && (
+                  <View style={[styles.activeBadge, { backgroundColor: colors.primary }]}>
+                    <Text style={[styles.activeBadgeText, { color: colors.primaryForeground }]}>Active</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
+                Customize IPO catalog view & priority
+              </Text>
+            </View>
+          </View>
+
+          {hasActiveFilter && (
+            <TouchableOpacity
+              onPress={() => {
+                setTempIncludeSme(true);
+                setTempOnlyActiveGmp(false);
+                setTempOnlyClosingToday(false);
+                setTempSortBy('DEFAULT');
+                try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+              }}
+              style={[styles.clearBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}
+              activeOpacity={0.7}
+            >
+              <Feather name="rotate-ccw" size={12} color={colors.primary} style={{ marginRight: 4 }} />
+              <Text style={[styles.clearText, { color: colors.primary }]}>Reset</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16, gap: 18 }}
+        >
+          {/* SECTION 1: MARKET SEGMENT (Interactive segmented card tiles) */}
+          <View>
+            <View style={styles.sectionHeaderRow}>
+              <Feather name="grid" size={12} color={colors.primary} />
+              <Text style={[styles.sectionHeaderTitle, { color: colors.mutedForeground }]}>
+                MARKET SEGMENT
+              </Text>
             </View>
 
-            {/* Modal Header */}
-            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.modalTitle, { color: colors.foreground }]}>Filter & Sort</Text>
-                <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
-                  Customize IPO Hub listings & ranking
-                </Text>
-              </View>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              {/* Option 1: All IPOs (Mainboard + SME) */}
               <TouchableOpacity
-                onPress={() => setShowFilterModal(false)}
-                hitSlop={8}
-                style={[styles.modalCloseBtn, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)' }]}
+                activeOpacity={0.75}
+                onPress={() => {
+                  setTempIncludeSme(true);
+                  try { Haptics.selectionAsync(); } catch {}
+                }}
+                style={[
+                  styles.segmentCard,
+                  {
+                    borderColor: tempIncludeSme ? colors.primary : colors.border,
+                    backgroundColor: tempIncludeSme
+                      ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF')
+                      : colors.surface,
+                  },
+                ]}
               >
-                <Feather name="x" size={16} color={colors.foreground} />
+                <View style={[styles.segmentIconWrap, { backgroundColor: tempIncludeSme ? colors.primary + '22' : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}>
+                  <Feather name="layers" size={16} color={tempIncludeSme ? colors.primary : colors.mutedForeground} />
+                </View>
+                <Text style={[styles.segmentTitle, { color: tempIncludeSme ? colors.primary : colors.foreground }]}>
+                  All Markets
+                </Text>
+                <Text style={[styles.segmentSub, { color: colors.mutedForeground }]}>
+                  Mainboard & SME
+                </Text>
+                {tempIncludeSme && (
+                  <View style={[styles.segmentCheckBadge, { backgroundColor: colors.primary }]}>
+                    <Feather name="check" size={10} color="#FFFFFF" />
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              {/* Option 2: Mainboard Only */}
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={() => {
+                  setTempIncludeSme(false);
+                  try { Haptics.selectionAsync(); } catch {}
+                }}
+                style={[
+                  styles.segmentCard,
+                  {
+                    borderColor: !tempIncludeSme ? colors.primary : colors.border,
+                    backgroundColor: !tempIncludeSme
+                      ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF')
+                      : colors.surface,
+                  },
+                ]}
+              >
+                <View style={[styles.segmentIconWrap, { backgroundColor: !tempIncludeSme ? colors.primary + '22' : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}>
+                  <Feather name="shield" size={16} color={!tempIncludeSme ? colors.primary : colors.mutedForeground} />
+                </View>
+                <Text style={[styles.segmentTitle, { color: !tempIncludeSme ? colors.primary : colors.foreground }]}>
+                  Mainboard Only
+                </Text>
+                <Text style={[styles.segmentSub, { color: colors.mutedForeground }]}>
+                  Excludes SME IPOs
+                </Text>
+                {!tempIncludeSme && (
+                  <View style={[styles.segmentCheckBadge, { backgroundColor: colors.primary }]}>
+                    <Feather name="check" size={10} color="#FFFFFF" />
+                  </View>
+                )}
               </TouchableOpacity>
             </View>
+          </View>
 
-            <View style={styles.modalContent}>
-              {/* Filter Section */}
-              <View style={styles.sectionHeaderRow}>
-                <Feather name="filter" size={11} color={colors.primary} />
-                <Text style={[styles.sectionHeaderTitle, { color: colors.mutedForeground }]}>
-                  Filters
-                </Text>
-              </View>
+          {/* SECTION 2: OPPORTUNITY FILTERS (Actionable modern filter tiles with toggle checkmarks) */}
+          <View>
+            <View style={styles.sectionHeaderRow}>
+              <Feather name="zap" size={12} color={colors.primary} />
+              <Text style={[styles.sectionHeaderTitle, { color: colors.mutedForeground }]}>
+                OPPORTUNITY FILTERS
+              </Text>
+            </View>
 
-              <View style={[styles.filterSectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                {/* SME Toggle */}
-                <View style={styles.filterRow}>
-                  <View style={[styles.filterIconWrap, { backgroundColor: isDark ? 'rgba(236, 72, 153, 0.15)' : '#FCE7F3' }]}>
-                    <Feather name="layers" size={15} color={isDark ? '#F472B6' : '#DB2777'} />
-                  </View>
-                  <View style={{ flex: 1, marginRight: 10 }}>
-                    <Text style={[styles.filterItemTitle, { color: colors.foreground }]}>
-                      Include SME IPOs
-                    </Text>
-                    <Text style={[styles.filterItemSub, { color: colors.mutedForeground }]}>
-                      Show Small & Medium Enterprise IPOs
-                    </Text>
-                  </View>
-                  <Switch
-                    value={tempIncludeSme}
-                    onValueChange={(val) => {
-                      setTempIncludeSme(val);
-                      try { Haptics.selectionAsync(); } catch {}
-                    }}
-                    trackColor={{ false: isDark ? '#334155' : '#CBD5E1', true: '#10B98180' }}
-                    thumbColor={tempIncludeSme ? '#10B981' : '#FFFFFF'}
-                  />
+            <View style={{ gap: 10 }}>
+              {/* Active GMP Filter Tile */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  setTempOnlyActiveGmp(!tempOnlyActiveGmp);
+                  try { Haptics.selectionAsync(); } catch {}
+                }}
+                style={[
+                  styles.opportunityCard,
+                  {
+                    borderColor: tempOnlyActiveGmp ? '#10B981' : colors.border,
+                    backgroundColor: tempOnlyActiveGmp
+                      ? (isDark ? 'rgba(16, 185, 129, 0.12)' : '#ECFDF5')
+                      : colors.surface,
+                  },
+                ]}
+              >
+                <View style={[styles.oppIconWrap, { backgroundColor: tempOnlyActiveGmp ? 'rgba(16, 185, 129, 0.2)' : (isDark ? 'rgba(16, 185, 129, 0.12)' : '#DCFCE7') }]}>
+                  <Feather name="trending-up" size={16} color="#10B981" />
                 </View>
-
-                <View style={[styles.filterItemDivider, { backgroundColor: colors.border }]} />
-
-                {/* Only Active GMP Toggle */}
-                <View style={styles.filterRow}>
-                  <View style={[styles.filterIconWrap, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7' }]}>
-                    <Feather name="trending-up" size={15} color="#10B981" />
-                  </View>
-                  <View style={{ flex: 1, marginRight: 10 }}>
-                    <Text style={[styles.filterItemTitle, { color: colors.foreground }]}>
-                      Only Active GMP
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={[styles.oppTitle, { color: tempOnlyActiveGmp ? (isDark ? '#34D399' : '#059669') : colors.foreground }]}>
+                      Active GMP Only
                     </Text>
-                    <Text style={[styles.filterItemSub, { color: colors.mutedForeground }]}>
-                      Show IPOs with GMP price or % greater than 0
-                    </Text>
+                    <View style={[styles.miniBadge, { backgroundColor: tempOnlyActiveGmp ? '#10B981' : (isDark ? '#334155' : '#E2E8F0') }]}>
+                      <Text style={[styles.miniBadgeText, { color: tempOnlyActiveGmp ? '#FFFFFF' : colors.mutedForeground }]}>&gt; ₹0</Text>
+                    </View>
                   </View>
-                  <Switch
-                    value={tempOnlyActiveGmp}
-                    onValueChange={(val) => {
-                      setTempOnlyActiveGmp(val);
-                      try { Haptics.selectionAsync(); } catch {}
-                    }}
-                    trackColor={{ false: isDark ? '#334155' : '#CBD5E1', true: '#10B98180' }}
-                    thumbColor={tempOnlyActiveGmp ? '#10B981' : '#FFFFFF'}
-                  />
+                  <Text style={[styles.oppSub, { color: colors.mutedForeground }]}>
+                    Show only issues with positive expected listing gain
+                  </Text>
                 </View>
+                <View
+                  style={[
+                    styles.toggleCheckbox,
+                    {
+                      borderColor: tempOnlyActiveGmp ? '#10B981' : colors.border,
+                      backgroundColor: tempOnlyActiveGmp ? '#10B981' : 'transparent',
+                    },
+                  ]}
+                >
+                  {tempOnlyActiveGmp && <Feather name="check" size={12} color="#FFFFFF" />}
+                </View>
+              </TouchableOpacity>
 
-                <View style={[styles.filterItemDivider, { backgroundColor: colors.border }]} />
-
-                {/* Closing Today Toggle */}
-                <View style={styles.filterRow}>
-                  <View style={[styles.filterIconWrap, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7' }]}>
-                    <Feather name="clock" size={15} color={isDark ? '#FBBF24' : '#D97706'} />
-                  </View>
-                  <View style={{ flex: 1, marginRight: 10 }}>
-                    <Text style={[styles.filterItemTitle, { color: colors.foreground }]}>
+              {/* Closing Today Filter Tile */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  setTempOnlyClosingToday(!tempOnlyClosingToday);
+                  try { Haptics.selectionAsync(); } catch {}
+                }}
+                style={[
+                  styles.opportunityCard,
+                  {
+                    borderColor: tempOnlyClosingToday ? '#F59E0B' : colors.border,
+                    backgroundColor: tempOnlyClosingToday
+                      ? (isDark ? 'rgba(245, 158, 11, 0.12)' : '#FFFBEB')
+                      : colors.surface,
+                  },
+                ]}
+              >
+                <View style={[styles.oppIconWrap, { backgroundColor: tempOnlyClosingToday ? 'rgba(245, 158, 11, 0.2)' : (isDark ? 'rgba(245, 158, 11, 0.12)' : '#FEF3C7') }]}>
+                  <Feather name="clock" size={16} color={isDark ? '#FBBF24' : '#D97706'} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={[styles.oppTitle, { color: tempOnlyClosingToday ? (isDark ? '#FBBF24' : '#D97706') : colors.foreground }]}>
                       Closing Today
                     </Text>
-                    <Text style={[styles.filterItemSub, { color: colors.mutedForeground }]}>
-                      Show only IPOs ending subscription today
-                    </Text>
+                    <View style={[styles.miniBadge, { backgroundColor: tempOnlyClosingToday ? '#F59E0B' : (isDark ? '#334155' : '#E2E8F0') }]}>
+                      <Text style={[styles.miniBadgeText, { color: tempOnlyClosingToday ? '#FFFFFF' : colors.mutedForeground }]}>Urgent</Text>
+                    </View>
                   </View>
-                  <Switch
-                    value={tempOnlyClosingToday}
-                    onValueChange={(val) => {
-                      setTempOnlyClosingToday(val);
+                  <Text style={[styles.oppSub, { color: colors.mutedForeground }]}>
+                    Ending subscription today before 5:00 PM cutoff
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.toggleCheckbox,
+                    {
+                      borderColor: tempOnlyClosingToday ? '#F59E0B' : colors.border,
+                      backgroundColor: tempOnlyClosingToday ? '#F59E0B' : 'transparent',
+                    },
+                  ]}
+                >
+                  {tempOnlyClosingToday && <Feather name="check" size={12} color="#FFFFFF" />}
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* SECTION 3: SORT & RANKING */}
+          <View>
+            <View style={styles.sectionHeaderRow}>
+              <Feather name="bar-chart-2" size={12} color={colors.primary} />
+              <Text style={[styles.sectionHeaderTitle, { color: colors.mutedForeground }]}>
+                SORT & RANKING
+              </Text>
+            </View>
+
+            <View style={{ gap: 10 }}>
+              {[
+                {
+                  key: 'DEFAULT',
+                  label: 'Timeline Schedule',
+                  sub: 'Chronological catalog order by status & dates',
+                  icon: 'calendar',
+                  badge: 'Standard',
+                },
+                {
+                  key: 'GMP',
+                  label: 'Highest Expected GMP',
+                  sub: 'Rank top profit potential & highest premium first',
+                  icon: 'trending-up',
+                  badge: 'Top Gains',
+                },
+              ].map((opt) => {
+                const isSelected = tempSortBy === opt.key;
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    activeOpacity={0.75}
+                    onPress={() => {
+                      setTempSortBy(opt.key as SortOption);
                       try { Haptics.selectionAsync(); } catch {}
                     }}
-                    trackColor={{ false: isDark ? '#334155' : '#CBD5E1', true: '#10B98180' }}
-                    thumbColor={tempOnlyClosingToday ? '#10B981' : '#FFFFFF'}
-                  />
-                </View>
-              </View>
-
-              {/* Sort Section */}
-              <View style={[styles.sectionHeaderRow, { marginTop: 4 }]}>
-                <Feather name="bar-chart-2" size={11} color={colors.primary} />
-                <Text style={[styles.sectionHeaderTitle, { color: colors.mutedForeground }]}>
-                  Sort By
-                </Text>
-              </View>
-
-              <View style={{ gap: 8 }}>
-                {[
-                  {
-                    key: 'DEFAULT',
-                    label: 'Default Order',
-                    sub: 'Standard catalog & timeline order',
-                    icon: 'list',
-                    color: colors.primary,
-                  },
-                  {
-                    key: 'GMP',
-                    label: 'GMP: Highest First',
-                    sub: 'Rank by highest grey market premium',
-                    icon: 'arrow-up-right',
-                    color: '#10B981',
-                  },
-                ].map((opt) => {
-                  const isSelected = tempSortBy === opt.key;
-                  return (
-                    <TouchableOpacity
-                      key={opt.key}
-                      activeOpacity={0.75}
-                      onPress={() => {
-                        setTempSortBy(opt.key as SortOption);
-                        try { Haptics.selectionAsync(); } catch {}
-                      }}
+                    style={[
+                      styles.sortOptionCard,
+                      {
+                        borderColor: isSelected ? colors.primary : colors.border,
+                        backgroundColor: isSelected
+                          ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF')
+                          : colors.surface,
+                      },
+                    ]}
+                  >
+                    <View
                       style={[
-                        styles.sortCard,
+                        styles.sortIconWrap,
                         {
-                          borderColor: isSelected ? colors.primary : colors.border,
                           backgroundColor: isSelected
-                            ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF')
-                            : colors.surface,
+                            ? colors.primary + '22'
+                            : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)'),
                         },
                       ]}
                     >
-                      <View
-                        style={[
-                          styles.sortIconWrap,
-                          {
-                            backgroundColor: isSelected
-                              ? (isDark ? 'rgba(99, 102, 241, 0.2)' : '#E0E7FF')
-                              : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)'),
-                          },
-                        ]}
-                      >
-                        <Feather name={opt.icon as any} size={15} color={isSelected ? colors.primary : colors.mutedForeground} />
-                      </View>
-                      <View style={{ flex: 1, marginRight: 8 }}>
+                      <Feather
+                        name={opt.icon as any}
+                        size={16}
+                        color={isSelected ? colors.primary : colors.mutedForeground}
+                      />
+                    </View>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Text style={[styles.sortCardTitle, { color: isSelected ? colors.primary : colors.foreground }]}>
                           {opt.label}
                         </Text>
-                        <Text style={[styles.sortCardSub, { color: colors.mutedForeground }]}>
-                          {opt.sub}
-                        </Text>
+                        <View style={[styles.miniBadge, { backgroundColor: isSelected ? colors.primary + '20' : (isDark ? '#334155' : '#E2E8F0') }]}>
+                          <Text style={[styles.miniBadgeText, { color: isSelected ? colors.primary : colors.mutedForeground }]}>{opt.badge}</Text>
+                        </View>
                       </View>
-                      <View
-                        style={[
-                          styles.radioCircle,
-                          {
-                            borderColor: isSelected ? colors.primary : colors.border,
-                            backgroundColor: isSelected ? colors.primary : 'transparent',
-                          },
-                        ]}
-                      >
-                        {isSelected && <Feather name="check" size={10} color="#FFFFFF" />}
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+                      <Text style={[styles.sortCardSub, { color: colors.mutedForeground }]}>
+                        {opt.sub}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.radioCircle,
+                        {
+                          borderColor: isSelected ? colors.primary : colors.border,
+                          backgroundColor: isSelected ? colors.primary : 'transparent',
+                        },
+                      ]}
+                    >
+                      {isSelected && <Feather name="check" size={11} color="#FFFFFF" />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
+          </View>
+        </ScrollView>
 
-            {/* Modal Actions Footer */}
-            <View style={[styles.modalFooter, { borderTopColor: colors.border }]}>
-              <TouchableOpacity
-                onPress={() => {
-                  setTempIncludeSme(true);
-                  setTempOnlyActiveGmp(false);
-                  setTempOnlyClosingToday(false);
-                  setTempSortBy('DEFAULT');
-                  setIncludeSme(true);
-                  setOnlyActiveGmp(false);
-                  setOnlyClosingToday(false);
-                  setSortBy('DEFAULT');
-                  setShowFilterModal(false);
-                  try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); } catch {}
-                }}
-                style={[styles.modalFooterResetBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.resetBtnText, { color: colors.mutedForeground }]}>
-                  Reset All
-                </Text>
-              </TouchableOpacity>
+        {/* Modal Actions Footer */}
+        <View style={[styles.modalFooter, { borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 22) + 6 }]}>
+          <TouchableOpacity
+            onPress={() => {
+              setTempIncludeSme(true);
+              setTempOnlyActiveGmp(false);
+              setTempOnlyClosingToday(false);
+              setTempSortBy('DEFAULT');
+              setIncludeSme(true);
+              setOnlyActiveGmp(false);
+              setOnlyClosingToday(false);
+              setSortBy('DEFAULT');
+              setShowFilterModal(false);
+              try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); } catch {}
+            }}
+            style={[styles.modalFooterResetBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}
+            activeOpacity={0.8}
+          >
+            <Feather name="rotate-ccw" size={13} color={colors.mutedForeground} style={{ marginRight: 6 }} />
+            <Text style={[styles.resetBtnText, { color: colors.mutedForeground }]}>
+              Reset All
+            </Text>
+          </TouchableOpacity>
 
-              <TouchableOpacity
-                onPress={() => {
-                  setIncludeSme(tempIncludeSme);
-                  setOnlyActiveGmp(tempOnlyActiveGmp);
-                  setOnlyClosingToday(tempOnlyClosingToday);
-                  setSortBy(tempSortBy);
-                  setShowFilterModal(false);
-                  try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
-                }}
-                style={[styles.modalFooterApplyBtn, { backgroundColor: colors.primary }]}
-                activeOpacity={0.85}
-              >
-                <Feather name="check" size={14} color={colors.primaryForeground} style={{ marginRight: 6 }} />
-                <Text style={[styles.applyBtnText, { color: colors.primaryForeground }]}>
-                  Apply Filters
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+          <TouchableOpacity
+            onPress={() => {
+              setIncludeSme(tempIncludeSme);
+              setOnlyActiveGmp(tempOnlyActiveGmp);
+              setOnlyClosingToday(tempOnlyClosingToday);
+              setSortBy(tempSortBy);
+              setShowFilterModal(false);
+              try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
+            }}
+            style={[styles.modalFooterApplyBtn, { backgroundColor: colors.primary }]}
+            activeOpacity={0.85}
+          >
+            <Feather name="check" size={15} color={colors.primaryForeground} style={{ marginRight: 6 }} />
+            <Text style={[styles.applyBtnText, { color: colors.primaryForeground }]}>
+              Apply Filters
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </ScoopedBottomSheet>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  floatingHeaderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    overflow: 'hidden',
+  },
   header: {
     paddingHorizontal: 16,
+    height: 56,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1436,6 +1654,22 @@ const styles = StyleSheet.create({
   subTabBarWrap: {
     paddingTop: 4,
     paddingBottom: 4,
+  },
+  filterBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderWidth: 1,
+  },
+  filterBarText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
   },
   toolbarRow: {
     flexDirection: 'row',
@@ -1659,134 +1893,203 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
+    justifyContent: 'flex-end',
   },
   filterModalCard: {
     width: '100%',
-    maxWidth: 410,
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: 20,
+    maxHeight: '85%',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    paddingHorizontal: 20,
+    paddingTop: 10,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.18,
     shadowRadius: 24,
-    elevation: 16,
+    elevation: 24,
   },
   modalHandleWrap: {
     alignItems: 'center',
-    marginTop: -8,
-    marginBottom: 8,
+    paddingVertical: 6,
   },
   modalHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
+    width: 42,
+    height: 4.5,
+    borderRadius: 3,
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 20,
     paddingBottom: 14,
     borderBottomWidth: 1,
   },
-  modalTitle: {
-    fontSize: 18,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.3,
+  headerTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
   },
-  modalSubtitle: {
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    marginTop: 2,
-  },
-  modalCloseBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  headerIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  modalContent: {
-    paddingTop: 14,
-    gap: 10,
+  modalTitle: {
+    fontSize: 17,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.2,
+  },
+  modalSubtitle: {
+    fontSize: 11.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 1,
+  },
+  activeBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+    borderRadius: 10,
+  },
+  activeBadgeText: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  clearBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  clearText: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
   },
   sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 2,
+    marginBottom: 10,
   },
   sectionHeaderTitle: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
-  filterSectionCard: {
+  segmentCard: {
+    flex: 1,
     borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 4,
+    borderWidth: 1.5,
+    padding: 14,
+    position: 'relative',
   },
-  filterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  filterIconWrap: {
+  segmentIconWrap: {
     width: 32,
     height: 32,
     borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  segmentTitle: {
+    fontSize: 13.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  segmentSub: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 2,
+  },
+  segmentCheckBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  opportunityCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+  },
+  oppIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
-  filterItemTitle: {
-    fontSize: 14,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
+  oppTitle: {
+    fontSize: 13.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
-  filterItemSub: {
-    fontSize: 11.5,
+  oppSub: {
+    fontSize: 11,
     fontFamily: 'GoogleSansFlex_400Regular',
-    marginTop: 1.5,
+    marginTop: 2,
   },
-  filterItemDivider: {
-    height: 1,
-    marginHorizontal: -4,
+  miniBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
   },
-  sortCard: {
+  miniBadgeText: {
+    fontSize: 9.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  toggleCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 7,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  sortOptionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 16,
     borderWidth: 1.5,
   },
   sortIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
+    marginRight: 12,
   },
   sortCardTitle: {
     fontSize: 13.5,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   sortCardSub: {
     fontSize: 11,
     fontFamily: 'GoogleSansFlex_400Regular',
-    marginTop: 1,
+    marginTop: 2,
   },
   radioCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1794,32 +2097,34 @@ const styles = StyleSheet.create({
   modalFooter: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 18,
+    paddingHorizontal: 20,
     paddingTop: 14,
     borderTopWidth: 1,
   },
   modalFooterResetBtn: {
     flex: 1,
-    height: 44,
-    borderRadius: 12,
+    height: 48,
+    borderRadius: 14,
     borderWidth: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
   resetBtnText: {
-    fontSize: 13,
+    fontSize: 13.5,
     fontFamily: 'GoogleSansFlex_600SemiBold',
   },
   modalFooterApplyBtn: {
-    flex: 1.8,
-    height: 44,
-    borderRadius: 12,
+    flex: 1.6,
+    height: 48,
+    borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
   applyBtnText: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.2,
   },
 });

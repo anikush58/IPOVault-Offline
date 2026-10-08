@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { IconButton } from '@/components/ui/IconButton';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 
 export default function SettingsAboutScreen() {
   const colors = useColors();
@@ -28,23 +29,24 @@ export default function SettingsAboutScreen() {
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [showLicensesModal, setShowLicensesModal] = useState(false);
 
-  const topPad = Platform.OS === 'web' ? 24 : insets.top;
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header Bar */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 56, backgroundColor: colors.background }]}>
-        <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
-        <View style={styles.headerCenter}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>SETTINGS</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>About IPOVault</Text>
-        </View>
-        <View style={{ width: 40 }} />
-      </View>
+      <ScreenHeader
+        eyebrow="SETTINGS"
+        title="About IPOVault"
+        centerTitle
+        showBack
+      />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 40 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: topPad + 60 + 12,
+          paddingBottom: insets.bottom + 40,
+        }}
       >
         <Text style={[styles.screenSubtitle, { color: colors.mutedForeground }]}>
           Your IPO tracking companion

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,7 +10,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { Feather } from '@expo/vector-icons';
+import Svg, { Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useColors } from '@/hooks/useColors';
@@ -144,6 +147,8 @@ export function BulkApplySheet({ visible, onClose }: Props) {
 
   const [backendIpos, setBackendIpos] = useState<BackendIpo[]>([]);
   const [loadingBackendIpos, setLoadingBackendIpos] = useState(false);
+  const [sheetWidth, setSheetWidth] = useState(0);
+  const [sheetHeight, setSheetHeight] = useState(0);
 
   // Reset selections & fetch live open IPOs from IPO Hub whenever sheet is opened
   useEffect(() => {
@@ -398,34 +403,104 @@ export function BulkApplySheet({ visible, onClose }: Props) {
     }
   };
 
+  const R = 32;
+  const SCOOP_W = 60;
+  const SCOOP_D = 28;
+
+  const getScoopedPath = (w: number, h: number) => {
+    if (w <= 0 || h <= 0) return '';
+    const cx = w / 2;
+
+    return `M 0 ${h}
+      L 0 ${R}
+      A ${R} ${R} 0 0 1 ${R} 0
+      L ${cx - SCOOP_W} 0
+      C ${cx - 38} 0, ${cx - 32} ${SCOOP_D}, ${cx} ${SCOOP_D}
+      C ${cx + 32} ${SCOOP_D}, ${cx + 38} 0, ${cx + SCOOP_W} 0
+      L ${w - R} 0
+      A ${R} ${R} 0 0 1 ${w} ${R}
+      L ${w} ${h}
+      Z`;
+  };
+
   if (!visible) return null;
 
   return (
     <>
       <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={onClose}>
-        <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <View style={styles.modalOverlay}>
+          {/* Blurred Background Backdrop */}
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 35 : 24}
+            tint={isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
           <Pressable
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.45)' : 'rgba(0, 0, 0, 0.25)' },
+            ]}
+            onPress={onClose}
+          />
+
+          <Pressable
+            onLayout={(e) => {
+              const { width, height } = e.nativeEvent.layout;
+              setSheetWidth(width);
+              setSheetHeight(height);
+            }}
             style={[
               styles.sheetContainer,
               {
-                backgroundColor: colors.background,
-                borderTopColor: colors.border,
                 paddingBottom: Math.max(Math.floor(insets.bottom / 2), 13),
               },
             ]}
             onPress={() => {}}
           >
-            <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+            {/* Scooped SVG Background */}
+            {sheetWidth > 0 && sheetHeight > 0 && (
+              <Svg
+                width={sheetWidth}
+                height={sheetHeight}
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
+              >
+                <Path
+                  d={getScoopedPath(sheetWidth, sheetHeight)}
+                  fill={colors.background}
+                  stroke={colors.border}
+                  strokeWidth={1}
+                />
+              </Svg>
+            )}
 
-            {/* Header */}
-            <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Bulk Application Creator</Text>
-              <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={8}>
-                <Feather name="x" size={20} color={colors.mutedForeground} />
+            {/* Floating Scooped Close Cross Button */}
+            <View style={styles.scoopedCloseWrapper} pointerEvents="box-none">
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  onClose();
+                }}
+                activeOpacity={0.8}
+                hitSlop={8}
+                style={[
+                  styles.scoopedCloseBtn,
+                  {
+                    backgroundColor: isDark ? colors.card : '#FFFFFF',
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Feather name="x" size={21} color={colors.foreground} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 13, gap: 12 }}>
+            {/* Header - Left aligned heading with clean top spacing below scoop */}
+            <View style={styles.sheetHeader}>
+              <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Bulk Application Creator</Text>
+            </View>
+
+            <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 13, gap: 12 }}>
               {/* 1. SELECT IPO */}
               <View>
                 <Text style={[styles.stepLabel, { color: colors.mutedForeground }]}>1. SELECT IPO</Text>
@@ -547,7 +622,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
               </TouchableOpacity>
             </ScrollView>
           </Pressable>
-        </Pressable>
+        </View>
       </Modal>
 
       {/* Pickers for Bulk Sheet (Centered Modals matching bids page) */}
@@ -673,22 +748,30 @@ export function BulkApplySheet({ visible, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
   centerModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   pickerModalCard: { width: '92%', maxWidth: 400, borderRadius: 22, borderWidth: 1, maxHeight: '85%', overflow: 'hidden', elevation: 6 },
   pickerModalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1 },
   sheetContainer: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
+    width: '100%',
     maxHeight: '92%',
-    borderTopWidth: 1,
-    borderBottomWidth: 0,
+    backgroundColor: 'transparent',
+    overflow: 'visible',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 8,
   },
   sheetHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12 },
-  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
-  sheetTitle: { fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
+  sheetHeader: {
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 38,
+    paddingBottom: 12,
+  },
+  sheetTitle: { fontSize: 18, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3, textAlign: 'left' },
   closeBtn: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   stepLabel: { fontSize: 10, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 6 },
   pickerTrigger: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 48 },
@@ -712,4 +795,25 @@ const styles = StyleSheet.create({
   goldBtnTextDisabled: { color: '#A0AEC0', fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 0.1 },
   pickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: 18, borderBottomWidth: 1 },
   pickerRowName: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold' },
+  scoopedCloseWrapper: {
+    position: 'absolute',
+    top: -35,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  scoopedCloseBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 4,
+  },
 });

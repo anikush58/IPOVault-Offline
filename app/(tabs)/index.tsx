@@ -23,6 +23,7 @@ import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDB } from '@/context/DBContext';
 import { IconButton } from '@/components/ui/IconButton';
+import { AnimatedEntrance } from '@/components/ui/AnimatedEntrance';
 import { KPICard } from '@/components/KPICard';
 import { PerformanceChart } from '@/components/PerformanceChart';
 import { Leaderboard } from '@/components/Leaderboard';
@@ -613,73 +614,110 @@ export default function DashboardScreen() {
     outputRange: [0, 0, 1],
   });
 
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerBlurOpacity = scrollY.interpolate({
+    inputRange: [0, 24],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      {/* ── Header ── */}
+      {/* ── Floating Blurred Header ── */}
       <View
         style={[
-          styles.header,
-          { paddingTop: topPad, height: topPad + 60, backgroundColor: isDark ? colors.background : '#F7F7F9' },
+          styles.floatingHeaderContainer,
+          { paddingTop: topPad },
         ]}
+        pointerEvents="box-none"
       >
-        <View style={{ flex: 1, justifyContent: 'center' }}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>IPOVAULT</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Dashboard</Text>
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: headerBlurOpacity }]}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 90 : 75}
+            tint={isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(14, 17, 23, 0.96)', 'rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.35)']
+                : ['rgba(248, 249, 250, 0.96)', 'rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.35)']
+            }
+            locations={[0, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+
+        <View style={styles.header}>
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <Text style={[styles.headerEyebrow, { color: colors.primary }]}>IPOVAULT</Text>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>Dashboard</Text>
+          </View>
+
+          {/* Actions (Filter) */}
+          <View style={styles.headerActions}>
+            <IconButton
+              name="sliders"
+              variant={hasFilter ? 'primary' : 'surface'}
+              size="md"
+              onPress={() => setShowFilter(true)}
+            />
+          </View>
         </View>
 
-        {/* Actions (Filter) */}
-        <View style={styles.headerActions}>
-          <IconButton
-            name="sliders"
-            variant={hasFilter ? 'primary' : 'surface'}
-            size="md"
-            onPress={() => setShowFilter(true)}
-          />
-        </View>
+        {/* ── Collapsible search bar ── */}
+        <Animated.View
+          style={[
+            styles.searchBar,
+            {
+              height: searchBarHeight,
+              opacity: searchBarOpacity,
+            },
+          ]}
+          pointerEvents={showSearch ? 'auto' : 'none'}
+        >
+          <View style={[styles.searchInner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Feather name="search" size={14} color={colors.mutedForeground} />
+            <TextInput
+              ref={searchRef}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search users or IPOs…"
+              placeholderTextColor={colors.mutedForeground}
+              style={[styles.searchInput, { color: colors.foreground }]}
+              returnKeyType="search"
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
+                <Feather name="x-circle" size={14} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </Animated.View>
       </View>
 
-      {/* ── Collapsible search bar ── */}
-      <Animated.View
-        style={[
-          styles.searchBar,
-          {
-            height: searchBarHeight,
-            opacity: searchBarOpacity,
-            backgroundColor: colors.background,
-            borderBottomColor: colors.border,
-          },
-        ]}
-        pointerEvents={showSearch ? 'auto' : 'none'}
-      >
-        <View style={[styles.searchInner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Feather name="search" size={14} color={colors.mutedForeground} />
-          <TextInput
-            ref={searchRef}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search users or IPOs…"
-            placeholderTextColor={colors.mutedForeground}
-            style={[styles.searchInput, { color: colors.foreground }]}
-            returnKeyType="search"
-            autoCorrect={false}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-              <Feather name="x-circle" size={14} color={colors.mutedForeground} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </Animated.View>
-
-      <ScrollView
+      <Animated.ScrollView
         showsVerticalScrollIndicator={false}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
         refreshControl={
-          <RefreshControl refreshing={isLoading || refreshingIpoHub} onRefresh={handleDashboardRefresh} tintColor={colors.primary} />
+          <RefreshControl
+            refreshing={isLoading || refreshingIpoHub}
+            onRefresh={handleDashboardRefresh}
+            tintColor={colors.primary}
+            progressViewOffset={topPad + 60}
+          />
         }
-        contentContainerStyle={{ paddingBottom: insets.bottom + 90 }}
+        contentContainerStyle={{
+          paddingTop: topPad + 68,
+          paddingBottom: insets.bottom + 90,
+        }}
       >
         {/* Active filter chip */}
         {hasFilter && (
@@ -1056,147 +1094,128 @@ export default function DashboardScreen() {
         </Animated.View>
 
         {/* ── Quick Actions Section ── */}
-        <View style={styles.quickActionsSection}>
-          <Text style={[styles.quickActionsEyebrow, { color: colors.mutedForeground }]}>
-            QUICK ACTIONS
-          </Text>
+        <AnimatedEntrance delay={100} distance={12}>
+          <View style={styles.quickActionsSection}>
+            <Text style={[styles.quickActionsEyebrow, { color: colors.mutedForeground }]}>
+              QUICK ACTIONS
+            </Text>
 
-          <View style={styles.quickActionsRow}>
-            {/* 1. Allotment Checker */}
-            <TouchableOpacity
-              activeOpacity={0.75}
-              onPress={() => router.push('/allotment-checker')}
-              style={styles.quickActionItem}
-            >
-              <BlurView
-                intensity={Platform.OS === 'web' ? 0 : 35}
-                tint={isDark ? 'dark' : 'light'}
-                style={[
-                  styles.quickActionIconWrap,
-                  {
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
-                    borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.08)',
-                  },
-                ]}
+            <View style={styles.quickActionsRow}>
+              {/* 1. Allotment Checker */}
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={() => router.push('/allotment-checker')}
+                style={styles.quickActionItem}
               >
-                <View style={{ width: 22, height: 24, justifyContent: 'center', alignItems: 'center' }}>
-                  <MaterialCommunityIcons name="file-document-outline" size={20} color={colors.foreground} />
-                  <View style={{ position: 'absolute', bottom: -3, right: -4, backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderRadius: 7 }}>
-                    <MaterialCommunityIcons name="check-circle" size={13} color={colors.foreground} />
+                <BlurView
+                  intensity={Platform.OS === 'web' ? 0 : 35}
+                  tint={isDark ? 'dark' : 'light'}
+                  style={[
+                    styles.quickActionIconWrap,
+                    {
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.08)',
+                    },
+                  ]}
+                >
+                  <View style={{ width: 22, height: 24, justifyContent: 'center', alignItems: 'center' }}>
+                    <MaterialCommunityIcons name="file-document-outline" size={20} color={colors.foreground} />
+                    <View style={{ position: 'absolute', bottom: -3, right: -4, backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderRadius: 7 }}>
+                      <MaterialCommunityIcons name="check-circle" size={13} color={colors.foreground} />
+                    </View>
                   </View>
-                </View>
-              </BlurView>
-              <Text style={[styles.quickActionLabel, { color: colors.foreground }]} numberOfLines={1}>
-                Allotment
-              </Text>
-            </TouchableOpacity>
+                </BlurView>
+                <Text style={[styles.quickActionLabel, { color: colors.foreground }]} numberOfLines={1}>
+                  Allotment
+                </Text>
+              </TouchableOpacity>
 
 
-            {/* 2. Users */}
-            <TouchableOpacity
-              activeOpacity={0.75}
-              onPress={() => router.push({ pathname: '/users', params: { from: 'dashboard' } })}
-              style={styles.quickActionItem}
-            >
-              <BlurView
-                intensity={Platform.OS === 'web' ? 0 : 35}
-                tint={isDark ? 'dark' : 'light'}
-                style={[
-                  styles.quickActionIconWrap,
-                  {
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
-                    borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.08)',
-                  },
-                ]}
+              {/* 2. Users */}
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={() => router.push({ pathname: '/users', params: { from: 'dashboard' } })}
+                style={styles.quickActionItem}
               >
-                <Feather name="users" size={20} color={colors.foreground} />
-              </BlurView>
-              <Text style={[styles.quickActionLabel, { color: colors.foreground }]} numberOfLines={1}>
-                Manage Users
-              </Text>
-            </TouchableOpacity>
+                <BlurView
+                  intensity={Platform.OS === 'web' ? 0 : 35}
+                  tint={isDark ? 'dark' : 'light'}
+                  style={[
+                    styles.quickActionIconWrap,
+                    {
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.08)',
+                    },
+                  ]}
+                >
+                  <Feather name="users" size={20} color={colors.foreground} />
+                </BlurView>
+                <Text style={[styles.quickActionLabel, { color: colors.foreground }]} numberOfLines={1}>
+                  Manage Users
+                </Text>
+              </TouchableOpacity>
 
-            {/* 3. Banks */}
-            <TouchableOpacity
-              activeOpacity={0.75}
-              onPress={() => router.push({ pathname: '/banks', params: { from: 'dashboard' } })}
-              style={styles.quickActionItem}
-            >
-              <BlurView
-                intensity={Platform.OS === 'web' ? 0 : 35}
-                tint={isDark ? 'dark' : 'light'}
-                style={[
-                  styles.quickActionIconWrap,
-                  {
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
-                    borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.08)',
-                  },
-                ]}
+              {/* 3. Banks */}
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={() => router.push({ pathname: '/banks', params: { from: 'dashboard' } })}
+                style={styles.quickActionItem}
               >
-                <MaterialCommunityIcons name="bank-outline" size={20} color={colors.foreground} />
-              </BlurView>
-              <Text style={[styles.quickActionLabel, { color: colors.foreground }]} numberOfLines={1}>
-                Manage Banks
-              </Text>
-            </TouchableOpacity>
+                <BlurView
+                  intensity={Platform.OS === 'web' ? 0 : 35}
+                  tint={isDark ? 'dark' : 'light'}
+                  style={[
+                    styles.quickActionIconWrap,
+                    {
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.08)',
+                    },
+                  ]}
+                >
+                  <MaterialCommunityIcons name="bank-outline" size={20} color={colors.foreground} />
+                </BlurView>
+                <Text style={[styles.quickActionLabel, { color: colors.foreground }]} numberOfLines={1}>
+                  Manage Banks
+                </Text>
+              </TouchableOpacity>
 
-            {/* 4. Leaderboard */}
-            <TouchableOpacity
-              activeOpacity={0.75}
-              onPress={() => router.push('/leaderboard')}
-              style={styles.quickActionItem}
-            >
-              <BlurView
-                intensity={Platform.OS === 'web' ? 0 : 35}
-                tint={isDark ? 'dark' : 'light'}
-                style={[
-                  styles.quickActionIconWrap,
-                  {
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
-                    borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.08)',
-                  },
-                ]}
+              {/* 4. Leaderboard */}
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={() => router.push('/leaderboard')}
+                style={styles.quickActionItem}
               >
-                <MaterialCommunityIcons name="trophy-outline" size={20} color={colors.foreground} />
-              </BlurView>
-              <Text style={[styles.quickActionLabel, { color: colors.foreground }]} numberOfLines={1}>
-                Leaderboard
-              </Text>
-            </TouchableOpacity>
-
-            {/* 5. IPO Calendar (Hidden for now) */}
-            {/* <TouchableOpacity
-              activeOpacity={0.75}
-              onPress={() => router.push('/ipo-calendar')}
-              style={styles.quickActionItem}
-            >
-              <BlurView
-                intensity={Platform.OS === 'web' ? 0 : 35}
-                tint={isDark ? 'dark' : 'light'}
-                style={[
-                  styles.quickActionIconWrap,
-                  {
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
-                    borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.08)',
-                  },
-                ]}
-              >
-                <Feather name="calendar" size={20} color={colors.foreground} />
-              </BlurView>
-              <Text style={[styles.quickActionLabel, { color: colors.foreground }]} numberOfLines={1}>
-                Calendar
-              </Text>
-            </TouchableOpacity> */}
+                <BlurView
+                  intensity={Platform.OS === 'web' ? 0 : 35}
+                  tint={isDark ? 'dark' : 'light'}
+                  style={[
+                    styles.quickActionIconWrap,
+                    {
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.08)',
+                    },
+                  ]}
+                >
+                  <MaterialCommunityIcons name="trophy-outline" size={20} color={colors.foreground} />
+                </BlurView>
+                <Text style={[styles.quickActionLabel, { color: colors.foreground }]} numberOfLines={1}>
+                  Leaderboard
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-
+        </AnimatedEntrance>
 
         {/* Performance chart — Line */}
-        <PerformanceChart applications={baseFilteredApps} />
+        <AnimatedEntrance delay={160} distance={14}>
+          <PerformanceChart applications={baseFilteredApps} />
+        </AnimatedEntrance>
 
         {/* Leaderboard */}
-        <Leaderboard applications={baseFilteredApps} searchQuery={searchQuery} />
-      </ScrollView>
+        <AnimatedEntrance delay={220} distance={14}>
+          <Leaderboard applications={baseFilteredApps} searchQuery={searchQuery} />
+        </AnimatedEntrance>
+      </Animated.ScrollView>
 
       <FilterSheet
         visible={showFilter}
@@ -1244,9 +1263,17 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
+  floatingHeaderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    overflow: 'hidden',
+  },
   header: {
     paddingHorizontal: 16,
-    overflow: 'hidden',
+    height: 56,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

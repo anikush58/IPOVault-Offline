@@ -17,6 +17,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconButton } from '@/components/ui/IconButton';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { IPORepository } from '@/services/ipo/ipoRepository';
 import { IPOMasterRecord } from '@/services/ipo/types';
 import { IPOCard } from '@/components/ipo/IPOCard';
@@ -29,7 +30,6 @@ export default function WatchlistScreen() {
   const router = useRouter();
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
-  const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
   const repo = useMemo(() => new IPORepository(db), [db]);
 
@@ -107,36 +107,27 @@ export default function WatchlistScreen() {
     [handleCardPress, handleToggleFavorite]
   );
 
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* ── Standardized Header ── */}
-      <View
-        style={[
-          styles.header,
-          { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background },
-        ]}
-      >
-        <IconButton
-          name="chevron-left"
-          variant="surface"
-          size="md"
-          onPress={() => router.back()}
-        />
-
-        <Text style={[styles.headerTitle, { color: colors.foreground }]} numberOfLines={1}>
-          Watchlist
-        </Text>
-
-        <IconButton
-          name="bookmark"
-          variant="surface"
-          size="md"
-          disabled
-        />
-      </View>
+      {/* ── Floating Blurred Standardized Header ── */}
+      <ScreenHeader
+        title="Watchlist"
+        showBack
+        centerTitle
+        rightElement={
+          <IconButton
+            name="bookmark"
+            variant="surface"
+            size="md"
+            disabled
+          />
+        }
+      />
 
       {loading ? (
-        <View style={styles.loadingWrap}>
+        <View style={[styles.loadingWrap, { paddingTop: topPad + 60 }]}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.mutedForeground }]}>Loading your watchlist...</Text>
         </View>
@@ -145,10 +136,21 @@ export default function WatchlistScreen() {
           data={watchlist}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={[styles.listPadding, { paddingBottom: Math.max(insets.bottom + 110, 135) }]}
+          contentContainerStyle={[
+            styles.listPadding,
+            {
+              paddingTop: topPad + 60 + 12,
+              paddingBottom: Math.max(insets.bottom + 110, 135),
+            },
+          ]}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+              progressViewOffset={topPad + 60}
+            />
           }
           ListHeaderComponent={
             watchlist.length > 0 ? (

@@ -1,7 +1,5 @@
 import React from 'react';
 import {
-  Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,8 +7,11 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { useTheme } from '@/context/ThemeContext';
+import { ScoopedBottomSheet } from '@/components/ui/ScoopedBottomSheet';
 
 export type FilterState = {
   issueTypes: string[];   // 'Mainboard' | 'SME'
@@ -40,6 +41,8 @@ export function IPOFilterSheet({
   onClose,
 }: Props) {
   const colors = useColors();
+  const { resolvedScheme } = useTheme();
+  const isDark = resolvedScheme === 'dark';
   const insets = useSafeAreaInsets();
   const [draft, setDraft] = React.useState<FilterState>(filters);
 
@@ -50,6 +53,9 @@ export function IPOFilterSheet({
   }, [visible, filters]);
 
   const toggleItem = (category: 'issueTypes' | 'exchanges' | 'sectors' | 'registrars', item: string) => {
+    try {
+      Haptics.selectionAsync();
+    } catch {}
     setDraft((prev) => {
       const arr = prev[category];
       const exists = arr.includes(item);
@@ -59,11 +65,17 @@ export function IPOFilterSheet({
   };
 
   const handleApply = () => {
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {}
     onApply(draft);
     onClose();
   };
 
   const handleReset = () => {
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    } catch {}
     onReset();
     onClose();
   };
@@ -76,242 +88,299 @@ export function IPOFilterSheet({
     (draft.onlyFavorites ? 1 : 0);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose}>
-        <Pressable
+    <ScoopedBottomSheet
+      visible={visible}
+      onClose={onClose}
+      maxHeight="88%"
+    >
+      {/* Header */}
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <View style={styles.headerTitleGroup}>
+          <View style={[styles.headerIconWrap, { backgroundColor: colors.primary + '18' }]}>
+            <Feather name="filter" size={16} color={colors.primary} />
+          </View>
+          <View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={[styles.title, { color: colors.foreground }]}>Filter IPOs</Text>
+              {activeCount > 0 && (
+                <View style={[styles.activeBadge, { backgroundColor: colors.primary }]}>
+                  <Text style={[styles.activeBadgeText, { color: colors.primaryForeground }]}>{activeCount}</Text>
+                </View>
+              )}
+            </View>
+            <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
+              Filter by sector, issue type & registrar
+            </Text>
+          </View>
+        </View>
+
+        {activeCount > 0 && (
+          <TouchableOpacity
+            onPress={handleReset}
+            style={[styles.clearBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}
+            activeOpacity={0.7}
+          >
+            <Feather name="rotate-ccw" size={12} color={colors.primary} style={{ marginRight: 4 }} />
+            <Text style={[styles.clearText, { color: colors.primary }]}>Reset</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Favorites Toggle */}
+        <TouchableOpacity
+          onPress={() => {
+            try { Haptics.selectionAsync(); } catch {}
+            setDraft((prev) => ({ ...prev, onlyFavorites: !prev.onlyFavorites }));
+          }}
           style={[
-            styles.sheet,
+            styles.favRow,
             {
-              backgroundColor: colors.background,
-              borderColor: colors.border,
+              backgroundColor: draft.onlyFavorites
+                ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF')
+                : colors.surface,
+              borderColor: draft.onlyFavorites ? colors.primary : colors.border,
             },
           ]}
-          onPress={() => {}}
+          activeOpacity={0.75}
         >
-          <View style={[styles.handle, { backgroundColor: colors.border }]} />
-
-          {/* Header */}
-          <View style={[styles.header, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.title, { color: colors.foreground }]}>Filter IPOs</Text>
-            {activeCount > 0 ? (
-              <TouchableOpacity onPress={handleReset} style={[styles.clearBtn, { borderColor: colors.border }]}>
-                <Text style={[styles.clearText, { color: colors.primary }]}>Clear All ({activeCount})</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-
-          <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-            {/* Favorites Toggle */}
-            <TouchableOpacity
-              onPress={() => setDraft((prev) => ({ ...prev, onlyFavorites: !prev.onlyFavorites }))}
+          <View style={styles.favLeft}>
+            <View
               style={[
-                styles.favRow,
+                styles.favIconWrap,
                 {
-                  backgroundColor: draft.onlyFavorites ? colors.primary + '14' : colors.surface,
-                  borderColor: draft.onlyFavorites ? colors.primary : colors.border,
+                  backgroundColor: draft.onlyFavorites
+                    ? colors.primary + '20'
+                    : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
                 },
               ]}
             >
-              <View style={styles.favLeft}>
-                <Feather
-                  name="star"
-                  size={16}
-                  color={draft.onlyFavorites ? colors.primary : colors.mutedForeground}
-                />
-                <Text
-                  style={[
-                    styles.favText,
-                    { color: draft.onlyFavorites ? colors.primary : colors.foreground },
-                  ]}
-                >
-                  Show Favorites Only
-                </Text>
-              </View>
-              {draft.onlyFavorites && <Feather name="check" size={16} color={colors.primary} />}
-            </TouchableOpacity>
-
-            {/* Issue Type */}
-            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>ISSUE TYPE</Text>
-            <View style={styles.chipRow}>
-              {['Mainboard', 'SME'].map((type) => {
-                const sel = draft.issueTypes.includes(type);
-                return (
-                  <TouchableOpacity
-                    key={type}
-                    onPress={() => toggleItem('issueTypes', type)}
-                    style={[
-                      styles.chip,
-                      {
-                        backgroundColor: sel ? colors.primary : colors.surface,
-                        borderColor: sel ? colors.primary : colors.border,
-                      },
-                    ]}
-                  >
-                    <Text style={[styles.chipText, { color: sel ? '#FFFFFF' : colors.foreground }]}>
-                      {type}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+              <Feather
+                name="star"
+                size={14}
+                color={draft.onlyFavorites ? colors.primary : colors.mutedForeground}
+              />
             </View>
-
-            {/* Exchange */}
-            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>EXCHANGE</Text>
-            <View style={styles.chipRow}>
-              {['NSE', 'BSE', 'NSE SME', 'BSE SME'].map((ex) => {
-                const sel = draft.exchanges.includes(ex);
-                return (
-                  <TouchableOpacity
-                    key={ex}
-                    onPress={() => toggleItem('exchanges', ex)}
-                    style={[
-                      styles.chip,
-                      {
-                        backgroundColor: sel ? colors.primary : colors.surface,
-                        borderColor: sel ? colors.primary : colors.border,
-                      },
-                    ]}
-                  >
-                    <Text style={[styles.chipText, { color: sel ? '#FFFFFF' : colors.foreground }]}>
-                      {ex}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* Sector */}
-            {availableSectors.length > 0 ? (
-              <>
-                <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>SECTOR</Text>
-                <View style={styles.chipRow}>
-                  {availableSectors.map((sector) => {
-                    const sel = draft.sectors.includes(sector);
-                    return (
-                      <TouchableOpacity
-                        key={sector}
-                        onPress={() => toggleItem('sectors', sector)}
-                        style={[
-                          styles.chip,
-                          {
-                            backgroundColor: sel ? colors.primary : colors.surface,
-                            borderColor: sel ? colors.primary : colors.border,
-                          },
-                        ]}
-                      >
-                        <Text style={[styles.chipText, { color: sel ? '#FFFFFF' : colors.foreground }]}>
-                          {sector}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </>
-            ) : null}
-
-            {/* Registrar */}
-            {availableRegistrars.length > 0 ? (
-              <>
-                <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>REGISTRAR</Text>
-                <View style={styles.chipRow}>
-                  {availableRegistrars.map((reg) => {
-                    const sel = draft.registrars.includes(reg);
-                    return (
-                      <TouchableOpacity
-                        key={reg}
-                        onPress={() => toggleItem('registrars', reg)}
-                        style={[
-                          styles.chip,
-                          {
-                            backgroundColor: sel ? colors.primary : colors.surface,
-                            borderColor: sel ? colors.primary : colors.border,
-                          },
-                        ]}
-                      >
-                        <Text style={[styles.chipText, { color: sel ? '#FFFFFF' : colors.foreground }]}>
-                          {reg}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </>
-            ) : null}
-          </ScrollView>
-
-          {/* Sticky Apply button */}
-          <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) + 12, backgroundColor: colors.background, borderTopColor: colors.border }]}>
-            <TouchableOpacity
-              onPress={handleApply}
-              style={[styles.applyBtn, { backgroundColor: colors.primary }]}
+            <Text
+              style={[
+                styles.favText,
+                { color: draft.onlyFavorites ? colors.primary : colors.foreground },
+              ]}
             >
-              <Text style={styles.applyBtnText}>
-                {activeCount > 0 ? `Apply (${activeCount} Filters)` : 'Apply Filters'}
-              </Text>
-            </TouchableOpacity>
+              Show Favorites Only
+            </Text>
           </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
+          {draft.onlyFavorites && (
+            <View style={[styles.checkCircle, { backgroundColor: colors.primary }]}>
+              <Feather name="check" size={12} color="#FFFFFF" />
+            </View>
+          )}
+        </TouchableOpacity>
+
+        {/* Issue Type */}
+        <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>ISSUE TYPE</Text>
+        <View style={styles.chipRow}>
+          {['Mainboard', 'SME'].map((type) => {
+            const sel = draft.issueTypes.includes(type);
+            return (
+              <TouchableOpacity
+                key={type}
+                onPress={() => toggleItem('issueTypes', type)}
+                style={[
+                  styles.chip,
+                  {
+                    backgroundColor: sel ? (isDark ? 'rgba(99, 102, 241, 0.14)' : '#EEF2FF') : colors.surface,
+                    borderColor: sel ? colors.primary : colors.border,
+                  },
+                ]}
+                activeOpacity={0.75}
+              >
+                <Text style={[styles.chipText, { color: sel ? colors.primary : colors.foreground }]}>
+                  {type}
+                </Text>
+                {sel && <Feather name="check" size={12} color={colors.primary} style={{ marginLeft: 4 }} />}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Exchange */}
+        <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>EXCHANGE</Text>
+        <View style={styles.chipRow}>
+          {['NSE', 'BSE', 'NSE SME', 'BSE SME'].map((ex) => {
+            const sel = draft.exchanges.includes(ex);
+            return (
+              <TouchableOpacity
+                key={ex}
+                onPress={() => toggleItem('exchanges', ex)}
+                style={[
+                  styles.chip,
+                  {
+                    backgroundColor: sel ? (isDark ? 'rgba(99, 102, 241, 0.14)' : '#EEF2FF') : colors.surface,
+                    borderColor: sel ? colors.primary : colors.border,
+                  },
+                ]}
+                activeOpacity={0.75}
+              >
+                <Text style={[styles.chipText, { color: sel ? colors.primary : colors.foreground }]}>
+                  {ex}
+                </Text>
+                {sel && <Feather name="check" size={12} color={colors.primary} style={{ marginLeft: 4 }} />}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Sector */}
+        {availableSectors.length > 0 ? (
+          <>
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>SECTOR</Text>
+            <View style={styles.chipRow}>
+              {availableSectors.map((sector) => {
+                const sel = draft.sectors.includes(sector);
+                return (
+                  <TouchableOpacity
+                    key={sector}
+                    onPress={() => toggleItem('sectors', sector)}
+                    style={[
+                      styles.chip,
+                      {
+                        backgroundColor: sel ? (isDark ? 'rgba(99, 102, 241, 0.14)' : '#EEF2FF') : colors.surface,
+                        borderColor: sel ? colors.primary : colors.border,
+                      },
+                    ]}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[styles.chipText, { color: sel ? colors.primary : colors.foreground }]}>
+                      {sector}
+                    </Text>
+                    {sel && <Feather name="check" size={12} color={colors.primary} style={{ marginLeft: 4 }} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </>
+        ) : null}
+
+        {/* Registrar */}
+        {availableRegistrars.length > 0 ? (
+          <>
+            <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>REGISTRAR</Text>
+            <View style={styles.chipRow}>
+              {availableRegistrars.map((reg) => {
+                const sel = draft.registrars.includes(reg);
+                return (
+                  <TouchableOpacity
+                    key={reg}
+                    onPress={() => toggleItem('registrars', reg)}
+                    style={[
+                      styles.chip,
+                      {
+                        backgroundColor: sel ? (isDark ? 'rgba(99, 102, 241, 0.14)' : '#EEF2FF') : colors.surface,
+                        borderColor: sel ? colors.primary : colors.border,
+                      },
+                    ]}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[styles.chipText, { color: sel ? colors.primary : colors.foreground }]}>
+                      {reg}
+                    </Text>
+                    {sel && <Feather name="check" size={12} color={colors.primary} style={{ marginLeft: 4 }} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </>
+        ) : null}
+      </ScrollView>
+
+      {/* Sticky Apply button */}
+      <View style={[styles.footer, { borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 22) + 6 }]}>
+        <TouchableOpacity
+          onPress={handleApply}
+          style={[styles.applyBtn, { backgroundColor: colors.primary }]}
+          activeOpacity={0.85}
+        >
+          <Feather name="check" size={16} color={colors.primaryForeground} style={{ marginRight: 6 }} />
+          <Text style={[styles.applyBtnText, { color: colors.primaryForeground }]}>
+            {activeCount > 0 ? `Apply Filters (${activeCount})` : 'Apply Filters'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </ScoopedBottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
-  },
-  sheet: {
-    width: '92%',
-    maxWidth: 440,
-    borderRadius: 24,
-    borderWidth: 1,
-    maxHeight: '85%',
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginTop: 12,
-    marginBottom: 4,
-  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingBottom: 14,
     borderBottomWidth: 1,
+  },
+  headerTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  headerIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
     fontSize: 17,
     fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.2,
+  },
+  subtitle: {
+    fontSize: 11.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 1,
+  },
+  activeBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+    borderRadius: 10,
+  },
+  activeBadgeText: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   clearBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
   clearText: {
     fontSize: 12,
     fontFamily: 'GoogleSansFlex_600SemiBold',
   },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 24,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
   },
   favRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderRadius: 14,
-    borderWidth: 1,
+    borderWidth: 1.5,
     marginBottom: 16,
   },
   favLeft: {
@@ -319,16 +388,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  favIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   favText: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontFamily: 'GoogleSansFlex_600SemiBold',
   },
+  checkCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sectionTitle: {
-    fontSize: 10,
+    fontSize: 10.5,
     fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 0.5,
-    marginBottom: 10,
-    marginTop: 8,
+    letterSpacing: 0.8,
+    marginBottom: 8,
+    marginTop: 6,
+    textTransform: 'uppercase',
   },
   chipRow: {
     flexDirection: 'row',
@@ -337,17 +421,17 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   chip: {
-    height: 36,
-    minHeight: 36,
+    height: 38,
     paddingHorizontal: 14,
-    borderRadius: 20,
-    borderWidth: 1,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
   chipText: {
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_500Medium',
+    fontSize: 12.5,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
   },
   footer: {
     paddingHorizontal: 20,
@@ -355,15 +439,15 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
   },
   applyBtn: {
-    paddingVertical: 14,
+    height: 48,
     borderRadius: 14,
+    flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 48,
     justifyContent: 'center',
   },
   applyBtnText: {
-    color: '#FFFFFF',
     fontSize: 14,
     fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.2,
   },
 });

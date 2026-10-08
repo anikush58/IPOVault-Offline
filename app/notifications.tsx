@@ -1,21 +1,28 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
+  ActivityIndicator,
+  Animated,
   FlatList,
   Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useColors } from '@/hooks/useColors';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useNotifications } from '@/context/NotificationContext';
 import { IconButton } from '@/components/ui/IconButton';
 import { Tabs } from '@/components/ui/Tabs';
+import { AnimatedEntrance } from '@/components/ui/AnimatedEntrance';
 import { NotificationRecord, NotificationType } from '@/services/notifications/notificationEngine';
+
+const AnimatedFlatList = Animated.createAnimatedComponent(FlatList as any);
 
 // Format relative time (e.g. "2m ago", "1h ago", "Yesterday")
 function formatRelativeTime(isoStr: string): string {
@@ -91,43 +98,77 @@ export default function NotificationCenterScreen() {
     }
   };
 
-  const topPad = Platform.OS === 'web' ? 67 : insets.top;
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
+
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerBlurOpacity = scrollY.interpolate({
+    inputRange: [0, 24],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header Bar */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
-        <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
+      {/* Floating Blurred Header Bar & Tabs */}
+      <View
+        style={[
+          styles.floatingHeaderContainer,
+          { paddingTop: topPad },
+        ]}
+        pointerEvents="box-none"
+      >
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: headerBlurOpacity }]}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 90 : 75}
+            tint={isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(14, 17, 23, 0.96)', 'rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.35)']
+                : ['rgba(248, 249, 250, 0.96)', 'rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.35)']
+            }
+            locations={[0, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
 
-        <View style={styles.titleRow}>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Notifications</Text>
-          {unreadCount > 0 && (
-            <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}>
-              <Text style={[styles.unreadBadgeText, { color: '#FFFFFF' }]}>{unreadCount}</Text>
-            </View>
-          )}
+        <View style={styles.header}>
+          <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
+
+          <View style={styles.titleRow}>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>Notifications</Text>
+            {unreadCount > 0 && (
+              <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}>
+                <Text style={[styles.unreadBadgeText, { color: '#FFFFFF' }]}>{unreadCount}</Text>
+              </View>
+            )}
+          </View>
+
+          <TouchableOpacity
+            onPress={markAllAsRead}
+            disabled={unreadCount === 0}
+            style={{ opacity: unreadCount === 0 ? 0.4 : 1 }}
+          >
+            <Text style={[styles.markAllText, { color: colors.primary }]}>Mark all read</Text>
+          </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          onPress={markAllAsRead}
-          disabled={unreadCount === 0}
-          style={{ opacity: unreadCount === 0 ? 0.4 : 1 }}
-        >
-          <Text style={[styles.markAllText, { color: colors.primary }]}>Mark all read</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Filter Tabs */}
-      <View style={{ borderBottomWidth: 1, borderBottomColor: colors.border }}>
-        <Tabs
-          variant="underline"
-          tabs={[
-            { key: 'ALL', label: `ALL (${notifications.length})` },
-            { key: 'UNREAD', label: `UNREAD (${unreadCount})` },
-          ]}
-          activeTab={activeTab}
-          onChange={setActiveTab}
-        />
+        {/* Filter Tabs */}
+        <View style={{ borderBottomWidth: 1, borderBottomColor: colors.border }}>
+          <Tabs
+            variant="underline"
+            tabs={[
+              { key: 'ALL', label: `ALL (${notifications.length})` },
+              { key: 'UNREAD', label: `UNREAD (${unreadCount})` },
+            ]}
+            activeTab={activeTab}
+            onChange={setActiveTab}
+          />
+        </View>
       </View>
 
       {/* Body List */}
@@ -136,7 +177,7 @@ export default function NotificationCenterScreen() {
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : filteredNotifications.length === 0 ? (
-        <View style={styles.emptyView}>
+        <View style={[styles.emptyView, { paddingTop: topPad + 110 }]}>
           <Feather name="bell-off" size={44} color={colors.mutedForeground} style={{ marginBottom: 12 }} />
           <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No Notifications</Text>
           <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
@@ -146,55 +187,62 @@ export default function NotificationCenterScreen() {
           </Text>
         </View>
       ) : (
-        <FlatList
+        <AnimatedFlatList
           data={filteredNotifications}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContainer}
-          renderItem={({ item }) => {
+          keyExtractor={(item: any) => item.id}
+          contentContainerStyle={[styles.listContainer, { paddingTop: topPad + 110 }]}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+            { useNativeDriver: true }
+          )}
+          scrollEventThrottle={16}
+          renderItem={({ item, index }: { item: NotificationRecord; index: number }) => {
             const iconConfig = getNotificationIcon(item.type);
             const isUnread = !item.read_at;
 
             return (
-              <TouchableOpacity
-                onPress={() => handleNotificationPress(item)}
-                style={[
-                  styles.card,
-                  {
-                    backgroundColor: isUnread ? colors.surface : colors.card,
-                    borderColor: colors.border,
-                  },
-                ]}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.iconWrap, { backgroundColor: iconConfig.bg }]}>
-                  <Feather name={iconConfig.name as any} size={20} color={iconConfig.color} />
-                </View>
+              <AnimatedEntrance delay={Math.min(index, 8) * 40} distance={12}>
+                <TouchableOpacity
+                  onPress={() => handleNotificationPress(item)}
+                  style={[
+                    styles.card,
+                    {
+                      backgroundColor: isUnread ? colors.surface : colors.card,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.iconWrap, { backgroundColor: iconConfig.bg }]}>
+                    <Feather name={iconConfig.name as any} size={20} color={iconConfig.color} />
+                  </View>
 
-                <View style={styles.cardBody}>
-                  <View style={styles.cardHeaderRow}>
-                    <Text style={[styles.cardTitle, { color: colors.foreground }]} numberOfLines={1}>
-                      {item.title}
-                    </Text>
-                    <Text style={[styles.timeText, { color: colors.mutedForeground }]}>
-                      {formatRelativeTime(item.created_at)}
+                  <View style={styles.cardBody}>
+                    <View style={styles.cardHeaderRow}>
+                      <Text style={[styles.cardTitle, { color: colors.foreground }]} numberOfLines={1}>
+                        {item.title}
+                      </Text>
+                      <Text style={[styles.timeText, { color: colors.mutedForeground }]}>
+                        {formatRelativeTime(item.created_at)}
+                      </Text>
+                    </View>
+
+                    <Text style={[styles.cardText, { color: colors.mutedForeground }]} numberOfLines={2}>
+                      {item.body}
                     </Text>
                   </View>
 
-                  <Text style={[styles.cardText, { color: colors.mutedForeground }]} numberOfLines={2}>
-                    {item.body}
-                  </Text>
-                </View>
+                  {isUnread && <View style={[styles.dotIndicator, { backgroundColor: colors.primary }]} />}
 
-                {isUnread && <View style={[styles.dotIndicator, { backgroundColor: colors.primary }]} />}
-
-                <TouchableOpacity
-                  onPress={() => deleteNotification(item.id)}
-                  style={styles.deleteBtn}
-                  hitSlop={8}
-                >
-                  <Feather name="trash-2" size={14} color={colors.mutedForeground} />
+                  <TouchableOpacity
+                    onPress={() => deleteNotification(item.id)}
+                    style={styles.deleteBtn}
+                    hitSlop={8}
+                  >
+                    <Feather name="trash-2" size={14} color={colors.mutedForeground} />
+                  </TouchableOpacity>
                 </TouchableOpacity>
-              </TouchableOpacity>
+              </AnimatedEntrance>
             );
           }}
         />
@@ -205,11 +253,20 @@ export default function NotificationCenterScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  floatingHeaderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    overflow: 'hidden',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
+    height: 56,
   },
   headerIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },

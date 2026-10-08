@@ -27,6 +27,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { API_BASE_URL } from '@/constants/apiConfig';
 import { AllotmentStatusBadge } from '@/components/allotment/AllotmentStatusBadge';
 import { IconButton } from '@/components/ui/IconButton';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { UpdateApplicationModal } from '@/components/UpdateApplicationModal';
 import { useAuth } from '@/context/AuthContext';
 import { useDB, type ApplicationStatus, type ApplicationWithDetails } from '@/context/DBContext';
@@ -2106,36 +2107,35 @@ export default function AllotmentCheckerScreen() {
     return 'Ready';
   }, [isCreatingJob, activeJob]);
 
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
+
   return (
     <View
       style={[
         styles.container,
-        { backgroundColor: colors.background, paddingTop: insets.top },
+        { backgroundColor: colors.background },
       ]}
     >
-      {/* Header */}
-      <View style={styles.header}>
-        <IconButton
-          name="arrow-left"
-          variant="surface"
-          size="md"
-          onPress={() => router.back()}
-        />
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-            Allotment Checker
-          </Text>
-        </View>
-        <IconButton
-          name="terminal"
-          variant={showDiagnostics ? 'primary' : 'surface'}
-          size="md"
-          onPress={() => setShowDiagnostics((prev) => !prev)}
-        />
-      </View>
+      {/* Floating Blurred Header */}
+      <ScreenHeader
+        title="Allotment Checker"
+        showBack
+        centerTitle
+        rightElement={
+          <IconButton
+            name="terminal"
+            variant={showDiagnostics ? 'primary' : 'surface'}
+            size="md"
+            onPress={() => setShowDiagnostics((prev) => !prev)}
+          />
+        }
+      />
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: topPad + 60 + 12 },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {/* Initial Idle IPO Selector Card (Only when no IPO is selected) */}

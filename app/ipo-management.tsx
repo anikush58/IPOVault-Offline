@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
@@ -65,6 +66,13 @@ export default function IPOManagementScreen() {
   const [showSearch, setShowSearch] = useState(false);
   const [logoErrors, setLogoErrors] = useState<Record<string, boolean>>({});
   const searchRef = useRef<TextInput>(null);
+
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerBlurOpacity = scrollY.interpolate({
+    inputRange: [0, 24],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
 
   useEffect(() => {
     setLogoErrors({});
@@ -168,81 +176,115 @@ export default function IPOManagementScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* ── Sub-Page Header ── */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
-        <IconButton
-          name="chevron-left"
-          variant="surface"
-          size="md"
-          onPress={() => {
-            if (router.canGoBack()) router.back();
-            else router.replace('/(tabs)');
-          }}
-        />
-
-        <View style={{ flex: 1, justifyContent: 'center', marginLeft: 8 }}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>TRACK & MANAGE</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>IPO Management</Text>
-        </View>
-
-        {/* header actions: search & add */}
-        <View style={styles.headerActions}>
-          <IconButton
-            name={showSearch ? 'x' : 'search'}
-            variant={showSearch ? 'primary' : 'surface'}
-            size="md"
-            onPress={toggleSearch}
+      {/* ── Floating Blurred Sub-Page Header ── */}
+      <View
+        style={[
+          styles.floatingHeaderContainer,
+          { paddingTop: topPad },
+        ]}
+        pointerEvents="box-none"
+      >
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: headerBlurOpacity }]}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 90 : 75}
+            tint={isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
           />
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(14, 17, 23, 0.96)', 'rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.35)']
+                : ['rgba(248, 249, 250, 0.96)', 'rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.35)']
+            }
+            locations={[0, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+
+        <View style={styles.header}>
           <IconButton
-            name="plus"
+            name="chevron-left"
             variant="surface"
             size="md"
-            onPress={openAddPage}
+            onPress={() => {
+              if (router.canGoBack()) router.back();
+              else router.replace('/(tabs)');
+            }}
           />
-        </View>
-      </View>
 
-      {/* ── Collapsible Search Bar ── */}
-      {showSearch && (
-        <View style={[styles.searchWrap, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-          <View style={[styles.searchInner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Feather name="search" size={15} color={colors.mutedForeground} />
-            <TextInput
-              ref={searchRef}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search by IPO name or registrar..."
-              placeholderTextColor={colors.mutedForeground}
-              style={[styles.searchInput, { color: colors.foreground }]}
-              autoCorrect={false}
+          <View style={{ flex: 1, justifyContent: 'center', marginLeft: 8 }}>
+            <Text style={[styles.headerEyebrow, { color: colors.primary }]}>TRACK & MANAGE</Text>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>IPO Management</Text>
+          </View>
+
+          {/* header actions: search & add */}
+          <View style={styles.headerActions}>
+            <IconButton
+              name={showSearch ? 'x' : 'search'}
+              variant={showSearch ? 'primary' : 'surface'}
+              size="md"
+              onPress={toggleSearch}
             />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-                <Feather name="x-circle" size={15} color={colors.mutedForeground} />
-              </TouchableOpacity>
-            )}
+            <IconButton
+              name="plus"
+              variant="surface"
+              size="md"
+              onPress={openAddPage}
+            />
           </View>
         </View>
-      )}
 
-      {/* ── Filter Segment Tabs (Active / Favorites / Archived) ── */}
-      <View style={[styles.segmentBarWrap, { backgroundColor: colors.background, paddingVertical: 8 }]}>
-        <Tabs
-          variant="pills"
-          tabs={[
-            { key: 'active', label: 'Active', count: activeCount > 0 ? activeCount : undefined },
-            { key: 'favorites', label: 'Favorites', count: favCount > 0 ? favCount : undefined },
-            { key: 'archived', label: 'Archived', count: archivedCount > 0 ? archivedCount : undefined },
-          ]}
-          activeTab={activeSegment}
-          onChange={(key) => setActiveSegment(key as TabSegment)}
-        />
+        {/* ── Collapsible Search Bar ── */}
+        {showSearch && (
+          <View style={styles.searchWrap}>
+            <View style={[styles.searchInner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Feather name="search" size={15} color={colors.mutedForeground} />
+              <TextInput
+                ref={searchRef}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search by IPO name or registrar..."
+                placeholderTextColor={colors.mutedForeground}
+                style={[styles.searchInput, { color: colors.foreground }]}
+                autoCorrect={false}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
+                  <Feather name="x-circle" size={15} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* ── Filter Segment Tabs (Active / Favorites / Archived) ── */}
+        <View style={[styles.segmentBarWrap, { paddingVertical: 8 }]}>
+          <Tabs
+            variant="pills"
+            tabs={[
+              { key: 'active', label: 'Active', count: activeCount > 0 ? activeCount : undefined },
+              { key: 'favorites', label: 'Favorites', count: favCount > 0 ? favCount : undefined },
+              { key: 'archived', label: 'Archived', count: archivedCount > 0 ? archivedCount : undefined },
+            ]}
+            activeTab={activeSegment}
+            onChange={(key) => setActiveSegment(key as TabSegment)}
+          />
+        </View>
       </View>
 
       {/* ── Content Body ── */}
-      <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 110, paddingTop: 6 }}
+      <Animated.ScrollView
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingBottom: insets.bottom + 110,
+          paddingTop: topPad + 118,
+        }}
         showsVerticalScrollIndicator={false}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
       >
         {filteredIPOs.length === 0 ? (
           <View style={[styles.emptyContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -517,19 +559,27 @@ export default function IPOManagementScreen() {
             );
           })
         )}
-      </ScrollView>
+      </Animated.ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  floatingHeaderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    overflow: 'hidden',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    overflow: 'hidden',
+    height: 56,
   },
   headerEyebrow: {
     fontSize: 11,

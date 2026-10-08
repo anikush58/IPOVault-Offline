@@ -21,6 +21,7 @@ import { useDialog } from '@/context/DialogContext';
 import { useDB } from '@/context/DBContext';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { DatePickerModal } from '@/components/DatePickerModal';
 import { ensureBase64DataUrl } from '@/utils/imageUtils';
 import {
@@ -67,7 +68,7 @@ export default function AddIPOScreen() {
   const router = useRouter();
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
-  const topPad = Platform.OS === 'web' ? 67 : insets.top;
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
   const { showError, showSuccess } = useDialog();
   const { ipos, refresh } = useDB();
 
@@ -353,46 +354,33 @@ export default function AddIPOScreen() {
       style={[styles.flex, { backgroundColor: colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* Page Header */}
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: topPad,
-            height: topPad + 60,
-            backgroundColor: colors.background,
-          },
-        ]}
-      >
-        <IconButton
-          name="chevron-left"
-          variant="surface"
-          size="md"
-          onPress={() => router.back()}
-        />
-
-        <View style={styles.headerCenter}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>
-            {isEditing ? 'EDIT LISTING' : 'NEW LISTING'}
-          </Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-            {isEditing ? 'Edit IPO' : 'Add IPO'}
-          </Text>
-        </View>
-
-        <Button
-          variant="primary"
-          size="sm"
-          title={saving ? 'Saving…' : 'Save'}
-          loading={saving}
-          disabled={saving}
-          onPress={handleSave}
-        />
-      </View>
+      {/* Floating Page Header */}
+      <ScreenHeader
+        eyebrow={isEditing ? 'EDIT LISTING' : 'NEW LISTING'}
+        title={isEditing ? 'Edit IPO' : 'Add IPO'}
+        centerTitle
+        showBack
+        rightElement={
+          <Button
+            variant="primary"
+            size="sm"
+            title={saving ? 'Saving…' : 'Save'}
+            loading={saving}
+            disabled={saving}
+            onPress={handleSave}
+          />
+        }
+      />
 
       {/* Form ScrollView */}
       <ScrollView
-        contentContainerStyle={[styles.form, { paddingBottom: insets.bottom + 40 }]}
+        contentContainerStyle={[
+          styles.form,
+          {
+            paddingTop: topPad + 60 + 12,
+            paddingBottom: insets.bottom + 40,
+          },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >

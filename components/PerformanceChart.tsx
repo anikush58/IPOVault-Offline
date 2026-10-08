@@ -46,6 +46,7 @@ type DropdownOption = {
 
 const CHART_H = 170;
 const LABEL_H = 18;
+const CHART_COLOR = '#84CC16'; // Light lime green
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // ── Bucket helpers ────────────────────────────────────────────────────────────
@@ -622,8 +623,8 @@ export function PerformanceChart({ applications }: Props) {
                 <Svg width={chartWidth} height={CHART_H} style={{ position: 'absolute', top: 0, left: 0 }}>
                   <Defs>
                     <SvgLinearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                      <Stop offset="0%" stopColor="#10B981" stopOpacity={0.25} />
-                      <Stop offset="100%" stopColor="#10B981" stopOpacity={0.0} />
+                      <Stop offset="0%" stopColor={CHART_COLOR} stopOpacity={0.25} />
+                      <Stop offset="100%" stopColor={CHART_COLOR} stopOpacity={0.0} />
                     </SvgLinearGradient>
                   </Defs>
 
@@ -663,7 +664,7 @@ export function PerformanceChart({ applications }: Props) {
 
                   {/* Curved line */}
                   {points.length > 0 && (
-                    <Path d={linePath} fill="none" stroke={colors.positive} strokeWidth={1.8} />
+                    <Path d={linePath} fill="none" stroke={CHART_COLOR} strokeWidth={1.8} />
                   )}
 
                   {/* Dotted vertical guide line */}
@@ -689,8 +690,8 @@ export function PerformanceChart({ applications }: Props) {
                         cx={pt.x}
                         cy={pt.y}
                         r={isSelected ? 4.5 : 2.5}
-                        fill={isSelected ? '#10B981' : colors.card}
-                        stroke="#10B981"
+                        fill={isSelected ? CHART_COLOR : colors.card}
+                        stroke={CHART_COLOR}
                         strokeWidth={1.5}
                       />
                     );
@@ -719,7 +720,7 @@ export function PerformanceChart({ applications }: Props) {
                       width: 18,
                       height: 18,
                       borderRadius: 9,
-                      backgroundColor: colors.positive,
+                      backgroundColor: CHART_COLOR,
                       opacity: 0.15,
                     }}
                   />
@@ -728,7 +729,7 @@ export function PerformanceChart({ applications }: Props) {
                       width: 8,
                       height: 8,
                       borderRadius: 4,
-                      backgroundColor: colors.positive,
+                      backgroundColor: CHART_COLOR,
                       borderWidth: 1.5,
                       borderColor: colors.card,
                     }}

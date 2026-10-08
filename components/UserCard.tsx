@@ -423,23 +423,46 @@ export function UserCard({
                 }}
                 style={[
                   styles.brokerActionBtn,
-                  { backgroundColor: colors.primary },
+                  connectionStatus === 'EXPIRED'
+                    ? {
+                        backgroundColor: isDark
+                          ? 'rgba(245, 158, 11, 0.2)'
+                          : '#FEF3C7',
+                        borderColor: isDark
+                          ? 'rgba(245, 158, 11, 0.4)'
+                          : '#FDE68A',
+                        borderWidth: 1,
+                      }
+                    : { backgroundColor: colors.primary },
                 ]}
                 activeOpacity={0.7}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Feather
-                  name="link-2"
+                  name={connectionStatus === 'EXPIRED' ? 'rotate-cw' : 'link-2'}
                   size={11}
-                  color={colors.primaryForeground}
+                  color={
+                    connectionStatus === 'EXPIRED'
+                      ? isDark
+                        ? '#FBBF24'
+                        : '#D97706'
+                      : colors.primaryForeground
+                  }
                 />
                 <Text
                   style={[
                     styles.brokerActionBtnText,
-                    { color: colors.primaryForeground },
+                    {
+                      color:
+                        connectionStatus === 'EXPIRED'
+                          ? isDark
+                            ? '#FBBF24'
+                            : '#D97706'
+                          : colors.primaryForeground,
+                    },
                   ]}
                 >
-                  Connect
+                  {connectionStatus === 'EXPIRED' ? 'Re-authenticate' : 'Connect'}
                 </Text>
               </TouchableOpacity>
             )}

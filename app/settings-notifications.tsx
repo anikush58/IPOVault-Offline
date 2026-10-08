@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { IconButton } from '@/components/ui/IconButton';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { IOSToggle } from '@/components/ui/IOSToggle';
 
 const DAYS_OF_WEEK = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -41,7 +42,7 @@ export default function SettingsNotificationsScreen() {
   const [endTime, setEndTime] = useState('7:00 AM');
   const [selectedDays, setSelectedDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
 
-  const topPad = Platform.OS === 'web' ? 24 : insets.top;
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
   const toggleDay = (idx: number) => {
     Haptics.selectionAsync();
@@ -57,19 +58,20 @@ export default function SettingsNotificationsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header Bar */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 56, backgroundColor: colors.background }]}>
-        <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
-        <View style={styles.headerCenter}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>SETTINGS</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Notifications</Text>
-        </View>
-        <View style={{ width: 40 }} />
-      </View>
+      <ScreenHeader
+        eyebrow="SETTINGS"
+        title="Notifications"
+        centerTitle
+        showBack
+      />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 40 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: topPad + 60 + 12,
+          paddingBottom: insets.bottom + 40,
+        }}
       >
         <Text style={[styles.screenSubtitle, { color: colors.mutedForeground }]}>
           Choose what you want to be notified about

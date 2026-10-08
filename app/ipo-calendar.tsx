@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   Platform,
   RefreshControl,
   ScrollView,
@@ -9,7 +10,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
+const AnimatedSectionList = Animated.createAnimatedComponent(SectionList as any);
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
@@ -152,6 +157,13 @@ export default function IPOCalendarScreen() {
   // Board Filter & View Mode State
   const [selectedBoard, setSelectedBoard] = useState<'ALL' | 'MAINBOARD' | 'SME'>('ALL');
   const [viewMode, setViewMode] = useState<'list' | 'card'>('list');
+
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerBlurOpacity = scrollY.interpolate({
+    inputRange: [0, 24],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
 
   // Cutoff date: Today onwards (no past dates!)
   const TODAY_STR = '2026-09-02';
@@ -345,83 +357,114 @@ export default function IPOCalendarScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Top Navigation Header (No grey line below header) */}
+      {/* Floating Blurred Top Navigation & Filters */}
       <View
         style={[
-          styles.header,
-          {
-            paddingTop: topPad,
-            height: topPad + 60,
-            backgroundColor: colors.background,
-            borderBottomWidth: 0, // Removed grey line
-          },
+          styles.floatingHeaderContainer,
+          { paddingTop: topPad },
         ]}
+        pointerEvents="box-none"
       >
-        <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: headerBlurOpacity }]}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 90 : 75}
+            tint={isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(14, 17, 23, 0.96)', 'rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.35)']
+                : ['rgba(248, 249, 250, 0.96)', 'rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.35)']
+            }
+            locations={[0, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
 
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>IPO Event Calendar</Text>
+        <View style={styles.header}>
+          <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
 
-        {/* View Mode Toggle: List vs 2-Column Card Grid */}
-        <View style={[styles.viewModeToggle, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <TouchableOpacity
-            onPress={() => setViewMode('list')}
-            style={[styles.toggleBtn, viewMode === 'list' && { backgroundColor: isDark ? colors.primary : '#0F172A' }]}
-          >
-            <Feather name="list" size={15} color={viewMode === 'list' ? '#FFFFFF' : colors.mutedForeground} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setViewMode('card')}
-            style={[styles.toggleBtn, viewMode === 'card' && { backgroundColor: isDark ? colors.primary : '#0F172A' }]}
-          >
-            <Feather name="grid" size={15} color={viewMode === 'card' ? '#FFFFFF' : colors.mutedForeground} />
-          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.foreground }]}>IPO Event Calendar</Text>
+
+          {/* View Mode Toggle: List vs 2-Column Card Grid */}
+          <View style={[styles.viewModeToggle, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <TouchableOpacity
+              onPress={() => setViewMode('list')}
+              style={[styles.toggleBtn, viewMode === 'list' && { backgroundColor: isDark ? colors.primary : '#0F172A' }]}
+            >
+              <Feather name="list" size={15} color={viewMode === 'list' ? '#FFFFFF' : colors.mutedForeground} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setViewMode('card')}
+              style={[styles.toggleBtn, viewMode === 'card' && { backgroundColor: isDark ? colors.primary : '#0F172A' }]}
+            >
+              <Feather name="grid" size={15} color={viewMode === 'card' ? '#FFFFFF' : colors.mutedForeground} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Filter/Chips Bar */}
+        <View style={styles.filterBar}>
+          {(['ALL', 'MAINBOARD', 'SME'] as const).map((b) => {
+            const active = selectedBoard === b;
+            return (
+              <TouchableOpacity
+                key={b}
+                onPress={() => setSelectedBoard(b)}
+                style={[
+                  styles.boardPillChip,
+                  active
+                    ? {
+                        backgroundColor: isDark ? '#818CF8' : '#0F172A',
+                        borderColor: isDark ? '#818CF8' : '#0F172A',
+                      }
+                    : {
+                        backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+                        borderColor: isDark ? '#334155' : '#E2E8F0',
+                      },
+                ]}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.boardPillChipText,
+                    { color: active ? '#FFFFFF' : colors.foreground },
+                    active && { fontFamily: 'GoogleSansFlex_700Bold' },
+                  ]}
+                >
+                  {b === 'ALL' ? 'All Boards' : b === 'MAINBOARD' ? 'Mainboard' : 'SME Only'}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
-      {/* Filter/Chips Bar (Matching reference screenshot: fully rounded pill shapes, no bottom line) */}
-      <View style={[styles.filterBar, { backgroundColor: colors.background }]}>
-        {(['ALL', 'MAINBOARD', 'SME'] as const).map((b) => {
-          const active = selectedBoard === b;
-          return (
-            <TouchableOpacity
-              key={b}
-              onPress={() => setSelectedBoard(b)}
-              style={[
-                styles.boardPillChip,
-                active
-                  ? {
-                      backgroundColor: isDark ? '#818CF8' : '#0F172A',
-                      borderColor: isDark ? '#818CF8' : '#0F172A',
-                    }
-                  : {
-                      backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-                      borderColor: isDark ? '#334155' : '#E2E8F0',
-                    },
-              ]}
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[
-                  styles.boardPillChipText,
-                  { color: active ? '#FFFFFF' : colors.foreground },
-                  active && { fontFamily: 'GoogleSansFlex_700Bold' },
-                ]}
-              >
-                {b === 'ALL' ? 'All Boards' : b === 'MAINBOARD' ? 'Mainboard' : 'SME Only'}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
       {/* Main Timeline SectionList with STICKY HEADERS */}
-      <SectionList
+      <AnimatedSectionList
         sections={sections}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item: any) => item.id}
         stickySectionHeadersEnabled={true}
-        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refresh} tintColor={colors.primary} />}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: insets.bottom + 24 }}
-        renderSectionHeader={({ section }) => (
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={refresh}
+            tintColor={colors.primary}
+            progressViewOffset={topPad + 110}
+          />
+        }
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: topPad + 114,
+          paddingBottom: insets.bottom + 24,
+        }}
+        renderSectionHeader={({ section }: { section: CalendarSection }) => (
           <View style={[styles.stickyHeaderContainer, { backgroundColor: colors.background }]}>
             {/* Distinct Date Header Card with Extra Highlight for Today */}
             <View
@@ -506,7 +549,7 @@ export default function IPOCalendarScreen() {
                       { color: section.isToday ? (isDark ? '#C7D2FE' : '#3730A3') : colors.mutedForeground },
                     ]}
                   >
-                    {section.data.reduce((acc, curr) => acc + curr.events.length, 0)} events
+                    {section.data.reduce((acc: number, curr: EventRowItem) => acc + curr.events.length, 0)} events
                   </Text>
                 </View>
               )}
@@ -532,7 +575,7 @@ export default function IPOCalendarScreen() {
             ) : null}
           </View>
         )}
-        renderItem={({ item: rowItem, section }) => {
+        renderItem={({ item: rowItem, section }: { item: EventRowItem; section: CalendarSection }) => {
           // ── LIST VIEW: 1 event per row ──
           if (viewMode === 'list') {
             const event = rowItem.events[0];
@@ -649,8 +692,17 @@ export default function IPOCalendarScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
+  floatingHeaderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    overflow: 'hidden',
+  },
   header: {
     paddingHorizontal: 16,
+    height: 56,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

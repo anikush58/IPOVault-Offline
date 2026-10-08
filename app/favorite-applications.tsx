@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { IconButton } from '@/components/ui/IconButton';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { useDB, type ApplicationWithDetails } from '@/context/DBContext';
 import { useAuth } from '@/context/AuthContext';
 import { ApplicationCard } from '@/components/ApplicationCard';
@@ -34,7 +35,7 @@ export default function FavoriteApplicationsScreen() {
   const { user: authUser } = useAuth();
   const { applications, ipos, users, isLoading, refresh } = useDB();
   const insets = useSafeAreaInsets();
-  const topPad = Platform.OS === 'web' ? 67 : insets.top;
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
   const [selectedApp, setSelectedApp] = useState<ApplicationWithDetails | null>(null);
   const [brokerPortfolio, setBrokerPortfolio] = useState<UserPortfolioSummaryResponse | null>(null);
@@ -73,29 +74,25 @@ export default function FavoriteApplicationsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* ── Top Page Header ── */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
-        <IconButton
-          name="chevron-left"
-          variant="surface"
-          size="md"
-          onPress={() => router.back()}
-        />
-
-        <View style={styles.headerCenter}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>SAVED</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Favorite Applications</Text>
-        </View>
-
-        <View style={{ width: 36 }} />
-      </View>
+      {/* ── Floating Top Header ── */}
+      <ScreenHeader
+        eyebrow="SAVED"
+        title="Favorite Applications"
+        centerTitle
+        showBack
+      />
 
       {/* ── Favorites List ── */}
       <FlatList
         data={favoriteApps}
         keyExtractor={(item) => item.id}
         refreshControl={
-          <RefreshControl refreshing={isLoading} onRefresh={refresh} tintColor={colors.primary} />
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={refresh}
+            tintColor={colors.primary}
+            progressViewOffset={topPad + 60}
+          />
         }
         renderItem={({ item }) => (
           <ApplicationCard
@@ -103,7 +100,10 @@ export default function FavoriteApplicationsScreen() {
             onPress={() => setSelectedApp(item)}
           />
         )}
-        contentContainerStyle={{ paddingVertical: 12, paddingBottom: insets.bottom + 40 }}
+        contentContainerStyle={{
+          paddingTop: topPad + 60 + 12,
+          paddingBottom: insets.bottom + 40,
+        }}
         ListHeaderComponent={() =>
           favoriteApps.length > 0 ? (
             <Text style={[styles.sectionLabel, { color: colors.mutedForeground, marginHorizontal: 16 }]}>

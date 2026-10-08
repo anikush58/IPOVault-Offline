@@ -106,7 +106,7 @@ function LeaderRow({
           {entry.soldCount} {entry.soldCount === 1 ? 'sale' : 'sales'}
         </Text>
       </View>
-      <Text style={[row.profit, { color: isPos ? '#10B981' : colors.destructive }]}>
+      <Text style={[row.profit, { color: isPos ? colors.positive : colors.negative }]}>
         {isPos ? '+' : ''}{formatCurrency(entry.netProfit)}
       </Text>
     </View>

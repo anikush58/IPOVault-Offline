@@ -24,6 +24,7 @@ import { useDialog } from '@/context/DialogContext';
 import { useDB, type ApplicationStatus, type ApplicationWithDetails, type IPOListing, type User } from '@/context/DBContext';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { formatCurrency } from '@/utils/formatters';
 import { StatusBadge } from '@/components/StatusBadge';
 import { AddIPOModal } from '@/components/AddIPOModal';
@@ -467,22 +468,20 @@ export default function BidsScreen() {
       {/* ── SCREEN 1: BIDS HOME ── */}
       {viewMode === 'home' && (
         <View style={{ flex: 1 }}>
-          {/* Header */}
-          <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
-            <View style={{ flex: 1, justifyContent: 'center' }}>
-              <Text style={[styles.headerEyebrow, { color: colors.primary }]}>CREATE & MANAGE</Text>
-              <Text style={[styles.headerTitle, { color: colors.foreground }]}>Bids</Text>
-            </View>
+          <ScreenHeader
+            title="Bids"
+            eyebrow="CREATE & MANAGE"
+            rightElement={
+              <IconButton
+                name="plus"
+                variant="surface"
+                size="md"
+                onPress={() => setShowBulkSheet(true)}
+              />
+            }
+          />
 
-            <IconButton
-              name="plus"
-              variant="surface"
-              size="md"
-              onPress={() => setShowBulkSheet(true)}
-            />
-          </View>
-
-          <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: insets.bottom + 90 }}>
+          <ScrollView contentContainerStyle={{ paddingTop: topPad + 60 + 16, paddingBottom: insets.bottom + 90 }}>
             {/* Management Shortcuts — 2 Prominent Grid Cards */}
             <View style={styles.shortcutsRow}>
               {/* Users Card */}
@@ -661,16 +660,14 @@ export default function BidsScreen() {
       {/* ── SCREEN 3: NEEDS YOUR ATTENTION LIST SCREEN ── */}
       {viewMode === 'attention' && (
         <View style={{ flex: 1 }}>
-          {/* Sub Header */}
-          <View style={[styles.subHeader, { paddingTop: topPad, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={() => setViewMode('home')} style={styles.backBtn} activeOpacity={0.7}>
-              <Feather name="arrow-left" size={20} color={colors.foreground} />
-            </TouchableOpacity>
-            <Text style={[styles.subHeaderTitle, { color: colors.foreground }]}>Needs Your Attention</Text>
-            <View style={{ width: 44 }} />
-          </View>
+          <ScreenHeader
+            title="Needs Your Attention"
+            showBack
+            centerTitle
+            onBack={() => setViewMode('home')}
+          />
 
-          <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 90 }}>
+          <ScrollView contentContainerStyle={{ padding: 16, paddingTop: topPad + 60 + 16, paddingBottom: insets.bottom + 90 }}>
             {/* Banner Card */}
             <View
               style={[

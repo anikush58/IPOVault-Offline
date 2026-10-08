@@ -19,6 +19,7 @@ import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { useDialog } from '@/context/DialogContext';
 import { IconButton } from '@/components/ui/IconButton';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 
 export default function SettingsContactSupportScreen() {
   const colors = useColors();
@@ -31,7 +32,7 @@ export default function SettingsContactSupportScreen() {
   const [showInAppFeedbackModal, setShowInAppFeedbackModal] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
 
-  const topPad = Platform.OS === 'web' ? 24 : insets.top;
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
   const handleEmailSupport = () => {
     Linking.openURL('mailto:support@ipovault.app?subject=IPOVault%20Support%20Inquiry');
@@ -51,19 +52,20 @@ export default function SettingsContactSupportScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header Bar */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 56, backgroundColor: colors.background }]}>
-        <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
-        <View style={styles.headerCenter}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>SETTINGS</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Contact Support</Text>
-        </View>
-        <View style={{ width: 40 }} />
-      </View>
+      <ScreenHeader
+        eyebrow="SETTINGS"
+        title="Contact Support"
+        centerTitle
+        showBack
+      />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 40 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: topPad + 60 + 12,
+          paddingBottom: insets.bottom + 40,
+        }}
       >
         <Text style={[styles.screenSubtitle, { color: colors.mutedForeground }]}>
           Get help from our team

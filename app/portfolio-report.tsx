@@ -1,5 +1,6 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
+  Animated,
   Image,
   Platform,
   RefreshControl,
@@ -12,6 +13,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
@@ -144,8 +146,6 @@ export default function PortfolioReportScreen() {
   const [filterIpoNames, setFilterIpoNames] = useState<string[]>([]);
   const [filterYear, setFilterYear] = useState<string | null>(null);
   const [showFilter, setShowFilter] = useState(false);
-
-  const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
   const activeUserId = useMemo(() => {
     return resolveCanonicalBrokerUserId(authUser, users);
@@ -423,87 +423,125 @@ export default function PortfolioReportScreen() {
     }
   };
 
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
+
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerBlurOpacity = scrollY.interpolate({
+    inputRange: [0, 24],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header Bar */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: isDark ? colors.background : '#F7F7F9' }]}>
-        <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
-        
-        <View style={[styles.headerCenter, { top: topPad, bottom: 0 }]} pointerEvents="none">
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>REPORTS</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Portfolio Report</Text>
+      {/* Floating Blurred Header Bar */}
+      <View
+        style={[
+          styles.floatingHeaderContainer,
+          { paddingTop: topPad },
+        ]}
+        pointerEvents="box-none"
+      >
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: headerBlurOpacity }]}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 90 : 75}
+            tint={isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(14, 17, 23, 0.96)', 'rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.35)']
+                : ['rgba(248, 249, 250, 0.96)', 'rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.35)']
+            }
+            locations={[0, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+
+        <View style={styles.header}>
+          <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
+          
+          <View style={[styles.headerCenter, { top: 0, bottom: 0 }]} pointerEvents="none">
+            <Text style={[styles.headerEyebrow, { color: colors.primary }]}>REPORTS</Text>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>Portfolio Report</Text>
+          </View>
+
+          <View style={styles.headerActions}>
+            <IconButton
+              name={showSearch ? 'x' : 'search'}
+              iconSize={showSearch ? 15 : 18}
+              variant={showSearch || searchQuery.length > 0 ? 'primary' : 'surface'}
+              size="md"
+              onPress={toggleSearch}
+            />
+            <IconButton
+              name="sliders"
+              iconSize={17}
+              variant={hasFilter ? 'primary' : 'surface'}
+              size="md"
+              onPress={() => setShowFilter(true)}
+            />
+          </View>
         </View>
 
-        <View style={styles.headerActions}>
-          <IconButton
-            name={showSearch ? 'x' : 'search'}
-            iconSize={showSearch ? 15 : 18}
-            variant={showSearch || searchQuery.length > 0 ? 'primary' : 'surface'}
-            size="md"
-            onPress={toggleSearch}
-          />
-          <IconButton
-            name="sliders"
-            iconSize={17}
-            variant={hasFilter ? 'primary' : 'surface'}
-            size="md"
-            onPress={() => setShowFilter(true)}
-          />
-        </View>
+        {/* Collapsible Search Input Bar */}
+        {showSearch && (
+          <View style={[styles.searchBarHeader, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Feather name="search" size={14} color={colors.mutedForeground} />
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search by user, broker or IPO…"
+              placeholderTextColor={colors.mutedForeground}
+              style={[styles.searchInput, { color: colors.foreground }]}
+              autoFocus
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
+                <Feather name="x-circle" size={14} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </View>
 
-      {/* Collapsible Search Input Bar */}
-      {showSearch && (
-        <View style={[styles.searchBarHeader, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Feather name="search" size={14} color={colors.mutedForeground} />
-          <TextInput
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search by user, broker or IPO…"
-            placeholderTextColor={colors.mutedForeground}
-            style={[styles.searchInput, { color: colors.foreground }]}
-            autoFocus
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-              <Feather name="x-circle" size={14} color={colors.mutedForeground} />
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
-
-      {/* Active filter chip bar */}
-      {hasFilter && (
-        <View style={[styles.filterBar, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
-          <Feather name="filter" size={12} color={colors.primary} />
-          <Text style={[styles.filterBarText, { color: colors.primary }]} numberOfLines={1}>
-            {filterChipLabel}
-          </Text>
-          <TouchableOpacity onPress={() => { setFilterUserIds([]); setFilterIpoNames([]); setFilterYear(null); }} hitSlop={8}>
-            <Feather name="x" size={14} color={colors.primary} />
-          </TouchableOpacity>
-        </View>
-      )}
-
-      <ScrollView
+      <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         stickyHeaderIndices={[1]}
+        contentContainerStyle={{
+          paddingTop: topPad + 60 + 8,
+          paddingBottom: insets.bottom + 90,
+        }}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
-            refreshing={isRefreshing}
+            refreshing={isLoading}
             onRefresh={async () => {
-              setIsRefreshing(true);
-              try {
-                await Promise.all([refresh(), loadBrokerPortfolio()]);
-              } finally {
-                setIsRefreshing(false);
-              }
+              await Promise.all([refresh(), loadBrokerPortfolio()]);
             }}
             tintColor={colors.primary}
+            progressViewOffset={topPad + 60}
           />
         }
-        contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
       >
+        {/* Active filter chip bar */}
+        {hasFilter && (
+          <View style={[styles.filterBar, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
+            <Feather name="filter" size={12} color={colors.primary} />
+            <Text style={[styles.filterBarText, { color: colors.primary }]} numberOfLines={1}>
+              {filterChipLabel}
+            </Text>
+            <TouchableOpacity onPress={() => { setFilterUserIds([]); setFilterIpoNames([]); setFilterYear(null); }} hitSlop={8}>
+              <Feather name="x" size={14} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Child 0: Profit Summary Donut Chart Card */}
         <View style={styles.chartSection}>
           <ProfitSummaryDonutCard
@@ -763,7 +801,7 @@ export default function PortfolioReportScreen() {
                             <Text
                               style={[
                                 styles.dataVal,
-                                { color: grossPL >= 0 ? '#10B981' : '#EF4444' },
+                                { color: grossPL >= 0 ? colors.positive : colors.negative },
                               ]}
                               numberOfLines={1}
                             >
@@ -775,7 +813,7 @@ export default function PortfolioReportScreen() {
                             <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
                               EST. CHARGES
                             </Text>
-                            <Text style={[styles.dataVal, { color: '#EF4444' }]} numberOfLines={1}>
+                            <Text style={[styles.dataVal, { color: colors.negative }]} numberOfLines={1}>
                               {formatCurrency(totalCharges)}
                             </Text>
                           </View>
@@ -787,7 +825,7 @@ export default function PortfolioReportScreen() {
                             <Text
                               style={[
                                 styles.dataValHighlight,
-                                { color: netPL >= 0 ? '#10B981' : '#EF4444' },
+                                { color: netPL >= 0 ? colors.positive : colors.negative },
                               ]}
                               numberOfLines={1}
                             >
@@ -804,7 +842,7 @@ export default function PortfolioReportScreen() {
                             <Text
                               style={[
                                 styles.dataVal,
-                                { color: grossPL >= 0 ? '#10B981' : '#EF4444' },
+                                { color: grossPL >= 0 ? colors.positive : colors.negative },
                               ]}
                               numberOfLines={1}
                             >
@@ -816,7 +854,7 @@ export default function PortfolioReportScreen() {
                             <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
                               CHARGES
                             </Text>
-                            <Text style={[styles.dataVal, { color: '#EF4444' }]} numberOfLines={1}>
+                            <Text style={[styles.dataVal, { color: colors.negative }]} numberOfLines={1}>
                               -{formatCurrency(totalCharges)}
                             </Text>
                           </View>
@@ -828,7 +866,7 @@ export default function PortfolioReportScreen() {
                             <Text
                               style={[
                                 styles.dataValHighlight,
-                                { color: netPL >= 0 ? '#10B981' : '#EF4444' },
+                                { color: netPL >= 0 ? colors.positive : colors.negative },
                               ]}
                               numberOfLines={1}
                             >
@@ -844,7 +882,7 @@ export default function PortfolioReportScreen() {
             })
           )}
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
 
       <FilterSheet
         visible={showFilter}
@@ -869,8 +907,17 @@ export default function PortfolioReportScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  floatingHeaderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    overflow: 'hidden',
+  },
   header: {
     paddingHorizontal: 16,
+    height: 56,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

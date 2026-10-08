@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
+  Animated,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -13,7 +14,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
+const AnimatedFlatList = Animated.createAnimatedComponent(FlatList as any);
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,6 +29,7 @@ import { useDB, type BankAccount } from '@/context/DBContext';
 import { useDialog } from '@/context/DialogContext';
 import { BanksOverviewCard } from '@/components/BanksOverviewCard';
 import { IconButton } from '@/components/ui/IconButton';
+import { AnimatedEntrance } from '@/components/ui/AnimatedEntrance';
 import { formatCurrency } from '@/utils/formatters';
 
 const IPO_LOT_COST = 15000;
@@ -331,12 +336,14 @@ function BankCard({
 
 export default function BanksScreen() {
   const colors = useColors();
+  const { resolvedScheme } = useTheme();
+  const isDark = resolvedScheme === 'dark';
   const router = useRouter();
   const { from } = useLocalSearchParams<{ from?: string }>();
   const { bankAccounts, ipos, applications, isLoading, refresh, addBankAccount, updateBankBalance, deleteBankAccount } = useDB();
   const { showError } = useDialog();
   const insets = useSafeAreaInsets();
-  const topPad = Platform.OS === 'web' ? 67 : insets.top;
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
   const [modalVisible, setModalVisible] = useState(false);
   const [editingBank, setEditingBank] = useState<BankAccount | null>(null);
@@ -410,63 +417,115 @@ export default function BanksScreen() {
     }
   };
 
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerBlurOpacity = scrollY.interpolate({
+    inputRange: [0, 24],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
-        <IconButton
-          name="chevron-left"
-          variant="surface"
-          size="md"
-          onPress={() => {
-            if (from === 'bids') router.replace('/(tabs)/bids');
-            else if (from === 'dashboard') router.replace('/(tabs)');
-            else if (router.canGoBack()) router.back();
-            else router.replace('/(tabs)');
-          }}
-        />
+      {/* Floating Blurred Header Bar */}
+      <View
+        style={[
+          styles.floatingHeaderContainer,
+          { paddingTop: topPad, height: topPad + 60 },
+        ]}
+        pointerEvents="box-none"
+      >
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: headerBlurOpacity }]}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 90 : 75}
+            tint={isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(14, 17, 23, 0.96)', 'rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.35)']
+                : ['rgba(248, 249, 250, 0.96)', 'rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.35)']
+            }
+            locations={[0, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
 
-        <View style={{ flex: 1, justifyContent: 'center', marginLeft: 8 }}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>CAPITAL</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Banks</Text>
+        <View style={styles.header}>
+          <IconButton
+            name="arrow-left"
+            variant="surface"
+            size="md"
+            onPress={() => {
+              if (from === 'bids') router.replace('/(tabs)/bids');
+              else if (from === 'dashboard') router.replace('/(tabs)');
+              else if (router.canGoBack()) router.back();
+              else router.replace('/(tabs)');
+            }}
+          />
+
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={[styles.headerEyebrow, { color: colors.primary }]}>CAPITAL</Text>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>Banks</Text>
+          </View>
+
+          <IconButton
+            name="plus"
+            variant="surface"
+            size="md"
+            onPress={openAdd}
+          />
         </View>
-
-        <IconButton
-          name="plus"
-          variant="surface"
-          size="md"
-          onPress={openAdd}
-        />
       </View>
 
-      <FlatList
+      <AnimatedFlatList
         data={bankAccounts}
-        keyExtractor={(b) => b.id.toString()}
-        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refresh} tintColor={colors.primary} />}
+        keyExtractor={(b: any) => b.id.toString()}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={refresh}
+            tintColor={colors.primary}
+            progressViewOffset={topPad + 60}
+          />
+        }
+        contentContainerStyle={{
+          paddingTop: topPad + 68,
+          paddingBottom: insets.bottom + 90,
+        }}
         ListHeaderComponent={() => (
           <>
-            <BanksOverviewCard
-              totalBalance={totalBalance}
-              totalBlocked={totalBlocked}
-              totalAvailable={totalAvailable}
-              totalSlots={totalSlots}
-              activeIpoLotCost={activeIpoLotCost}
-              accountsCount={bankAccounts.length}
-            />
+            <AnimatedEntrance delay={0} distance={14}>
+              <BanksOverviewCard
+                totalBalance={totalBalance}
+                totalBlocked={totalBlocked}
+                totalAvailable={totalAvailable}
+                totalSlots={totalSlots}
+                activeIpoLotCost={activeIpoLotCost}
+                accountsCount={bankAccounts.length}
+              />
+            </AnimatedEntrance>
 
             {bankAccounts.length > 0 && (
               <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>ACCOUNTS</Text>
             )}
           </>
         )}
-        renderItem={({ item }) => (
-          <BankCard
-            bank={item}
-            blocked={getBankBlocked(item.bank_name)}
-            ipoPrice={activeIpoLotCost}
-            onEdit={() => openEdit(item)}
-            onDelete={() => handleDelete(item)}
-          />
+        renderItem={({ item, index }: { item: BankAccount; index: number }) => (
+          <AnimatedEntrance delay={Math.min(index, 8) * 40} distance={12}>
+            <BankCard
+              bank={item}
+              blocked={getBankBlocked(item.bank_name)}
+              ipoPrice={activeIpoLotCost}
+              onEdit={() => openEdit(item)}
+              onDelete={() => handleDelete(item)}
+            />
+          </AnimatedEntrance>
         )}
         ListEmptyComponent={() => (
           <View style={styles.empty}>
@@ -484,7 +543,6 @@ export default function BanksScreen() {
             </TouchableOpacity>
           </View>
         )}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 90 }}
       />
 
       <BankModal
@@ -501,7 +559,16 @@ export default function BanksScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  floatingHeaderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    overflow: 'hidden',
+  },
   header: {
+    height: 56,
     paddingHorizontal: 16,
     overflow: 'hidden',
     flexDirection: 'row',

@@ -382,11 +382,11 @@ export function ApplicationCard({
                   {app.status === 'Sold' ? 'NET PROFIT' : app.status === 'Holding' ? 'CURRENT PROFIT' : 'QTY'}
                 </Text>
                 {app.status === 'Sold' ? (
-                  <Text style={[styles.gridValue, { color: isProfit ? '#16A34A' : colors.negative, fontFamily: 'GoogleSansFlex_700Bold' }]}>
+                  <Text style={[styles.gridValue, { color: isProfit ? colors.positive : colors.negative, fontFamily: 'GoogleSansFlex_700Bold' }]}>
                     {(netProfit ?? 0) >= 0 ? '+' : ''}{formatCurrency(netProfit || 0)}
                   </Text>
                 ) : app.status === 'Holding' ? (
-                  <Text style={[styles.gridValue, { color: currentProfit >= 0 ? '#16A34A' : colors.negative, fontFamily: 'GoogleSansFlex_700Bold' }]}>
+                  <Text style={[styles.gridValue, { color: currentProfit >= 0 ? colors.positive : colors.negative, fontFamily: 'GoogleSansFlex_700Bold' }]}>
                     {currentProfit >= 0 ? '+' : ''}{formatCurrency(currentProfit)}
                   </Text>
                 ) : (

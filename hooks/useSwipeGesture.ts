@@ -15,6 +15,11 @@ export function useSwipeGesture({
   minDeltaX = 40,
   maxDeltaY = 35,
 }: SwipeGestureOptions) {
+  const onSwipeLeftRef = useRef(onSwipeLeft);
+  const onSwipeRightRef = useRef(onSwipeRight);
+  onSwipeLeftRef.current = onSwipeLeft;
+  onSwipeRightRef.current = onSwipeRight;
+
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gestureState) => {
@@ -24,10 +29,10 @@ export function useSwipeGesture({
         );
       },
       onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dx < -minDeltaX && onSwipeLeft) {
-          onSwipeLeft();
-        } else if (gestureState.dx > minDeltaX && onSwipeRight) {
-          onSwipeRight();
+        if (gestureState.dx < -minDeltaX && onSwipeLeftRef.current) {
+          onSwipeLeftRef.current();
+        } else if (gestureState.dx > minDeltaX && onSwipeRightRef.current) {
+          onSwipeRightRef.current();
         }
       },
     })

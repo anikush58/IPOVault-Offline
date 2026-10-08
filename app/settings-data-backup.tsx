@@ -23,6 +23,7 @@ import { useDB } from '@/context/DBContext';
 import { useFirestoreSync } from '@/hooks/useFirestoreSync';
 import { useAuth } from '@/context/AuthContext';
 import { IconButton } from '@/components/ui/IconButton';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 
 async function shareFile(
   content: string,
@@ -257,19 +258,20 @@ export default function SettingsDataBackupScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header Bar */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 56, backgroundColor: colors.background }]}>
-        <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
-        <View style={styles.headerCenter}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>SETTINGS</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Data & Backup</Text>
-        </View>
-        <View style={{ width: 40 }} />
-      </View>
+      <ScreenHeader
+        eyebrow="SETTINGS"
+        title="Data & Backup"
+        centerTitle
+        showBack
+      />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 40 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: topPad + 60 + 12,
+          paddingBottom: insets.bottom + 40,
+        }}
       >
         <Text style={[styles.screenSubtitle, { color: colors.mutedForeground }]}>
           Manage your IPOVault data and keep it safe

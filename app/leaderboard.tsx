@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import Svg, { Circle, Defs, Path, LinearGradient as SvgLinearGradient, RadialGradient, Ellipse, Stop } from 'react-native-svg';
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -25,6 +26,8 @@ import { calculateAppTaxAndNet } from '@/utils/calculations';
 import { formatCurrency } from '@/utils/formatters';
 
 type TabKey = 'user' | 'ipo';
+
+const AnimatedFlatList = Animated.createAnimatedComponent(FlatList as any);
 
 type LeaderEntry = {
   id: string;
@@ -477,9 +480,11 @@ const medalStyles = StyleSheet.create({
 function Top3Podium({
   top3,
   isDark,
+  colors,
 }: {
   top3: LeaderEntry[];
   isDark: boolean;
+  colors: ReturnType<typeof useColors>;
 }) {
   const first = top3[0];
   const second = top3[1];
@@ -528,15 +533,14 @@ function Top3Podium({
             style={[
               podiumStyles.profitPill,
               {
-                backgroundColor: isDark ? 'rgba(148, 163, 184, 0.18)' : '#F1F5F9',
-                borderColor: isDark ? 'rgba(148, 163, 184, 0.35)' : '#CBD5E1',
+                backgroundColor: second.netProfit >= 0 ? colors.positiveBg : colors.negativeBg,
               },
             ]}
           >
             <Text
               style={[
                 podiumStyles.profitText,
-                { color: isDark ? '#E2E8F0' : '#475569' },
+                { color: second.netProfit >= 0 ? colors.positive : colors.negative },
               ]}
               numberOfLines={1}
             >
@@ -545,7 +549,7 @@ function Top3Podium({
           </View>
         </View>
       ) : (
-        <View style={podiumStyles.cardPlaceholder} />
+        <View style={[podiumStyles.cardPlaceholder, podiumStyles.cardSilver]} />
       )}
 
       {/* Rank 1 (Center - Gold) */}
@@ -598,15 +602,14 @@ function Top3Podium({
             podiumStyles.profitPill,
             podiumStyles.profitPillGold,
             {
-              backgroundColor: isDark ? 'rgba(245, 158, 11, 0.20)' : '#FEF3C7',
-              borderColor: isDark ? 'rgba(245, 158, 11, 0.45)' : '#FDE68A',
+              backgroundColor: first.netProfit >= 0 ? colors.positiveBg : colors.negativeBg,
             },
           ]}
         >
           <Text
             style={[
               podiumStyles.profitTextGold,
-              { color: isDark ? '#FDE047' : '#92400E' },
+              { color: first.netProfit >= 0 ? colors.positive : colors.negative },
             ]}
             numberOfLines={1}
           >
@@ -654,15 +657,14 @@ function Top3Podium({
             style={[
               podiumStyles.profitPill,
               {
-                backgroundColor: isDark ? 'rgba(234, 88, 12, 0.18)' : '#FFEDD5',
-                borderColor: isDark ? 'rgba(234, 88, 12, 0.35)' : '#FDBA74',
+                backgroundColor: third.netProfit >= 0 ? colors.positiveBg : colors.negativeBg,
               },
             ]}
           >
             <Text
               style={[
                 podiumStyles.profitText,
-                { color: isDark ? '#FDBA74' : '#C2410C' },
+                { color: third.netProfit >= 0 ? colors.positive : colors.negative },
               ]}
               numberOfLines={1}
             >
@@ -671,71 +673,8 @@ function Top3Podium({
           </View>
         </View>
       ) : (
-        <View style={podiumStyles.cardPlaceholder} />
+        <View style={[podiumStyles.cardPlaceholder, podiumStyles.cardBronze]} />
       )}
-    </View>
-  );
-}
-
-// ── Summary KPI Card (Below Podiums) ──────────────────────────────────────────
-
-function LeaderboardStatsCard({
-  totalRanked,
-  topPerformer,
-  totalNetPL,
-  colors,
-  isDark,
-}: {
-  totalRanked: number;
-  topPerformer?: LeaderEntry;
-  totalNetPL: number;
-  colors: ReturnType<typeof useColors>;
-  isDark: boolean;
-}) {
-  const isPositiveNet = totalNetPL >= 0;
-
-  return (
-    <View
-      style={[
-        statsCardStyles.card,
-        {
-          backgroundColor: colors.card,
-          borderColor: colors.border,
-        },
-      ]}
-    >
-      <View style={statsCardStyles.item}>
-        <Text style={[statsCardStyles.label, { color: colors.mutedForeground }]}>Total Ranked</Text>
-        <Text style={[statsCardStyles.val, { color: colors.foreground }]}>{totalRanked}</Text>
-      </View>
-
-      <View style={[statsCardStyles.divider, { backgroundColor: colors.border }]} />
-
-      <View style={statsCardStyles.item}>
-        <Text style={[statsCardStyles.label, { color: colors.mutedForeground }]}>Top Performer</Text>
-        <Text style={[statsCardStyles.val, { color: colors.primary }]} numberOfLines={1}>
-          {topPerformer ? topPerformer.name : 'N/A'}
-        </Text>
-      </View>
-
-      <View style={[statsCardStyles.divider, { backgroundColor: colors.border }]} />
-
-      <View style={statsCardStyles.item}>
-        <Text style={[statsCardStyles.label, { color: colors.mutedForeground }]}>Total Net P&L</Text>
-        <Text
-          style={[
-            statsCardStyles.val,
-            {
-              color: isPositiveNet
-                ? (isDark ? '#34D399' : '#059669')
-                : (isDark ? '#F87171' : '#DC2626'),
-            },
-          ]}
-          numberOfLines={1}
-        >
-          {`${isPositiveNet ? '+' : ''}${formatCurrency(totalNetPL)}`}
-        </Text>
-      </View>
     </View>
   );
 }
@@ -746,17 +685,13 @@ const podiumStyles = StyleSheet.create({
     alignItems: 'flex-end',
     justifyContent: 'center',
     paddingHorizontal: 0,
-    paddingTop: 14,
+    paddingTop: 16,
     paddingBottom: 14,
     gap: 8,
   },
   card: {
-    flex: 1,
-    minHeight: 184,
     borderRadius: 22,
     borderWidth: 1.5,
-    paddingVertical: 14,
-    paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'space-between',
     position: 'relative',
@@ -764,20 +699,32 @@ const podiumStyles = StyleSheet.create({
     elevation: 0,
   },
   cardPlaceholder: {
-    flex: 1,
+    flex: 0.95,
   },
-  cardSilver: {},
+  cardSilver: {
+    flex: 1.05,
+    minHeight: 196,
+    paddingVertical: 14,
+    paddingHorizontal: 6,
+    marginTop: 0,
+  },
   cardGold: {
-    flex: 1.15,
-    minHeight: 216,
+    flex: 1.18,
+    minHeight: 220,
     borderRadius: 24,
     paddingVertical: 14,
     paddingHorizontal: 4,
-    marginTop: -12,
+    marginTop: 0,
     shadowOpacity: 0,
     elevation: 0,
   },
-  cardBronze: {},
+  cardBronze: {
+    flex: 0.95,
+    minHeight: 180,
+    paddingVertical: 13,
+    paddingHorizontal: 5,
+    marginTop: 0,
+  },
   crownWrap: {
     position: 'absolute',
     top: -24,
@@ -860,7 +807,7 @@ const podiumStyles = StyleSheet.create({
   },
   profitPill: {
     borderRadius: 14,
-    borderWidth: 1,
+    borderWidth: 0,
     paddingVertical: 5,
     paddingHorizontal: 8,
     alignItems: 'center',
@@ -882,41 +829,6 @@ const podiumStyles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: -0.3,
-  },
-});
-
-const statsCardStyles = StyleSheet.create({
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    marginTop: 2,
-    marginBottom: 6,
-  },
-  item: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: 2,
-  },
-  divider: {
-    width: 1,
-    height: 24,
-  },
-  label: {
-    fontSize: 10.5,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    marginBottom: 2,
-    textAlign: 'center',
-  },
-  val: {
-    fontSize: 13,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    textAlign: 'center',
-    letterSpacing: -0.2,
   },
 });
 
@@ -971,80 +883,96 @@ export default function LeaderboardScreen() {
   const searchAnim = useRef(new Animated.Value(params.q ? 1 : 0)).current;
   const searchRef = useRef<TextInput>(null);
 
-  const topPad = Platform.OS === 'web' ? 67 : insets.top;
-
-  const toggleSearch = () => {
-    if (showSearch) {
-      Animated.timing(searchAnim, { toValue: 0, duration: 180, useNativeDriver: false }).start();
-      setShowSearch(false);
-      setSearchQuery('');
-    } else {
-      setShowSearch(true);
-      Animated.timing(searchAnim, { toValue: 1, duration: 220, useNativeDriver: false }).start(() =>
-        searchRef.current?.focus(),
-      );
-    }
-  };
-
-  const searchBarHeight = searchAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 52],
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const headerBlurOpacity = scrollY.interpolate({
+    inputRange: [0, 24],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
   });
-  const searchBarOpacity = searchAnim.interpolate({
-    inputRange: [0, 0.4, 1],
-    outputRange: [0, 0, 1],
-  });
+
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
   const userRankings = useMemo(
     () => computeRankings(applications, 'user'),
     [applications],
   );
-
   const ipoRankings = useMemo(
     () => computeRankings(applications, 'ipo'),
     [applications],
   );
 
-  const rankings = activeTab === 'user' ? userRankings : ipoRankings;
+  const tabsConfig = [
+    { key: 'user', label: 'By User', count: userRankings.length },
+    { key: 'ipo', label: 'By IPO', count: ipoRankings.length },
+  ];
+
+  const currentRankings = activeTab === 'user' ? userRankings : ipoRankings;
 
   const filteredRankings = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return rankings;
-    return rankings.filter((e) => e.name.toLowerCase().includes(q));
-  }, [rankings, searchQuery]);
+    if (!searchQuery.trim()) return currentRankings;
+    const q = searchQuery.toLowerCase().trim();
+    return currentRankings.filter((item) =>
+      item.name.toLowerCase().includes(q),
+    );
+  }, [currentRankings, searchQuery]);
 
   const top3 = useMemo(() => filteredRankings.slice(0, 3), [filteredRankings]);
-  const remainingRankings = useMemo(() => filteredRankings.slice(3), [filteredRankings]);
-
-  const tabsConfig = useMemo(
-    () => [
-      { key: 'user' as const, label: 'By user', count: userRankings.length },
-      { key: 'ipo' as const, label: 'By IPO', count: ipoRankings.length },
-    ],
-    [userRankings.length, ipoRankings.length],
+  const remainingRankings = useMemo(
+    () => filteredRankings.slice(3),
+    [filteredRankings],
   );
 
-  const totalNetPL = useMemo(
-    () => rankings.reduce((acc, r) => acc + r.netProfit, 0),
-    [rankings],
-  );
+  const toggleSearch = () => {
+    if (showSearch) {
+      Animated.timing(searchAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: false,
+      }).start(() => {
+        setShowSearch(false);
+        setSearchQuery('');
+      });
+    } else {
+      setShowSearch(true);
+      Animated.timing(searchAnim, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: false,
+      }).start(() => {
+        searchRef.current?.focus();
+      });
+    }
+  };
 
-  const topPerformer = rankings[0];
+  const searchBarHeight = searchAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 48],
+  });
+
+  const searchBarOpacity = searchAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  });
 
   const renderItem = ({ item, index }: { item: LeaderEntry; index: number }) => {
-    const isPos = item.netProfit >= 0;
+    const isProfit = item.netProfit >= 0;
     const rank = index + 4;
-
     return (
       <View
         style={[
           styles.rowCard,
-          { backgroundColor: colors.card, borderColor: colors.border },
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+          },
         ]}
       >
         <RankBadge rank={rank} colors={colors} />
         <View style={styles.rowInfo}>
-          <Text style={[styles.rowName, { color: colors.foreground }]} numberOfLines={1}>
+          <Text
+            style={[styles.rowName, { color: colors.foreground }]}
+            numberOfLines={1}
+          >
             {item.name}
           </Text>
           <Text style={[styles.rowSub, { color: colors.mutedForeground }]}>
@@ -1054,14 +982,10 @@ export default function LeaderboardScreen() {
         <Text
           style={[
             styles.rowProfit,
-            {
-              color: isPos
-                ? (isDark ? '#34D399' : '#059669')
-                : (isDark ? '#F87171' : '#DC2626'),
-            },
+            { color: isProfit ? colors.positive : colors.negative },
           ]}
         >
-          {`${isPos ? '+' : ''}${formatCurrency(item.netProfit)}`}
+          {isProfit ? '+' : ''}{formatCurrency(item.netProfit)}
         </Text>
       </View>
     );
@@ -1069,90 +993,120 @@ export default function LeaderboardScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
+      {/* Floating Blurred Header */}
       <View
         style={[
-          styles.header,
-          { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background },
+          styles.floatingHeaderContainer,
+          { paddingTop: topPad },
         ]}
+        pointerEvents="box-none"
       >
-        <IconButton
-          name="chevron-left"
-          variant="surface"
-          size="md"
-          onPress={() => router.back()}
-        />
-
-        <View style={styles.headerCenter}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>Rankings</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Leaderboard</Text>
-        </View>
-
-        <IconButton
-          name={showSearch ? 'x' : 'search'}
-          variant={showSearch || searchQuery.length > 0 ? 'primary' : 'surface'}
-          size="md"
-          onPress={toggleSearch}
-        />
-      </View>
-
-      {/* Expandable Search Input */}
-      <Animated.View
-        style={[
-          styles.searchBarWrap,
-          { height: searchBarHeight, opacity: searchBarOpacity, backgroundColor: colors.background },
-        ]}
-      >
-        <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Feather name="search" size={16} color={colors.mutedForeground} />
-          <TextInput
-            ref={searchRef}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder={`Search ${activeTab === 'user' ? 'users' : 'IPOs'}...`}
-            placeholderTextColor={colors.mutedForeground}
-            style={[styles.searchInput, { color: colors.foreground }]}
-            clearButtonMode="while-editing"
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: headerBlurOpacity }]}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 90 : 75}
+            tint={isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
           />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-              <Feather name="x-circle" size={14} color={colors.mutedForeground} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </Animated.View>
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(14, 17, 23, 0.96)', 'rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.35)']
+                : ['rgba(248, 249, 250, 0.96)', 'rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.35)']
+            }
+            locations={[0, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
 
-      {/* Pill Control */}
-      <View style={[styles.tabBarWrap, { backgroundColor: colors.background }]}>
-        <Tabs
-          variant="pills"
-          height={36}
-          tabs={tabsConfig}
-          activeTab={activeTab}
-          onChange={(key) => setActiveTab(key as TabKey)}
-        />
+        <View style={styles.header}>
+          <IconButton
+            name="chevron-left"
+            variant="surface"
+            size="md"
+            onPress={() => router.back()}
+          />
+
+          <View style={styles.headerCenter}>
+            <Text style={[styles.headerEyebrow, { color: colors.primary }]}>Rankings</Text>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>Leaderboard</Text>
+          </View>
+
+          <IconButton
+            name={showSearch ? 'x' : 'search'}
+            variant={showSearch || searchQuery.length > 0 ? 'primary' : 'surface'}
+            size="md"
+            onPress={toggleSearch}
+          />
+        </View>
+
+        {/* Expandable Search Input */}
+        <Animated.View
+          style={[
+            styles.searchBarWrap,
+            { height: searchBarHeight, opacity: searchBarOpacity },
+          ]}
+        >
+          <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Feather name="search" size={16} color={colors.mutedForeground} />
+            <TextInput
+              ref={searchRef}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder={`Search ${activeTab === 'user' ? 'users' : 'IPOs'}...`}
+              placeholderTextColor={colors.mutedForeground}
+              style={[styles.searchInput, { color: colors.foreground }]}
+              clearButtonMode="while-editing"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
+                <Feather name="x-circle" size={14} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </Animated.View>
+
+        {/* Pill Control */}
+        <View style={styles.tabBarWrap}>
+          <Tabs
+            variant="pills"
+            height={36}
+            tabs={tabsConfig}
+            activeTab={activeTab}
+            onChange={(key) => setActiveTab(key as TabKey)}
+          />
+        </View>
       </View>
 
       {/* List with Top 3 Podium in Header */}
-      <FlatList
+      <AnimatedFlatList
         data={remainingRankings}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item: any) => item.id}
         renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={refresh} colors={[colors.primary]} tintColor={colors.primary} />}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingTop: topPad + 114 },
+        ]}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={refresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+            progressViewOffset={topPad + 110}
+          />
+        }
         ListHeaderComponent={
           top3.length > 0 ? (
             <View style={styles.headerComponentWrap}>
               <Top3Podium
                 top3={top3}
                 isDark={isDark}
-              />
-              <LeaderboardStatsCard
-                totalRanked={rankings.length}
-                topPerformer={topPerformer}
-                totalNetPL={totalNetPL}
                 colors={colors}
-                isDark={isDark}
               />
               {remainingRankings.length > 0 && (
                 <View style={styles.sectionDividerWrap}>
@@ -1182,12 +1136,20 @@ export default function LeaderboardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  floatingHeaderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    overflow: 'hidden',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingBottom: 12,
+    height: 56,
     position: 'relative',
   },
   headerCenter: { alignItems: 'center' },
@@ -1225,12 +1187,13 @@ const styles = StyleSheet.create({
   },
   tabBarWrap: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingTop: 8,
+    paddingBottom: 4,
     borderBottomWidth: 0,
   },
   listContent: {
     paddingHorizontal: 16,
-    paddingTop: 4,
+    paddingTop: 0,
     paddingBottom: 32,
     gap: 10,
   },

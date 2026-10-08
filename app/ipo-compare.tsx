@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,6 +10,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useColors } from '@/hooks/useColors';
 import { useCompare } from '@/context/CompareContext';
@@ -32,6 +34,8 @@ export default function IPOCompareScreen() {
   const colors = useColors();
   const router = useRouter();
   const db = useSQLiteContext();
+  const insets = useSafeAreaInsets();
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
   const { width: windowWidth } = useWindowDimensions();
   const { selectedIds, removeFromCompare, clearCompare } = useCompare();
 
@@ -138,7 +142,7 @@ export default function IPOCompareScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <CompareHeader title="IPO Compare" onClear={clearCompare} />
 
-      <ScrollView style={styles.flex1} contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.flex1} contentContainerStyle={[styles.scrollContent, { paddingTop: topPad + 60 + 8 }]}>
         {/* Sticky Header with Cards */}
         <View style={[styles.cardsSection, { borderBottomColor: colors.border }]}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>

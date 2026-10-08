@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
+  Animated,
   Platform,
   ScrollView,
   StyleSheet,
@@ -16,6 +17,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconButton } from '@/components/ui/IconButton';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { AnimatedEntrance } from '@/components/ui/AnimatedEntrance';
 
 export default function IPOHubScreen() {
   const colors = useColors();
@@ -25,113 +28,104 @@ export default function IPOHubScreen() {
   const router = useRouter();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
+  const scrollY = useRef(new Animated.Value(0)).current;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: topPad,
-            height: topPad + 60,
-            backgroundColor: colors.background,
-          },
-        ]}
-      >
-        <IconButton
-          name="arrow-left"
-          variant="surface"
-          size="md"
-          onPress={() => router.back()}
-        />
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>
-            IPOVAULT CLOUD
-          </Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-            IPO Hub
-          </Text>
-        </View>
-        <View style={{ width: 44 }} />
-      </View>
+      <ScreenHeader
+        title="IPO Hub"
+        eyebrow="IPOVAULT CLOUD"
+        showBack
+        centerTitle
+        scrollY={scrollY}
+      />
 
-      <ScrollView
+      <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
           paddingHorizontal: 16,
-          paddingTop: 12,
+          paddingTop: topPad + 68,
           paddingBottom: Math.max(insets.bottom + 110, 135),
         }}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
       >
         {/* Intro Card */}
-        <BlurView
-          intensity={Platform.OS === 'web' ? 0 : 35}
-          tint={isDark ? 'dark' : 'light'}
-          style={[
-            styles.introCard,
-            {
-              backgroundColor: isDark
-                ? 'rgba(255, 255, 255, 0.04)'
-                : 'rgba(255, 255, 255, 0.7)',
-              borderColor: colors.border,
-            },
-          ]}
-        >
-          <Text style={[styles.introTitle, { color: colors.foreground }]}>
-            Cloud Analytics & Catalog Engine
-          </Text>
-          <Text style={[styles.introSub, { color: colors.mutedForeground }]}>
-            Access live backend-powered IPO listings and unified data-quality telemetry. Your offline IPO Management remains completely independent.
-          </Text>
-        </BlurView>
+        <AnimatedEntrance delay={0} distance={12}>
+          <BlurView
+            intensity={Platform.OS === 'web' ? 0 : 35}
+            tint={isDark ? 'dark' : 'light'}
+            style={[
+              styles.introCard,
+              {
+                backgroundColor: isDark
+                  ? 'rgba(255, 255, 255, 0.04)'
+                  : colors.card,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <Text style={[styles.introTitle, { color: colors.foreground }]}>
+              Cloud Analytics & Catalog Engine
+            </Text>
+            <Text style={[styles.introSub, { color: colors.mutedForeground }]}>
+              Access live backend-powered IPO listings and unified data-quality telemetry. Your offline IPO Management remains completely independent.
+            </Text>
+          </BlurView>
+        </AnimatedEntrance>
 
         {/* Feature 1: New IPOs */}
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => router.push('/new-ipos')}
-          style={styles.cardContainer}
-        >
-          <LinearGradient
-            colors={
-              isDark
-                ? ['#1F2937', '#111827']
-                : ['#FFFFFF', '#F9FAFB']
-            }
-            style={[styles.featureCard, { borderColor: colors.border }]}
+        <AnimatedEntrance delay={70} distance={14}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => router.push('/new-ipos')}
+            style={styles.cardContainer}
           >
-            <View style={styles.cardHeader}>
-              <View
-                style={[
-                  styles.iconWrap,
-                  { backgroundColor: colors.primary + '18' },
-                ]}
-              >
-                <Feather name="globe" size={22} color={colors.primary} />
+            <LinearGradient
+              colors={
+                isDark
+                  ? ['#1F2937', '#111827']
+                  : ['#FFFFFF', '#F9FAFB']
+              }
+              style={[styles.featureCard, { borderColor: colors.border }]}
+            >
+              <View style={styles.cardHeader}>
+                <View
+                  style={[
+                    styles.iconWrap,
+                    { backgroundColor: colors.primary + '18' },
+                  ]}
+                >
+                  <Feather name="globe" size={22} color={colors.primary} />
+                </View>
+                <View style={[styles.badge, { backgroundColor: colors.primary + '20' }]}>
+                  <Text style={[styles.badgeText, { color: colors.primary }]}>
+                    BACKEND CATALOG
+                  </Text>
+                </View>
               </View>
-              <View style={[styles.badge, { backgroundColor: colors.primary + '20' }]}>
-                <Text style={[styles.badgeText, { color: colors.primary }]}>
-                  BACKEND CATALOG
-                </Text>
-              </View>
-            </View>
 
-            <Text style={[styles.cardTitle, { color: colors.foreground }]}>
-              New IPOs
-            </Text>
-            <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
-              Browse canonical IPO filings, issue price bands, lot sizes, and share structures directly from IPOVault backend.
-            </Text>
-
-            <View style={styles.cardFooter}>
-              <Text style={[styles.actionText, { color: colors.primary }]}>
-                Explore Catalog
+              <Text style={[styles.cardTitle, { color: colors.foreground }]}>
+                New IPOs
               </Text>
-              <Feather name="arrow-right" size={16} color={colors.primary} />
-            </View>
-          </LinearGradient>
-        </TouchableOpacity>
+              <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
+                Browse canonical IPO filings, issue price bands, lot sizes, and share structures directly from IPOVault backend.
+              </Text>
+
+              <View style={styles.cardFooter}>
+                <Text style={[styles.actionText, { color: colors.primary }]}>
+                  Explore Catalog
+                </Text>
+                <Feather name="arrow-right" size={16} color={colors.primary} />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        </AnimatedEntrance>
 
         {/* Feature 2: Analytics (Preserved in code, hidden from UI as requested) */}
         {false && (
@@ -186,13 +180,15 @@ export default function IPOHubScreen() {
         )}
 
         {/* Architecture Note */}
-        <View style={[styles.noteBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Feather name="shield" size={16} color={colors.mutedForeground} />
-          <Text style={[styles.noteText, { color: colors.mutedForeground }]}>
-            Architecture Isolation: Read-only cloud catalog and analytics. Zero mutation of local SQLite offline data.
-          </Text>
-        </View>
-      </ScrollView>
+        <AnimatedEntrance delay={140} distance={12}>
+          <View style={[styles.noteBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Feather name="shield" size={16} color={colors.mutedForeground} />
+            <Text style={[styles.noteText, { color: colors.mutedForeground }]}>
+              Architecture Isolation: Read-only cloud catalog and analytics. Zero mutation of local SQLite offline data.
+            </Text>
+          </View>
+        </AnimatedEntrance>
+      </Animated.ScrollView>
     </View>
   );
 }

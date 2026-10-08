@@ -22,6 +22,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { IPORepository } from '@/services/ipo/ipoRepository';
 import { IPOOverviewTab } from '@/components/ipo/IPOOverviewTab';
 import { IconButton } from '@/components/ui/IconButton';
+import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { formatCurrency } from '@/utils/formatters';
 
 // ── Section card ──────────────────────────────────────────────────────────────
@@ -177,22 +178,21 @@ export default function FormsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Top Header */}
-      <View style={[styles.header, { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background }]}>
-        <View style={{ flex: 1, justifyContent: 'center' }}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary, marginTop: -2 }]}>IPO MARKET</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>IPO Hub</Text>
-        </View>
+      {/* Top Floating Blurred Header */}
+      <ScreenHeader
+        title="IPO Hub"
+        eyebrow="IPO MARKET"
+        rightElement={
+          <IconButton
+            name="plus"
+            variant="surface"
+            size="md"
+            onPress={() => router.push('/ipos')}
+          />
+        }
+      />
 
-        <IconButton
-          name="plus"
-          variant="surface"
-          size="md"
-          onPress={() => router.push('/ipos')}
-        />
-      </View>
-
-      <ScrollView contentContainerStyle={{ paddingTop: 16, paddingBottom: Math.max(insets.bottom + 110, 135), gap: 18 }}>
+      <ScrollView contentContainerStyle={{ paddingTop: topPad + 60 + 16, paddingBottom: Math.max(insets.bottom + 110, 135), gap: 18 }}>
 
         {/* Render Curated IPO Hub Overview Tab */}
         <IPOOverviewTab repo={new IPORepository(useSQLiteContext())} onOpenManualAdd={() => router.push('/ipos')} />

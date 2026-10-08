@@ -92,25 +92,29 @@ export function findMatchingMarketQuote(
     return null;
   };
 
-  // 1. ISIN match
+  // 1. ISIN match (Primary Path)
   if (appIsin && (marketQuotes as any)[appIsin]) {
     const p = getLtpFromVal((marketQuotes as any)[appIsin]);
     if (p != null) return p;
   }
 
-  // 2. Exchange Symbol match
+  // 2. Exchange Symbol match & SME segment fallback (when ISIN quote is empty/404 or pending)
   if (appSymbol) {
-    if ((marketQuotes as any)[appSymbol]) {
-      const p = getLtpFromVal((marketQuotes as any)[appSymbol]);
-      if (p != null) return p;
-    }
-    if ((marketQuotes as any)[`NSE:${appSymbol}`]) {
-      const p = getLtpFromVal((marketQuotes as any)[`NSE:${appSymbol}`]);
-      if (p != null) return p;
-    }
-    if ((marketQuotes as any)[`BSE:${appSymbol}`]) {
-      const p = getLtpFromVal((marketQuotes as any)[`BSE:${appSymbol}`]);
-      if (p != null) return p;
+    const symbolVariants = [
+      appSymbol,
+      `NSE:${appSymbol}`,
+      `BSE:${appSymbol}`,
+      `NSE_EQ|${appSymbol}`,
+      `BSE_EQ|${appSymbol}`,
+      `NSE_SM|${appSymbol}`,
+      `BSE_SM|${appSymbol}`,
+    ];
+
+    for (const variant of symbolVariants) {
+      if ((marketQuotes as any)[variant]) {
+        const p = getLtpFromVal((marketQuotes as any)[variant]);
+        if (p != null) return p;
+      }
     }
   }
 

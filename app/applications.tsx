@@ -40,13 +40,13 @@ import {
   extractHoldingInstrumentsForQuotes,
 } from '@/utils/brokerMatching';
 
-type TabKey = 'Applied' | 'Allotted' | 'Sold' | 'Holding' | 'Not Allotted';
+type TabKey = 'Allotted' | 'Holding' | 'Sold' | 'Applied' | 'Not Allotted';
 
 const TABS: { key: TabKey; label: string; flex: number }[] = [
-  { key: 'Applied',      label: 'Active',       flex: 1.0 },
   { key: 'Allotted',     label: 'Allotted',     flex: 1.1 },
-  { key: 'Sold',         label: 'Sold',         flex: 0.75 },
   { key: 'Holding',      label: 'Holding',      flex: 1.0 },
+  { key: 'Sold',         label: 'Sold',         flex: 0.75 },
+  { key: 'Applied',      label: 'Active',       flex: 1.0 },
   { key: 'Not Allotted', label: 'Not Allotted', flex: 1.45 },
 ];
 
@@ -105,7 +105,7 @@ export default function ApplicationsScreen() {
     };
   }, [activeUserId, applications, db, ipos]);
 
-  const [activeTab, setActiveTab] = useState<TabKey>('Applied');
+  const [activeTab, setActiveTab] = useState<TabKey>('Allotted');
   const [selectedApp, setSelectedApp] = useState<ApplicationWithDetails | null>(null);
   const [filterUserIds, setFilterUserIds] = useState<string[]>([]);
   const [filterBrokers, setFilterBrokers] = useState<string[]>([]);
