@@ -14,7 +14,7 @@ import {
   fetchUserDataFromFirestore,
   getCloudSyncMetadata,
 } from '@/services/cloud/firestoreSyncService';
-import { ipoDiagnosticsStore } from '@/services/ipo/ipoUpdater';
+import { ipoDiagnosticsStore } from '@/services/ipo/diagnosticsStore';
 import { SettingRow } from './(tabs)/settings';
 
 const TABLES = ['users_table', 'bank_accounts', 'ipo_listings', 'ipo_applications', 'ipo_master'];

@@ -6,7 +6,7 @@ import {
   getAuth,
   Auth,
 } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, Firestore } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const firebaseConfig = {
@@ -57,4 +57,12 @@ export const firebaseAuth: Auth = (() => {
   }
 })();
 
-export const firestore: Firestore = getFirestore(firebaseApp);
+export const firestore: Firestore = (() => {
+  try {
+    return initializeFirestore(firebaseApp, {
+      experimentalAutoDetectLongPolling: true,
+    });
+  } catch {
+    return getFirestore(firebaseApp);
+  }
+})();

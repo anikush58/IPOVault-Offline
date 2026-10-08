@@ -7,6 +7,39 @@ import { safeRunAsync, safeGetFirstAsync, safeGetAllAsync } from '@/utils/sqlite
 export class IPORepository {
   constructor(private db: SQLiteDatabase) {}
 
+  private hydrateRecord(row: any): IPOMasterRecord {
+    if (!row) return row;
+    const record = { ...row };
+    if (record.financials_json) {
+      try {
+        const parsedFin = JSON.parse(record.financials_json);
+        record.company = { ...(record.company || {}), financials: parsedFin };
+        record.financials = parsedFin;
+      } catch {}
+    }
+    if (record.participants_json) {
+      try {
+        record.participants = JSON.parse(record.participants_json);
+      } catch {}
+    }
+    if (record.documents_json) {
+      try {
+        record.documents = JSON.parse(record.documents_json);
+      } catch {}
+    }
+    if (record.intelligence_json) {
+      try {
+        record.intelligence = JSON.parse(record.intelligence_json);
+      } catch {}
+    }
+    if (record.anchor_details_json) {
+      try {
+        record.anchor_details = JSON.parse(record.anchor_details_json);
+      } catch {}
+    }
+    return record;
+  }
+
   async upsertBatch(records: Partial<IPOMasterRecord>[], isAuthoritative: boolean = true): Promise<number> {
     if (!records || records.length === 0) return 0;
     
@@ -17,30 +50,78 @@ export class IPORepository {
       const record = IPOParser.parse(raw);
       if (!record || !record.id) continue;
       
-      const gmpUpdateSql = isAuthoritative
-        ? `gmp_amount=excluded.gmp_amount,
+      const updateClauses = isAuthoritative
+        ? `company_name=COALESCE(NULLIF(excluded.company_name, ''), ipo_master.company_name),
+          ipo_name=COALESCE(NULLIF(excluded.ipo_name, ''), ipo_master.ipo_name),
+          symbol=COALESCE(NULLIF(excluded.symbol, ''), ipo_master.symbol),
+          exchange=COALESCE(NULLIF(excluded.exchange, ''), ipo_master.exchange),
+          issue_type=COALESCE(NULLIF(excluded.issue_type, ''), ipo_master.issue_type),
+          price_band_min=excluded.price_band_min,
+          price_band_max=excluded.price_band_max,
+          lot_size=excluded.lot_size,
+          issue_size=excluded.issue_size,
+          listing_date=excluded.listing_date,
+          open_date=excluded.open_date,
+          close_date=excluded.close_date,
+          allotment_date=excluded.allotment_date,
+          refund_date=excluded.refund_date,
+          demat_credit_date=excluded.demat_credit_date,
+          registrar=excluded.registrar,
+          lead_manager=excluded.lead_manager,
+          status=COALESCE(NULLIF(excluded.status, ''), ipo_master.status),
+          logo_url=COALESCE(NULLIF(excluded.logo_url, ''), ipo_master.logo_url),
+          sector=COALESCE(NULLIF(excluded.sector, ''), ipo_master.sector),
+          description=COALESCE(NULLIF(excluded.description, ''), ipo_master.description),
+          website=COALESCE(NULLIF(excluded.website, ''), ipo_master.website),
+          prospectus_url=excluded.prospectus_url,
+          retail_sub=excluded.retail_sub,
+          qib_sub=excluded.qib_sub,
+          nii_sub=excluded.nii_sub,
+          employee_sub=excluded.employee_sub,
+          shareholder_sub=excluded.shareholder_sub,
+          anchor_sub=excluded.anchor_sub,
+          total_sub=excluded.total_sub,
+          subscription_timestamp=excluded.subscription_timestamp,
+          registrar_website=excluded.registrar_website,
+          allotment_link=excluded.allotment_link,
+          listing_price=excluded.listing_price,
+          listing_gain_percent=excluded.listing_gain_percent,
+          current_price=excluded.current_price,
+          current_price_updated_at=excluded.current_price_updated_at,
+          gmp_amount=excluded.gmp_amount,
           gmp_percent=excluded.gmp_percent,
           profit_per_lot=excluded.profit_per_lot,
-          gmp_updated_at=excluded.gmp_updated_at,`
-        : `gmp_amount=COALESCE(excluded.gmp_amount, ipo_master.gmp_amount),
-          gmp_percent=COALESCE(excluded.gmp_percent, ipo_master.gmp_percent),
-          profit_per_lot=COALESCE(excluded.profit_per_lot, ipo_master.profit_per_lot),
-          gmp_updated_at=COALESCE(excluded.gmp_updated_at, ipo_master.gmp_updated_at),`;
-      
-      const sql = `INSERT INTO ipo_master (
-          id, company_name, ipo_name, symbol, exchange, issue_type,
-          price_band_min, price_band_max, lot_size, issue_size,
-          listing_date, open_date, close_date, allotment_date, refund_date, demat_credit_date,
-          registrar, lead_manager, status, logo_url, sector, description, website, prospectus_url,
-          retail_sub, qib_sub, nii_sub, employee_sub, shareholder_sub, anchor_sub, total_sub, subscription_timestamp,
-          registrar_website, allotment_link,
-          listing_price, listing_gain_percent, current_price, current_price_updated_at,
-          gmp_amount, gmp_percent, profit_per_lot, gmp_updated_at,
-          lifecycle_status, lifecycle_confidence, lifecycle_source, lifecycle_last_verified_at,
-          is_favorite, source_type, sync_version, created_at, updated_at, deleted_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        ON CONFLICT(id) DO UPDATE SET
-          company_name=COALESCE(NULLIF(excluded.company_name, ''), ipo_master.company_name),
+          gmp_updated_at=excluded.gmp_updated_at,
+          lifecycle_status=COALESCE(NULLIF(excluded.lifecycle_status, ''), ipo_master.lifecycle_status),
+          lifecycle_confidence=COALESCE(NULLIF(excluded.lifecycle_confidence, ''), ipo_master.lifecycle_confidence),
+          lifecycle_source=COALESCE(NULLIF(excluded.lifecycle_source, ''), ipo_master.lifecycle_source),
+          lifecycle_last_verified_at=excluded.lifecycle_last_verified_at,
+          pre_ipo_eps=excluded.pre_ipo_eps,
+          post_ipo_eps=excluded.post_ipo_eps,
+          pre_ipo_pe=excluded.pre_ipo_pe,
+          post_ipo_pe=excluded.post_ipo_pe,
+          pre_ipo_promoter_holding=excluded.pre_ipo_promoter_holding,
+          post_ipo_promoter_holding=excluded.post_ipo_promoter_holding,
+          pre_ipo_market_cap=excluded.pre_ipo_market_cap,
+          post_ipo_market_cap=excluded.post_ipo_market_cap,
+          market_cap=excluded.market_cap,
+          fresh_issue_size=excluded.fresh_issue_size,
+          ofs_size=excluded.ofs_size,
+          drhp_url=excluded.drhp_url,
+          rhp_url=excluded.rhp_url,
+          anchor_list_url=excluded.anchor_list_url,
+          company_phone=excluded.company_phone,
+          company_email=excluded.company_email,
+          registrar_phone=excluded.registrar_phone,
+          registrar_email=excluded.registrar_email,
+          financials_json=excluded.financials_json,
+          participants_json=excluded.participants_json,
+          documents_json=excluded.documents_json,
+          intelligence_json=excluded.intelligence_json,
+          anchor_details_json=excluded.anchor_details_json,
+          sync_version=excluded.sync_version,
+          updated_at=excluded.updated_at`
+        : `company_name=COALESCE(NULLIF(excluded.company_name, ''), ipo_master.company_name),
           ipo_name=COALESCE(NULLIF(excluded.ipo_name, ''), ipo_master.ipo_name),
           symbol=COALESCE(NULLIF(excluded.symbol, ''), ipo_master.symbol),
           exchange=COALESCE(NULLIF(excluded.exchange, ''), ipo_master.exchange),
@@ -53,19 +134,98 @@ export class IPORepository {
           open_date=COALESCE(NULLIF(excluded.open_date, ''), ipo_master.open_date),
           close_date=COALESCE(NULLIF(excluded.close_date, ''), ipo_master.close_date),
           allotment_date=COALESCE(NULLIF(excluded.allotment_date, ''), ipo_master.allotment_date),
+          refund_date=COALESCE(NULLIF(excluded.refund_date, ''), ipo_master.refund_date),
+          demat_credit_date=COALESCE(NULLIF(excluded.demat_credit_date, ''), ipo_master.demat_credit_date),
           registrar=COALESCE(NULLIF(excluded.registrar, ''), ipo_master.registrar),
+          lead_manager=COALESCE(NULLIF(excluded.lead_manager, ''), ipo_master.lead_manager),
           status=COALESCE(NULLIF(excluded.status, ''), ipo_master.status),
+          logo_url=COALESCE(NULLIF(excluded.logo_url, ''), ipo_master.logo_url),
+          sector=COALESCE(NULLIF(excluded.sector, ''), ipo_master.sector),
+          description=COALESCE(NULLIF(excluded.description, ''), ipo_master.description),
+          website=COALESCE(NULLIF(excluded.website, ''), ipo_master.website),
+          prospectus_url=COALESCE(NULLIF(excluded.prospectus_url, ''), ipo_master.prospectus_url),
+          retail_sub=COALESCE(excluded.retail_sub, ipo_master.retail_sub),
+          qib_sub=COALESCE(excluded.qib_sub, ipo_master.qib_sub),
+          nii_sub=COALESCE(excluded.nii_sub, ipo_master.nii_sub),
+          employee_sub=COALESCE(excluded.employee_sub, ipo_master.employee_sub),
+          shareholder_sub=COALESCE(excluded.shareholder_sub, ipo_master.shareholder_sub),
+          anchor_sub=COALESCE(excluded.anchor_sub, ipo_master.anchor_sub),
+          total_sub=COALESCE(excluded.total_sub, ipo_master.total_sub),
+          subscription_timestamp=COALESCE(NULLIF(excluded.subscription_timestamp, ''), ipo_master.subscription_timestamp),
+          registrar_website=COALESCE(NULLIF(excluded.registrar_website, ''), ipo_master.registrar_website),
+          allotment_link=COALESCE(NULLIF(excluded.allotment_link, ''), ipo_master.allotment_link),
+          listing_price=COALESCE(excluded.listing_price, ipo_master.listing_price),
+          listing_gain_percent=COALESCE(excluded.listing_gain_percent, ipo_master.listing_gain_percent),
+          current_price=COALESCE(excluded.current_price, ipo_master.current_price),
+          current_price_updated_at=COALESCE(NULLIF(excluded.current_price_updated_at, ''), ipo_master.current_price_updated_at),
+          gmp_amount=COALESCE(excluded.gmp_amount, ipo_master.gmp_amount),
+          gmp_percent=COALESCE(excluded.gmp_percent, ipo_master.gmp_percent),
+          profit_per_lot=COALESCE(excluded.profit_per_lot, ipo_master.profit_per_lot),
+          gmp_updated_at=COALESCE(excluded.gmp_updated_at, ipo_master.gmp_updated_at),
           lifecycle_status=COALESCE(NULLIF(excluded.lifecycle_status, ''), ipo_master.lifecycle_status),
           lifecycle_confidence=COALESCE(NULLIF(excluded.lifecycle_confidence, ''), ipo_master.lifecycle_confidence),
           lifecycle_source=COALESCE(NULLIF(excluded.lifecycle_source, ''), ipo_master.lifecycle_source),
           lifecycle_last_verified_at=COALESCE(NULLIF(excluded.lifecycle_last_verified_at, ''), ipo_master.lifecycle_last_verified_at),
-          total_sub=COALESCE(excluded.total_sub, ipo_master.total_sub),
-          retail_sub=COALESCE(excluded.retail_sub, ipo_master.retail_sub),
-          qib_sub=COALESCE(excluded.qib_sub, ipo_master.qib_sub),
-          nii_sub=COALESCE(excluded.nii_sub, ipo_master.nii_sub),
-          ${gmpUpdateSql}
-          listing_gain_percent=COALESCE(excluded.listing_gain_percent, ipo_master.listing_gain_percent),
+          pre_ipo_eps=COALESCE(excluded.pre_ipo_eps, ipo_master.pre_ipo_eps),
+          post_ipo_eps=COALESCE(excluded.post_ipo_eps, ipo_master.post_ipo_eps),
+          pre_ipo_pe=COALESCE(excluded.pre_ipo_pe, ipo_master.pre_ipo_pe),
+          post_ipo_pe=COALESCE(excluded.post_ipo_pe, ipo_master.post_ipo_pe),
+          pre_ipo_promoter_holding=COALESCE(excluded.pre_ipo_promoter_holding, ipo_master.pre_ipo_promoter_holding),
+          post_ipo_promoter_holding=COALESCE(excluded.post_ipo_promoter_holding, ipo_master.post_ipo_promoter_holding),
+          pre_ipo_market_cap=COALESCE(excluded.pre_ipo_market_cap, ipo_master.pre_ipo_market_cap),
+          post_ipo_market_cap=COALESCE(excluded.post_ipo_market_cap, ipo_master.post_ipo_market_cap),
+          market_cap=COALESCE(excluded.market_cap, ipo_master.market_cap),
+          fresh_issue_size=COALESCE(excluded.fresh_issue_size, ipo_master.fresh_issue_size),
+          ofs_size=COALESCE(excluded.ofs_size, ipo_master.ofs_size),
+          drhp_url=COALESCE(NULLIF(excluded.drhp_url, ''), ipo_master.drhp_url),
+          rhp_url=COALESCE(NULLIF(excluded.rhp_url, ''), ipo_master.rhp_url),
+          anchor_list_url=COALESCE(NULLIF(excluded.anchor_list_url, ''), ipo_master.anchor_list_url),
+          company_phone=COALESCE(NULLIF(excluded.company_phone, ''), ipo_master.company_phone),
+          company_email=COALESCE(NULLIF(excluded.company_email, ''), ipo_master.company_email),
+          registrar_phone=COALESCE(NULLIF(excluded.registrar_phone, ''), ipo_master.registrar_phone),
+          registrar_email=COALESCE(NULLIF(excluded.registrar_email, ''), ipo_master.registrar_email),
+          financials_json=COALESCE(NULLIF(excluded.financials_json, ''), ipo_master.financials_json),
+          participants_json=COALESCE(NULLIF(excluded.participants_json, ''), ipo_master.participants_json),
+          documents_json=COALESCE(NULLIF(excluded.documents_json, ''), ipo_master.documents_json),
+          intelligence_json=COALESCE(NULLIF(excluded.intelligence_json, ''), ipo_master.intelligence_json),
+          anchor_details_json=COALESCE(NULLIF(excluded.anchor_details_json, ''), ipo_master.anchor_details_json),
           updated_at=excluded.updated_at`;
+      
+      const sql = `INSERT INTO ipo_master (
+          id, company_name, ipo_name, symbol, exchange, issue_type,
+          price_band_min, price_band_max, lot_size, issue_size,
+          listing_date, open_date, close_date, allotment_date, refund_date, demat_credit_date,
+          registrar, lead_manager, status, logo_url, sector, description, website, prospectus_url,
+          retail_sub, qib_sub, nii_sub, employee_sub, shareholder_sub, anchor_sub, total_sub, subscription_timestamp,
+          registrar_website, allotment_link,
+          listing_price, listing_gain_percent, current_price, current_price_updated_at,
+          gmp_amount, gmp_percent, profit_per_lot, gmp_updated_at,
+          lifecycle_status, lifecycle_confidence, lifecycle_source, lifecycle_last_verified_at,
+          pre_ipo_eps, post_ipo_eps, pre_ipo_pe, post_ipo_pe,
+          pre_ipo_promoter_holding, post_ipo_promoter_holding, pre_ipo_market_cap, post_ipo_market_cap, market_cap,
+          fresh_issue_size, ofs_size, drhp_url, rhp_url, anchor_list_url,
+          company_phone, company_email, registrar_phone, registrar_email,
+          financials_json, participants_json, documents_json, intelligence_json, anchor_details_json,
+          is_favorite, source_type, sync_version, created_at, updated_at, deleted_at
+        ) VALUES (
+          ?,?,?,?,?,?,
+          ?,?,?,?,
+          ?,?,?,?,?,?,
+          ?,?,?,?,?,?,?,?,
+          ?,?,?,?,?,?,?,?,
+          ?,?,
+          ?,?,?,?,
+          ?,?,?,?,
+          ?,?,?,?,
+          ?,?,?,?,
+          ?,?,?,?,?,
+          ?,?,?,?,?,
+          ?,?,?,?,
+          ?,?,?,?,?,
+          ?,?,?,?,?,?
+        )
+        ON CONFLICT(id) DO UPDATE SET
+          ${updateClauses}`;
 
       const params = [
         record.id, record.company_name, record.ipo_name, record.symbol, record.exchange, record.issue_type,
@@ -77,6 +237,11 @@ export class IPORepository {
         record.listing_price, record.listing_gain_percent, record.current_price, record.current_price_updated_at,
         record.gmp_amount ?? null, record.gmp_percent ?? null, record.profit_per_lot ?? null, record.gmp_updated_at ?? null,
         record.lifecycle_status || record.status || 'Unknown', record.lifecycle_confidence || 'Low', record.lifecycle_source || '', record.lifecycle_last_verified_at || null,
+        record.pre_ipo_eps ?? null, record.post_ipo_eps ?? null, record.pre_ipo_pe ?? null, record.post_ipo_pe ?? null,
+        record.pre_ipo_promoter_holding ?? null, record.post_ipo_promoter_holding ?? null, record.pre_ipo_market_cap ?? null, record.post_ipo_market_cap ?? null, record.market_cap ?? null,
+        record.fresh_issue_size ?? null, record.ofs_size ?? null, record.drhp_url || '', record.rhp_url || '', record.anchor_list_url || '',
+        record.company_phone || '', record.company_email || '', record.registrar_phone || '', record.registrar_email || '',
+        record.financials_json || null, record.participants_json || null, record.documents_json || null, record.intelligence_json || null, record.anchor_details_json || null,
         record.is_favorite ?? 0, record.source_type || 'SERVER', record.sync_version ?? 0, record.created_at, record.updated_at, record.deleted_at
       ];
 
@@ -95,7 +260,8 @@ export class IPORepository {
 
   async getFavorites(): Promise<IPOMasterRecord[]> {
     const sql = "SELECT * FROM ipo_master WHERE deleted_at IS NULL AND is_favorite = 1 ORDER BY open_date DESC";
-    return safeGetAllAsync<IPOMasterRecord>(this.db, sql, [], 'IPORepository.getFavorites');
+    const rows = await safeGetAllAsync<IPOMasterRecord>(this.db, sql, [], 'IPORepository.getFavorites');
+    return (rows || []).map((r) => this.hydrateRecord(r));
   }
 
   async toggleFavorite(id: string, isFavorite: boolean): Promise<void> {
@@ -114,22 +280,26 @@ export class IPORepository {
 
   async getUpcoming(): Promise<IPOMasterRecord[]> {
     const sql = "SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (source_type = 'SERVER' OR source_type IS NULL OR source_type = '') AND id NOT LIKE 'manual-%' AND (UPPER(status) = 'UPCOMING' OR UPPER(lifecycle_status) = 'UPCOMING' OR open_date > date('now')) ORDER BY open_date ASC";
-    return safeGetAllAsync<IPOMasterRecord>(this.db, sql, [], 'IPORepository.getUpcoming');
+    const rows = await safeGetAllAsync<IPOMasterRecord>(this.db, sql, [], 'IPORepository.getUpcoming');
+    return (rows || []).map((r) => this.hydrateRecord(r));
   }
 
   async getOpen(): Promise<IPOMasterRecord[]> {
     const sql = "SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (source_type = 'SERVER' OR source_type IS NULL OR source_type = '') AND id NOT LIKE 'manual-%' AND (UPPER(status) = 'OPEN' OR UPPER(lifecycle_status) = 'OPEN') ORDER BY close_date ASC";
-    return safeGetAllAsync<IPOMasterRecord>(this.db, sql, [], 'IPORepository.getOpen');
+    const rows = await safeGetAllAsync<IPOMasterRecord>(this.db, sql, [], 'IPORepository.getOpen');
+    return (rows || []).map((r) => this.hydrateRecord(r));
   }
 
   async getClosed(): Promise<IPOMasterRecord[]> {
     const sql = "SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (source_type = 'SERVER' OR source_type IS NULL OR source_type = '') AND id NOT LIKE 'manual-%' AND (UPPER(status) IN ('CLOSED', 'ALLOTMENT_PENDING', 'ALLOTMENT_COMPLETED', 'ALLOTTED_PENDING', 'ALLOTTED_AVAILABLE', 'ALLOTMENT', 'ALLOTMENT_OUT', 'LISTING_PENDING') OR UPPER(lifecycle_status) IN ('CLOSED', 'ALLOTMENT_PENDING', 'ALLOTMENT_COMPLETED', 'ALLOTTED_PENDING', 'ALLOTTED_AVAILABLE', 'LISTING_UPCOMING')) ORDER BY close_date DESC";
-    return safeGetAllAsync<IPOMasterRecord>(this.db, sql, [], 'IPORepository.getClosed');
+    const rows = await safeGetAllAsync<IPOMasterRecord>(this.db, sql, [], 'IPORepository.getClosed');
+    return (rows || []).map((r) => this.hydrateRecord(r));
   }
 
   async getListed(): Promise<IPOMasterRecord[]> {
     const sql = "SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (source_type = 'SERVER' OR source_type IS NULL OR source_type = '') AND id NOT LIKE 'manual-%' AND (UPPER(status) IN ('LISTED', 'LISTING_PENDING') OR UPPER(lifecycle_status) IN ('LISTED', 'LISTING_UPCOMING')) ORDER BY listing_date DESC";
-    return safeGetAllAsync<IPOMasterRecord>(this.db, sql, [], 'IPORepository.getListed');
+    const rows = await safeGetAllAsync<IPOMasterRecord>(this.db, sql, [], 'IPORepository.getListed');
+    return (rows || []).map((r) => this.hydrateRecord(r));
   }
 
   async getById(id: string): Promise<IPOMasterRecord | null> {
@@ -138,7 +308,8 @@ export class IPORepository {
       return null;
     }
     const sql = "SELECT * FROM ipo_master WHERE id = ?";
-    return safeGetFirstAsync<IPOMasterRecord>(this.db, sql, [id], 'IPORepository.getById');
+    const row = await safeGetFirstAsync<IPOMasterRecord>(this.db, sql, [id], 'IPORepository.getById');
+    return row ? this.hydrateRecord(row) : null;
   }
 
   async search(query: string): Promise<IPOMasterRecord[]> {
@@ -163,7 +334,8 @@ export class IPORepository {
     }
 
     const sql = `SELECT * FROM ipo_master WHERE deleted_at IS NULL AND (source_type = 'SERVER' OR source_type IS NULL OR source_type = '') AND id NOT LIKE 'manual-%' AND ${conditions.join(' AND ')} ORDER BY open_date DESC LIMIT 50`;
-    return safeGetAllAsync<IPOMasterRecord>(this.db, sql, params, 'IPORepository.search');
+    const rows = await safeGetAllAsync<IPOMasterRecord>(this.db, sql, params, 'IPORepository.search');
+    return (rows || []).map((r) => this.hydrateRecord(r));
   }
 
   async getLastUpdatedTimestamp(): Promise<string | null> {
@@ -186,7 +358,8 @@ export class IPORepository {
     }
     sql += ') ORDER BY open_date DESC LIMIT 10';
 
-    return safeGetAllAsync<IPOMasterRecord>(this.db, sql, params, 'IPORepository.findDuplicates');
+    const rows = await safeGetAllAsync<IPOMasterRecord>(this.db, sql, params, 'IPORepository.findDuplicates');
+    return (rows || []).map((r) => this.hydrateRecord(r));
   }
 
   async createManual(data: Partial<IPOMasterRecord>): Promise<IPOMasterRecord> {

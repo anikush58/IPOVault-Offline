@@ -23,7 +23,6 @@ import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDB } from '@/context/DBContext';
 import { IconButton } from '@/components/ui/IconButton';
-import { useSmartIPODatabase } from '@/hooks/useSmartIPODatabase';
 import { KPICard } from '@/components/KPICard';
 import { PerformanceChart } from '@/components/PerformanceChart';
 import { Leaderboard } from '@/components/Leaderboard';

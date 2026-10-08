@@ -92,7 +92,95 @@ export class BackendIpoApiService {
       }
     }
 
-    return items.map(normalizeBackendIpo);
+    // Prevent duplicate IPOs when combining pages
+    const seen = new Set<string>();
+    const deduplicated: BackendIpo[] = [];
+    for (const item of items) {
+      const key = item.id || item.symbol;
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        deduplicated.push(item);
+      } else if (!key) {
+        deduplicated.push(item);
+      }
+    }
+
+    return deduplicated.map(normalizeBackendIpo);
+  }
+
+  public async listListedIpos(
+    filter?: BackendIpoListFilter,
+  ): Promise<BackendIpo[]> {
+    const queryParams: Record<string, string | number> = {
+      limit: 100,
+      ...(filter as Record<string, string | number>),
+    };
+    const res = await this.apiClient.get<
+      BackendIpo[] | { items: BackendIpo[] }
+    >(ENDPOINTS.LISTED, queryParams);
+
+    if (!res.data) {
+      return [];
+    }
+
+    let items: BackendIpo[] = [];
+
+    if (Array.isArray(res.data)) {
+      items = [...res.data];
+    } else if (
+      typeof res.data === 'object' &&
+      'items' in res.data &&
+      Array.isArray((res.data as any).items)
+    ) {
+      items = [...(res.data as any).items];
+    }
+
+    // If multiple pages exist and no specific page was requested, fetch remaining pages
+    if (
+      !filter?.page &&
+      res.meta &&
+      typeof (res.meta as any).totalPages === 'number' &&
+      (res.meta as any).totalPages > 1
+    ) {
+      const totalPages = (res.meta as any).totalPages;
+      const pagePromises = [];
+      for (let p = 2; p <= totalPages; p++) {
+        pagePromises.push(
+          this.apiClient.get<BackendIpo[] | { items: BackendIpo[] }>(
+            ENDPOINTS.LISTED,
+            { ...queryParams, page: p },
+          ),
+        );
+      }
+      const pagedResults = await Promise.all(pagePromises);
+      for (const pageRes of pagedResults) {
+        if (pageRes.data && Array.isArray(pageRes.data)) {
+          items.push(...pageRes.data);
+        } else if (
+          pageRes.data &&
+          typeof pageRes.data === 'object' &&
+          'items' in pageRes.data &&
+          Array.isArray((pageRes.data as any).items)
+        ) {
+          items.push(...(pageRes.data as any).items);
+        }
+      }
+    }
+
+    // Prevent duplicate IPOs when combining pages
+    const seen = new Set<string>();
+    const deduplicated: BackendIpo[] = [];
+    for (const item of items) {
+      const key = item.id || item.symbol;
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        deduplicated.push(item);
+      } else if (!key) {
+        deduplicated.push(item);
+      }
+    }
+
+    return deduplicated.map(normalizeBackendIpo);
   }
 
   public async getBackendIpoDetail(

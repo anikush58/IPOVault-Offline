@@ -46,7 +46,7 @@ export default function PrivacySecurityScreen() {
       iconColor: '#8B5CF6',
       title: 'Encrypted Cloud Transport',
       description:
-        'When optional Cloud Backup is used, data is transmitted exclusively over TLS 1.3 encryption and stored in Supabase with PostgreSQL Row-Level Security (RLS).',
+        'When optional Cloud Backup is used, data is transmitted exclusively over TLS 1.3 encryption and stored in Firebase Firestore with user-scoped security rules.',
     },
     {
       icon: 'key',

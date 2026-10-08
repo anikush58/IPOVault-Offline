@@ -1,7 +1,7 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { IPORepository } from './ipoRepository';
 import { LiveIPOProvider } from './providers/LiveIPOProvider';
-import { ipoDiagnosticsStore } from './ipoUpdater';
+import { ipoDiagnosticsStore } from './diagnosticsStore';
 import { syncStore } from '@/services/sync/syncStatus';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { runWithTransaction, safeExecAsync, safeRunAsync } from '@/utils/sqliteDebug';

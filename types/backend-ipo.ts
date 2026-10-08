@@ -11,6 +11,7 @@ export interface BackendCompanyFinancial {
   rocePercentage?: string | number | null;
   eps?: string | number | null;
   patMarginPercent?: string | number | null;
+  ebitdaMarginPercent?: string | number | null;
 }
 
 export interface BackendIpoCompany {
@@ -136,21 +137,21 @@ export interface BackendIpo {
   priceBandHigh?: number | null;
   faceValue?: number | string | null;
   lotSize?: number | null;
-  issueSize?: number | null;
-  freshIssueSize?: number | null;
-  ofsSize?: number | null;
-  preIpoEps?: number | null;
-  postIpoEps?: number | null;
-  preIpoPe?: number | null;
-  postIpoPe?: number | null;
-  preIpoPromoterHolding?: number | null;
-  postIpoPromoterHolding?: number | null;
-  preIpoMarketCap?: number | null;
-  postIpoMarketCap?: number | null;
-  marketCap?: number | null;
-  issueShareCount?: number | null;
-  freshIssueShareCount?: number | null;
-  ofsShareCount?: number | null;
+  issueSize?: number | string | null;
+  freshIssueSize?: number | string | null;
+  ofsSize?: number | string | null;
+  preIpoEps?: number | string | null;
+  postIpoEps?: number | string | null;
+  preIpoPe?: number | string | null;
+  postIpoPe?: number | string | null;
+  preIpoPromoterHolding?: number | string | null;
+  postIpoPromoterHolding?: number | string | null;
+  preIpoMarketCap?: number | string | null;
+  postIpoMarketCap?: number | string | null;
+  marketCap?: number | string | null;
+  issueShareCount?: number | string | null;
+  freshIssueShareCount?: number | string | null;
+  ofsShareCount?: number | string | null;
   listingPrice?: number | null;
   listingGainPct?: number | null;
   profitAmount?: number | null;
@@ -178,6 +179,9 @@ export interface BackendIpo {
   allotmentConfig?: BackendAllotment | null;
   currentGmp?: BackendGmp | null;
   currentSubscription?: BackendSubscription | null;
+  strengths?: string[] | null;
+  risks?: string[] | null;
+  objectsOfIssue?: string[] | null;
   createdAt?: string;
   updatedAt?: string;
 }

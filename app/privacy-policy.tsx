@@ -40,7 +40,7 @@ export default function PrivacyPolicyScreen() {
       id: 3,
       title: '3. Optional Cloud Backup',
       content:
-        'If you choose to sign in to Supabase and use Cloud Backup, an encrypted snapshot of your local database is securely transmitted to your personal Supabase account. Access to this backup is protected by Row-Level Security (RLS) policies tied exclusively to your authenticated user ID.',
+        'If you choose to sign in and use Cloud Backup, an encrypted snapshot of your local database is securely transmitted to your personal cloud backup storage in Firebase Firestore. Access to this backup is protected by security rules tied exclusively to your authenticated user ID.',
     },
     {
       id: 4,

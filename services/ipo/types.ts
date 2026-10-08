@@ -173,6 +173,20 @@ export interface IPOMasterRecord {
     }>;
   };
   
+  // JSON serialized storage & parsed references
+  financials_json?: string | null;
+  participants_json?: string | null;
+  documents_json?: string | null;
+  intelligence_json?: string | null;
+  anchor_details_json?: string | null;
+  company?: any;
+  participants?: any[] | null;
+  documents?: any[] | null;
+  financials?: any[] | null;
+  risks?: string[] | null;
+  strengths?: string[] | null;
+  objectsOfIssue?: string[] | null;
+
   // Intelligence & Score attributes
   intelligence?: IPOIntelligenceRecord;
   score?: IPOScoreRecord;

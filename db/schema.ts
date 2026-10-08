@@ -246,6 +246,20 @@ export async function initDB(db: SQLiteDatabase) {
       pre_ipo_market_cap REAL DEFAULT NULL,
       post_ipo_market_cap REAL DEFAULT NULL,
       market_cap REAL DEFAULT NULL,
+      fresh_issue_size REAL DEFAULT NULL,
+      ofs_size REAL DEFAULT NULL,
+      drhp_url TEXT DEFAULT '',
+      rhp_url TEXT DEFAULT '',
+      anchor_list_url TEXT DEFAULT '',
+      company_phone TEXT DEFAULT '',
+      company_email TEXT DEFAULT '',
+      registrar_phone TEXT DEFAULT '',
+      registrar_email TEXT DEFAULT '',
+      financials_json TEXT DEFAULT NULL,
+      participants_json TEXT DEFAULT NULL,
+      documents_json TEXT DEFAULT NULL,
+      intelligence_json TEXT DEFAULT NULL,
+      anchor_details_json TEXT DEFAULT NULL,
       is_favorite INTEGER DEFAULT 0,
       source_type TEXT DEFAULT 'SERVER',
       sync_version INTEGER DEFAULT 0,
@@ -366,6 +380,20 @@ export async function initDB(db: SQLiteDatabase) {
       await addColumnIfNotExists('ipo_master', 'pre_ipo_market_cap REAL DEFAULT NULL');
       await addColumnIfNotExists('ipo_master', 'post_ipo_market_cap REAL DEFAULT NULL');
       await addColumnIfNotExists('ipo_master', 'market_cap REAL DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'fresh_issue_size REAL DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'ofs_size REAL DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'drhp_url TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_master', 'rhp_url TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_master', 'anchor_list_url TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_master', 'company_phone TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_master', 'company_email TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_master', 'registrar_phone TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_master', 'registrar_email TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_master', 'financials_json TEXT DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'participants_json TEXT DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'documents_json TEXT DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'intelligence_json TEXT DEFAULT NULL');
+      await addColumnIfNotExists('ipo_master', 'anchor_details_json TEXT DEFAULT NULL');
 
       await addColumnIfNotExists('sync_queue', 'retry_count INTEGER DEFAULT 0');
       await addColumnIfNotExists('sync_queue', 'next_retry_at TEXT');

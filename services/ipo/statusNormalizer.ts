@@ -1,4 +1,3 @@
-import { SmartIPOLifecycleStatus } from '@/lib/smartIpo/types/smartIpo';
 
 export type NormalizedIPOStatus =
   | 'UPCOMING'

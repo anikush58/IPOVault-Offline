@@ -126,15 +126,13 @@ const jest = {
   }),
 };
 
-import { AllotmentApiService } from './AllotmentApiService';
-import { PanSyncService } from './PanSyncService';
+import { AllotmentApiService } from '../services/allotment/AllotmentApiService';
+import { PanSyncService } from '../services/allotment/PanSyncService';
 import {
   checkBigshareCaptchaPresence,
   getRegistrarConfig,
   isAutomatedCheckSupported,
-} from './registrarConfig';
-
-
+} from '../services/allotment/registrarConfig';
 
 describe('Allotment Checker Frontend Integration Tests', () => {
   let allotmentApiService: AllotmentApiService;
@@ -1036,7 +1034,7 @@ describe('Allotment Checker Frontend Integration Tests', () => {
     // Import filter from allotmentCheckerIpoSource
     const {
       isBackendIpoAllotmentEligible,
-    } = require('./allotmentCheckerIpoSource');
+    } = require('../services/allotment/allotmentCheckerIpoSource');
 
     it('Fixture 1: Includes strictly Allotment Out (including ALLOTMENT_COMPLETED) and Listed IPOs', () => {
       expect(isBackendIpoAllotmentEligible({ id: '1', status: 'Allotment Out' })).toBe(true);
@@ -1195,6 +1193,3 @@ describe('Allotment Checker Frontend Integration Tests', () => {
     });
   });
 });
-
-
-

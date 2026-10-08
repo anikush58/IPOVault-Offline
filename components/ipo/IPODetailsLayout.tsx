@@ -514,14 +514,14 @@ export function IPODetailsLayout({
 
   // Financial Snapshot & Full Table
   const financialsList = useMemo(() => {
-    const finList = ipo.company?.financials || ipo.intelligence?.financials || [];
+    const finList = ipo.company?.financials || ipo.intelligence?.financials || ipo.financials || [];
     if (!Array.isArray(finList) || finList.length === 0) return [];
     return [...finList].sort((a, b) => {
       const pA = String(a.fiscalPeriod || a.year || '');
       const pB = String(b.fiscalPeriod || b.year || '');
       return pA.localeCompare(pB);
     });
-  }, [ipo.company?.financials, ipo.intelligence?.financials]);
+  }, [ipo.company?.financials, ipo.intelligence?.financials, ipo.financials]);
 
   const financialSnapshot = useMemo(() => {
     if (financialsList.length === 0) {
@@ -585,10 +585,12 @@ export function IPODetailsLayout({
   const valuationData = useMemo(() => {
     const ipoPe =
       ipo.postIpoPe ??
-      ipo.preIpoPe ??
       ipo.post_ipo_pe ??
+      ipo.preIpoPe ??
       ipo.pre_ipo_pe ??
-      (priceHigh && ipo.eps && Number(ipo.eps) > 0 ? (Number(priceHigh) / Number(ipo.eps)).toFixed(2) : null);
+      (priceHigh && (ipo.eps || ipo.postIpoEps || ipo.preIpoEps || ipo.post_ipo_eps || ipo.pre_ipo_eps) && Number(ipo.eps || ipo.postIpoEps || ipo.preIpoEps || ipo.post_ipo_eps || ipo.pre_ipo_eps) > 0
+        ? (Number(priceHigh) / Number(ipo.eps || ipo.postIpoEps || ipo.preIpoEps || ipo.post_ipo_eps || ipo.pre_ipo_eps)).toFixed(2)
+        : null);
 
     const industryPe = ipo.intelligence?.peer_comparison?.[0]?.pe_ratio ?? null;
 
@@ -596,7 +598,7 @@ export function IPODetailsLayout({
       ipoPe: ipoPe ? `${Number(ipoPe).toFixed(2)}x` : '-',
       industryPe: industryPe ? `${Number(industryPe).toFixed(1)}x` : '-',
     };
-  }, [ipo.postIpoPe, ipo.preIpoPe, ipo.post_ipo_pe, ipo.pre_ipo_pe, priceHigh, ipo.eps, ipo.intelligence]);
+  }, [ipo.postIpoPe, ipo.post_ipo_pe, ipo.preIpoPe, ipo.pre_ipo_pe, priceHigh, ipo.eps, ipo.postIpoEps, ipo.preIpoEps, ipo.post_ipo_eps, ipo.pre_ipo_eps, ipo.intelligence]);
 
   // Company Overview
   const aboutDescription =
@@ -610,54 +612,78 @@ export function IPODetailsLayout({
 
   // Key Risks
   const keyRisks = useMemo(() => {
+    if (Array.isArray(ipo.risks) && ipo.risks.length > 0) {
+      return ipo.risks.slice(0, 3);
+    }
     if (ipo.intelligence?.risks && Array.isArray(ipo.intelligence.risks) && ipo.intelligence.risks.length > 0) {
       return ipo.intelligence.risks.slice(0, 3);
     }
     return [];
-  }, [ipo.intelligence?.risks]);
+  }, [ipo.risks, ipo.intelligence?.risks]);
 
   // Promoter Holding
   const promoterPre =
+    ipo.preIpoPromoterHolding ??
+    ipo.pre_ipo_promoter_holding ??
     ipo.company?.promoterHoldingPre ??
     ipo.promoter_holding_pre ??
     ipo.promoterHoldingPreIssuePercentage ??
     null;
   const promoterPost =
+    ipo.postIpoPromoterHolding ??
+    ipo.post_ipo_promoter_holding ??
     ipo.company?.promoterHoldingPost ??
     ipo.promoter_holding_post ??
     ipo.promoterHoldingPostIssuePercentage ??
     null;
 
   // Registrar Info
+  const registrarParticipant = Array.isArray(ipo.participants)
+    ? ipo.participants.find((p: any) => p.role === 'REGISTRAR')
+    : null;
+
   const registrarName =
     ipo.company?.registrar?.name ||
     ipo.registrar?.name ||
+    (typeof ipo.registrar === 'string' && ipo.registrar.trim().length > 0 ? ipo.registrar.trim() : null) ||
     ipo.registrar_name ||
-    ipo.registrar ||
+    registrarParticipant?.name ||
     ipo.allotment?.registrarName ||
     null;
   const registrarPhone =
     ipo.company?.registrar?.phone ||
     ipo.registrar?.phone ||
     ipo.registrar_phone ||
+    registrarParticipant?.phone ||
     null;
   const registrarEmail =
     ipo.company?.registrar?.email ||
     ipo.registrar?.email ||
     ipo.registrar_email ||
+    registrarParticipant?.email ||
     null;
   const registrarWebsite =
     ipo.company?.registrar?.websiteUrl ||
     ipo.registrar?.websiteUrl ||
+    ipo.registrar_website ||
     ipo.registrar_url ||
+    registrarParticipant?.website ||
     null;
 
   // Lead Managers
   const leadManagersList = useMemo(() => {
+    if (Array.isArray(ipo.participants) && ipo.participants.length > 0) {
+      const brlms = ipo.participants
+        .filter((p: any) => p.role === 'BRLM' || p.role === 'CO_BRLM')
+        .map((p: any) => p.name?.trim())
+        .filter(Boolean);
+      if (brlms.length > 0) return brlms;
+    }
     const raw =
       ipo.company?.leadManagers ||
       ipo.leadManagers ||
       ipo.lead_managers ||
+      ipo.lead_manager ||
       ipo.intelligence?.lead_managers ||
       [];
     if (Array.isArray(raw)) {
@@ -667,7 +693,7 @@ export function IPODetailsLayout({
       return raw.split(',').map((s: string) => s.trim()).filter(Boolean);
     }
     return [];
-  }, [ipo.company?.leadManagers, ipo.leadManagers, ipo.lead_managers, ipo.intelligence?.lead_managers]);
+  }, [ipo.participants, ipo.company?.leadManagers, ipo.leadManagers, ipo.lead_managers, ipo.lead_manager, ipo.intelligence?.lead_managers]);
 
   // Peers List
   const peerList = useMemo(() => {
@@ -699,10 +725,31 @@ export function IPODetailsLayout({
 
   // IPO Documents
   const documentsList = useMemo(() => {
-    const drhpUrl = (ipo.drhp_url || ipo.intelligence?.drhp_url || '').trim();
-    const rhpUrl = (ipo.rhp_url || ipo.intelligence?.rhp_url || '').trim();
-    const prospectusUrl = (ipo.prospectus_url || '').trim();
-    const anchorDocUrl = (ipo.anchor_list_url || ipo.intelligence?.anchor_investors_url || '').trim();
+    if (Array.isArray(ipo.documents) && ipo.documents.length > 0) {
+      const validDocs = ipo.documents
+        .map((d: any) => {
+          const url = (d.sourceUrl || d.fileUrl || d.documentUrl || d.url || '').trim();
+          if (!url) return null;
+          let title = d.title || d.fileName;
+          if (!title) {
+            switch (d.documentType) {
+              case 'DRHP': title = 'DRHP Prospectus'; break;
+              case 'RHP': title = 'RHP Prospectus'; break;
+              case 'PROSPECTUS': title = 'Final Prospectus'; break;
+              case 'ANCHOR_LIST': title = 'Anchor Investor Document'; break;
+              default: title = 'IPO Document'; break;
+            }
+          }
+          return { title, url };
+        })
+        .filter(Boolean) as Array<{ title: string; url: string }>;
+      if (validDocs.length > 0) return validDocs;
+    }
+
+    const drhpUrl = (ipo.drhpUrl || ipo.drhp_url || ipo.intelligence?.drhp_url || '').trim();
+    const rhpUrl = (ipo.rhpUrl || ipo.rhp_url || ipo.intelligence?.rhp_url || '').trim();
+    const prospectusUrl = (ipo.prospectusUrl || ipo.prospectus_url || '').trim();
+    const anchorDocUrl = (ipo.anchorListUrl || ipo.anchor_list_url || ipo.anchorDetails?.documentUrl || ipo.intelligence?.anchor_investors_url || '').trim();
 
     return [
       { title: 'DRHP Prospectus', url: drhpUrl },
@@ -710,7 +757,7 @@ export function IPODetailsLayout({
       { title: 'Final Prospectus', url: prospectusUrl },
       { title: 'Anchor Investor Document', url: anchorDocUrl },
     ].filter((d) => Boolean(d.url));
-  }, [ipo.drhp_url, ipo.rhp_url, ipo.prospectus_url, ipo.anchor_list_url, ipo.intelligence]);
+  }, [ipo.documents, ipo.drhpUrl, ipo.drhp_url, ipo.rhpUrl, ipo.rhp_url, ipo.prospectusUrl, ipo.prospectus_url, ipo.anchorListUrl, ipo.anchor_list_url, ipo.anchorDetails, ipo.intelligence]);
 
   const handleOpenUrl = (url?: string | null) => {
     if (!url) return;

@@ -195,6 +195,68 @@ export async function clearLocalSyncCursor(uid: string): Promise<void> {
   }
 }
 
+const DEFAULT_FIRESTORE_TIMEOUT_MS = 10000;
+
+async function safeGetDocs(queryRef: any, timeoutMs: number = DEFAULT_FIRESTORE_TIMEOUT_MS): Promise<any> {
+  return new Promise((resolve) => {
+    let resolved = false;
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        if (isDev) console.warn(`[firestoreSyncService] getDocs query timed out after ${timeoutMs}ms.`);
+        resolve(null);
+      }
+    }, timeoutMs);
+
+    getDocs(queryRef)
+      .then((snap) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          resolve(snap);
+        }
+      })
+      .catch((err) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          if (isDev) console.warn('[firestoreSyncService] safeGetDocs error:', err);
+          resolve(null);
+        }
+      });
+  });
+}
+
+async function safeGetDoc(docRef: any, timeoutMs: number = DEFAULT_FIRESTORE_TIMEOUT_MS): Promise<any> {
+  return new Promise((resolve) => {
+    let resolved = false;
+    const timer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        if (isDev) console.warn(`[firestoreSyncService] getDoc query timed out after ${timeoutMs}ms.`);
+        resolve(null);
+      }
+    }, timeoutMs);
+
+    getDoc(docRef)
+      .then((snap) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          resolve(snap);
+        }
+      })
+      .catch((err) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          if (isDev) console.warn('[firestoreSyncService] safeGetDoc error:', err);
+          resolve(null);
+        }
+      });
+  });
+}
+
 // ── Cloud Metadata & Detection ───────────────────────────────────────────────
 
 /**
@@ -204,8 +266,8 @@ export async function hasCloudData(uid: string): Promise<boolean> {
   if (!uid) return false;
   try {
     const metaRef = doc(firestore, `users/${uid}/metadata/sync_state`);
-    const snap = await getDoc(metaRef);
-    if (snap.exists()) {
+    const snap = await safeGetDoc(metaRef);
+    if (snap && snap.exists()) {
       const data = snap.data();
       if (data && (data.userCount > 0 || data.ipoCount > 0 || data.applicationCount > 0 || data.last_synced_at)) {
         return true;
@@ -213,9 +275,9 @@ export async function hasCloudData(uid: string): Promise<boolean> {
     }
     // Check if subcollections have documents
     const [profilesSnap, legacyProfilesSnap, appsSnap] = await Promise.all([
-      getDocs(collection(firestore, `users/${uid}/profiles`)).catch(() => null),
-      getDocs(collection(firestore, `users/${uid}/user_profiles`)).catch(() => null),
-      getDocs(collection(firestore, `users/${uid}/applications`)).catch(() => null),
+      safeGetDocs(collection(firestore, `users/${uid}/profiles`)),
+      safeGetDocs(collection(firestore, `users/${uid}/user_profiles`)),
+      safeGetDocs(collection(firestore, `users/${uid}/applications`)),
     ]);
 
     if (profilesSnap && !profilesSnap.empty) return true;
@@ -236,8 +298,8 @@ export async function getCloudSyncMetadata(uid: string): Promise<CloudSyncMetada
   if (!uid) return null;
   try {
     const metaRef = doc(firestore, `users/${uid}/metadata/sync_state`);
-    const snap = await getDoc(metaRef);
-    if (snap.exists()) {
+    const snap = await safeGetDoc(metaRef);
+    if (snap && snap.exists()) {
       return snap.data() as CloudSyncMetadata;
     }
     return null;
@@ -261,21 +323,21 @@ export async function fetchCriticalUserDataFromFirestore(uid: string): Promise<C
   const startTime = Date.now();
   try {
     const [profilesSnap, iposSnap, appsSnap, metaSnap] = await Promise.all([
-      getDocs(collection(firestore, `users/${uid}/profiles`)).catch(() => null),
-      getDocs(collection(firestore, `users/${uid}/ipos`)).catch(() => null),
-      getDocs(collection(firestore, `users/${uid}/applications`)).catch(() => null),
-      getDoc(doc(firestore, `users/${uid}/metadata/sync_state`)).catch(() => null),
+      safeGetDocs(collection(firestore, `users/${uid}/profiles`)),
+      safeGetDocs(collection(firestore, `users/${uid}/ipos`)),
+      safeGetDocs(collection(firestore, `users/${uid}/applications`)),
+      safeGetDoc(doc(firestore, `users/${uid}/metadata/sync_state`)),
     ]);
 
-    let restoredUsers = profilesSnap ? profilesSnap.docs.map((d) => d.data()).filter((u) => !u.deleted_at) : [];
-    const restoredIpos = iposSnap ? iposSnap.docs.map((d) => d.data()).filter((i) => !i.deleted_at) : [];
-    const restoredApps = appsSnap ? appsSnap.docs.map((d) => d.data()).filter((a) => !a.deleted_at) : [];
+    let restoredUsers = profilesSnap ? profilesSnap.docs.map((d: any) => d.data()).filter((u: any) => !u.deleted_at) : [];
+    const restoredIpos = iposSnap ? iposSnap.docs.map((d: any) => d.data()).filter((i: any) => !i.deleted_at) : [];
+    const restoredApps = appsSnap ? appsSnap.docs.map((d: any) => d.data()).filter((a: any) => !a.deleted_at) : [];
 
     // Fallback to legacy user_profiles if primary profiles collection is empty
     if (restoredUsers.length === 0) {
-      const legacyProfilesSnap = await getDocs(collection(firestore, `users/${uid}/user_profiles`)).catch(() => null);
+      const legacyProfilesSnap = await safeGetDocs(collection(firestore, `users/${uid}/user_profiles`));
       if (legacyProfilesSnap && !legacyProfilesSnap.empty) {
-        restoredUsers = legacyProfilesSnap.docs.map((d) => d.data()).filter((u) => !u.deleted_at);
+        restoredUsers = legacyProfilesSnap.docs.map((d: any) => d.data()).filter((u: any) => !u.deleted_at);
       }
     }
 
@@ -319,18 +381,18 @@ export async function fetchSecondaryUserDataFromFirestore(uid: string): Promise<
   const startTime = Date.now();
   try {
     const [bankAccountsSnap, allotmentsSnap] = await Promise.all([
-      getDocs(collection(firestore, `users/${uid}/bankAccounts`)).catch(() => null),
-      getDocs(collection(firestore, `users/${uid}/allotments`)).catch(() => null),
+      safeGetDocs(collection(firestore, `users/${uid}/bankAccounts`)),
+      safeGetDocs(collection(firestore, `users/${uid}/allotments`)),
     ]);
 
-    let restoredBanks = bankAccountsSnap ? bankAccountsSnap.docs.map((d) => d.data()).filter((b) => !b.deleted_at) : [];
-    const restoredAllotments = allotmentsSnap ? allotmentsSnap.docs.map((d) => d.data()).filter((alt) => !alt.deleted_at) : [];
+    let restoredBanks = bankAccountsSnap ? bankAccountsSnap.docs.map((d: any) => d.data()).filter((b: any) => !b.deleted_at) : [];
+    const restoredAllotments = allotmentsSnap ? allotmentsSnap.docs.map((d: any) => d.data()).filter((alt: any) => !alt.deleted_at) : [];
 
     // Fallback to legacy banks collection if primary is empty
     if (restoredBanks.length === 0) {
-      const legacyBanksSnap = await getDocs(collection(firestore, `users/${uid}/banks`)).catch(() => null);
+      const legacyBanksSnap = await safeGetDocs(collection(firestore, `users/${uid}/banks`));
       if (legacyBanksSnap && !legacyBanksSnap.empty) {
-        restoredBanks = legacyBanksSnap.docs.map((d) => d.data()).filter((b) => !b.deleted_at);
+        restoredBanks = legacyBanksSnap.docs.map((d: any) => d.data()).filter((b: any) => !b.deleted_at);
       }
     }
 
@@ -552,18 +614,18 @@ export async function fetchUserDataFromFirestore(uid: string): Promise<RestoreRe
       bankAccountsSnap,
       allotmentsSnap,
     ] = await Promise.all([
-      getDocs(collection(firestore, `users/${uid}/profiles`)).catch(() => null),
-      getDocs(collection(firestore, `users/${uid}/ipos`)).catch(() => null),
-      getDocs(collection(firestore, `users/${uid}/applications`)).catch(() => null),
-      getDocs(collection(firestore, `users/${uid}/bankAccounts`)).catch(() => null),
-      getDocs(collection(firestore, `users/${uid}/allotments`)).catch(() => null),
+      safeGetDocs(collection(firestore, `users/${uid}/profiles`)),
+      safeGetDocs(collection(firestore, `users/${uid}/ipos`)),
+      safeGetDocs(collection(firestore, `users/${uid}/applications`)),
+      safeGetDocs(collection(firestore, `users/${uid}/bankAccounts`)),
+      safeGetDocs(collection(firestore, `users/${uid}/allotments`)),
     ]);
 
-    let restoredUsers = profilesSnap ? profilesSnap.docs.map((d) => d.data()).filter((u) => !u.deleted_at) : [];
-    const restoredIpos = iposSnap ? iposSnap.docs.map((d) => d.data()).filter((i) => !i.deleted_at) : [];
-    const restoredApps = appsSnap ? appsSnap.docs.map((d) => d.data()).filter((a) => !a.deleted_at) : [];
-    let restoredBanks = bankAccountsSnap ? bankAccountsSnap.docs.map((d) => d.data()).filter((b) => !b.deleted_at) : [];
-    const restoredAllotments = allotmentsSnap ? allotmentsSnap.docs.map((d) => d.data()).filter((alt) => !alt.deleted_at) : [];
+    let restoredUsers = profilesSnap ? profilesSnap.docs.map((d: any) => d.data()).filter((u: any) => !u.deleted_at) : [];
+    const restoredIpos = iposSnap ? iposSnap.docs.map((d: any) => d.data()).filter((i: any) => !i.deleted_at) : [];
+    const restoredApps = appsSnap ? appsSnap.docs.map((d: any) => d.data()).filter((a: any) => !a.deleted_at) : [];
+    let restoredBanks = bankAccountsSnap ? bankAccountsSnap.docs.map((d: any) => d.data()).filter((b: any) => !b.deleted_at) : [];
+    const restoredAllotments = allotmentsSnap ? allotmentsSnap.docs.map((d: any) => d.data()).filter((alt: any) => !alt.deleted_at) : [];
 
     // Parallel legacy fallbacks only if primary collections returned empty
     const needsLegacyProfiles = restoredUsers.length === 0;
@@ -571,18 +633,18 @@ export async function fetchUserDataFromFirestore(uid: string): Promise<RestoreRe
     if (needsLegacyProfiles || needsLegacyBanks) {
       const [legacyProfilesSnap, legacyBanksSnap] = await Promise.all([
         needsLegacyProfiles
-          ? getDocs(collection(firestore, `users/${uid}/user_profiles`)).catch(() => null)
+          ? safeGetDocs(collection(firestore, `users/${uid}/user_profiles`))
           : Promise.resolve(null),
         needsLegacyBanks
-          ? getDocs(collection(firestore, `users/${uid}/banks`)).catch(() => null)
+          ? safeGetDocs(collection(firestore, `users/${uid}/banks`))
           : Promise.resolve(null),
       ]);
 
       if (legacyProfilesSnap && !legacyProfilesSnap.empty) {
-        restoredUsers = legacyProfilesSnap.docs.map((d) => d.data()).filter((u) => !u.deleted_at);
+        restoredUsers = legacyProfilesSnap.docs.map((d: any) => d.data()).filter((u: any) => !u.deleted_at);
       }
       if (legacyBanksSnap && !legacyBanksSnap.empty) {
-        restoredBanks = legacyBanksSnap.docs.map((d) => d.data()).filter((b) => !b.deleted_at);
+        restoredBanks = legacyBanksSnap.docs.map((d: any) => d.data()).filter((b: any) => !b.deleted_at);
       }
     }
 
@@ -598,7 +660,7 @@ export async function fetchUserDataFromFirestore(uid: string): Promise<RestoreRe
 
     if (totalRecords === 0) {
       const snapshotRef = doc(firestore, `users/${uid}/metadata/snapshot`);
-      const snapshotSnap = await getDoc(snapshotRef).catch(() => null);
+      const snapshotSnap = await safeGetDoc(snapshotRef);
       if (snapshotSnap && snapshotSnap.exists()) {
         const snapData = snapshotSnap.data() as IPOVaultExportData;
         if (snapData?.users?.length || snapData?.applications?.length) {
@@ -669,15 +731,15 @@ export async function fetchCriticalDeltaFromFirestore(
   if (!uid) return { success: false, error: 'User is not authenticated.' };
   try {
     const [profilesSnap, iposSnap, appsSnap] = await Promise.all([
-      getDocs(query(collection(firestore, `users/${uid}/profiles`), where('updated_at', '>', lastSyncedAt))).catch(() => null),
-      getDocs(query(collection(firestore, `users/${uid}/ipos`), where('updated_at', '>', lastSyncedAt))).catch(() => null),
-      getDocs(query(collection(firestore, `users/${uid}/applications`), where('updated_at', '>', lastSyncedAt))).catch(() => null),
+      safeGetDocs(query(collection(firestore, `users/${uid}/profiles`), where('updated_at', '>', lastSyncedAt))),
+      safeGetDocs(query(collection(firestore, `users/${uid}/ipos`), where('updated_at', '>', lastSyncedAt))),
+      safeGetDocs(query(collection(firestore, `users/${uid}/applications`), where('updated_at', '>', lastSyncedAt))),
     ]);
 
     const changes: CriticalDeltaChanges = {
-      profiles: profilesSnap ? profilesSnap.docs.map((d) => d.data()) : [],
-      ipos: iposSnap ? iposSnap.docs.map((d) => d.data()) : [],
-      applications: appsSnap ? appsSnap.docs.map((d) => d.data()) : [],
+      profiles: profilesSnap ? profilesSnap.docs.map((d: any) => d.data()) : [],
+      ipos: iposSnap ? iposSnap.docs.map((d: any) => d.data()) : [],
+      applications: appsSnap ? appsSnap.docs.map((d: any) => d.data()) : [],
     };
 
     return { success: true, changes };
@@ -697,13 +759,13 @@ export async function fetchSecondaryDeltaFromFirestore(
   if (!uid) return { success: false, error: 'User is not authenticated.' };
   try {
     const [banksSnap, allotmentsSnap] = await Promise.all([
-      getDocs(query(collection(firestore, `users/${uid}/bankAccounts`), where('updated_at', '>', lastSyncedAt))).catch(() => null),
-      getDocs(query(collection(firestore, `users/${uid}/allotments`), where('updated_at', '>', lastSyncedAt))).catch(() => null),
+      safeGetDocs(query(collection(firestore, `users/${uid}/bankAccounts`), where('updated_at', '>', lastSyncedAt))),
+      safeGetDocs(query(collection(firestore, `users/${uid}/allotments`), where('updated_at', '>', lastSyncedAt))),
     ]);
 
     const changes: SecondaryDeltaChanges = {
-      bankAccounts: banksSnap ? banksSnap.docs.map((d) => d.data()) : [],
-      allotments: allotmentsSnap ? allotmentsSnap.docs.map((d) => d.data()) : [],
+      bankAccounts: banksSnap ? banksSnap.docs.map((d: any) => d.data()) : [],
+      allotments: allotmentsSnap ? allotmentsSnap.docs.map((d: any) => d.data()) : [],
     };
 
     return { success: true, changes };

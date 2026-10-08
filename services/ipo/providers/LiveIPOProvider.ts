@@ -116,14 +116,61 @@ export class LiveIPOProvider implements IPOProvider {
       const rawRecords: any[] = Array.isArray(json) ? json : json.delta || json.data || json.ipos || [];
       const tombstones: string[] = json.tombstones || [];
 
-      const normalized = rawRecords.map((item) => this.normalizeRecord(item));
+      // If multiple pages exist in metadata, fetch remaining pages to retrieve complete IPO list
+      const totalPages = json?.meta?.totalPages;
+      if (typeof totalPages === 'number' && totalPages > 1) {
+        const pagePromises = [];
+        for (let p = 2; p <= totalPages; p++) {
+          const pageUrl = new URL(url.toString());
+          pageUrl.searchParams.set('page', String(p));
+          pagePromises.push(
+            fetch(pageUrl.toString(), {
+              method: 'GET',
+              headers,
+              signal: controller.signal,
+            })
+              .then(async (r) => (r.ok ? r.json() : null))
+              .catch(() => null)
+          );
+        }
+        const extraPages = await Promise.all(pagePromises);
+        for (const extraJson of extraPages) {
+          if (extraJson) {
+            const extraRecords = Array.isArray(extraJson)
+              ? extraJson
+              : extraJson.delta || extraJson.data || extraJson.ipos || [];
+            rawRecords.push(...extraRecords);
+            if (Array.isArray(extraJson.tombstones)) {
+              tombstones.push(...extraJson.tombstones);
+            }
+          }
+        }
+      }
+
+      // Prevent duplicate IPOs when combining pages
+      const seen = new Set<string>();
+      const dedupedRecords: any[] = [];
+      for (const rec of rawRecords) {
+        const key = rec?.id || rec?.symbol;
+        if (key && !seen.has(key)) {
+          seen.add(key);
+          dedupedRecords.push(rec);
+        } else if (!key) {
+          dedupedRecords.push(rec);
+        }
+      }
+
+      const normalized = dedupedRecords.map((item) => this.normalizeRecord(item));
 
       // Append soft-deleted tombstone records with deleted_at flag
       tombstones.forEach((tombId) => {
-        normalized.push({
-          id: tombId,
-          deleted_at: new Date().toISOString(),
-        });
+        if (!seen.has(tombId)) {
+          seen.add(tombId);
+          normalized.push({
+            id: tombId,
+            deleted_at: new Date().toISOString(),
+          });
+        }
       });
 
       return {
@@ -150,17 +197,43 @@ export class LiveIPOProvider implements IPOProvider {
     const now = new Date().toISOString();
     const companyDisplayName = raw.company?.displayName || raw.companyName || raw.company_name || raw.name || raw.symbol || '';
 
+    const regPart = Array.isArray(raw.participants)
+      ? raw.participants.find((p: any) => p.role === 'REGISTRAR')
+      : null;
+
     const registrarName =
       raw.registrar ||
       raw.registrar_name ||
-      raw.participants?.find((p: any) => p.role === 'REGISTRAR')?.name ||
+      regPart?.name ||
       '';
 
-    const leadMgr =
-      raw.lead_manager ||
-      raw.leadManager ||
-      raw.participants?.find((p: any) => p.role === 'BRLM' || p.role === 'CO_BRLM')?.name ||
+    const registrarPhone =
+      raw.registrar_phone ||
+      regPart?.phone ||
+      raw.company?.registrar?.phone ||
       '';
+
+    const registrarEmail =
+      raw.registrar_email ||
+      regPart?.email ||
+      raw.company?.registrar?.email ||
+      '';
+
+    const registrarWebsite =
+      raw.registrar_website ||
+      raw.registrar_url ||
+      regPart?.website ||
+      raw.company?.registrar?.websiteUrl ||
+      '';
+
+    const brlmNames = Array.isArray(raw.participants)
+      ? raw.participants.filter((p: any) => p.role === 'BRLM' || p.role === 'CO_BRLM').map((p: any) => p.name?.trim()).filter(Boolean)
+      : [];
+
+    const leadMgr =
+      brlmNames.length > 0
+        ? brlmNames.join(', ')
+        : raw.lead_manager || raw.leadManager || '';
 
     const gmpAmt =
       raw.currentGmp?.gmpAmount != null
@@ -219,6 +292,52 @@ export class LiveIPOProvider implements IPOProvider {
       totalSub = Number(raw.total_sub ?? raw.total_subscription);
     }
 
+    const preIpoEps = raw.preIpoEps !== undefined && raw.preIpoEps !== null ? Number(raw.preIpoEps) : (raw.pre_ipo_eps ?? null);
+    const postIpoEps = raw.postIpoEps !== undefined && raw.postIpoEps !== null ? Number(raw.postIpoEps) : (raw.post_ipo_eps ?? null);
+    const preIpoPe = raw.preIpoPe !== undefined && raw.preIpoPe !== null ? Number(raw.preIpoPe) : (raw.pre_ipo_pe ?? null);
+    const postIpoPe = raw.postIpoPe !== undefined && raw.postIpoPe !== null ? Number(raw.postIpoPe) : (raw.post_ipo_pe ?? null);
+    const preIpoPromoter = raw.preIpoPromoterHolding !== undefined && raw.preIpoPromoterHolding !== null ? Number(raw.preIpoPromoterHolding) : (raw.pre_ipo_promoter_holding ?? raw.company?.promoterHoldingPre ?? null);
+    const postIpoPromoter = raw.postIpoPromoterHolding !== undefined && raw.postIpoPromoterHolding !== null ? Number(raw.postIpoPromoterHolding) : (raw.post_ipo_promoter_holding ?? raw.company?.promoterHoldingPost ?? null);
+    const preIpoMcap = raw.preIpoMarketCap !== undefined && raw.preIpoMarketCap !== null ? Number(raw.preIpoMarketCap) : (raw.pre_ipo_market_cap ?? null);
+    const postIpoMcap = raw.postIpoMarketCap !== undefined && raw.postIpoMarketCap !== null ? Number(raw.postIpoMarketCap) : (raw.post_ipo_market_cap ?? null);
+    const mcap = raw.marketCap !== undefined && raw.marketCap !== null ? Number(raw.marketCap) : (raw.market_cap ?? (postIpoMcap ?? preIpoMcap));
+
+    const freshIssue = raw.freshIssueSize !== undefined && raw.freshIssueSize !== null ? Number(raw.freshIssueSize) : (raw.fresh_issue_size ?? null);
+    const ofs = raw.ofsSize !== undefined && raw.ofsSize !== null ? Number(raw.ofsSize) : (raw.ofs_size ?? null);
+
+    const drhpUrl = String(raw.drhpUrl || raw.drhp_url || raw.documents?.find((d: any) => d.documentType === 'DRHP')?.sourceUrl || '').trim();
+    const rhpUrl = String(raw.rhpUrl || raw.rhp_url || raw.documents?.find((d: any) => d.documentType === 'RHP')?.sourceUrl || '').trim();
+    const anchorListUrl = String(raw.anchorListUrl || raw.anchor_list_url || raw.anchorDetails?.documentUrl || raw.documents?.find((d: any) => d.documentType === 'ANCHOR_LIST')?.sourceUrl || '').trim();
+    const prospectusUrl = String(raw.prospectusUrl || raw.prospectus_url || raw.rhpUrl || raw.rhp_url || raw.documents?.find((d: any) => d.documentType === 'PROSPECTUS')?.sourceUrl || '').trim();
+
+    const companyPhone = String(raw.company?.phone || raw.company_phone || '').trim();
+    const companyEmail = String(raw.company?.email || raw.company_email || '').trim();
+
+    const rawFinancials = Array.isArray(raw.company?.financials)
+      ? raw.company.financials
+      : Array.isArray(raw.financials)
+      ? raw.financials
+      : Array.isArray(raw.intelligence?.financials)
+      ? raw.intelligence.financials
+      : null;
+    const financialsJson = rawFinancials && rawFinancials.length > 0 ? JSON.stringify(rawFinancials) : null;
+
+    const rawParticipants = Array.isArray(raw.participants) && raw.participants.length > 0 ? raw.participants : null;
+    const participantsJson = rawParticipants ? JSON.stringify(rawParticipants) : null;
+
+    const rawDocuments = Array.isArray(raw.documents) && raw.documents.length > 0 ? raw.documents : null;
+    const documentsJson = rawDocuments ? JSON.stringify(rawDocuments) : null;
+
+    const rawIntelligence = raw.intelligence || (raw.strengths || raw.risks || raw.objectsOfIssue ? {
+      strengths: raw.strengths || [],
+      risks: raw.risks || [],
+      objects_of_issue: raw.objectsOfIssue || [],
+    } : null);
+    const intelligenceJson = rawIntelligence ? JSON.stringify(rawIntelligence) : null;
+
+    const rawAnchor = raw.anchorDetails || raw.anchor_details || null;
+    const anchorDetailsJson = rawAnchor ? JSON.stringify(rawAnchor) : null;
+
     return {
       id,
       company_name: String(companyDisplayName).trim(),
@@ -250,7 +369,16 @@ export class LiveIPOProvider implements IPOProvider {
       sector: String(raw.company?.sector || raw.sector || '').trim(),
       description: String(raw.company?.aboutDescription || raw.description || '').trim(),
       website: String(raw.company?.website || raw.company_website || raw.website || '').trim(),
-      prospectus_url: String(raw.rhpUrl || raw.prospectusUrl || raw.prospectus_url || raw.rhp_url || '').trim(),
+      prospectus_url: prospectusUrl,
+      drhp_url: drhpUrl,
+      rhp_url: rhpUrl,
+      anchor_list_url: anchorListUrl,
+      company_phone: companyPhone,
+      company_email: companyEmail,
+      registrar_phone: String(registrarPhone).trim(),
+      registrar_email: String(registrarEmail).trim(),
+      registrar_website: String(registrarWebsite).trim(),
+      allotment_link: String(raw.allotment_link || raw.allotment?.sourceUrl || raw.allotment?.allotmentSourceUrl || '').trim(),
       gmp_amount: gmpAmt,
       gmp_percent: gmpPct,
       profit_per_lot: profitPerLot,
@@ -259,6 +387,37 @@ export class LiveIPOProvider implements IPOProvider {
       qib_sub: qibSub ?? (raw.qib_sub != null ? Number(raw.qib_sub) : null),
       nii_sub: niiSub ?? (raw.nii_sub != null ? Number(raw.nii_sub) : null),
       retail_sub: retailSub ?? (raw.retail_sub != null ? Number(raw.retail_sub) : null),
+      pre_ipo_eps: preIpoEps != null ? Number(preIpoEps) : null,
+      post_ipo_eps: postIpoEps != null ? Number(postIpoEps) : null,
+      pre_ipo_pe: preIpoPe != null ? Number(preIpoPe) : null,
+      post_ipo_pe: postIpoPe != null ? Number(postIpoPe) : null,
+      pre_ipo_promoter_holding: preIpoPromoter != null ? Number(preIpoPromoter) : null,
+      post_ipo_promoter_holding: postIpoPromoter != null ? Number(postIpoPromoter) : null,
+      pre_ipo_market_cap: preIpoMcap != null ? Number(preIpoMcap) : null,
+      post_ipo_market_cap: postIpoMcap != null ? Number(postIpoMcap) : null,
+      market_cap: mcap != null ? Number(mcap) : null,
+      fresh_issue_size: freshIssue != null ? Number(freshIssue) : null,
+      ofs_size: ofs != null ? Number(ofs) : null,
+      financials_json: financialsJson,
+      participants_json: participantsJson,
+      documents_json: documentsJson,
+      intelligence_json: intelligenceJson,
+      anchor_details_json: anchorDetailsJson,
+      company: raw.company || {
+        displayName: companyDisplayName,
+        aboutDescription: raw.description,
+        sector: raw.sector,
+        website: raw.website,
+        phone: companyPhone,
+        email: companyEmail,
+        financials: rawFinancials,
+      },
+      participants: rawParticipants,
+      documents: rawDocuments,
+      financials: rawFinancials,
+      risks: raw.risks || (rawIntelligence?.risks ?? null),
+      strengths: raw.strengths || (rawIntelligence?.strengths ?? null),
+      objectsOfIssue: raw.objectsOfIssue || (rawIntelligence?.objects_of_issue ?? null),
       sync_version: raw.sync_version ?? 1,
       updated_at: raw.updated_at || raw.updatedAt || now,
     };

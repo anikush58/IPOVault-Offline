@@ -6,6 +6,7 @@ export const ENDPOINTS = {
   OPEN: '/api/v1/open',
   UPCOMING: '/api/v1/upcoming',
   CLOSED: '/api/v1/closed',
+  LISTED: '/api/v1/ipos/listed',
   ALLOTMENTS: '/api/v1/allotments',
   ALLOTMENT_JOBS: '/api/v1/allotment/jobs',
   ALLOTMENT_JOB_BY_ID: (id: string) => `/api/v1/allotment/jobs/${id}`,

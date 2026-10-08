@@ -1,4 +1,32 @@
-declare const describe: any, it: any, expect: any;
+/* eslint-disable @typescript-eslint/no-explicit-any */
+const describe = (globalThis as any).describe || ((name: string, fn: () => void) => {
+  console.log(`\n--- ${name} ---`);
+  fn();
+});
+
+const it = (globalThis as any).it || ((name: string, fn: () => void) => {
+  try {
+    fn();
+    console.log(`  ✓ ${name}`);
+  } catch (err) {
+    console.error(`  ✗ ${name}:`, err);
+    process.exitCode = 1;
+  }
+});
+
+const expect = (globalThis as any).expect || ((actual: any) => ({
+  toBe: (expected: any) => {
+    if (actual !== expected) throw new Error(`Expected ${expected} but got ${actual}`);
+  },
+  toBeNull: () => {
+    if (actual !== null) throw new Error(`Expected null but got ${actual}`);
+  },
+  toContain: (item: any) => {
+    if (Array.isArray(actual) && !actual.includes(item)) {
+      throw new Error(`Expected array to contain ${item}`);
+    }
+  },
+}));
 
 import {
   CONTROLLED_EXCHANGES,
@@ -7,7 +35,7 @@ import {
   resolveExchangeCode,
   resolveIssueTypeCode,
   resolveRegistrarCode,
-} from '../../constants/ipoControls';
+} from '../constants/ipoControls';
 
 export interface ManualIpoFormInput {
   companyName: string;
@@ -73,7 +101,7 @@ export function validateAndNormalizeManualIpoForm(
   }
 
   // Editing Safety Rule: Clear backend_ipo_id if core identity (company name or symbol) changed
-  let backendIpoId: string | null = input.existingBackendIpoId ?? null;
+  let backendIpoId: string | null = input.existingBackendIpoId ?? originalRecord?.backendIpoId ?? null;
   if (
     originalRecord &&
     (originalRecord.companyName.trim().toLowerCase() !== trimmedCompany.toLowerCase() ||
