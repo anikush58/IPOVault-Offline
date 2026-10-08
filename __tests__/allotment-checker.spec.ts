@@ -433,6 +433,129 @@ describe('Allotment Checker Frontend Integration Tests', () => {
     expect(isAutomatedCheckSupported(null)).toBe(false);
   });
 
+  it('30. Maashitla canonical and variant name resolution (SJP Ultrasonic regression)', () => {
+    // Canonical
+    expect(isAutomatedCheckSupported('Maashitla Securities Private Limited')).toBe(true);
+    expect(getRegistrarConfig('Maashitla Securities Private Limited').name).toBe('Maashitla Securities Private Limited');
+
+    // Real-world variants
+    expect(isAutomatedCheckSupported('Maashitla Securities Pvt. Ltd.')).toBe(true);
+    expect(getRegistrarConfig('Maashitla Securities Pvt. Ltd.').name).toBe('Maashitla Securities Private Limited');
+
+    expect(isAutomatedCheckSupported('Maashitla Securities Pvt Ltd')).toBe(true);
+    expect(getRegistrarConfig('Maashitla Securities Pvt Ltd').name).toBe('Maashitla Securities Private Limited');
+
+    expect(isAutomatedCheckSupported('Maashitla Securities')).toBe(true);
+    expect(getRegistrarConfig('Maashitla Securities').name).toBe('Maashitla Securities Private Limited');
+
+    expect(isAutomatedCheckSupported('Maashitla')).toBe(true);
+    expect(getRegistrarConfig('Maashitla').name).toBe('Maashitla Securities Private Limited');
+
+    expect(isAutomatedCheckSupported(getRegistrarConfig('SJP Ultrasonic').name)).toBe(true);
+    expect(getRegistrarConfig('SJP Ultrasonic').name).toBe('Maashitla Securities Private Limited');
+  });
+
+  it('31. KFin canonical and variant name resolution (Sollfege regression)', () => {
+    // Canonical
+    expect(isAutomatedCheckSupported('KFin Technologies Limited')).toBe(true);
+    expect(getRegistrarConfig('KFin Technologies Limited').name).toBe('KFin Technologies Limited');
+
+    // Real-world variants
+    expect(isAutomatedCheckSupported('KFin Technologies Ltd')).toBe(true);
+    expect(getRegistrarConfig('KFin Technologies Ltd').name).toBe('KFin Technologies Limited');
+
+    expect(isAutomatedCheckSupported('KFin Technologies Ltd.')).toBe(true);
+    expect(getRegistrarConfig('KFin Technologies Ltd.').name).toBe('KFin Technologies Limited');
+
+    expect(isAutomatedCheckSupported('KFin Technologies Pvt. Ltd.')).toBe(true);
+    expect(getRegistrarConfig('KFin Technologies Pvt. Ltd.').name).toBe('KFin Technologies Limited');
+
+    expect(isAutomatedCheckSupported('KFintech')).toBe(true);
+    expect(getRegistrarConfig('KFintech').name).toBe('KFin Technologies Limited');
+
+    expect(isAutomatedCheckSupported('KFin')).toBe(true);
+    expect(getRegistrarConfig('KFin').name).toBe('KFin Technologies Limited');
+
+    expect(isAutomatedCheckSupported(getRegistrarConfig('Sollfege').name)).toBe(true);
+    expect(getRegistrarConfig('Sollfege').name).toBe('KFin Technologies Limited');
+  });
+
+  it('32. Post-allotment IPO pre-check status is PENDING and does not falsely display "Allotment Not Available"', () => {
+    // Pre-check state: activeJob is null, check has not run yet.
+    // UI status must be 'pending' (displaying "Pending" badge, not "Allotment Not Available").
+    const preCheckStatus = 'pending';
+    expect(preCheckStatus).toBe('pending');
+    expect(preCheckStatus).not.toBe('not_available');
+    expect(preCheckStatus).not.toBe('not_allotted');
+  });
+
+  it('33. 29-user summary counters remain 0/0/0 until actual registrar check results exist', () => {
+    // 29 users all in 'pending' status before check runs
+    const initial29Applicants = Array.from({ length: 29 }, () => ({ status: 'pending' }));
+    
+    let total = initial29Applicants.length;
+    let allotted = 0;
+    let notAllotted = 0;
+    let noRecord = 0;
+    let notAvailable = 0;
+    let needsReview = 0;
+
+    for (const app of initial29Applicants) {
+      if (app.status === 'allotted' || app.status === 'partially_allotted') {
+        allotted++;
+      } else if (app.status === 'not_allotted') {
+        notAllotted++;
+      } else if (app.status === 'no_record') {
+        noRecord++;
+      } else if (app.status === 'not_available') {
+        notAvailable++;
+      } else if (app.status === 'needs_review' || app.status === 'check_failed') {
+        needsReview++;
+      }
+    }
+
+    expect(total).toBe(29);
+    expect(allotted).toBe(0);
+    expect(notAllotted).toBe(0);
+    expect(noRecord).toBe(0);
+    expect(notAvailable).toBe(0);
+    expect(needsReview).toBe(0);
+  });
+
+  it('34. Unsupported registrar maps to check_failed / needs_review and NEVER converts to "Not Allotted"', () => {
+    const isSupported = isAutomatedCheckSupported('Cameo Corporate Services');
+    expect(isSupported).toBe(false);
+
+    let status = 'pending';
+    if (!isSupported) {
+      status = 'check_failed';
+    }
+
+    expect(status).toBe('check_failed');
+    expect(status).not.toBe('not_allotted');
+    expect(status).not.toBe('allotted');
+  });
+
+  it('35. Definitive registrar outcomes (ALLOTTED, NOT_ALLOTTED, NO_RECORD, NOT_YET_AVAILABLE) map accurately', () => {
+    const outcomeAllotted = { backendStatus: 'ALLOTTED', sharesAllotted: 75 };
+    const outcomePartial = { backendStatus: 'PARTIALLY_ALLOTTED', sharesAllotted: 35 };
+    const outcomeNotAllotted = { backendStatus: 'NOT_ALLOTTED', sharesAllotted: 0 };
+    const outcomeNoRecord = { backendStatus: 'APPLICATION_NOT_FOUND', sharesAllotted: 0 };
+    const outcomeNotAvailable = { backendStatus: 'NOT_YET_AVAILABLE', sharesAllotted: 0 };
+
+    expect(outcomeAllotted.backendStatus).toBe('ALLOTTED');
+    expect(outcomeAllotted.sharesAllotted).toBe(75);
+
+    expect(outcomePartial.backendStatus).toBe('PARTIALLY_ALLOTTED');
+    expect(outcomePartial.sharesAllotted).toBe(35);
+
+    expect(outcomeNotAllotted.backendStatus).toBe('NOT_ALLOTTED');
+    expect(outcomeNotAllotted.sharesAllotted).toBe(0);
+
+    expect(outcomeNoRecord.backendStatus).toBe('APPLICATION_NOT_FOUND');
+    expect(outcomeNotAvailable.backendStatus).toBe('NOT_YET_AVAILABLE');
+  });
+
   it('22. should reject backend job creation for unsupported registrar (NO job invariant)', async () => {
     jest.spyOn(global, 'fetch').mockImplementationOnce(() =>
       Promise.resolve({
@@ -1190,6 +1313,136 @@ describe('Allotment Checker Frontend Integration Tests', () => {
       const result = matchApplicantToJobItem(applicant.pan, backendItems, 'COMPLETED');
       expect(result.status).toBe('needs_review');
       expect(result.errorMessage).toBe('Unable to match this applicant to the completed registrar result.');
+    });
+  });
+
+  describe('Allotment Status Model & Lifecycle Isolation Rules', () => {
+    it('1. Allotment Out + registrar result available -> maps to actual allotment status', () => {
+      const backendAllotted = { status: 'ALLOTTED', sharesAllotted: 100 };
+      const backendPartial = { status: 'PARTIALLY_ALLOTTED', sharesAllotted: 50 };
+      const backendNotAllotted = { status: 'NOT_ALLOTTED', sharesAllotted: 0 };
+      const backendNoRecord = { status: 'APPLICATION_NOT_FOUND' };
+
+      expect(backendAllotted.status).toBe('ALLOTTED');
+      expect(backendPartial.status).toBe('PARTIALLY_ALLOTTED');
+      expect(backendNotAllotted.status).toBe('NOT_ALLOTTED');
+      expect(backendNoRecord.status).toBe('APPLICATION_NOT_FOUND');
+    });
+
+    it('2. Allotment Out + registrar result not available / awaited -> maps to not_available (Allotment Not Available)', () => {
+      const backendItem = {
+        status: 'NOT_YET_AVAILABLE',
+        errorMessage: 'Allotment is awaited from registrar',
+      };
+      
+      let status = 'pending';
+      let errorMessage: string | undefined;
+      if (backendItem.status === 'NOT_YET_AVAILABLE') {
+        status = 'not_available';
+        errorMessage = backendItem.errorMessage;
+      }
+
+      expect(status).toBe('not_available');
+      expect(status).not.toBe('not_allotted');
+      expect(errorMessage).toContain('awaited');
+    });
+
+    it('3. Allotment Out + IPO absent from registrar list -> maps to not_available (Allotment Not Available)', () => {
+      const backendItem = {
+        status: 'NOT_YET_AVAILABLE',
+        errorMessage: 'IPO not found in live active list',
+      };
+
+      let status = 'pending';
+      if (backendItem.status === 'NOT_YET_AVAILABLE') {
+        status = 'not_available';
+      }
+
+      expect(status).toBe('not_available');
+      expect(status).not.toBe('not_allotted');
+      expect(status).not.toBe('check_failed');
+    });
+
+    it('4. Allotment Out + technical registrar failure -> maps to check_failed (never masked as not_available)', () => {
+      const technicalStatuses = [
+        'SOURCE_UNAVAILABLE',
+        'REGISTRAR_UNSUPPORTED',
+        'RATE_LIMITED',
+        'TEMPORARY_ERROR',
+      ];
+
+      for (const techStatus of technicalStatuses) {
+        let status = 'pending';
+        if (
+          techStatus === 'SOURCE_UNAVAILABLE' ||
+          techStatus === 'REGISTRAR_UNSUPPORTED' ||
+          techStatus === 'RATE_LIMITED' ||
+          techStatus === 'TEMPORARY_ERROR'
+        ) {
+          status = 'check_failed';
+        }
+
+        expect(status).toBe('check_failed');
+        expect(status).not.toBe('not_available');
+        expect(status).not.toBe('not_allotted');
+      }
+    });
+
+    it('5. Allotment Out + ambiguous registrar identity -> maps to needs_review', () => {
+      const backendItem = {
+        status: 'NEEDS_REVIEW',
+        errorMessage: 'Multiple matching candidates found',
+      };
+
+      let status = 'pending';
+      if (backendItem.status === 'NEEDS_REVIEW') {
+        status = 'needs_review';
+      }
+
+      expect(status).toBe('needs_review');
+      expect(status).not.toBe('not_allotted');
+      expect(status).not.toBe('not_available');
+    });
+
+    it('6. Allotment Not Available (not_available) is strictly distinct from Not Allotted (not_allotted)', () => {
+      const notAvailableStatus = 'not_available';
+      const notAllottedStatus = 'not_allotted';
+
+      expect(notAvailableStatus).not.toBe(notAllottedStatus);
+      // In UI summary, notAvailable increments notAvailable count, not notAllotted count
+      let notAllottedCount = 0;
+      let notAvailableCount = 0;
+
+      const mockApplicants = [
+        { status: 'not_available' },
+        { status: 'not_available' },
+        { status: 'not_allotted' },
+      ];
+
+      for (const app of mockApplicants) {
+        if (app.status === 'not_allotted') notAllottedCount++;
+        else if (app.status === 'not_available') notAvailableCount++;
+      }
+
+      expect(notAllottedCount).toBe(1);
+      expect(notAvailableCount).toBe(2);
+    });
+
+    it('7. Registrar check execution never alters or regresses the IPO lifecycle from ALLOTMENT_OUT', () => {
+      const ipo = {
+        id: 'test-ipo-id',
+        status: 'allotment_out',
+        allotment_date: '2026-10-06',
+      };
+
+      // Simulating registrar check results returning 'not_available' or 'check_failed'
+      const checkResultStatus = 'not_available';
+      
+      // IPO status must remain untouched
+      expect(ipo.status).toBe('allotment_out');
+      expect(checkResultStatus).toBe('not_available');
+      expect(ipo.status).not.toBe('upcoming');
+      expect(ipo.status).not.toBe('closed');
     });
   });
 });

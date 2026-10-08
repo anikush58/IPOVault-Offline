@@ -96,7 +96,7 @@ export const AllotmentStatusBadge: React.FC<AllotmentStatusBadgeProps> = ({
       break;
 
     case 'NOT_AVAILABLE':
-      label = label || 'Allotment Not Declared';
+      label = label || 'Allotment Not Available';
       textColor = isDark ? '#94A3B8' : '#607386';
       bg = isDark ? 'rgba(96, 115, 134, 0.18)' : '#EDF4F9';
       iconBg = isDark ? '#94A3B8' : '#607386';
