@@ -15,8 +15,21 @@ const afterEach = (fn: () => void) => {
   _afterEach = fn;
 };
 
+const testQueue: Array<() => Promise<void>> = [];
+let isRunning = false;
+
+async function runQueue() {
+  if (isRunning) return;
+  isRunning = true;
+  while (testQueue.length > 0) {
+    const testFn = testQueue.shift();
+    if (testFn) await testFn();
+  }
+  isRunning = false;
+}
+
 const it = (name: string, fn: () => Promise<void> | void) => {
-  void (async () => {
+  testQueue.push(async () => {
     try {
       if (_beforeEach) _beforeEach();
       await fn();
@@ -27,7 +40,8 @@ const it = (name: string, fn: () => Promise<void> | void) => {
     } finally {
       if (_afterEach) _afterEach();
     }
-  })();
+  });
+  setImmediate(runQueue);
 };
 
 const expect = (actual: any) => ({
@@ -128,6 +142,7 @@ const jest = {
 
 import { AllotmentApiService } from '../services/allotment/AllotmentApiService';
 import { PanSyncService } from '../services/allotment/PanSyncService';
+import { firebaseAuth } from '../services/auth/firebaseConfig';
 import {
   checkBigshareCaptchaPresence,
   getRegistrarConfig,
@@ -139,11 +154,17 @@ describe('Allotment Checker Frontend Integration Tests', () => {
   let panSyncService: PanSyncService;
 
   beforeEach(() => {
+    (firebaseAuth as any).currentUser = {
+      uid: 'user-123',
+      email: 'tester@ipovault.app',
+      getIdToken: async () => 'test-firebase-id-token-abc',
+    };
     allotmentApiService = new AllotmentApiService('http://localhost:3000');
     panSyncService = new PanSyncService('http://localhost:3000');
   });
 
   afterEach(() => {
+    (firebaseAuth as any).currentUser = null;
     jest.restoreAllMocks();
   });
 
@@ -181,7 +202,7 @@ describe('Allotment Checker Frontend Integration Tests', () => {
     expect(job.ipoId).toBe(ipoId);
   });
 
-  it('6 & 16. should associate user identity via x-user-id and send no plaintext PAN in job request', async () => {
+  it('6 & 16. should associate user identity via Authorization Bearer token and send no plaintext PAN in job request', async () => {
     const ipoId = '11111111-2222-4333-a444-555555555555';
     const userId = 'user-456';
 
@@ -217,22 +238,25 @@ describe('Allotment Checker Frontend Integration Tests', () => {
 
     await allotmentApiService.createJob(ipoId, userId);
 
-    expect(capturedHeaders['x-user-id']).toBe('user-456');
+    expect(capturedHeaders['Authorization']).toBe('Bearer test-firebase-id-token-abc');
+    expect(capturedHeaders['x-user-id']).toBe(undefined);
     expect(capturedBody).toEqual({ ipoId });
     expect(JSON.stringify(capturedBody)).not.toContain('ABCDE1234F');
   });
 
-  it('7. should synchronize local user PANs to backend UserSavedPan storage', async () => {
+  it('7. should synchronize local user PANs to backend UserSavedPan storage using Bearer auth', async () => {
     const userId = 'user-789';
     const localPans = [
       { userId, pan: 'ABCDE1234F', name: 'User One' },
       { userId, pan: 'XYZAB5678C', name: 'User Two' },
     ];
 
+    let capturedHeaders: Record<string, string> = {};
     let capturedBody: any;
     jest
       .spyOn(global, 'fetch')
       .mockImplementationOnce((url: unknown, options?: any) => {
+        capturedHeaders = (options?.headers as Record<string, string>) || {};
         capturedBody = JSON.parse((options?.body as string) || '{}');
         return Promise.resolve({
           ok: true,
@@ -243,6 +267,8 @@ describe('Allotment Checker Frontend Integration Tests', () => {
 
     const success = await panSyncService.syncLocalPans(userId, localPans);
     expect(success).toBe(true);
+    expect(capturedHeaders['Authorization']).toBe('Bearer test-firebase-id-token-abc');
+    expect(capturedHeaders['x-user-id']).toBe(undefined);
     expect(capturedBody.pans).toHaveLength(2);
     expect(capturedBody.pans[0].pan).toBe('ABCDE1234F');
   });

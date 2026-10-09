@@ -248,6 +248,36 @@ async function runBrokerOAuthSuccessFlowTestSuite() {
     );
   }
 
+  // --- TEST 6: Explicit /users Navigation & Focus Refresh on Callback ---
+  console.log('\n--- TEST 6: Explicit /users Navigation & Focus Refresh on Callback ---');
+  {
+    const sim = new BrokerOAuthFlowSimulator();
+    // Simulate real device launch where deep link initially opens callback screen on top of root
+    sim.navigationHistory = ['/(tabs)'];
+    sim.currentScreen = '/(tabs)';
+
+    // Receive incoming Upstox success callback
+    sim.receiveDeepLink('ipovault://broker-callback?status=success&accountId=acc-real-456&broker=Upstox');
+
+    assert(
+      sim.currentScreen === '/users',
+      'TEST 6.1',
+      'BrokerCallbackScreen explicitly navigates to /users (never lands on Dashboard /(tabs))'
+    );
+
+    assert(
+      sim.navigationHistory[sim.navigationHistory.length - 1] === '/users',
+      'TEST 6.2',
+      'Final destination in navigation history is /users'
+    );
+
+    assert(
+      sim.isConnected === true,
+      'TEST 6.3',
+      'Broker connection status is marked connected and triggers focus/event reload'
+    );
+  }
+
   console.log('\n===============================================================');
   console.log(`ALL BROKER OAUTH SUCCESS FLOW TESTS PASSED (${passCount}/${passCount})`);
   console.log('===============================================================');
