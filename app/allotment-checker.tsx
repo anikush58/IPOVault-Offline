@@ -1030,6 +1030,7 @@ export default function AllotmentCheckerScreen() {
   // Selected IPO — Defaults to NULL on initial mount (idle state)
   const [selectedIpoId, setSelectedIpoId] = useState<string | null>(null);
   const [showIpoPicker, setShowIpoPicker] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showCelebrationModal, setShowCelebrationModal] = useState(false);
   const [logoLoadFailed, setLogoLoadFailed] = useState(false);
   const celebratedJobIdsRef = useRef<Set<string>>(new Set());
@@ -1038,6 +1039,50 @@ export default function AllotmentCheckerScreen() {
   useEffect(() => {
     setLogoLoadFailed(false);
   }, [selectedIpoId]);
+
+  // Allotment history computed from local applications & backend published IPOs (Only successful allotments)
+  const allotmentHistoryItems = useMemo(() => {
+    const items: Array<{
+      id: string;
+      ipoId?: string;
+      ipoName: string;
+      userName: string;
+      pan: string;
+      status: string;
+      sharesAllotted?: number;
+    }> = [];
+
+    for (const app of applications) {
+      const isSuccessful =
+        app.status === 'Allotted' ||
+        app.status === 'Holding' ||
+        app.status === 'Sold' ||
+        (typeof app.quantity === 'number' && app.quantity > 0 && app.status !== 'Not Allotted');
+
+      if (!isSuccessful) continue; // Only show successful allotments in history
+
+      const usr = users.find((u) => u.id === app.user_id);
+      const ipo = ipos.find((i) => i.id === app.ipo_id);
+      const matchedBackendIpo = backendIpos.find(
+        (b) =>
+          b.id === app.ipo_id ||
+          (ipo?.backend_ipo_id && b.id === ipo.backend_ipo_id) ||
+          b.company?.displayName?.toLowerCase().trim() === app.ipo_name?.toLowerCase().trim(),
+      );
+
+      items.push({
+        id: app.id,
+        ipoId: matchedBackendIpo?.id || app.ipo_id,
+        ipoName: app.ipo_name || ipo?.ipo_name || 'IPO',
+        userName: app.user_name || usr?.name || 'Applicant',
+        pan: usr?.pan_number || '',
+        status: 'ALLOTTED',
+        sharesAllotted: app.quantity || (app as any).shares_count || undefined,
+      });
+    }
+
+    return items;
+  }, [applications, ipos, users, backendIpos]);
 
   // Active Job state
   const [activeJob, setActiveJob] = useState<BackendJobResponse | null>(null);
@@ -2107,34 +2152,66 @@ export default function AllotmentCheckerScreen() {
     return 'Ready';
   }, [isCreatingJob, activeJob]);
 
-  const topPad = Platform.OS === 'web' ? 20 : insets.top;
+  const topPad = Platform.OS === 'web' ? 16 : insets.top;
 
   return (
     <View
       style={[
         styles.container,
-        { backgroundColor: colors.background },
+        { backgroundColor: colors.background, paddingTop: topPad },
       ]}
     >
-      {/* Floating Blurred Header */}
-      <ScreenHeader
-        title="Allotment Checker"
-        showBack
-        centerTitle
-        rightElement={
+      {/* Full Screen Background Graphic for Idle State */}
+      {!selectedIpo && (
+        <Image
+          source={ALLOTMENT_HERO_GRAPHIC}
+          style={StyleSheet.absoluteFillObject}
+          resizeMode="cover"
+        />
+      )}
+
+      {/* Top Header */}
+      <View style={styles.header}>
+        <IconButton
+          name="arrow-left"
+          variant="surface"
+          size="md"
+          onPress={() => {
+            if (selectedIpo) {
+              handleSwitchIpo();
+            } else {
+              router.back();
+            }
+          }}
+        />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={[styles.headerEyebrow, { color: colors.mutedForeground }]}>
+            IPO
+          </Text>
+          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+            Allotment Checker
+          </Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <IconButton
+            name="award"
+            variant="surface"
+            size="md"
+            onPress={() => setShowHistoryModal(true)}
+          />
           <IconButton
             name="terminal"
             variant={showDiagnostics ? 'primary' : 'surface'}
             size="md"
             onPress={() => setShowDiagnostics((prev) => !prev)}
           />
-        }
-      />
+        </View>
+      </View>
 
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: topPad + 60 + 12 },
+          { paddingTop: 8 },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -2143,44 +2220,52 @@ export default function AllotmentCheckerScreen() {
           <TouchableOpacity
             style={[
               styles.ipoSelectorCard,
-              { backgroundColor: colors.card, borderColor: colors.border },
+              {
+                backgroundColor: isDark ? colors.card : '#FFFFFF',
+                borderColor: colors.border,
+              },
             ]}
             onPress={() => setShowIpoPicker(true)}
-            activeOpacity={0.7}
+            activeOpacity={0.82}
           >
             <View style={styles.ipoSelectorLeft}>
-              <Text
-                style={[styles.ipoSelectorLabel, { color: colors.mutedForeground }]}
+              <View
+                style={[
+                  styles.ipoSelectorIconWrap,
+                  {
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F1F5F9',
+                    borderColor: colors.border,
+                  },
+                ]}
               >
-                SELECT IPO TO CHECK ALLOTMENT
-              </Text>
-              <Text style={[styles.ipoSelectorName, { color: colors.foreground }]}>
-                Choose from registered IPOs...
-              </Text>
+                <Ionicons name="business" size={22} color={colors.foreground} />
+              </View>
+              <View style={styles.ipoSelectorTextCol}>
+                <Text
+                  style={[styles.ipoSelectorName, { color: colors.foreground }]}
+                  numberOfLines={1}
+                >
+                  Choose from registered IPOs...
+                </Text>
+                <Text
+                  style={[styles.ipoSelectorHint, { color: colors.mutedForeground }]}
+                >
+                  Direct registrar verification for saved PANs
+                </Text>
+              </View>
             </View>
-            <Feather name="chevron-down" size={24} color={colors.mutedForeground} />
+            <View
+              style={[
+                styles.ipoSelectorChevronWrap,
+                {
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F8FAFC',
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Feather name="chevron-down" size={18} color={colors.foreground} />
+            </View>
           </TouchableOpacity>
-        )}
-
-        {/* Empty State Graphics / How It Works Guide when no IPO is selected */}
-        {!selectedIpo && (
-          <View style={styles.emptyHeroContainer}>
-            {/* Top decorative graphic */}
-            <View style={styles.emptyHeroGraphicWrapper}>
-              <Image
-                source={ALLOTMENT_HERO_GRAPHIC}
-                style={styles.emptyHeroGraphic}
-                resizeMode="contain"
-              />
-            </View>
-
-            <Text style={[styles.emptyHeroTitle, { color: colors.foreground }]}>
-              Instant Allotment Verification
-            </Text>
-            <Text style={[styles.emptyHeroSubtitle, { color: colors.mutedForeground }]}>
-              Check allotment status across multiple PAN applications simultaneously with direct registrar verification.
-            </Text>
-          </View>
         )}
 
         {/* Selected IPO Info Card (Shown when an IPO is selected) */}
@@ -2904,6 +2989,92 @@ export default function AllotmentCheckerScreen() {
         </View>
       </Modal>
 
+      {/* Allotment History & Recent Applications Modal */}
+      <Modal
+        visible={showHistoryModal}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setShowHistoryModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.pickerModalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowHistoryModal(false)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            style={[
+              styles.historyModalCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={[styles.pickerModalHeader, { borderBottomColor: colors.border }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Feather name="clock" size={18} color={colors.primary} />
+                <Text style={[styles.pickerModalTitle, { color: colors.foreground }]}>
+                  Allotment History
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowHistoryModal(false)}
+                style={styles.pickerCloseBtn}
+                hitSlop={8}
+              >
+                <Feather name="x" size={18} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+
+            <FlatList
+              data={allotmentHistoryItems}
+              keyExtractor={(item) => item.id}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingVertical: 4 }}
+              ListEmptyComponent={
+                <View style={{ padding: 28, alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  <Feather name="inbox" size={32} color={colors.mutedForeground} />
+                  <Text style={{ color: colors.foreground, fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold' }}>
+                    No Allotment History
+                  </Text>
+                  <Text style={{ color: colors.mutedForeground, fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', textAlign: 'center', lineHeight: 18 }}>
+                    Check any active IPO above to verify registrar allotment for your PANs.
+                  </Text>
+                </View>
+              }
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.historyRow,
+                    { borderBottomColor: colors.border },
+                  ]}
+                  onPress={() => {
+                    setShowHistoryModal(false);
+                    if (item.ipoId) {
+                      handleSelectIpo(item.ipoId);
+                    }
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ flex: 1, gap: 3 }}>
+                    <Text style={[styles.historyRowName, { color: colors.foreground }]} numberOfLines={1}>
+                      {item.ipoName}
+                    </Text>
+                    <Text style={[styles.historyRowSub, { color: colors.mutedForeground }]}>
+                      {item.userName} • {maskPan(item.pan)}
+                    </Text>
+                  </View>
+                  <AllotmentStatusBadge
+                    status={item.status as any}
+                    sharesAllotted={item.sharesAllotted}
+                    size="sm"
+                  />
+                </TouchableOpacity>
+              )}
+            />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Manual Application Status Update Modal */}
       <UpdateApplicationModal
         application={selectedAppForUpdate}
@@ -3112,7 +3283,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 10,
   },
   headerEyebrow: {
     fontSize: 10,
@@ -3122,26 +3293,41 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 18,
     fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.5,
+    letterSpacing: -0.3,
     textAlign: 'center',
   },
   scrollContent: {
-    padding: 16,
-    gap: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+    gap: 14,
   },
   ipoSelectorCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
   },
   ipoSelectorLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
     flex: 1,
-    gap: 4,
+  },
+  ipoSelectorIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ipoSelectorTextCol: {
+    flex: 1,
+    gap: 3,
   },
   ipoSelectorLabel: {
     fontSize: 10,
@@ -3149,10 +3335,28 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
+  ipoSelectorDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
   ipoSelectorName: {
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: -0.2,
+  },
+  ipoSelectorHint: {
+    fontSize: 11.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+  },
+  ipoSelectorChevronWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
   },
   ipoRegistrarText: {
     fontSize: 12,
@@ -3476,6 +3680,35 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 16,
   },
+  historyModalCard: {
+    width: '92%',
+    maxWidth: 420,
+    borderRadius: 22,
+    borderWidth: 1,
+    maxHeight: '80%',
+    overflow: 'hidden',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+  },
+  historyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+  },
+  historyRowName: {
+    fontSize: 14,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  historyRowSub: {
+    fontSize: 11.5,
+    fontFamily: 'SpaceMono',
+  },
   pickerModalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3515,15 +3748,6 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     paddingHorizontal: 8,
     gap: 12,
-  },
-  emptyHeroGraphicWrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  emptyHeroGraphic: {
-    width: 300,
-    height: 260,
   },
   emptyHeroTitle: {
     fontSize: 20,

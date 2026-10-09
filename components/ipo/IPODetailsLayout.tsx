@@ -418,9 +418,9 @@ export function IPODetailsLayout({
         title: 'Allotment Declared',
         subtitle: `Announced on ${formatFullDate(allotmentDate)}`,
         badgeText: 'Out Now',
-        badgeColor: '#3B82F6',
-        badgeBg: isDark ? 'rgba(59, 130, 246, 0.18)' : '#EFF6FF',
-        badgeTextColor: isDark ? '#60A5FA' : '#2563EB',
+        badgeColor: '#06B6D4',
+        badgeBg: isDark ? 'rgba(6, 182, 212, 0.18)' : '#E0F2FE',
+        badgeTextColor: isDark ? '#22D3EE' : '#0891B2',
       };
     }
 
@@ -429,9 +429,9 @@ export function IPODetailsLayout({
         title: 'Allotment Awaited',
         subtitle: allotmentDate ? `Expected on ${formatFullDate(allotmentDate)}` : 'Allotment status pending',
         badgeText: 'Allotment Awaited',
-        badgeColor: '#F59E0B',
-        badgeBg: isDark ? 'rgba(245, 158, 11, 0.18)' : '#FEF3C7',
-        badgeTextColor: isDark ? '#FBBF24' : '#D97706',
+        badgeColor: '#F97316',
+        badgeBg: isDark ? 'rgba(249, 115, 22, 0.18)' : '#FFEDD5',
+        badgeTextColor: isDark ? '#FB923C' : '#EA580C',
       };
     }
 
@@ -451,9 +451,9 @@ export function IPODetailsLayout({
         title: 'Listed on Exchange',
         subtitle: listingDate ? `Listed on ${formatFullDate(listingDate)}` : 'Trading active',
         badgeText: 'Listed',
-        badgeColor: '#10B981',
-        badgeBg: isDark ? 'rgba(16, 185, 129, 0.18)' : '#DCFCE7',
-        badgeTextColor: isDark ? '#34D399' : '#15803D',
+        badgeColor: '#8B5CF6',
+        badgeBg: isDark ? 'rgba(139, 92, 246, 0.18)' : '#F5F3FF',
+        badgeTextColor: isDark ? '#A78BFA' : '#7C3AED',
       };
     }
 
@@ -461,9 +461,9 @@ export function IPODetailsLayout({
       title: 'Upcoming IPO',
       subtitle: openDate ? `Opens on ${formatFullDate(openDate)}` : 'Dates to be announced',
       badgeText: 'Upcoming',
-      badgeColor: '#F59E0B',
-      badgeBg: isDark ? 'rgba(245, 158, 11, 0.18)' : '#FEF3C7',
-      badgeTextColor: isDark ? '#FBBF24' : '#D97706',
+      badgeColor: '#3B82F6',
+      badgeBg: isDark ? 'rgba(59, 130, 246, 0.18)' : '#EFF6FF',
+      badgeTextColor: isDark ? '#60A5FA' : '#2563EB',
     };
   }, [isClosingToday, isOpen, isAllotmentPending, isAllotmentOut, isClosed, isListed, openDate, closeDate, allotmentDate, listingDate, isDark]);
 

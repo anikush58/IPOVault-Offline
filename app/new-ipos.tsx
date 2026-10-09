@@ -494,8 +494,8 @@ const NewIpoCardItem = React.memo(
                     }
                   : isAllotmentOut
                   ? {
-                      backgroundColor: isDark ? 'rgba(34,197,94,0.12)' : '#F0FDF4',
-                      borderColor: isDark ? 'rgba(134,239,172,0.4)' : '#86EFAC',
+                      backgroundColor: isDark ? 'rgba(6,182,212,0.12)' : '#E0F2FE',
+                      borderColor: isDark ? 'rgba(34,211,238,0.4)' : '#BAE6FD',
                     }
                   : isListed
                   ? {
@@ -520,7 +520,31 @@ const NewIpoCardItem = React.memo(
                 <Feather
                   name="zap"
                   size={11.5}
-                  color={isDark ? '#4ADE80' : '#16A34A'}
+                  color={isDark ? '#34D399' : '#059669'}
+                  style={{ marginRight: 2 }}
+                />
+              )}
+              {isUpcoming && (
+                <Feather
+                  name="calendar"
+                  size={11.5}
+                  color={isDark ? '#60A5FA' : '#1D4ED8'}
+                  style={{ marginRight: 2 }}
+                />
+              )}
+              {isAllotmentOut && (
+                <Feather
+                  name="check-circle"
+                  size={11.5}
+                  color={isDark ? '#22D3EE' : '#0891B2'}
+                  style={{ marginRight: 2 }}
+                />
+              )}
+              {isListed && (
+                <Feather
+                  name="award"
+                  size={11.5}
+                  color={isDark ? '#A78BFA' : '#7C3AED'}
                   style={{ marginRight: 2 }}
                 />
               )}
@@ -531,11 +555,11 @@ const NewIpoCardItem = React.memo(
                     color: isItemClosingToday
                       ? (isDark ? '#FBBF24' : '#D97706')
                       : isOpen
-                      ? (isDark ? '#4ADE80' : '#15803D')
+                      ? (isDark ? '#34D399' : '#059669')
                       : isUpcoming
                       ? (isDark ? '#60A5FA' : '#1D4ED8')
                       : isAllotmentOut
-                      ? (isDark ? '#4ADE80' : '#15803D')
+                      ? (isDark ? '#22D3EE' : '#0891B2')
                       : isListed
                       ? (isDark ? '#A78BFA' : '#7C3AED')
                       : (isDark ? '#94A3B8' : '#64748B'),

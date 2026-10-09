@@ -14,32 +14,32 @@ export function IPOStatusChip({ status }: { status: IPOStatusType }) {
     const s = (st || '').toLowerCase().trim();
     if (s === 'closing_today' || s === 'closing today' || s === 'closes today' || s === 'closing soon' || s === 'closing') {
       return {
-        bg: isDark ? 'rgba(245, 158, 11, 0.22)' : '#FEF3C7',
-        border: isDark ? 'rgba(245, 158, 11, 0.50)' : 'rgba(217, 119, 6, 0.40)',
+        bg: isDark ? 'rgba(245, 158, 11, 0.18)' : '#FEF3C7',
+        border: isDark ? 'rgba(251, 191, 36, 0.40)' : 'rgba(217, 119, 6, 0.35)',
         text: isDark ? '#FBBF24' : '#D97706',
         dot: isDark ? '#FBBF24' : '#D97706',
       };
     }
     if (s === 'open' || s === 'live bid' || s === 'live' || s === 'live now') {
       return {
-        bg: isDark ? 'rgba(16, 185, 129, 0.22)' : '#DCFCE7',
-        border: isDark ? 'rgba(16, 185, 129, 0.50)' : 'rgba(21, 128, 61, 0.40)',
-        text: isDark ? '#34D399' : '#15803D',
-        dot: isDark ? '#34D399' : '#15803D',
+        bg: isDark ? 'rgba(16, 185, 129, 0.18)' : '#DCFCE7',
+        border: isDark ? 'rgba(52, 211, 153, 0.40)' : 'rgba(16, 185, 129, 0.35)',
+        text: isDark ? '#34D399' : '#059669',
+        dot: isDark ? '#34D399' : '#059669',
       };
     }
     if (s === 'pre-apply' || s === 'pre_apply' || s === 'preapply') {
       return {
-        bg: isDark ? 'rgba(6, 182, 212, 0.22)' : 'rgba(6, 182, 212, 0.15)',
-        border: isDark ? 'rgba(6, 182, 212, 0.50)' : 'rgba(6, 182, 212, 0.35)',
-        text: isDark ? '#22D3EE' : '#0891B2',
-        dot: isDark ? '#22D3EE' : '#0891B2',
+        bg: isDark ? 'rgba(14, 165, 233, 0.18)' : '#E0F2FE',
+        border: isDark ? 'rgba(56, 189, 248, 0.40)' : 'rgba(2, 132, 199, 0.35)',
+        text: isDark ? '#38BDF8' : '#0284C7',
+        dot: isDark ? '#38BDF8' : '#0284C7',
       };
     }
     if (s === 'upcoming') {
       return {
-        bg: isDark ? 'rgba(59, 130, 246, 0.22)' : '#EFF6FF',
-        border: isDark ? 'rgba(59, 130, 246, 0.50)' : 'rgba(37, 99, 235, 0.35)',
+        bg: isDark ? 'rgba(59, 130, 246, 0.18)' : '#EFF6FF',
+        border: isDark ? 'rgba(96, 165, 250, 0.40)' : 'rgba(37, 99, 235, 0.35)',
         text: isDark ? '#60A5FA' : '#2563EB',
         dot: isDark ? '#60A5FA' : '#2563EB',
       };
@@ -56,19 +56,10 @@ export function IPOStatusChip({ status }: { status: IPOStatusType }) {
       s === 'allotted_pending'
     ) {
       return {
-        bg: isDark ? 'rgba(245, 158, 11, 0.24)' : '#FEF3C7',
-        border: 'transparent',
-        borderWidth: 0,
-        text: isDark ? '#FBBF24' : '#D97706',
-        dot: isDark ? '#FBBF24' : '#D97706',
-      };
-    }
-    if (s === 'closed') {
-      return {
-        bg: isDark ? 'rgba(100, 116, 139, 0.20)' : '#F1F5F9',
-        border: isDark ? 'rgba(100, 116, 139, 0.40)' : 'rgba(100, 116, 139, 0.30)',
-        text: isDark ? '#94A3B8' : '#64748B',
-        dot: isDark ? '#94A3B8' : '#64748B',
+        bg: isDark ? 'rgba(249, 115, 22, 0.18)' : '#FFEDD5',
+        border: isDark ? 'rgba(251, 146, 60, 0.40)' : 'rgba(234, 88, 12, 0.35)',
+        text: isDark ? '#FB923C' : '#EA580C',
+        dot: isDark ? '#FB923C' : '#EA580C',
       };
     }
     if (
@@ -80,25 +71,32 @@ export function IPOStatusChip({ status }: { status: IPOStatusType }) {
       s === 'allotment_completed'
     ) {
       return {
-        bg: isDark ? 'rgba(16, 185, 129, 0.24)' : '#DCFCE7',
-        border: 'transparent',
-        borderWidth: 0,
-        text: isDark ? '#34D399' : '#059669',
-        dot: isDark ? '#34D399' : '#059669',
+        bg: isDark ? 'rgba(6, 182, 212, 0.18)' : '#E0F2FE',
+        border: isDark ? 'rgba(34, 211, 238, 0.40)' : 'rgba(8, 145, 178, 0.35)',
+        text: isDark ? '#22D3EE' : '#0891B2',
+        dot: isDark ? '#22D3EE' : '#0891B2',
+      };
+    }
+    if (s === 'closed') {
+      return {
+        bg: isDark ? 'rgba(100, 116, 139, 0.18)' : '#F1F5F9',
+        border: isDark ? 'rgba(148, 163, 184, 0.35)' : 'rgba(100, 116, 139, 0.25)',
+        text: isDark ? '#94A3B8' : '#64748B',
+        dot: isDark ? '#94A3B8' : '#64748B',
       };
     }
     if (s === 'sold') {
       return {
-        bg: isDark ? 'rgba(245, 158, 11, 0.22)' : '#FEF3C7',
-        border: isDark ? 'rgba(245, 158, 11, 0.45)' : 'rgba(217, 119, 6, 0.35)',
-        text: isDark ? '#FBBF24' : '#D97706',
-        dot: isDark ? '#FBBF24' : '#D97706',
+        bg: isDark ? 'rgba(217, 70, 239, 0.18)' : '#FAE8FF',
+        border: isDark ? 'rgba(232, 121, 249, 0.40)' : 'rgba(162, 28, 175, 0.35)',
+        text: isDark ? '#E879F9' : '#A21CAF',
+        dot: isDark ? '#E879F9' : '#A21CAF',
       };
     }
     if (s === 'listed') {
       return {
-        bg: isDark ? 'rgba(139, 92, 246, 0.22)' : '#F5F3FF',
-        border: isDark ? 'rgba(139, 92, 246, 0.50)' : 'rgba(124, 58, 237, 0.35)',
+        bg: isDark ? 'rgba(139, 92, 246, 0.18)' : '#F5F3FF',
+        border: isDark ? 'rgba(167, 139, 250, 0.40)' : 'rgba(124, 58, 237, 0.35)',
         text: isDark ? '#A78BFA' : '#7C3AED',
         dot: isDark ? '#A78BFA' : '#7C3AED',
       };

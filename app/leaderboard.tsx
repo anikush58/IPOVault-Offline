@@ -38,7 +38,6 @@ type LeaderEntry = {
 
 // ── Asset References for Easy Customization in assets/leaderboard ─────────────
 const LEADERBOARD_ASSETS = {
-  crown: require('@/assets/images/leaderboard/crown.png'),
   leafLeft: require('@/assets/images/leaderboard/leaf-left.png'),
   leafRight: require('@/assets/images/leaderboard/leaf-right.png'),
   rank1Badge: require('@/assets/images/leaderboard/rank-1-badge.png'),
@@ -70,22 +69,9 @@ function computeRankings(
     .sort((a, b) => b.netProfit - a.netProfit);
 }
 
-// ── Crown Component (uses asset image with SVG vector fallback) ───────────────
+// ── Crown Component (SVG vector) ──────────────────────────────────────────────
 
 function GoldenCrown() {
-  const [imgError, setImgError] = useState(false);
-
-  if (!imgError) {
-    return (
-      <Image
-        source={LEADERBOARD_ASSETS.crown}
-        style={{ width: 48, height: 30 }}
-        resizeMode="contain"
-        onError={() => setImgError(true)}
-      />
-    );
-  }
-
   return (
     <Svg width="48" height="30" viewBox="0 0 48 30" fill="none">
       <Defs>
@@ -533,14 +519,15 @@ function Top3Podium({
             style={[
               podiumStyles.profitPill,
               {
-                backgroundColor: second.netProfit >= 0 ? colors.positiveBg : colors.negativeBg,
+                backgroundColor: isDark ? 'rgba(148, 163, 184, 0.18)' : '#F1F5F9',
+                borderColor: isDark ? 'rgba(148, 163, 184, 0.35)' : '#E2E8F0',
               },
             ]}
           >
             <Text
               style={[
                 podiumStyles.profitText,
-                { color: second.netProfit >= 0 ? colors.positive : colors.negative },
+                { color: isDark ? '#CBD5E1' : '#475569' },
               ]}
               numberOfLines={1}
             >
@@ -602,14 +589,15 @@ function Top3Podium({
             podiumStyles.profitPill,
             podiumStyles.profitPillGold,
             {
-              backgroundColor: first.netProfit >= 0 ? colors.positiveBg : colors.negativeBg,
+              backgroundColor: isDark ? 'rgba(245, 158, 11, 0.20)' : '#FEF3C7',
+              borderColor: isDark ? 'rgba(245, 158, 11, 0.45)' : '#FDE68A',
             },
           ]}
         >
           <Text
             style={[
               podiumStyles.profitTextGold,
-              { color: first.netProfit >= 0 ? colors.positive : colors.negative },
+              { color: isDark ? '#FBBF24' : '#B45309' },
             ]}
             numberOfLines={1}
           >
@@ -657,14 +645,15 @@ function Top3Podium({
             style={[
               podiumStyles.profitPill,
               {
-                backgroundColor: third.netProfit >= 0 ? colors.positiveBg : colors.negativeBg,
+                backgroundColor: isDark ? 'rgba(234, 88, 12, 0.18)' : '#FFEDD5',
+                borderColor: isDark ? 'rgba(234, 88, 12, 0.35)' : '#FED7AA',
               },
             ]}
           >
             <Text
               style={[
                 podiumStyles.profitText,
-                { color: third.netProfit >= 0 ? colors.positive : colors.negative },
+                { color: isDark ? '#FB923C' : '#C2410C' },
               ]}
               numberOfLines={1}
             >
@@ -806,8 +795,8 @@ const podiumStyles = StyleSheet.create({
     textAlign: 'center',
   },
   profitPill: {
-    borderRadius: 14,
-    borderWidth: 0,
+    borderRadius: 100,
+    borderWidth: 1,
     paddingVertical: 5,
     paddingHorizontal: 8,
     alignItems: 'center',

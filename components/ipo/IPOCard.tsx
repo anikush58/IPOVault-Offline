@@ -397,8 +397,8 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
                   }
                 : isAllotmentOut
                 ? {
-                    backgroundColor: isDark ? 'rgba(34,197,94,0.12)' : '#F0FDF4',
-                    borderColor: isDark ? 'rgba(134,239,172,0.4)' : '#86EFAC',
+                    backgroundColor: isDark ? 'rgba(6,182,212,0.12)' : '#E0F2FE',
+                    borderColor: isDark ? 'rgba(34,211,238,0.4)' : '#BAE6FD',
                   }
                 : isListed
                 ? {
@@ -407,8 +407,8 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
                   }
                 : isAllotmentPending
                 ? {
-                    backgroundColor: isDark ? 'rgba(245,158,11,0.12)' : '#FFFBEB',
-                    borderColor: isDark ? 'rgba(251,191,36,0.4)' : '#FDE68A',
+                    backgroundColor: isDark ? 'rgba(249,115,22,0.12)' : '#FFEDD5',
+                    borderColor: isDark ? 'rgba(251,146,60,0.4)' : '#FED7AA',
                   }
                 : {
                     backgroundColor: isDark ? 'rgba(148,163,184,0.12)' : '#F8FAFC',
@@ -428,7 +428,39 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
               <Feather
                 name="zap"
                 size={11.5}
-                color={isDark ? '#4ADE80' : '#16A34A'}
+                color={isDark ? '#34D399' : '#059669'}
+                style={{ marginRight: 2 }}
+              />
+            )}
+            {isUpcoming && (
+              <Feather
+                name="calendar"
+                size={11.5}
+                color={isDark ? '#60A5FA' : '#1D4ED8'}
+                style={{ marginRight: 2 }}
+              />
+            )}
+            {isAllotmentOut && (
+              <Feather
+                name="check-circle"
+                size={11.5}
+                color={isDark ? '#22D3EE' : '#0891B2'}
+                style={{ marginRight: 2 }}
+              />
+            )}
+            {isListed && (
+              <Feather
+                name="award"
+                size={11.5}
+                color={isDark ? '#A78BFA' : '#7C3AED'}
+                style={{ marginRight: 2 }}
+              />
+            )}
+            {isAllotmentPending && (
+              <Feather
+                name="clock"
+                size={11.5}
+                color={isDark ? '#FB923C' : '#EA580C'}
                 style={{ marginRight: 2 }}
               />
             )}
@@ -439,15 +471,15 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
                   color: isClosingToday
                     ? (isDark ? '#FBBF24' : '#D97706')
                     : isOpen
-                    ? (isDark ? '#4ADE80' : '#15803D')
+                    ? (isDark ? '#34D399' : '#059669')
                     : isUpcoming
                     ? (isDark ? '#60A5FA' : '#1D4ED8')
                     : isAllotmentOut
-                    ? (isDark ? '#4ADE80' : '#15803D')
+                    ? (isDark ? '#22D3EE' : '#0891B2')
                     : isListed
                     ? (isDark ? '#A78BFA' : '#7C3AED')
                     : isAllotmentPending
-                    ? (isDark ? '#FBBF24' : '#D97706')
+                    ? (isDark ? '#FB923C' : '#EA580C')
                     : (isDark ? '#94A3B8' : '#64748B'),
                 },
               ]}

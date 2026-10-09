@@ -55,7 +55,7 @@ const TABS: { key: TabKey; label: string; flex: number }[] = [
   { key: 'Allotted',     label: 'Allotted',     flex: 1.1 },
   { key: 'Holding',      label: 'Holding',      flex: 1.0 },
   { key: 'Sold',         label: 'Sold',         flex: 0.75 },
-  { key: 'Applied',      label: 'Active',       flex: 1.0 },
+  { key: 'Applied',      label: 'Applied',      flex: 1.0 },
   { key: 'Not Allotted', label: 'Not Allotted', flex: 1.45 },
 ];
 

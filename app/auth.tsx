@@ -10,8 +10,9 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Modal,
+  Image,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
@@ -19,11 +20,93 @@ import { useAuth } from '@/context/AuthContext';
 import { useDB } from '@/context/DBContext';
 import { useDialog } from '@/context/DialogContext';
 import { IconButton } from '@/components/ui/IconButton';
-import { Feather } from '@expo/vector-icons';
+import { Tabs } from '@/components/ui/Tabs';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-
 import * as SplashScreen from 'expo-splash-screen';
+
+import { ThemeToggle } from '@/components/onboarding/ThemeToggle';
+
+/**
+ * IPOVault Brand Logo Icon (Uses app icon image asset)
+ */
+function IPOVaultBrandLogo({ isDark }: { isDark: boolean }) {
+  return (
+    <View style={styles.brandContainer}>
+      <Image
+        source={
+          isDark
+            ? require('@/assets/images/auth-brand-logo-dark.png')
+            : require('@/assets/images/auth-brand-logo.png')
+        }
+        style={styles.brandIconImage}
+        resizeMode="contain"
+      />
+      <Text
+        style={[
+          styles.brandLabel,
+          { color: isDark ? 'rgba(255, 255, 255, 0.9)' : '#0F172A' },
+        ]}
+      >
+        IPOVAULT
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * Polished Emerald Security Shield Icon with Checkmark
+ */
+function SecurityShieldIcon({ size = 18 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 20 20" fill="none">
+      <Defs>
+        <SvgLinearGradient id="shieldGrad" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0%" stopColor="#10B981" />
+          <Stop offset="100%" stopColor="#059669" />
+        </SvgLinearGradient>
+      </Defs>
+      <Path
+        d="M10 1.5L3.5 4.5V9.5C3.5 14 6.3 17.5 10 18.5C13.7 17.5 16.5 14 16.5 9.5V4.5L10 1.5Z"
+        fill="url(#shieldGrad)"
+      />
+      <Path
+        d="M6.8 9.8L8.8 11.8L13.2 7.2"
+        stroke="#FFFFFF"
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+/**
+ * Official Google Multi-color Logo Vector
+ */
+function GoogleLogoSvg({ size = 20 }: { size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+        fill="#4285F4"
+      />
+      <Path
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+        fill="#34A853"
+      />
+      <Path
+        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+        fill="#FBBC05"
+      />
+      <Path
+        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+        fill="#EA4335"
+      />
+    </Svg>
+  );
+}
 
 export default function AuthScreen() {
   const colors = useColors();
@@ -55,7 +138,7 @@ export default function AuthScreen() {
   const [resetEmail, setResetEmail] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
 
-  const topPad = Platform.OS === 'web' ? 67 : insets.top;
+  const topPad = Platform.OS === 'web' ? 24 : insets.top;
   const hasNavigatedRef = React.useRef(false);
 
   const handleNavigateReturn = React.useCallback(() => {
@@ -174,13 +257,19 @@ export default function AuthScreen() {
       style={[styles.container, { backgroundColor: colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          { paddingTop: topPad, height: topPad + 60, backgroundColor: colors.background },
-        ]}
-      >
+      {/* Full-Screen Ambient Background Asset */}
+      <Image
+        source={
+          isDark
+            ? require('@/assets/images/auth-bg-dark.png')
+            : require('@/assets/images/auth-bg.png')
+        }
+        style={StyleSheet.absoluteFillObject}
+        resizeMode="cover"
+      />
+
+      {/* Top Bar for Back Navigation & Theme Toggle */}
+      <View style={[styles.topBar, { top: topPad + 8 }]}>
         {params.returnTo ? (
           <IconButton
             name="chevron-left"
@@ -190,274 +279,249 @@ export default function AuthScreen() {
             disabled={loadingAction !== null}
           />
         ) : (
-          <View style={{ width: 44, height: 44 }} />
+          <View />
         )}
-        <View style={styles.headerCenter}>
-          <Text style={[styles.headerEyebrow, { color: colors.primary }]}>IPOVault</Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Authentication</Text>
-        </View>
-        <View style={{ width: 44, height: 44 }} />
+        <ThemeToggle />
       </View>
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: Math.max(topPad + 16, 36) + 100 },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.formContainer}>
-            {/* Mode Switcher Tabs */}
+          {/* Brand Header */}
+          <IPOVaultBrandLogo isDark={isDark} />
+
+          <View style={styles.titleContainer}>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+              {mode === 'signin' ? 'Welcome Back' : 'Create Account'}
+            </Text>
+            <Text style={[styles.headerSubtitle, { color: colors.mutedForeground }]}>
+              {mode === 'signin'
+                ? 'Sign in to manage your IPO portfolio,\ntrack applications and more.'
+                : 'Sign up to manage your IPO portfolio,\ntrack applications and more.'}
+            </Text>
+          </View>
+
+          {/* Mode Switcher Tabs (Matches App Tab Style) */}
+          <View style={styles.tabWrapper}>
+            <Tabs<'signin' | 'signup'>
+              variant="pills"
+              height={38}
+              tabs={[
+                { key: 'signin', label: 'Sign In' },
+                { key: 'signup', label: 'Create Account' },
+              ]}
+              activeTab={mode}
+              onChange={(newMode) => {
+                setMode(newMode);
+                setErrorMessage(null);
+              }}
+              textStyle={{ fontSize: 13 }}
+            />
+          </View>
+
+          {/* Error Message Banner */}
+          {errorMessage ? (
             <View
               style={[
-                styles.tabTrack,
+                styles.errorBanner,
                 {
-                  backgroundColor: isDark ? '#1E232D' : '#F1F3F6',
-                  borderColor: colors.border,
+                  backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2',
+                  borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : '#FECACA',
                 },
               ]}
             >
-              <TouchableOpacity
-                style={[
-                  styles.tabButton,
-                  mode === 'signin' && {
-                    backgroundColor: colors.card,
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.1,
-                    shadowRadius: 4,
-                    elevation: 2,
-                  },
-                ]}
-                onPress={() => {
-                  setMode('signin');
-                  setErrorMessage(null);
-                }}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.tabButtonText,
-                    {
-                      color: mode === 'signin' ? colors.foreground : colors.mutedForeground,
-                      fontFamily: mode === 'signin' ? 'GoogleSansFlex_700Bold' : 'GoogleSansFlex_500Medium',
-                    },
-                  ]}
-                >
-                  Sign In
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.tabButton,
-                  mode === 'signup' && {
-                    backgroundColor: colors.card,
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.1,
-                    shadowRadius: 4,
-                    elevation: 2,
-                  },
-                ]}
-                onPress={() => {
-                  setMode('signup');
-                  setErrorMessage(null);
-                }}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.tabButtonText,
-                    {
-                      color: mode === 'signup' ? colors.foreground : colors.mutedForeground,
-                      fontFamily: mode === 'signup' ? 'GoogleSansFlex_700Bold' : 'GoogleSansFlex_500Medium',
-                    },
-                  ]}
-                >
-                  Create Account
-                </Text>
-              </TouchableOpacity>
+              <Feather name="alert-circle" size={16} color="#EF4444" style={{ marginRight: 8 }} />
+              <Text style={[styles.errorBannerText, { color: '#EF4444' }]}>{errorMessage}</Text>
             </View>
+          ) : null}
 
-            {/* Error Message Box */}
-            {errorMessage ? (
-              <View
-                style={[
-                  styles.errorBanner,
-                  {
-                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2',
-                    borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : '#FECACA',
-                  },
-                ]}
-              >
-                <Feather name="alert-circle" size={16} color="#EF4444" style={{ marginRight: 8 }} />
-                <Text style={[styles.errorBannerText, { color: '#EF4444' }]}>{errorMessage}</Text>
-              </View>
-            ) : null}
-
-            {/* Native Google Sign-In Button */}
-            <TouchableOpacity
-              style={[
-                styles.googleButton,
-                {
-                  backgroundColor: isDark ? '#262C36' : '#FFFFFF',
-                  borderColor: colors.border,
-                },
-              ]}
-              onPress={handleGoogleSignIn}
-              disabled={loadingAction !== null}
-              activeOpacity={0.8}
-            >
-              {loadingAction === 'Connecting with Google…' ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <>
-                  <Feather name="globe" size={18} color={colors.primary} style={styles.googleIcon} />
-                  <Text style={[styles.googleButtonText, { color: colors.foreground }]}>
-                    Continue with Google
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
-
-            {/* Or Divider */}
-            <View style={styles.dividerRow}>
-              <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-              <Text style={[styles.dividerText, { color: colors.mutedForeground }]}>
-                or with email
-              </Text>
-              <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-            </View>
-
-            {/* Full Name Field (Sign Up) */}
-            {mode === 'signup' && (
-              <View style={styles.fieldGroup}>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
-                  FULL NAME
-                </Text>
-                <View
-                  style={[
-                    styles.inputWrap,
-                    {
-                      backgroundColor: colors.card,
-                      borderColor: colors.border,
-                    },
-                  ]}
-                >
-                  <Feather name="user" size={18} color={colors.mutedForeground} style={styles.inputIcon} />
-                  <TextInput
-                    style={[styles.textInput, { color: colors.foreground }]}
-                    placeholder="Enter your full name"
-                    placeholderTextColor={colors.mutedForeground}
-                    value={fullName}
-                    onChangeText={setFullName}
-                    autoCapitalize="words"
-                    autoComplete="name"
-                  />
-                </View>
-              </View>
-            )}
-
-            {/* Email Field */}
+          {/* Full Name Field (Sign Up) */}
+          {mode === 'signup' && (
             <View style={styles.fieldGroup}>
               <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
-                EMAIL ADDRESS
+                FULL NAME
               </Text>
               <View
                 style={[
                   styles.inputWrap,
                   {
-                    backgroundColor: colors.card,
-                    borderColor: colors.border,
+                    backgroundColor: isDark ? '#1A202C' : '#FFFFFF',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
                   },
                 ]}
               >
-                <Feather name="mail" size={18} color={colors.mutedForeground} style={styles.inputIcon} />
+                <Feather name="user" size={18} color={colors.mutedForeground} style={styles.inputIcon} />
                 <TextInput
                   style={[styles.textInput, { color: colors.foreground }]}
-                  placeholder="name@example.com"
+                  placeholder="Enter your full name"
                   placeholderTextColor={colors.mutedForeground}
-                  value={email}
-                  onChangeText={setEmail}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  autoComplete="email"
+                  value={fullName}
+                  onChangeText={setFullName}
+                  autoCapitalize="words"
+                  autoComplete="name"
                 />
               </View>
             </View>
+          )}
 
-            {/* Password Field */}
-            <View style={styles.fieldGroup}>
-              <View style={styles.passwordLabelRow}>
-                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
-                  PASSWORD
-                </Text>
-                {mode === 'signin' && (
-                  <TouchableOpacity
-                    onPress={() => {
-                      setResetEmail(email);
-                      setShowForgotModal(true);
-                    }}
-                    hitSlop={8}
-                  >
-                    <Text style={[styles.forgotText, { color: colors.primary }]}>
-                      Forgot Password?
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-              <View
-                style={[
-                  styles.inputWrap,
-                  {
-                    backgroundColor: colors.card,
-                    borderColor: colors.border,
-                  },
-                ]}
-              >
-                <Feather name="lock" size={18} color={colors.mutedForeground} style={styles.inputIcon} />
-                <TextInput
-                  style={[styles.textInput, { color: colors.foreground }]}
-                  placeholder={mode === 'signup' ? 'Minimum 6 characters' : 'Enter your password'}
-                  placeholderTextColor={colors.mutedForeground}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  autoCapitalize="none"
-                />
-                <TouchableOpacity
-                  onPress={() => setShowPassword((prev) => !prev)}
-                  hitSlop={10}
-                  style={styles.eyeButton}
-                >
-                  <Feather
-                    name={showPassword ? 'eye-off' : 'eye'}
-                    size={18}
-                    color={colors.mutedForeground}
-                  />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Submit Action Button */}
-            <TouchableOpacity
-              style={[styles.submitButton, { backgroundColor: colors.primary }]}
-              onPress={handleEmailAuth}
-              disabled={loadingAction !== null}
-              activeOpacity={0.8}
+          {/* Email Address Field */}
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
+              EMAIL ADDRESS
+            </Text>
+            <View
+              style={[
+                styles.inputWrap,
+                {
+                  backgroundColor: isDark ? '#1A202C' : '#FFFFFF',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
+                },
+              ]}
             >
-              {loadingAction && loadingAction !== 'Connecting with Google…' ? (
-                <ActivityIndicator size="small" color={colors.primaryForeground} />
-              ) : (
-                <Text style={[styles.submitButtonText, { color: colors.primaryForeground }]}>
-                  {mode === 'signin' ? 'Sign In' : 'Create Account'}
-                </Text>
-              )}
-            </TouchableOpacity>
+              <Feather name="mail" size={18} color={colors.mutedForeground} style={styles.inputIcon} />
+              <TextInput
+                style={[styles.textInput, { color: colors.foreground }]}
+                placeholder="name@example.com"
+                placeholderTextColor={colors.mutedForeground}
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoComplete="email"
+              />
+            </View>
+          </View>
 
-            <Text style={[styles.disclaimerText, { color: colors.mutedForeground }]}>
+          {/* Password Field */}
+          <View style={styles.fieldGroup}>
+            <View style={styles.passwordLabelRow}>
+              <Text style={[styles.fieldLabel, { color: colors.mutedForeground, marginBottom: 0 }]}>
+                PASSWORD
+              </Text>
+              {mode === 'signin' && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setResetEmail(email);
+                    setShowForgotModal(true);
+                  }}
+                  hitSlop={8}
+                >
+                  <Text style={[styles.forgotText, { color: colors.primary }]}>
+                    Forgot Password?
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <View
+              style={[
+                styles.inputWrap,
+                {
+                  backgroundColor: isDark ? '#1A202C' : '#FFFFFF',
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
+                },
+              ]}
+            >
+              <Feather name="lock" size={18} color={colors.mutedForeground} style={styles.inputIcon} />
+              <TextInput
+                style={[styles.textInput, { color: colors.foreground }]}
+                placeholder={mode === 'signup' ? 'Minimum 6 characters' : 'Enter your password'}
+                placeholderTextColor={colors.mutedForeground}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword((prev) => !prev)}
+                hitSlop={10}
+                style={styles.eyeButton}
+              >
+                <Feather
+                  name={showPassword ? 'eye-off' : 'eye'}
+                  size={18}
+                  color={colors.mutedForeground}
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Submit Action Button */}
+          <TouchableOpacity
+            style={[
+              styles.submitButton,
+              {
+                backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
+              },
+            ]}
+            onPress={handleEmailAuth}
+            disabled={loadingAction !== null}
+            activeOpacity={0.88}
+          >
+            {loadingAction && loadingAction !== 'Connecting with Google…' ? (
+              <ActivityIndicator
+                size="small"
+                color={isDark ? '#000000' : '#FFFFFF'}
+              />
+            ) : (
+              <Text
+                style={[
+                  styles.submitButtonText,
+                  { color: isDark ? '#000000' : '#FFFFFF' },
+                ]}
+              >
+                {mode === 'signin' ? 'Sign In' : 'Create Account'}
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Or Divider */}
+          <View style={styles.dividerRow}>
+            <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0' }]} />
+            <Text style={[styles.dividerText, { color: colors.mutedForeground }]}>
+              {mode === 'signin' ? 'OR CONTINUE WITH GOOGLE' : 'OR SIGN UP WITH GOOGLE'}
+            </Text>
+            <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0' }]} />
+          </View>
+
+          {/* Native Google Sign-In Button */}
+          <TouchableOpacity
+            style={[
+              styles.googleButton,
+              {
+                backgroundColor: isDark ? '#1E232D' : '#FFFFFF',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0',
+              },
+            ]}
+            onPress={handleGoogleSignIn}
+            disabled={loadingAction !== null}
+            activeOpacity={0.85}
+          >
+            {loadingAction === 'Connecting with Google…' ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <>
+                <GoogleLogoSvg size={20} />
+                <Text style={[styles.googleButtonText, { color: colors.foreground }]}>
+                  Continue with Google
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {/* Subtle Security Badge */}
+          <View style={styles.securityRow}>
+            <SecurityShieldIcon size={16} />
+            <Text style={[styles.disclaimerText, { color: colors.mutedForeground, marginLeft: 4 }]}>
               Secured by Firebase Authentication & Google Identity Services
             </Text>
           </View>
+        </View>
       </ScrollView>
 
       {/* Forgot Password Modal */}
@@ -530,58 +594,64 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+  topBar: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  headerCenter: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerEyebrow: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    marginBottom: 2,
-    textAlign: 'center',
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.8,
-    lineHeight: 32,
-    textAlign: 'center',
+    zIndex: 10,
   },
   scrollContent: {
     paddingHorizontal: 24,
-    paddingTop: 16,
     paddingBottom: 40,
+    alignItems: 'center',
   },
   formContainer: {
     width: '100%',
     maxWidth: 420,
     alignSelf: 'center',
   },
-  tabTrack: {
-    flexDirection: 'row',
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 4,
+  brandContainer: {
+    alignItems: 'center',
+    marginTop: -50,
     marginBottom: 20,
   },
-  tabButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+  brandIconImage: {
+    width: 136,
+    height: 136,
+    borderRadius: 36,
+    marginBottom: 7,
   },
-  tabButtonText: {
-    fontSize: 14,
+  brandLabel: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 2.2,
+    textAlign: 'center',
+  },
+  titleContainer: {
+    alignItems: 'center',
+    marginBottom: 54,
+  },
+  headerTitle: {
+    fontSize: 27,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.6,
+    lineHeight: 34,
+    textAlign: 'center',
+    marginBottom: 11,
+  },
+  headerSubtitle: {
+    fontSize: 13.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    lineHeight: 19,
+    textAlign: 'center',
+    paddingHorizontal: 12,
+  },
+  tabWrapper: {
+    marginBottom: 20,
+    width: '100%',
   },
   errorBanner: {
     flexDirection: 'row',
@@ -602,19 +672,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     height: 52,
     width: '100%',
-    borderRadius: 14,
+    borderRadius: 100,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
-    marginBottom: 20,
-  },
-  googleIcon: {
-    marginRight: 10,
+    gap: 12,
+    marginBottom: 22,
   },
   googleButtonText: {
     fontFamily: 'GoogleSansFlex_600SemiBold',
@@ -630,26 +693,25 @@ const styles = StyleSheet.create({
     height: 1,
   },
   dividerText: {
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_500Medium',
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
     marginHorizontal: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   fieldGroup: {
-    marginBottom: 18,
+    marginBottom: 16,
   },
   passwordLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    marginBottom: 7,
   },
   fieldLabel: {
     fontSize: 11,
     fontFamily: 'GoogleSansFlex_600SemiBold',
     letterSpacing: 0.8,
-    marginBottom: 6,
+    marginBottom: 7,
   },
   forgotText: {
     fontSize: 12,
@@ -664,90 +726,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   inputIcon: {
-    marginRight: 10,
+    marginRight: 11,
   },
   textInput: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 14.5,
     fontFamily: 'GoogleSansFlex_400Regular',
     height: '100%',
   },
   eyeButton: {
-    padding: 4,
+    padding: 6,
   },
   submitButton: {
     height: 52,
     width: '100%',
-    borderRadius: 14,
+    borderRadius: 100,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 4,
+    marginBottom: 22,
   },
   submitButtonText: {
     fontFamily: 'GoogleSansFlex_700Bold',
-    fontSize: 16,
+    fontSize: 15.5,
+  },
+  securityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
   },
   disclaimerText: {
     fontSize: 11.5,
     fontFamily: 'GoogleSansFlex_400Regular',
     textAlign: 'center',
-    marginTop: 24,
     lineHeight: 16,
-  },
-  stateCenterContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-  },
-  stateCard: {
-    width: '100%',
-    maxWidth: 360,
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: 28,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  successBadge: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#10B981',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  successTitle: {
-    fontSize: 20,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    textAlign: 'center',
-    marginBottom: 8,
-    color: '#10B981',
-  },
-  userEmailText: {
-    fontSize: 14,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
-    textAlign: 'center',
-    marginBottom: 14,
-  },
-  returningText: {
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    textAlign: 'center',
   },
   modalBackdrop: {
     flex: 1,
@@ -797,7 +810,7 @@ const styles = StyleSheet.create({
   },
   resetSubmitButton: {
     height: 48,
-    borderRadius: 14,
+    borderRadius: 100,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 16,

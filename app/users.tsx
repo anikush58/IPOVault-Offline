@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  DeviceEventEmitter,
   FlatList,
   Platform,
   RefreshControl,
@@ -17,7 +18,7 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
@@ -129,8 +130,21 @@ export default function UsersScreen() {
     }
   }, [activeUserId, applications]);
 
+  // Re-fetch fresh broker accounts every time screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      loadBrokerAccounts();
+    }, [loadBrokerAccounts]),
+  );
+
+  // Listen for background/callback broker update events
   useEffect(() => {
-    loadBrokerAccounts();
+    const sub = DeviceEventEmitter.addListener('BROKER_ACCOUNT_UPDATED', () => {
+      loadBrokerAccounts();
+    });
+    return () => {
+      sub.remove();
+    };
   }, [loadBrokerAccounts]);
 
   const handleRefresh = useCallback(async () => {

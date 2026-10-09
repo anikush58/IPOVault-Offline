@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
+  DeviceEventEmitter,
   Platform,
   StyleSheet,
   Text,
@@ -47,6 +48,7 @@ export default function BrokerCallbackScreen() {
 
   const [isProcessing, setIsProcessing] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const hasProcessedRef = useRef(false);
 
   const isSuccess =
     params.status === 'success' ||
@@ -56,6 +58,9 @@ export default function BrokerCallbackScreen() {
     let mounted = true;
 
     async function handleCallback() {
+      if (hasProcessedRef.current) return;
+      hasProcessedRef.current = true;
+
       try {
         if (params.error || params.error_description) {
           const err =
@@ -84,6 +89,13 @@ export default function BrokerCallbackScreen() {
           }
         }
 
+        // Emit global event so mounted screens refresh immediately
+        DeviceEventEmitter.emit('BROKER_ACCOUNT_UPDATED', {
+          broker: brokerName,
+          accountId: params.accountId,
+          status: 'success',
+        });
+
         if (Platform.OS !== 'web') {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
@@ -92,7 +104,7 @@ export default function BrokerCallbackScreen() {
           setIsProcessing(false);
         }
 
-        // Auto redirect back to users / settings screen after 1.5s
+        // Auto redirect explicitly to Manage Users screen after 1.5s
         const timer = setTimeout(() => {
           if (mounted) {
             navigateBack();
@@ -113,14 +125,10 @@ export default function BrokerCallbackScreen() {
     return () => {
       mounted = false;
     };
-  }, [params, activeUserId]);
+  }, [params, activeUserId, brokerName]);
 
   const navigateBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/users' as any);
-    }
+    router.replace('/users' as any);
   };
 
   return (

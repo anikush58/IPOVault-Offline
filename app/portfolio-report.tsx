@@ -5,6 +5,7 @@ import {
   Platform,
   RefreshControl,
   ScrollView,
+  SectionList,
   StyleSheet,
   Text,
   TextInput,
@@ -38,6 +39,8 @@ import {
 import { MarketQuotesMap } from '@/services/broker/BrokerApiService';
 
 type TabType = 'profits' | 'holding' | 'charges';
+
+const AnimatedSectionList = Animated.createAnimatedComponent(SectionList as any);
 
 const AVATAR_PALETTES: [string, string][] = [
   ['#8B5CF6', '#6D28D9'], // Purple
@@ -414,55 +417,43 @@ export default function PortfolioReportScreen() {
     });
   }, [baseFilteredApps, activeTab, searchQuery, selectedPeriod]);
 
+  const searchAnim = useRef(new Animated.Value(0)).current;
+  const searchRef = useRef<TextInput>(null);
+
+
+
   const toggleSearch = () => {
     if (showSearch) {
+      Animated.timing(searchAnim, { toValue: 0, duration: 180, useNativeDriver: false }).start();
       setShowSearch(false);
       setSearchQuery('');
     } else {
       setShowSearch(true);
+      Animated.timing(searchAnim, { toValue: 1, duration: 220, useNativeDriver: false }).start(() =>
+        searchRef.current?.focus(),
+      );
     }
   };
 
-  const topPad = Platform.OS === 'web' ? 20 : insets.top;
-
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const headerBlurOpacity = scrollY.interpolate({
-    inputRange: [0, 24],
-    outputRange: [0, 1],
-    extrapolate: 'clamp',
+  const searchBarHeight = searchAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 52],
   });
+  const searchBarOpacity = searchAnim.interpolate({
+    inputRange: [0, 0.4, 1],
+    outputRange: [0, 0, 1],
+  });
+
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Floating Blurred Header Bar */}
-      <View
-        style={[
-          styles.floatingHeaderContainer,
-          { paddingTop: topPad },
-        ]}
-        pointerEvents="box-none"
-      >
-        <Animated.View style={[StyleSheet.absoluteFill, { opacity: headerBlurOpacity }]}>
-          <BlurView
-            intensity={Platform.OS === 'ios' ? 90 : 75}
-            tint={isDark ? 'dark' : 'light'}
-            style={StyleSheet.absoluteFill}
-          />
-          <LinearGradient
-            colors={
-              isDark
-                ? ['rgba(14, 17, 23, 0.96)', 'rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.35)']
-                : ['rgba(248, 249, 250, 0.96)', 'rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.35)']
-            }
-            locations={[0, 0.75, 1]}
-            style={StyleSheet.absoluteFill}
-          />
-        </Animated.View>
-
+      {/* Screen Header */}
+      <View style={[styles.headerContainer, { paddingTop: topPad, backgroundColor: colors.background }]}>
         <View style={styles.header}>
           <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
           
-          <View style={[styles.headerCenter, { top: 0, bottom: 0 }]} pointerEvents="none">
+          <View style={styles.headerCenter} pointerEvents="none">
             <Text style={[styles.headerEyebrow, { color: colors.primary }]}>REPORTS</Text>
             <Text style={[styles.headerTitle, { color: colors.foreground }]}>Portfolio Report</Text>
           </View>
@@ -485,17 +476,28 @@ export default function PortfolioReportScreen() {
           </View>
         </View>
 
-        {/* Collapsible Search Input Bar */}
-        {showSearch && (
-          <View style={[styles.searchBarHeader, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        {/* Expandable Search Input */}
+        <Animated.View
+          style={[
+            styles.searchBar,
+            {
+              height: searchBarHeight,
+              opacity: searchBarOpacity,
+              backgroundColor: colors.background,
+            },
+          ]}
+          pointerEvents={showSearch ? 'auto' : 'none'}
+        >
+          <View style={[styles.searchInner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Feather name="search" size={14} color={colors.mutedForeground} />
             <TextInput
+              ref={searchRef}
               value={searchQuery}
               onChangeText={setSearchQuery}
               placeholder="Search by user, broker or IPO…"
               placeholderTextColor={colors.mutedForeground}
               style={[styles.searchInput, { color: colors.foreground }]}
-              autoFocus
+              autoCorrect={false}
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
@@ -503,21 +505,19 @@ export default function PortfolioReportScreen() {
               </TouchableOpacity>
             )}
           </View>
-        )}
+        </Animated.View>
       </View>
 
-      <Animated.ScrollView
+      {/* SectionList with Sticky Tab Pills Header */}
+      <SectionList
+        style={{ flex: 1 }}
+        sections={[{ title: 'Report', data: filteredApps }]}
+        keyExtractor={(item: any) => item.id.toString()}
+        stickySectionHeadersEnabled={true}
         showsVerticalScrollIndicator={false}
-        stickyHeaderIndices={[1]}
         contentContainerStyle={{
-          paddingTop: topPad + 60 + 8,
           paddingBottom: insets.bottom + 90,
         }}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true }
-        )}
-        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={isLoading}
@@ -525,57 +525,349 @@ export default function PortfolioReportScreen() {
               await Promise.all([refresh(), loadBrokerPortfolio()]);
             }}
             tintColor={colors.primary}
-            progressViewOffset={topPad + 60}
           />
         }
-      >
-        {/* Active filter chip bar */}
-        {hasFilter && (
-          <View style={[styles.filterBar, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
-            <Feather name="filter" size={12} color={colors.primary} />
-            <Text style={[styles.filterBarText, { color: colors.primary }]} numberOfLines={1}>
-              {filterChipLabel}
-            </Text>
-            <TouchableOpacity onPress={() => { setFilterUserIds([]); setFilterIpoNames([]); setFilterYear(null); }} hitSlop={8}>
-              <Feather name="x" size={14} color={colors.primary} />
-            </TouchableOpacity>
+        ListHeaderComponent={() => (
+          <View>
+            {/* Active filter chip bar */}
+            {hasFilter && (
+              <View style={[styles.filterBar, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
+                <Feather name="filter" size={12} color={colors.primary} />
+                <Text style={[styles.filterBarText, { color: colors.primary }]} numberOfLines={1}>
+                  {filterChipLabel}
+                </Text>
+                <TouchableOpacity onPress={() => { setFilterUserIds([]); setFilterIpoNames([]); setFilterYear(null); }} hitSlop={8}>
+                  <Feather name="x" size={14} color={colors.primary} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Profit Summary Donut Chart Card */}
+            <View style={styles.chartSection}>
+              <ProfitSummaryDonutCard
+                grossProfit={totals.grossProfit}
+                holdingProfit={totals.holdingProfit}
+                totalCharges={totals.totalCharges}
+                netRealizedProfit={totals.netRealizedProfit}
+                totalTax={totals.totalTax}
+                totalUserCut={totals.totalUserCut}
+                vsLastMonthPct={vsLastMonthPct}
+                isVsLastMonthUp={isVsLastMonthUp}
+                selectedPeriod={selectedPeriod}
+                onPeriodChange={setSelectedPeriod}
+              />
+            </View>
           </View>
         )}
+        renderSectionHeader={() => (
+          <View style={[styles.chipTabContainer, { backgroundColor: colors.background }]}>
+            <Tabs
+              variant="pills"
+              height={36}
+              tabs={[
+                { key: 'profits', label: 'All Profits', count: tabCounts.profits },
+                { key: 'holding', label: 'Holding Profits', count: tabCounts.holding },
+                { key: 'charges', label: 'All Charges', count: tabCounts.charges },
+              ]}
+              activeTab={activeTab}
+              onChange={(key) => setActiveTab(key as TabType)}
+            />
+          </View>
+        )}
+        renderItem={({ item }) => {
+          const { grossPL, tax, userCut, netPL } = calculateAppTaxAndNet(item);
+          const buyVal = calcBuyValue(item.buy_price, item.quantity);
+          const totalCharges = tax + userCut;
+          const netPLPct = buyVal > 0 ? (netPL / buyVal) * 100 : 0;
+          const logoUrl = item.ipo_logo_url || (item as any).logo_url;
 
-        {/* Child 0: Profit Summary Donut Chart Card */}
-        <View style={styles.chartSection}>
-          <ProfitSummaryDonutCard
-            grossProfit={totals.grossProfit}
-            holdingProfit={totals.holdingProfit}
-            totalCharges={totals.totalCharges}
-            netRealizedProfit={totals.netRealizedProfit}
-            totalTax={totals.totalTax}
-            totalUserCut={totals.totalUserCut}
-            vsLastMonthPct={vsLastMonthPct}
-            isVsLastMonthUp={isVsLastMonthUp}
-            selectedPeriod={selectedPeriod}
-            onPeriodChange={setSelectedPeriod}
-          />
-        </View>
+          const isSme = ((item as any).issue_type || (item as any).marketSegment || '').toUpperCase().includes('SME');
+          const issueTypeLabel = isSme ? 'SME' : 'Mainboard';
 
-        {/* Child 1: Sticky Pill/Chip Style Tab Selection */}
-        <View style={[styles.chipTabContainer, { backgroundColor: colors.background }]}>
-          <Tabs
-            variant="pills"
-            height={36}
-            tabs={[
-              { key: 'profits', label: 'All Profits', count: tabCounts.profits },
-              { key: 'holding', label: 'Holding Profits', count: tabCounts.holding },
-              { key: 'charges', label: 'All Charges', count: tabCounts.charges },
-            ]}
-            activeTab={activeTab}
-            onChange={(key) => setActiveTab(key as TabType)}
-          />
-        </View>
+          return (
+            <View
+              key={item.id}
+              style={[
+                styles.reportCard,
+                {
+                  backgroundColor: isDark ? '#1E293B' : '#F4F5F7',
+                  borderColor: isDark ? '#334155' : '#E5E7EB',
+                },
+              ]}
+            >
+              {/* Top Header Row: Avatar + Title & Subtitle on Left, Badges on Right */}
+              <View style={styles.cardHeaderRow}>
+                <View style={styles.headerLeftWrap}>
+                  <CompanyAvatar
+                    ipoName={item.ipo_name || 'IPO'}
+                    logoUrl={logoUrl}
+                    isDark={isDark}
+                  />
 
-        {/* List Section */}
-        <View style={styles.listSection}>
-          {filteredApps.length === 0 ? (
+                  <View style={styles.titleWrap}>
+                    <Text
+                      style={[styles.companyTitle, { color: colors.foreground }]}
+                      numberOfLines={1}
+                    >
+                      {item.ipo_name || 'IPO Application'}
+                    </Text>
+                    <Text
+                      style={[styles.subtitleText, { color: isDark ? '#94A3B8' : '#64748B' }]}
+                      numberOfLines={1}
+                    >
+                      {item.user_name} • {item.user_broker || 'No Broker'} • {item.quantity} Qty
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Right Badges */}
+                <View style={styles.badgesRow}>
+                  {/* Issue Type Pill */}
+                  <View
+                    style={[
+                      styles.issueTypePill,
+                      isSme
+                        ? {
+                            backgroundColor: isDark ? 'rgba(236,72,153,0.12)' : '#FDF2F8',
+                            borderColor: isDark ? 'rgba(244,114,182,0.4)' : '#FBCFE8',
+                          }
+                        : {
+                            backgroundColor: isDark ? 'rgba(99,102,241,0.12)' : '#EEF2FF',
+                            borderColor: isDark ? 'rgba(199,210,254,0.4)' : '#C7D2FE',
+                          },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.issueTypeText,
+                        { color: isSme ? (isDark ? '#F472B6' : '#BE185D') : (isDark ? '#818CF8' : '#4F46E5') },
+                      ]}
+                    >
+                      {issueTypeLabel}
+                    </Text>
+                  </View>
+
+                  {/* Status Pill */}
+                  <View
+                    style={[
+                      styles.statusPill,
+                      item.status === 'Sold'
+                        ? {
+                            backgroundColor: isDark ? 'rgba(34,197,94,0.12)' : '#F0FDF4',
+                            borderColor: isDark ? 'rgba(134,239,172,0.4)' : '#86EFAC',
+                          }
+                        : item.status === 'Holding'
+                        ? {
+                            backgroundColor: isDark ? 'rgba(59,130,246,0.12)' : '#EFF6FF',
+                            borderColor: isDark ? 'rgba(147,197,253,0.4)' : '#93C5FD',
+                          }
+                        : {
+                            backgroundColor: isDark ? 'rgba(245,158,11,0.12)' : '#FFFBEB',
+                            borderColor: isDark ? 'rgba(251,191,36,0.4)' : '#FDE68A',
+                          },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.statusText,
+                        {
+                          color:
+                            item.status === 'Sold'
+                              ? (isDark ? '#4ADE80' : '#15803D')
+                              : item.status === 'Holding'
+                              ? (isDark ? '#60A5FA' : '#1D4ED8')
+                              : (isDark ? '#FBBF24' : '#D97706'),
+                        },
+                      ]}
+                    >
+                      {item.status}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Inner Data Card (Matching IPOCard innerDataCard) */}
+              <View
+                style={[
+                  styles.innerDataCard,
+                  {
+                    backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
+                    borderColor: isDark ? '#334155' : '#E5E7EB',
+                  },
+                ]}
+              >
+                {/* Row 1: Trade Details Grid (Buy Price | Sell / Est Price | Invested) */}
+                <View style={styles.dataRow}>
+                  <View style={styles.dataColLeft}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      BUY PRICE
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {formatCurrency(item.buy_price || 0)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.dataColCenter}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      {activeTab === 'holding' ? 'EST. PRICE' : 'SELL PRICE'}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.dataVal,
+                        {
+                          color:
+                            item.sell_price != null
+                              ? item.sell_price >= (item.buy_price || 0)
+                                ? '#10B981'
+                                : '#EF4444'
+                              : colors.mutedForeground,
+                        },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {item.sell_price != null ? formatCurrency(item.sell_price) : '—'}
+                    </Text>
+                  </View>
+
+                  <View style={styles.dataColRight}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      INVESTED
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {formatCurrency(buyVal)}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Divider Line */}
+                <View
+                  style={[
+                    styles.innerDivider,
+                    { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9' },
+                  ]}
+                />
+
+                {/* Row 2: Performance / Financial Metrics Grid */}
+                <View style={styles.dataRow}>
+                  {activeTab === 'charges' ? (
+                    <>
+                      <View style={styles.dataColLeft}>
+                        <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                          TAX (STCG)
+                        </Text>
+                        <Text style={[styles.dataVal, { color: '#EF4444' }]} numberOfLines={1}>
+                          {formatCurrency(tax)}
+                        </Text>
+                      </View>
+
+                      <View style={styles.dataColCenter}>
+                        <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                          USER CUT
+                        </Text>
+                        <Text style={[styles.dataVal, { color: '#EF4444' }]} numberOfLines={1}>
+                          {formatCurrency(userCut)}
+                        </Text>
+                      </View>
+
+                      <View style={styles.dataColRight}>
+                        <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                          TOTAL CHARGES
+                        </Text>
+                        <Text style={[styles.dataValHighlight, { color: '#EF4444' }]} numberOfLines={1}>
+                          {formatCurrency(totalCharges)}
+                        </Text>
+                      </View>
+                    </>
+                  ) : activeTab === 'holding' ? (
+                    <>
+                      <View style={styles.dataColLeft}>
+                        <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                          GROSS P&L
+                        </Text>
+                        <Text
+                          style={[
+                            styles.dataVal,
+                            { color: grossPL >= 0 ? colors.positive : colors.negative },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {grossPL >= 0 ? '+' : ''}{formatCurrency(grossPL)}
+                        </Text>
+                      </View>
+
+                      <View style={styles.dataColCenter}>
+                        <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                          EST. CHARGES
+                        </Text>
+                        <Text style={[styles.dataVal, { color: colors.negative }]} numberOfLines={1}>
+                          {formatCurrency(totalCharges)}
+                        </Text>
+                      </View>
+
+                      <View style={styles.dataColRight}>
+                        <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                          NET P&L (EST)
+                        </Text>
+                        <Text
+                          style={[
+                            styles.dataValHighlight,
+                            { color: netPL >= 0 ? colors.positive : colors.negative },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {netPL >= 0 ? '+' : ''}{formatCurrency(netPL)} ({netPLPct >= 0 ? '+' : ''}{netPLPct.toFixed(1)}%)
+                        </Text>
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <View style={styles.dataColLeft}>
+                        <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                          GROSS P&L
+                        </Text>
+                        <Text
+                          style={[
+                            styles.dataVal,
+                            { color: grossPL >= 0 ? colors.positive : colors.negative },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {grossPL >= 0 ? '+' : ''}{formatCurrency(grossPL)}
+                        </Text>
+                      </View>
+
+                      <View style={styles.dataColCenter}>
+                        <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                          CHARGES
+                        </Text>
+                        <Text style={[styles.dataVal, { color: colors.negative }]} numberOfLines={1}>
+                          -{formatCurrency(totalCharges)}
+                        </Text>
+                      </View>
+
+                      <View style={styles.dataColRight}>
+                        <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                          NET REALIZED
+                        </Text>
+                        <Text
+                          style={[
+                            styles.dataValHighlight,
+                            { color: netPL >= 0 ? colors.positive : colors.negative },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {netPL >= 0 ? '+' : ''}{formatCurrency(netPL)} ({netPLPct >= 0 ? '+' : ''}{netPLPct.toFixed(1)}%)
+                        </Text>
+                      </View>
+                    </>
+                  )}
+                </View>
+              </View>
+            </View>
+          );
+        }}
+        ListEmptyComponent={() => (
+          <View style={styles.emptyContainer}>
             <View style={[styles.emptyCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E5E7EB' }]}>
               <Feather name="inbox" size={32} color={colors.mutedForeground} />
               <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No Records Found</Text>
@@ -587,302 +879,9 @@ export default function PortfolioReportScreen() {
                   : 'No tax or fee charges recorded.'}
               </Text>
             </View>
-          ) : (
-            filteredApps.map((item) => {
-              const { grossPL, tax, userCut, netPL } = calculateAppTaxAndNet(item);
-              const buyVal = calcBuyValue(item.buy_price, item.quantity);
-              const totalCharges = tax + userCut;
-              const netPLPct = buyVal > 0 ? (netPL / buyVal) * 100 : 0;
-              const logoUrl = item.ipo_logo_url || (item as any).logo_url;
-
-              const isSme = ((item as any).issue_type || (item as any).marketSegment || '').toUpperCase().includes('SME');
-              const issueTypeLabel = isSme ? 'SME' : 'Mainboard';
-
-              return (
-                <View
-                  key={item.id}
-                  style={[
-                    styles.reportCard,
-                    {
-                      backgroundColor: isDark ? '#1E293B' : '#F4F5F7',
-                      borderColor: isDark ? '#334155' : '#E5E7EB',
-                    },
-                  ]}
-                >
-                  {/* Top Header Row: Avatar + Title & Subtitle on Left, Badges on Right */}
-                  <View style={styles.cardHeaderRow}>
-                    <View style={styles.headerLeftWrap}>
-                      <CompanyAvatar
-                        ipoName={item.ipo_name || 'IPO'}
-                        logoUrl={logoUrl}
-                        isDark={isDark}
-                      />
-
-                      <View style={styles.titleWrap}>
-                        <Text
-                          style={[styles.companyTitle, { color: colors.foreground }]}
-                          numberOfLines={1}
-                        >
-                          {item.ipo_name || 'IPO Application'}
-                        </Text>
-                        <Text
-                          style={[styles.subtitleText, { color: isDark ? '#94A3B8' : '#64748B' }]}
-                          numberOfLines={1}
-                        >
-                          {item.user_name} • {item.user_broker || 'No Broker'} • {item.quantity} Qty
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Right Badges */}
-                    <View style={styles.badgesRow}>
-                      {/* Issue Type Pill */}
-                      <View
-                        style={[
-                          styles.issueTypePill,
-                          isSme
-                            ? {
-                                backgroundColor: isDark ? 'rgba(236,72,153,0.12)' : '#FDF2F8',
-                                borderColor: isDark ? 'rgba(244,114,182,0.4)' : '#FBCFE8',
-                              }
-                            : {
-                                backgroundColor: isDark ? 'rgba(99,102,241,0.12)' : '#EEF2FF',
-                                borderColor: isDark ? 'rgba(199,210,254,0.4)' : '#C7D2FE',
-                              },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.issueTypeText,
-                            { color: isSme ? (isDark ? '#F472B6' : '#BE185D') : (isDark ? '#818CF8' : '#4F46E5') },
-                          ]}
-                        >
-                          {issueTypeLabel}
-                        </Text>
-                      </View>
-
-                      {/* Status Pill */}
-                      <View
-                        style={[
-                          styles.statusPill,
-                          item.status === 'Sold'
-                            ? {
-                                backgroundColor: isDark ? 'rgba(34,197,94,0.12)' : '#F0FDF4',
-                                borderColor: isDark ? 'rgba(134,239,172,0.4)' : '#86EFAC',
-                              }
-                            : item.status === 'Holding'
-                            ? {
-                                backgroundColor: isDark ? 'rgba(59,130,246,0.12)' : '#EFF6FF',
-                                borderColor: isDark ? 'rgba(147,197,253,0.4)' : '#93C5FD',
-                              }
-                            : {
-                                backgroundColor: isDark ? 'rgba(245,158,11,0.12)' : '#FFFBEB',
-                                borderColor: isDark ? 'rgba(251,191,36,0.4)' : '#FDE68A',
-                              },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.statusText,
-                            {
-                              color:
-                                item.status === 'Sold'
-                                  ? (isDark ? '#4ADE80' : '#15803D')
-                                  : item.status === 'Holding'
-                                  ? (isDark ? '#60A5FA' : '#1D4ED8')
-                                  : (isDark ? '#FBBF24' : '#D97706'),
-                            },
-                          ]}
-                        >
-                          {item.status}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* Inner Data Card (Matching IPOCard innerDataCard) */}
-                  <View
-                    style={[
-                      styles.innerDataCard,
-                      {
-                        backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
-                        borderColor: isDark ? '#334155' : '#E5E7EB',
-                      },
-                    ]}
-                  >
-                    {/* Row 1: Trade Details Grid (Buy Price | Sell / Est Price | Invested) */}
-                    <View style={styles.dataRow}>
-                      <View style={styles.dataColLeft}>
-                        <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                          BUY PRICE
-                        </Text>
-                        <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
-                          {formatCurrency(item.buy_price || 0)}
-                        </Text>
-                      </View>
-
-                      <View style={styles.dataColCenter}>
-                        <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                          {activeTab === 'holding' ? 'EST. PRICE' : 'SELL PRICE'}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.dataVal,
-                            {
-                              color:
-                                item.sell_price != null
-                                  ? item.sell_price >= (item.buy_price || 0)
-                                    ? '#10B981'
-                                    : '#EF4444'
-                                  : colors.mutedForeground,
-                            },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {item.sell_price != null ? formatCurrency(item.sell_price) : '—'}
-                        </Text>
-                      </View>
-
-                      <View style={styles.dataColRight}>
-                        <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                          INVESTED
-                        </Text>
-                        <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
-                          {formatCurrency(buyVal)}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Divider Line */}
-                    <View
-                      style={[
-                        styles.innerDivider,
-                        { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9' },
-                      ]}
-                    />
-
-                    {/* Row 2: Performance / Financial Metrics Grid */}
-                    <View style={styles.dataRow}>
-                      {activeTab === 'charges' ? (
-                        <>
-                          <View style={styles.dataColLeft}>
-                            <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                              TAX (STCG)
-                            </Text>
-                            <Text style={[styles.dataVal, { color: '#EF4444' }]} numberOfLines={1}>
-                              {formatCurrency(tax)}
-                            </Text>
-                          </View>
-
-                          <View style={styles.dataColCenter}>
-                            <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                              USER CUT
-                            </Text>
-                            <Text style={[styles.dataVal, { color: '#EF4444' }]} numberOfLines={1}>
-                              {formatCurrency(userCut)}
-                            </Text>
-                          </View>
-
-                          <View style={styles.dataColRight}>
-                            <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                              TOTAL CHARGES
-                            </Text>
-                            <Text style={[styles.dataValHighlight, { color: '#EF4444' }]} numberOfLines={1}>
-                              {formatCurrency(totalCharges)}
-                            </Text>
-                          </View>
-                        </>
-                      ) : activeTab === 'holding' ? (
-                        <>
-                          <View style={styles.dataColLeft}>
-                            <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                              GROSS P&L
-                            </Text>
-                            <Text
-                              style={[
-                                styles.dataVal,
-                                { color: grossPL >= 0 ? colors.positive : colors.negative },
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {grossPL >= 0 ? '+' : ''}{formatCurrency(grossPL)}
-                            </Text>
-                          </View>
-
-                          <View style={styles.dataColCenter}>
-                            <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                              EST. CHARGES
-                            </Text>
-                            <Text style={[styles.dataVal, { color: colors.negative }]} numberOfLines={1}>
-                              {formatCurrency(totalCharges)}
-                            </Text>
-                          </View>
-
-                          <View style={styles.dataColRight}>
-                            <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                              NET P&L (EST)
-                            </Text>
-                            <Text
-                              style={[
-                                styles.dataValHighlight,
-                                { color: netPL >= 0 ? colors.positive : colors.negative },
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {netPL >= 0 ? '+' : ''}{formatCurrency(netPL)} ({netPLPct >= 0 ? '+' : ''}{netPLPct.toFixed(1)}%)
-                            </Text>
-                          </View>
-                        </>
-                      ) : (
-                        <>
-                          <View style={styles.dataColLeft}>
-                            <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                              GROSS P&L
-                            </Text>
-                            <Text
-                              style={[
-                                styles.dataVal,
-                                { color: grossPL >= 0 ? colors.positive : colors.negative },
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {grossPL >= 0 ? '+' : ''}{formatCurrency(grossPL)}
-                            </Text>
-                          </View>
-
-                          <View style={styles.dataColCenter}>
-                            <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                              CHARGES
-                            </Text>
-                            <Text style={[styles.dataVal, { color: colors.negative }]} numberOfLines={1}>
-                              -{formatCurrency(totalCharges)}
-                            </Text>
-                          </View>
-
-                          <View style={styles.dataColRight}>
-                            <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                              NET REALIZED
-                            </Text>
-                            <Text
-                              style={[
-                                styles.dataValHighlight,
-                                { color: netPL >= 0 ? colors.positive : colors.negative },
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {netPL >= 0 ? '+' : ''}{formatCurrency(netPL)} ({netPLPct >= 0 ? '+' : ''}{netPLPct.toFixed(1)}%)
-                            </Text>
-                          </View>
-                        </>
-                      )}
-                    </View>
-                  </View>
-                </View>
-              );
-            })
-          )}
-        </View>
-      </Animated.ScrollView>
+          </View>
+        )}
+      />
 
       <FilterSheet
         visible={showFilter}
@@ -907,13 +906,8 @@ export default function PortfolioReportScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  floatingHeaderContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
+  headerContainer: {
     zIndex: 100,
-    overflow: 'hidden',
   },
   header: {
     paddingHorizontal: 16,
@@ -948,6 +942,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  searchBar: {
+    borderBottomWidth: 0,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    overflow: 'hidden',
+  },
+  searchInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    height: 40,
+  },
+  searchInput: { flex: 1, fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', paddingVertical: 0 },
   filterBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -965,22 +975,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: 'GoogleSansFlex_600SemiBold',
   },
-  searchBarHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 4,
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    height: 42,
-  },
-  searchInput: { flex: 1, fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', paddingVertical: 0 },
   chartSection: { paddingHorizontal: 16, paddingTop: 14 },
-  chipTabContainer: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 6, zIndex: 10 },
-  listSection: { paddingHorizontal: 16, paddingTop: 14, gap: 12 },
+  chipTabContainer: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, zIndex: 10 },
+  emptyContainer: { paddingHorizontal: 16, paddingTop: 14 },
 
   // Outer Card matching IPOCard style
   reportCard: {
@@ -991,6 +988,8 @@ const styles = StyleSheet.create({
     paddingLeft: 5,
     paddingRight: 5,
     gap: 10,
+    marginHorizontal: 16,
+    marginBottom: 12,
   },
 
   // Header Row
