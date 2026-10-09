@@ -9,7 +9,7 @@ function getCurrentTime() {
 
 export interface IUserRepository {
   getAll(): Promise<User[]>;
-  add(user: Omit<User, 'id'>): Promise<void>;
+  add(user: Omit<User, 'id'>, ownerId?: string | null): Promise<void>;
   update(id: string, user: Omit<User, 'id'>): Promise<void>;
   archive(id: string, isArchived: boolean): Promise<void>;
   delete(id: string): Promise<void>;
@@ -17,7 +17,7 @@ export interface IUserRepository {
 
 export interface IBankRepository {
   getAll(): Promise<BankAccount[]>;
-  add(bankName: string, balance: number, upiApp?: string): Promise<void>;
+  add(bankName: string, balance: number, upiApp?: string, ownerId?: string | null): Promise<void>;
   updateBalance(id: string, balance: number, bankName?: string, upiApp?: string): Promise<void>;
   delete(id: string): Promise<void>;
 }
@@ -25,7 +25,7 @@ export interface IBankRepository {
 export interface IIPORepository {
   getAll(): Promise<IPOListing[]>;
   getById(id: string): Promise<IPOListing | null>;
-  add(ipo: Omit<IPOListing, 'id' | 'is_favorite' | 'archived'>): Promise<void>;
+  add(ipo: Omit<IPOListing, 'id' | 'is_favorite' | 'archived'>, ownerId?: string | null): Promise<void>;
   update(id: string, ipo: Omit<IPOListing, 'id' | 'is_favorite'>): Promise<void>;
   updateGmp(id: string, gmpAmount: number | null, gmpPercent: number | null, profitLot: number | null): Promise<void>;
   archive(id: string, isArchived: boolean): Promise<void>;
@@ -40,7 +40,8 @@ export interface IApplicationRepository {
     userIds: string[],
     bankName?: string | Record<string, string>,
     upiApp?: string | Record<string, string>,
-    lotCounts?: Record<string, number> | number
+    lotCounts?: Record<string, number> | number,
+    ownerId?: string | null,
   ): Promise<void>;
   update(
     id: string,
@@ -57,7 +58,8 @@ export interface IApplicationRepository {
     sellPrice: number,
     saleDate: string | null,
     tax?: number,
-    userCut?: number
+    userCut?: number,
+    ownerId?: string | null,
   ): Promise<void>;
   updateBulkStatus(ids: string[], status: ApplicationStatus): Promise<void>;
   toggleFavorite(id: string, isFavorite: boolean): Promise<void>;
@@ -76,14 +78,14 @@ export class UserRepository implements IUserRepository {
     );
   }
 
-  async add(user: Omit<User, 'id'>): Promise<void> {
+  async add(user: Omit<User, 'id'>, ownerId?: string | null): Promise<void> {
     const id = Crypto.randomUUID();
     const now = getCurrentTime();
     const sql = `
       INSERT INTO users_table (
         id, name, pan_number, client_id, upi_id, broker, tpin, upi_app, bank_name, avatar_url, default_amount_blocked,
-        archived, sync_version, sync_status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
+        archived, sync_version, sync_status, owner_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)
     `;
     const params = [
       id,
@@ -99,11 +101,13 @@ export class UserRepository implements IUserRepository {
       user.default_amount_blocked || 0,
       0,
       0,
+      ownerId || null,
       now,
       now,
     ];
     await safeRunAsync(this.db, sql, params, 'UserRepository.add');
   }
+
 
   async update(id: string, user: Omit<User, 'id'>): Promise<void> {
     if (!id) return;
@@ -176,15 +180,15 @@ export class IPORepository implements IIPORepository {
     );
   }
 
-  async add(ipo: Omit<IPOListing, 'id' | 'is_favorite' | 'archived'>): Promise<void> {
+  async add(ipo: Omit<IPOListing, 'id' | 'is_favorite' | 'archived'>, ownerId?: string | null): Promise<void> {
     const id = Crypto.randomUUID();
     const now = getCurrentTime();
     const sql = `
       INSERT INTO ipo_listings (
         id, backend_ipo_id, symbol, company_name, ipo_name, buy_price, quantity,
         open_date, close_date, listing_date, registrar, exchange, issue_type, allotment_date,
-        logo_url, gmp_percent, gmp_value, archived, is_favorite, sync_version, sync_status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 'PENDING', ?, ?)
+        logo_url, gmp_percent, gmp_value, archived, is_favorite, sync_version, sync_status, owner_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 'PENDING', ?, ?, ?)
     `;
     const params = [
       id,
@@ -204,11 +208,13 @@ export class IPORepository implements IIPORepository {
       ipo.logo_url ?? '',
       ipo.gmp_percent ?? 0,
       ipo.gmp_value ?? 0,
+      ownerId || null,
       now,
       now,
     ];
     await safeRunAsync(this.db, sql, params, 'IPORepository.add');
   }
+
 
   async update(id: string, ipo: Omit<IPOListing, 'id' | 'is_favorite'>): Promise<void> {
     if (!id) return;
@@ -325,7 +331,8 @@ export class ApplicationRepository implements IApplicationRepository {
     userIds: string[],
     bankName?: string | Record<string, string>,
     upiApp?: string | Record<string, string>,
-    lotCounts?: Record<string, number> | number
+    lotCounts?: Record<string, number> | number,
+    ownerId?: string | null,
   ): Promise<void> {
     if (!ipoId) {
       if (__DEV__) console.warn('[ApplicationRepository.addBulk] Called with empty ipoId');
@@ -400,8 +407,8 @@ export class ApplicationRepository implements IApplicationRepository {
         const sql = `
           INSERT INTO ipo_applications (
             id, user_id, ipo_id, status, bank_name, upi_app, shares_count, tax, user_cut,
-            is_favorite, sync_version, sync_status, created_at, updated_at
-          ) VALUES (?, ?, ?, 'Applied', ?, ?, ?, 0, 0, 0, 0, 'PENDING', ?, ?)
+            is_favorite, sync_version, sync_status, owner_id, created_at, updated_at
+          ) VALUES (?, ?, ?, 'Applied', ?, ?, ?, 0, 0, 0, 0, 'PENDING', ?, ?, ?)
         `;
         const params = [
           id,
@@ -410,6 +417,7 @@ export class ApplicationRepository implements IApplicationRepository {
           resolvedBank,
           resolvedUpi,
           calculatedShares,
+          ownerId || null,
           now,
           now,
         ];
@@ -417,6 +425,7 @@ export class ApplicationRepository implements IApplicationRepository {
       }
     }
   }
+
 
   async update(
     id: string,
@@ -457,6 +466,7 @@ export class ApplicationRepository implements IApplicationRepository {
     saleDate: string | null,
     tax: number = 0,
     userCut: number = 0,
+    ownerId?: string | null,
   ): Promise<void> {
     if (!id || soldShares <= 0 || totalShares <= 0) return;
     const now = getCurrentTime();
@@ -564,8 +574,8 @@ export class ApplicationRepository implements IApplicationRepository {
         const insertSoldSql = `
           INSERT INTO ipo_applications (
             id, user_id, ipo_id, status, shares_count, sell_price, sale_date, tax, user_cut,
-            bank_name, upi_app, is_favorite, sync_version, sync_status, created_at, updated_at
-          ) VALUES (?, ?, ?, 'Sold', ?, ?, ?, ?, ?, ?, ?, 0, 0, 'PENDING', ?, ?)
+            bank_name, upi_app, is_favorite, sync_version, sync_status, owner_id, created_at, updated_at
+          ) VALUES (?, ?, ?, 'Sold', ?, ?, ?, ?, ?, ?, ?, 0, 0, 'PENDING', ?, ?, ?)
         `;
         const insertSoldParams = [
           newId,
@@ -578,6 +588,7 @@ export class ApplicationRepository implements IApplicationRepository {
           userCut,
           orig.bank_name || '',
           orig.upi_app || '',
+          orig.owner_id || null,
           now,
           now,
         ];
@@ -641,24 +652,26 @@ export class BankRepository implements IBankRepository {
     );
   }
 
-  async add(bankName: string, balance: number, upiApp?: string): Promise<void> {
+  async add(bankName: string, balance: number, upiApp?: string, ownerId?: string | null): Promise<void> {
     const id = Crypto.randomUUID();
     const now = getCurrentTime();
     const sql = `
       INSERT INTO bank_accounts (
-        id, bank_name, balance, upi_app, sync_version, sync_status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, 0, 'PENDING', ?, ?)
+        id, bank_name, balance, upi_app, sync_version, sync_status, owner_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 0, 'PENDING', ?, ?, ?)
     `;
     const params = [
       id,
       bankName.trim(),
       balance,
       upiApp ? upiApp.trim() : '',
+      ownerId || null,
       now,
       now,
     ];
     await safeRunAsync(this.db, sql, params, 'BankRepository.add');
   }
+
 
   async updateBalance(id: string, balance: number, bankName?: string, upiApp?: string): Promise<void> {
     if (!id) {

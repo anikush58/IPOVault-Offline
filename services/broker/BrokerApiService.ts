@@ -1,5 +1,8 @@
 import { ApiClient } from '../api/ApiClient';
 import { API_BASE_URL } from '../../constants/apiConfig';
+import { getAuthHeaders } from '../api/authHeaders';
+
+declare const __DEV__: boolean;
 
 export interface BrokerAccountConnection {
   id: string;
@@ -125,7 +128,6 @@ export interface MarketQuoteItem {
 
 export type MarketQuotesMap = Record<string, MarketQuoteItem>;
 
-
 export interface CanonicalBrokerInfo {
   brokerType: 'UPSTOX' | 'DHAN' | 'FYERS' | 'ZERODHA' | 'GROWW' | 'MILLIONS';
   slug: 'upstox' | 'dhan' | 'fyers' | 'zerodha' | 'groww' | 'millions';
@@ -212,16 +214,16 @@ export class BrokerApiService {
   }
 
   /**
-   * Fetches all broker accounts registered for the given user ID.
+   * Fetches all broker accounts registered for the authenticated user.
    */
-  public async getAccounts(userId?: string | null): Promise<BrokerAccountItem[]> {
-    if (!userId || typeof userId !== 'string' || !userId.trim()) return [];
+  public async getAccounts(_userId?: string | null): Promise<BrokerAccountItem[]> {
     try {
-      const cleanId = userId.trim();
+      const authHeaders = await getAuthHeaders();
+      if (!authHeaders.Authorization) return [];
       const response = await this.apiClient.get<BrokerAccountItem[]>(
         '/api/v1/broker-accounts',
         undefined,
-        { 'x-user-id': cleanId },
+        authHeaders,
       );
       const accounts = extractResponseData<BrokerAccountItem[]>(response);
       return Array.isArray(accounts) ? accounts : [];
@@ -232,10 +234,10 @@ export class BrokerApiService {
   }
 
   /**
-   * Creates or retrieves a broker account for a profile.
+   * Creates a broker account for a profile.
    */
   public async createAccount(
-    userId: string | null | undefined,
+    _userId: string | null | undefined,
     params: {
       profileId: string;
       broker: string;
@@ -243,7 +245,10 @@ export class BrokerApiService {
       clientId?: string | null;
     },
   ): Promise<BrokerAccountItem> {
-    if (!userId) throw new Error('User ID is required to create broker account');
+    const authHeaders = await getAuthHeaders();
+    if (!authHeaders.Authorization) {
+      throw new Error('Authentication required to create broker account');
+    }
     const response = await this.apiClient.post<BrokerAccountItem>(
       '/api/v1/broker-accounts',
       {
@@ -252,7 +257,7 @@ export class BrokerApiService {
         accountName: params.accountName || undefined,
         clientId: params.clientId || undefined,
       },
-      { 'x-user-id': userId.trim() },
+      authHeaders,
     );
     return extractResponseData<BrokerAccountItem>(response);
   }
@@ -261,19 +266,22 @@ export class BrokerApiService {
    * Generates broker OAuth authorization URL.
    */
   public async getAuthorizationUrl(
-    userId: string | null | undefined,
+    _userId: string | null | undefined,
     accountId: string,
     brokerSlug: string,
     redirectUri?: string,
   ): Promise<{ authorizationUrl: string }> {
-    if (!userId) throw new Error('User ID is required for broker authorization');
+    const authHeaders = await getAuthHeaders();
+    if (!authHeaders.Authorization) {
+      throw new Error('Authentication required for broker authorization');
+    }
     const queryParams: Record<string, string> = {};
     if (redirectUri) queryParams.redirectUri = redirectUri;
 
     const response = await this.apiClient.get<{ authorizationUrl: string }>(
       `/api/v1/broker-accounts/${accountId}/connect/${brokerSlug}`,
       queryParams,
-      { 'x-user-id': userId.trim() },
+      authHeaders,
     );
     const data = extractResponseData<{ authorizationUrl: string }>(response);
     if (!data?.authorizationUrl) {
@@ -286,7 +294,7 @@ export class BrokerApiService {
    * Completes OAuth callback by submitting authorization code/token and state to backend.
    */
   public async completeOAuthCallback(
-    userId: string | null | undefined,
+    _userId: string | null | undefined,
     accountId: string,
     brokerSlug: string,
     params: {
@@ -298,7 +306,7 @@ export class BrokerApiService {
       redirectUri?: string;
     },
   ): Promise<BrokerAccountConnection> {
-    if (!userId) throw new Error('User ID is required for broker callback');
+    const authHeaders = await getAuthHeaders();
     const queryParams: Record<string, string> = {};
     if (params.code) queryParams.code = params.code;
     if (params.tokenId) queryParams.tokenId = params.tokenId;
@@ -310,7 +318,7 @@ export class BrokerApiService {
     const response = await this.apiClient.get<BrokerAccountConnection>(
       `/api/v1/broker-accounts/${accountId}/connect/${brokerSlug}/callback`,
       queryParams,
-      { 'x-user-id': userId.trim() },
+      authHeaders,
     );
     return extractResponseData<BrokerAccountConnection>(response);
   }
@@ -319,14 +327,17 @@ export class BrokerApiService {
    * Soft disconnects the broker account session.
    */
   public async disconnectAccount(
-    userId: string | null | undefined,
+    _userId: string | null | undefined,
     accountId: string,
   ): Promise<BrokerAccountItem> {
-    if (!userId) throw new Error('User ID is required to disconnect account');
+    const authHeaders = await getAuthHeaders();
+    if (!authHeaders.Authorization) {
+      throw new Error('Authentication required to disconnect account');
+    }
     const response = await this.apiClient.post<BrokerAccountItem>(
       `/api/v1/broker-accounts/${accountId}/disconnect`,
       {},
-      { 'x-user-id': userId.trim() },
+      authHeaders,
     );
     return extractResponseData<BrokerAccountItem>(response);
   }
@@ -335,14 +346,17 @@ export class BrokerApiService {
    * Initiates a manual post-listing sync for the broker account.
    */
   public async syncAccount(
-    userId: string | null | undefined,
+    _userId: string | null | undefined,
     accountId: string,
   ): Promise<{
     brokerAccountId: string;
     syncTimestamp: string;
     syncedInvestmentsCount: number;
   }> {
-    if (!userId) throw new Error('User ID is required to sync account');
+    const authHeaders = await getAuthHeaders();
+    if (!authHeaders.Authorization) {
+      throw new Error('Authentication required to sync account');
+    }
     const response = await this.apiClient.post<{
       brokerAccountId: string;
       syncTimestamp: string;
@@ -350,7 +364,7 @@ export class BrokerApiService {
     }>(
       `/api/v1/broker-accounts/${accountId}/sync`,
       {},
-      { 'x-user-id': userId.trim() },
+      authHeaders,
     );
     return extractResponseData<{
       brokerAccountId: string;
@@ -363,16 +377,17 @@ export class BrokerApiService {
    * Retrieves derived IPO investment summary for a connected broker account and IPO.
    */
   public async getInvestmentSummary(
-    userId: string | null | undefined,
+    _userId: string | null | undefined,
     accountId: string,
     ipoId: string,
   ): Promise<DerivedInvestmentSummary | null> {
-    if (!userId) return null;
     try {
+      const authHeaders = await getAuthHeaders();
+      if (!authHeaders.Authorization) return null;
       const response = await this.apiClient.get<DerivedInvestmentSummary>(
         `/api/v1/broker-accounts/${accountId}/investments/${ipoId}`,
         undefined,
-        { 'x-user-id': userId.trim() },
+        authHeaders,
       );
       return extractResponseData<DerivedInvestmentSummary>(response) || null;
     } catch (err) {
@@ -388,16 +403,17 @@ export class BrokerApiService {
    * Syncs and updates derived IPO investment summary for a connected broker account and IPO.
    */
   public async syncInvestment(
-    userId: string | null | undefined,
+    _userId: string | null | undefined,
     accountId: string,
     ipoId: string,
   ): Promise<DerivedInvestmentSummary | null> {
-    if (!userId) return null;
     try {
+      const authHeaders = await getAuthHeaders();
+      if (!authHeaders.Authorization) return null;
       const response = await this.apiClient.post<DerivedInvestmentSummary>(
         `/api/v1/broker-accounts/${accountId}/investments/${ipoId}/sync`,
         {},
-        { 'x-user-id': userId.trim() },
+        authHeaders,
       );
       return extractResponseData<DerivedInvestmentSummary>(response) || null;
     } catch (err) {
@@ -413,15 +429,16 @@ export class BrokerApiService {
    * Retrieves live normalized holdings for a connected broker account.
    */
   public async getHoldings(
-    userId: string | null | undefined,
+    _userId: string | null | undefined,
     accountId: string,
   ): Promise<any[]> {
-    if (!userId) return [];
     try {
+      const authHeaders = await getAuthHeaders();
+      if (!authHeaders.Authorization) return [];
       const response = await this.apiClient.get<any[]>(
         `/api/v1/broker-accounts/${accountId}/holdings`,
         undefined,
-        { 'x-user-id': userId.trim() },
+        authHeaders,
       );
       const holdings = extractResponseData<any[]>(response);
       return Array.isArray(holdings) ? holdings : [];
@@ -440,15 +457,15 @@ export class BrokerApiService {
    * Uses broker trade record for historical executed sell price and quantity.
    */
   public async getUserPortfolio(
-    userId?: string | null,
+    _userId?: string | null,
   ): Promise<UserPortfolioSummaryResponse | null> {
-    if (!userId || typeof userId !== 'string' || !userId.trim()) return null;
     try {
-      const cleanId = userId.trim();
+      const authHeaders = await getAuthHeaders();
+      if (!authHeaders.Authorization) return null;
       const response = await this.apiClient.get<UserPortfolioSummaryResponse>(
         '/api/v1/broker-accounts/portfolio',
         undefined,
-        { 'x-user-id': cleanId },
+        authHeaders,
       );
       return extractResponseData<UserPortfolioSummaryResponse>(response) || null;
     } catch (err) {
@@ -463,13 +480,15 @@ export class BrokerApiService {
    * Uses any available connected broker's market-quote capability.
    */
   public async getMarketQuotes(
-    userId: string | null | undefined,
+    _userId: string | null | undefined,
     instruments: Array<{ symbol?: string | null; isin?: string | null; exchange?: string | null }>,
     brokerAccountId?: string | null,
   ): Promise<MarketQuotesMap> {
-    if (!userId || !instruments || instruments.length === 0) return {};
+    if (!instruments || instruments.length === 0) return {};
     try {
-      const cleanId = userId.trim();
+      const authHeaders = await getAuthHeaders();
+      if (!authHeaders.Authorization) return {};
+
       const symbols = instruments
         .map((i) => {
           const sym = i.symbol?.trim();
@@ -496,7 +515,7 @@ export class BrokerApiService {
       const response = await this.apiClient.get<any>(
         endpoint,
         queryParams,
-        { 'x-user-id': cleanId },
+        authHeaders,
       );
 
       const data = extractResponseData<any>(response);
@@ -560,20 +579,10 @@ export class BrokerApiService {
           }
         }
       }
-      if (__DEV__ && Object.keys(quotesMap).length > 0) {
-        console.log(
-          `[BrokerMarketQuote] Requested ${instruments.length} instruments (ISINs: ${isins || 'none'}, Symbols: ${symbols || 'none'}) at ${endpoint} -> Resolved ${Object.keys(quotesMap).length} quote entries`,
-        );
-        for (const [k, q] of Object.entries(quotesMap)) {
-          console.log(
-            `[BrokerMarketQuote] Instrument ${k} -> Resolved LTP: ₹${q.ltp} (ISIN: ${q.isin || 'N/A'}, Symbol: ${q.symbol || 'N/A'}, Exchange: ${q.exchange || 'N/A'})`,
-          );
-        }
-      }
       return quotesMap;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (__DEV__) {
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
         console.warn(`[BrokerApiService] getMarketQuotes failed (${msg}) -> preserving safe offline/stored LTP fallback`);
       }
       return {};

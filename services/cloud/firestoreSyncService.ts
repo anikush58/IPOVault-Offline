@@ -1651,6 +1651,16 @@ export async function syncSingleDocDelete(
 }
 
 /**
+ * Cancels any pending debounced sync timer
+ */
+export function cancelDebouncedFirestoreSync(): void {
+  if (autoSyncDebounceTimer) {
+    clearTimeout(autoSyncDebounceTimer);
+    autoSyncDebounceTimer = null;
+  }
+}
+
+/**
  * Debounced full sync trigger for batch database changes
  */
 export function scheduleDebouncedFirestoreSync(
@@ -1664,15 +1674,17 @@ export function scheduleDebouncedFirestoreSync(
   if (autoSyncDebounceTimer) {
     clearTimeout(autoSyncDebounceTimer);
   }
+  const scheduledUid = uid;
   autoSyncDebounceTimer = setTimeout(async () => {
     try {
-      if (isSuppressingCloudSync() || isCloudSyncBusy()) return;
+      if (!scheduledUid || isSuppressingCloudSync() || isCloudSyncBusy()) return;
       const jsonStr = await exportJSONFn();
       if (!jsonStr) return;
       const data = JSON.parse(jsonStr) as IPOVaultExportData;
-      await syncUserDataToFirestore(uid, data);
+      await syncUserDataToFirestore(scheduledUid, data);
     } catch (err) {
       if (isDev) console.warn('[firestoreSyncService] Debounced sync error:', err);
     }
   }, delayMs);
 }
+

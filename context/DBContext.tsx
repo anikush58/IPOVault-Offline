@@ -13,6 +13,7 @@ import { getEffectiveAvatarUrl } from '@/utils/avatarUtils';
 import { getRegistrarConfig } from '@/services/allotment/registrarConfig';
 import {
   scheduleDebouncedFirestoreSync,
+  cancelDebouncedFirestoreSync,
   syncUserDataToFirestore,
   fetchUserDataFromFirestore,
   syncDeltaFromFirestore,
@@ -23,6 +24,7 @@ import {
   CriticalUserData,
   SecondaryUserData,
 } from '@/services/cloud/firestoreSyncService';
+
 
 import { useAuth } from '@/context/AuthContext';
 
@@ -296,24 +298,26 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
   const refreshCritical = useCallback(async () => {
     const t0 = Date.now();
-    // Sync authenticated user ID to local users_table owner_id column
-    if (authUser?.id) {
-      try {
-        await db.runAsync(
-          'UPDATE users_table SET owner_id = ? WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL',
-          [authUser.id],
-        );
-      } catch {}
-    }
+    const currentUid = authUser?.uid || authUser?.id || null;
 
-    const userRows = await db.getAllAsync<User>(
-      'SELECT * FROM users_table WHERE deleted_at IS NULL ORDER BY name',
-    );
+    const userRows = currentUid
+      ? await db.getAllAsync<User>(
+          'SELECT * FROM users_table WHERE owner_id = ? AND deleted_at IS NULL ORDER BY name',
+          [currentUid]
+        )
+      : await db.getAllAsync<User>(
+          'SELECT * FROM users_table WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL ORDER BY name'
+        );
     setUsers(userRows);
 
-    const ipoRows = await db.getAllAsync<IPOListing>(
-      'SELECT * FROM ipo_listings WHERE deleted_at IS NULL ORDER BY id DESC',
-    );
+    const ipoRows = currentUid
+      ? await db.getAllAsync<IPOListing>(
+          'SELECT * FROM ipo_listings WHERE (owner_id = ? OR owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL ORDER BY id DESC',
+          [currentUid]
+        )
+      : await db.getAllAsync<IPOListing>(
+          'SELECT * FROM ipo_listings WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL ORDER BY id DESC'
+        );
 
     let masterRows: IPOListing[] = [];
     let masterById: Map<string, any> = new Map();
@@ -384,27 +388,49 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
     setIPOs([...enrichedIpoRows, ...masterRows]);
 
-    const appRows = await db.getAllAsync<ApplicationWithDetails>(`
-      SELECT a.id, a.user_id, a.ipo_id, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
-             a.shares_count, a.is_favorite, a.broker_account_id, a.created_at, a.updated_at,
-             u.name        AS user_name,
-             u.broker      AS user_broker,
-             u.client_id   AS user_client_id,
-             u.pan_number  AS user_pan_number,
-             u.avatar_url  AS user_avatar_url,
-             COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
-             COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
-             i.ipo_name,
-             i.buy_price,
-             COALESCE(a.shares_count, i.quantity) AS quantity,
-             i.open_date,
-             i.logo_url AS ipo_logo_url
-      FROM   ipo_applications a
-      JOIN   users_table u ON a.user_id = u.id
-      JOIN   ipo_listings i ON a.ipo_id = i.id
-      WHERE  a.deleted_at IS NULL AND u.deleted_at IS NULL AND i.deleted_at IS NULL
-      ORDER  BY a.id DESC
-    `);
+    const appRows = currentUid
+      ? await db.getAllAsync<ApplicationWithDetails>(`
+          SELECT a.id, a.user_id, a.ipo_id, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
+                 a.shares_count, a.is_favorite, a.broker_account_id, a.created_at, a.updated_at,
+                 u.name        AS user_name,
+                 u.broker      AS user_broker,
+                 u.client_id   AS user_client_id,
+                 u.pan_number  AS user_pan_number,
+                 u.avatar_url  AS user_avatar_url,
+                 COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
+                 COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
+                 i.ipo_name,
+                 i.buy_price,
+                 COALESCE(a.shares_count, i.quantity) AS quantity,
+                 i.open_date,
+                 i.logo_url AS ipo_logo_url
+          FROM   ipo_applications a
+          JOIN   users_table u ON a.user_id = u.id
+          JOIN   ipo_listings i ON a.ipo_id = i.id
+          WHERE  a.owner_id = ? AND a.deleted_at IS NULL AND u.deleted_at IS NULL AND i.deleted_at IS NULL
+          ORDER  BY a.id DESC
+        `, [currentUid])
+      : await db.getAllAsync<ApplicationWithDetails>(`
+          SELECT a.id, a.user_id, a.ipo_id, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
+                 a.shares_count, a.is_favorite, a.broker_account_id, a.created_at, a.updated_at,
+                 u.name        AS user_name,
+                 u.broker      AS user_broker,
+                 u.client_id   AS user_client_id,
+                 u.pan_number  AS user_pan_number,
+                 u.avatar_url  AS user_avatar_url,
+                 COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
+                 COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
+                 i.ipo_name,
+                 i.buy_price,
+                 COALESCE(a.shares_count, i.quantity) AS quantity,
+                 i.open_date,
+                 i.logo_url AS ipo_logo_url
+          FROM   ipo_applications a
+          JOIN   users_table u ON a.user_id = u.id
+          JOIN   ipo_listings i ON a.ipo_id = i.id
+          WHERE  (a.owner_id IS NULL OR a.owner_id = '') AND a.deleted_at IS NULL AND u.deleted_at IS NULL AND i.deleted_at IS NULL
+          ORDER  BY a.id DESC
+        `);
     setApplications(appRows);
 
     setIsLoading(false);
@@ -412,10 +438,12 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     if (isDev) {
       console.log(`[CloudSync Timing] Stage 1 critical refresh: ${duration}ms (users: ${userRows.length}, ipos: ${enrichedIpoRows.length + masterRows.length}, apps: ${appRows.length})`);
     }
-  }, [db, authUser?.id]);
+  }, [db, authUser?.uid, authUser?.id]);
 
   const refreshSecondary = useCallback(async () => {
     const t0 = Date.now();
+    const currentUid = authUser?.uid || authUser?.id || null;
+
     // Repair legacy rows where id is null or empty
     const nullBankRows = await db.getAllAsync<{ rowid: number }>(
       'SELECT rowid FROM bank_accounts WHERE id IS NULL OR id = ""',
@@ -424,15 +452,21 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       await db.runAsync('UPDATE bank_accounts SET id = ? WHERE rowid = ?', [Crypto.randomUUID(), r.rowid]);
     }
 
-    const bankRows = await db.getAllAsync<BankAccount>(
-      'SELECT * FROM bank_accounts WHERE deleted_at IS NULL ORDER BY bank_name',
-    );
+    const bankRows = currentUid
+      ? await db.getAllAsync<BankAccount>(
+          'SELECT * FROM bank_accounts WHERE owner_id = ? AND deleted_at IS NULL ORDER BY bank_name',
+          [currentUid]
+        )
+      : await db.getAllAsync<BankAccount>(
+          'SELECT * FROM bank_accounts WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL ORDER BY bank_name'
+        );
     setBankAccounts(bankRows);
     const duration = Date.now() - t0;
     if (isDev) {
       console.log(`[CloudSync Timing] Stage 2 secondary refresh: ${duration}ms (banks: ${bankRows.length})`);
     }
-  }, [db]);
+  }, [db, authUser?.uid, authUser?.id]);
+
 
   const refresh = useCallback(async () => {
     // Self-healing migration: Synchronize ipo_applications status with ipo_allotments table
@@ -478,6 +512,10 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    cancelDebouncedFirestoreSync();
+  }, [authUser?.uid]);
+
   // Automatically refresh UI state when cloud sync pipeline finishes
   useEffect(() => {
     let prevSyncState = syncStore.getStatus().state;
@@ -493,7 +531,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
   const addUser = async (user: Omit<User, 'id'>) => {
     const repo = new UserRepository(db);
-    await repo.add(user);
+    const currentUid = authUser?.uid || authUser?.id || null;
+    await repo.add(user, currentUid);
     await refresh();
   };
 
@@ -525,7 +564,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
   const addIPO = async (ipo: Omit<IPOListing, 'id' | 'is_favorite' | 'archived'>) => {
     const repo = new IPORepository(db);
-    await repo.add(ipo);
+    const currentUid = authUser?.uid || authUser?.id || null;
+    await repo.add(ipo, currentUid);
     await refresh();
   };
 
@@ -628,7 +668,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     }
 
     const repo = new ApplicationRepository(db);
-    await repo.addBulk(resolvedId, userIds, bankName, upiApp, lotCounts);
+    const currentUid = authUser?.uid || authUser?.id || null;
+    await repo.addBulk(resolvedId, userIds, bankName, upiApp, lotCounts, currentUid);
     await refresh();
   };
 
@@ -731,7 +772,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     userCut?: number
   ) => {
     const repo = new ApplicationRepository(db);
-    await repo.partialSell(id, soldShares, totalShares, sellPrice, saleDate, tax, userCut);
+    const currentUid = authUser?.uid || authUser?.id || null;
+    await repo.partialSell(id, soldShares, totalShares, sellPrice, saleDate, tax, userCut, currentUid);
     await refresh();
   };
 
@@ -812,7 +854,21 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
   const getAllotments = async (): Promise<IPOAllotmentRecord[]> => {
     try {
-      const rows = await db.getAllAsync<IPOAllotmentRecord>('SELECT * FROM ipo_allotments ORDER BY checked_at DESC');
+      const currentUid = authUser?.uid || authUser?.id || null;
+      const rows = currentUid
+        ? await db.getAllAsync<IPOAllotmentRecord>(
+            `SELECT alt.* FROM ipo_allotments alt
+             JOIN ipo_applications a ON alt.application_id = a.id
+             WHERE a.owner_id = ?
+             ORDER BY alt.checked_at DESC`,
+            [currentUid]
+          )
+        : await db.getAllAsync<IPOAllotmentRecord>(
+            `SELECT alt.* FROM ipo_allotments alt
+             JOIN ipo_applications a ON alt.application_id = a.id
+             WHERE (a.owner_id IS NULL OR a.owner_id = '')
+             ORDER BY alt.checked_at DESC`
+          );
       return rows || [];
     } catch {
       return [];
@@ -938,7 +994,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
   const addBankAccount = async (bankName: string, balance: number, upiApp?: string) => {
     const repo = new BankRepository(db);
-    await repo.add(bankName, balance, upiApp);
+    const currentUid = authUser?.uid || authUser?.id || null;
+    await repo.add(bankName, balance, upiApp, currentUid);
     await refresh();
   };
 
@@ -958,91 +1015,108 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
   const clearAllData = async () => {
     syncedUidRef.current = null;
-    if (authUser?.uid) {
-      await clearLocalSyncCursor(authUser.uid);
+    const currentUid = authUser?.uid || authUser?.id || null;
+    if (currentUid) {
+      await clearLocalSyncCursor(currentUid);
+      await db.runAsync('DELETE FROM ipo_allotments WHERE application_id IN (SELECT id FROM ipo_applications WHERE owner_id = ?)', [currentUid]);
+      await db.runAsync('DELETE FROM ipo_applications WHERE owner_id = ?', [currentUid]);
+      await db.runAsync('DELETE FROM ipo_listings WHERE owner_id = ?', [currentUid]);
+      await db.runAsync('DELETE FROM users_table WHERE owner_id = ?', [currentUid]);
+      await db.runAsync('DELETE FROM bank_accounts WHERE owner_id = ?', [currentUid]);
+    } else {
+      await db.runAsync('DELETE FROM ipo_allotments WHERE application_id IN (SELECT id FROM ipo_applications WHERE (owner_id IS NULL OR owner_id = ""))');
+      await db.runAsync('DELETE FROM ipo_applications WHERE (owner_id IS NULL OR owner_id = "")');
+      await db.runAsync('DELETE FROM ipo_listings WHERE (owner_id IS NULL OR owner_id = "")');
+      await db.runAsync('DELETE FROM users_table WHERE (owner_id IS NULL OR owner_id = "")');
+      await db.runAsync('DELETE FROM bank_accounts WHERE (owner_id IS NULL OR owner_id = "")');
     }
-    await db.execAsync('DELETE FROM ipo_allotments');
-    await db.execAsync('DELETE FROM ipo_applications');
-    await db.execAsync('DELETE FROM ipo_listings');
-    await db.execAsync('DELETE FROM users_table');
-    await db.execAsync('DELETE FROM bank_accounts');
     await refresh();
   };
 
   const loadSampleData = async () => {
-    await db.execAsync('DELETE FROM ipo_applications');
-    await db.execAsync('DELETE FROM ipo_listings');
-    await db.execAsync('DELETE FROM users_table');
-    await db.execAsync('DELETE FROM bank_accounts');
+    const currentUid = authUser?.uid || authUser?.id || null;
+    if (currentUid) {
+      await db.runAsync('DELETE FROM ipo_allotments WHERE application_id IN (SELECT id FROM ipo_applications WHERE owner_id = ?)', [currentUid]);
+      await db.runAsync('DELETE FROM ipo_applications WHERE owner_id = ?', [currentUid]);
+      await db.runAsync('DELETE FROM ipo_listings WHERE owner_id = ?', [currentUid]);
+      await db.runAsync('DELETE FROM users_table WHERE owner_id = ?', [currentUid]);
+      await db.runAsync('DELETE FROM bank_accounts WHERE owner_id = ?', [currentUid]);
+    } else {
+      await db.runAsync('DELETE FROM ipo_allotments WHERE application_id IN (SELECT id FROM ipo_applications WHERE (owner_id IS NULL OR owner_id = ""))');
+      await db.runAsync('DELETE FROM ipo_applications WHERE (owner_id IS NULL OR owner_id = "")');
+      await db.runAsync('DELETE FROM ipo_listings WHERE (owner_id IS NULL OR owner_id = "")');
+      await db.runAsync('DELETE FROM users_table WHERE (owner_id IS NULL OR owner_id = "")');
+      await db.runAsync('DELETE FROM bank_accounts WHERE (owner_id IS NULL OR owner_id = "")');
+    }
 
     // Users
     const now = new Date().toISOString();
     await db.runAsync(
-      'INSERT INTO users_table (id, name, pan_number, client_id, upi_id, broker, tpin, upi_app, bank_name, default_amount_blocked, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-      [Crypto.randomUUID(), 'Dhiru', 'AAAPD1234A', '1208180111845464', 'dhiru@okhdfcbank', 'Dhan', '123456', 'PhonePe', 'Kotak M Bank', 14998, now, now],
+      'INSERT INTO users_table (id, name, pan_number, client_id, upi_id, broker, tpin, upi_app, bank_name, default_amount_blocked, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [Crypto.randomUUID(), 'Dhiru', 'AAAPD1234A', '1208180111845464', 'dhiru@okhdfcbank', 'Dhan', '123456', 'PhonePe', 'Kotak M Bank', 14998, currentUid, now, now],
     );
     await db.runAsync(
-      'INSERT INTO users_table (id, name, pan_number, client_id, upi_id, broker, tpin, upi_app, bank_name, default_amount_blocked, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-      [Crypto.randomUUID(), 'Vishal', 'BBBPV5678B', '1208180111845465', 'vishal@okaxis', 'Upstox', '234567', 'GPay', 'Axis Bank', 14998, now, now],
+      'INSERT INTO users_table (id, name, pan_number, client_id, upi_id, broker, tpin, upi_app, bank_name, default_amount_blocked, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [Crypto.randomUUID(), 'Vishal', 'BBBPV5678B', '1208180111845465', 'vishal@okaxis', 'Upstox', '234567', 'GPay', 'Axis Bank', 14998, currentUid, now, now],
     );
     await db.runAsync(
-      'INSERT INTO users_table (id, name, pan_number, client_id, upi_id, broker, tpin, upi_app, bank_name, default_amount_blocked, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-      [Crypto.randomUUID(), 'Umesh', 'CCCU9012C', '1208180111845466', 'umesh@ybl', 'Groww', '345678', 'BHIM', 'HDFC Bank', 14998, now, now],
+      'INSERT INTO users_table (id, name, pan_number, client_id, upi_id, broker, tpin, upi_app, bank_name, default_amount_blocked, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      [Crypto.randomUUID(), 'Umesh', 'CCCU9012C', '1208180111845466', 'umesh@ybl', 'Groww', '345678', 'BHIM', 'HDFC Bank', 14998, currentUid, now, now],
     );
 
     // Bank accounts with sample balances
     await db.runAsync(
-      'INSERT INTO bank_accounts (id, bank_name, balance, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-      [Crypto.randomUUID(), 'Kotak M Bank', 75000, now, now],
+      'INSERT INTO bank_accounts (id, bank_name, balance, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [Crypto.randomUUID(), 'Kotak M Bank', 75000, currentUid, now, now],
     );
     await db.runAsync(
-      'INSERT INTO bank_accounts (id, bank_name, balance, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-      [Crypto.randomUUID(), 'Axis Bank', 50000, now, now],
+      'INSERT INTO bank_accounts (id, bank_name, balance, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [Crypto.randomUUID(), 'Axis Bank', 50000, currentUid, now, now],
     );
     await db.runAsync(
-      'INSERT INTO bank_accounts (id, bank_name, balance, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-      [Crypto.randomUUID(), 'HDFC Bank', 90000, now, now],
+      'INSERT INTO bank_accounts (id, bank_name, balance, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [Crypto.randomUUID(), 'HDFC Bank', 90000, currentUid, now, now],
     );
 
     // IPOs
     await db.runAsync(
-      'INSERT INTO ipo_listings (ipo_name,buy_price,quantity,open_date,close_date,allotment_date,listing_date,registrar,exchange,issue_type) VALUES (?,?,?,?,?,?,?,?,?,?)',
-      ['Advit Jewels', 56, 2000, '2025-11-10', '2025-11-12', '2025-11-13', '2025-11-15', 'Bigshare Services', 'BSE SME', 'SME'],
+      'INSERT INTO ipo_listings (ipo_name,buy_price,quantity,open_date,close_date,allotment_date,listing_date,registrar,exchange,issue_type,owner_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+      ['Advit Jewels', 56, 2000, '2025-11-10', '2025-11-12', '2025-11-13', '2025-11-15', 'Bigshare Services', 'BSE SME', 'SME', currentUid],
     );
     await db.runAsync(
-      'INSERT INTO ipo_listings (ipo_name,buy_price,quantity,open_date,close_date,allotment_date,listing_date,registrar,exchange,issue_type) VALUES (?,?,?,?,?,?,?,?,?,?)',
-      ['HDB Financial', 500, 35, '2025-10-28', '2025-10-30', '2025-11-01', '2025-11-04', 'KFin Technologies', 'NSE', 'Mainboard'],
+      'INSERT INTO ipo_listings (ipo_name,buy_price,quantity,open_date,close_date,allotment_date,listing_date,registrar,exchange,issue_type,owner_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+      ['HDB Financial', 500, 35, '2025-10-28', '2025-10-30', '2025-11-01', '2025-11-04', 'KFin Technologies', 'NSE', 'Mainboard', currentUid],
     );
     await db.runAsync(
-      'INSERT INTO ipo_listings (ipo_name,buy_price,quantity,open_date,close_date,allotment_date,listing_date,registrar,exchange,issue_type) VALUES (?,?,?,?,?,?,?,?,?,?)',
-      ['Ola Electric', 76, 195, '2025-10-15', '2025-10-17', '2025-10-18', '2025-10-20', 'Link Intime India', 'NSE', 'Mainboard'],
+      'INSERT INTO ipo_listings (ipo_name,buy_price,quantity,open_date,close_date,allotment_date,listing_date,registrar,exchange,issue_type,owner_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+      ['Ola Electric', 76, 195, '2025-10-15', '2025-10-17', '2025-10-18', '2025-10-20', 'Link Intime India', 'NSE', 'Mainboard', currentUid],
     );
 
     // Get IDs
-    const u1 = await db.getFirstAsync<{ id: string }>('SELECT id FROM users_table WHERE name=?', ['Dhiru']);
-    const u2 = await db.getFirstAsync<{ id: string }>('SELECT id FROM users_table WHERE name=?', ['Vishal']);
-    const u3 = await db.getFirstAsync<{ id: string }>('SELECT id FROM users_table WHERE name=?', ['Umesh']);
-    const i1 = await db.getFirstAsync<{ id: string }>('SELECT id FROM ipo_listings WHERE ipo_name=?', ['Advit Jewels']);
-    const i2 = await db.getFirstAsync<{ id: string }>('SELECT id FROM ipo_listings WHERE ipo_name=?', ['HDB Financial']);
-    const i3 = await db.getFirstAsync<{ id: string }>('SELECT id FROM ipo_listings WHERE ipo_name=?', ['Ola Electric']);
+    const u1 = await db.getFirstAsync<{ id: string }>('SELECT id FROM users_table WHERE name=? ORDER BY id DESC', ['Dhiru']);
+    const u2 = await db.getFirstAsync<{ id: string }>('SELECT id FROM users_table WHERE name=? ORDER BY id DESC', ['Vishal']);
+    const u3 = await db.getFirstAsync<{ id: string }>('SELECT id FROM users_table WHERE name=? ORDER BY id DESC', ['Umesh']);
+    const i1 = await db.getFirstAsync<{ id: string }>('SELECT id FROM ipo_listings WHERE ipo_name=? ORDER BY id DESC', ['Advit Jewels']);
+    const i2 = await db.getFirstAsync<{ id: string }>('SELECT id FROM ipo_listings WHERE ipo_name=? ORDER BY id DESC', ['HDB Financial']);
+    const i3 = await db.getFirstAsync<{ id: string }>('SELECT id FROM ipo_listings WHERE ipo_name=? ORDER BY id DESC', ['Ola Electric']);
 
     if (!u1 || !u2 || !u3 || !i1 || !i2 || !i3) return;
 
     // Applications
     await db.runAsync(
-      'INSERT INTO ipo_applications (id, user_id, ipo_id, status, sell_price, sale_date, tax, user_cut, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-      [Crypto.randomUUID(), u1.id, i1.id, 'Sold', 72, '2025-11-15', 150, 500, new Date().toISOString(), new Date().toISOString()],
+      'INSERT INTO ipo_applications (id, user_id, ipo_id, status, sell_price, sale_date, tax, user_cut, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+      [Crypto.randomUUID(), u1.id, i1.id, 'Sold', 72, '2025-11-15', 150, 500, currentUid, new Date().toISOString(), new Date().toISOString()],
     );
-    await db.runAsync('INSERT INTO ipo_applications (id, user_id, ipo_id, status, created_at, updated_at) VALUES (?,?,?,?,?,?)', [Crypto.randomUUID(), u2.id, i1.id, 'Allotted', new Date().toISOString(), new Date().toISOString()]);
-    await db.runAsync('INSERT INTO ipo_applications (id, user_id, ipo_id, status, created_at, updated_at) VALUES (?,?,?,?,?,?)', [Crypto.randomUUID(), u3.id, i1.id, 'Not Allotted', new Date().toISOString(), new Date().toISOString()]);
+    await db.runAsync('INSERT INTO ipo_applications (id, user_id, ipo_id, status, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?)', [Crypto.randomUUID(), u2.id, i1.id, 'Allotted', currentUid, new Date().toISOString(), new Date().toISOString()]);
+    await db.runAsync('INSERT INTO ipo_applications (id, user_id, ipo_id, status, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?)', [Crypto.randomUUID(), u3.id, i1.id, 'Not Allotted', currentUid, new Date().toISOString(), new Date().toISOString()]);
     await db.runAsync(
-      'INSERT INTO ipo_applications (id, user_id, ipo_id, status, sell_price, sale_date, tax, user_cut, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-      [Crypto.randomUUID(), u1.id, i2.id, 'Sold', 620, '2025-11-04', 200, 500, new Date().toISOString(), new Date().toISOString()],
+      'INSERT INTO ipo_applications (id, user_id, ipo_id, status, sell_price, sale_date, tax, user_cut, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+      [Crypto.randomUUID(), u1.id, i2.id, 'Sold', 620, '2025-11-04', 200, 500, currentUid, new Date().toISOString(), new Date().toISOString()],
     );
-    await db.runAsync('INSERT INTO ipo_applications (id, user_id, ipo_id, status, created_at, updated_at) VALUES (?,?,?,?,?,?)', [Crypto.randomUUID(), u2.id, i2.id, 'Applied', new Date().toISOString(), new Date().toISOString()]);
-    await db.runAsync('INSERT INTO ipo_applications (id, user_id, ipo_id, status, created_at, updated_at) VALUES (?,?,?,?,?,?)', [Crypto.randomUUID(), u3.id, i2.id, 'Applied', new Date().toISOString(), new Date().toISOString()]);
-    await db.runAsync('INSERT INTO ipo_applications (id, user_id, ipo_id, status, created_at, updated_at) VALUES (?,?,?,?,?,?)', [Crypto.randomUUID(), u1.id, i3.id, 'Not Allotted', new Date().toISOString(), new Date().toISOString()]);
-    await db.runAsync('INSERT INTO ipo_applications (id, user_id, ipo_id, status, created_at, updated_at) VALUES (?,?,?,?,?,?)', [Crypto.randomUUID(), u2.id, i3.id, 'Applied', new Date().toISOString(), new Date().toISOString()]);
+    await db.runAsync('INSERT INTO ipo_applications (id, user_id, ipo_id, status, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?)', [Crypto.randomUUID(), u2.id, i2.id, 'Applied', currentUid, new Date().toISOString(), new Date().toISOString()]);
+    await db.runAsync('INSERT INTO ipo_applications (id, user_id, ipo_id, status, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?)', [Crypto.randomUUID(), u3.id, i2.id, 'Applied', currentUid, new Date().toISOString(), new Date().toISOString()]);
+    await db.runAsync('INSERT INTO ipo_applications (id, user_id, ipo_id, status, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?)', [Crypto.randomUUID(), u1.id, i3.id, 'Not Allotted', currentUid, new Date().toISOString(), new Date().toISOString()]);
+    await db.runAsync('INSERT INTO ipo_applications (id, user_id, ipo_id, status, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?)', [Crypto.randomUUID(), u2.id, i3.id, 'Applied', currentUid, new Date().toISOString(), new Date().toISOString()]);
 
     await refresh();
   };
@@ -1098,12 +1172,24 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       })
     );
 
-    const rawAllotments = await safeGetAllAsync<any>(
-      db,
-      'SELECT * FROM ipo_allotments',
-      [],
-      'DBContext.exportJSON.allotments'
-    );
+    const currentUid = authUser?.uid || authUser?.id || null;
+    const rawAllotments = currentUid
+      ? await safeGetAllAsync<any>(
+          db,
+          `SELECT alt.* FROM ipo_allotments alt
+           JOIN ipo_applications a ON alt.application_id = a.id
+           WHERE a.owner_id = ?`,
+          [currentUid],
+          'DBContext.exportJSON.allotments'
+        )
+      : await safeGetAllAsync<any>(
+          db,
+          `SELECT alt.* FROM ipo_allotments alt
+           JOIN ipo_applications a ON alt.application_id = a.id
+           WHERE (a.owner_id IS NULL OR a.owner_id = '')`,
+          [],
+          'DBContext.exportJSON.allotments'
+        );
 
     const rawMasterIpos = await safeGetAllAsync<any>(
       db,
@@ -1125,6 +1211,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           user_id: a.user_id,
           ipo_id: a.ipo_id,
           status: a.status,
+          sell_price: a.sell_price ?? null,
+          sale_date: a.sale_date ?? null,
           shares_count: (a as any).shares_count ?? a.quantity ?? null,
           quantity: a.quantity ?? (a as any).shares_count ?? null,
           tax: a.tax,
@@ -1176,23 +1264,30 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       const startTime = Date.now();
 
       // Prefetch existing users, ipos, apps for O(1) lookup
+      const currentUid = authUser?.uid || null;
       const [existingUsersList, existingIposList, existingAppsList] = await Promise.all([
         safeGetAllAsync<{ id: string; pan_number: string; name: string }>(
           db,
-          'SELECT id, pan_number, name FROM users_table',
-          [],
+          currentUid
+            ? 'SELECT id, pan_number, name FROM users_table WHERE owner_id = ?'
+            : 'SELECT id, pan_number, name FROM users_table WHERE (owner_id IS NULL OR owner_id = "")',
+          currentUid ? [currentUid] : [],
           'importCriticalData.prefetchUsers'
         ),
         safeGetAllAsync<{ id: string; ipo_name: string }>(
           db,
-          'SELECT id, ipo_name FROM ipo_listings',
-          [],
+          currentUid
+            ? 'SELECT id, ipo_name FROM ipo_listings WHERE (owner_id = ? OR owner_id IS NULL OR owner_id = "")'
+            : 'SELECT id, ipo_name FROM ipo_listings WHERE (owner_id IS NULL OR owner_id = "")',
+          currentUid ? [currentUid] : [],
           'importCriticalData.prefetchIPOs'
         ),
         safeGetAllAsync<{ id: string; user_id: string; ipo_id: string; status: string }>(
           db,
-          'SELECT id, user_id, ipo_id, status FROM ipo_applications',
-          [],
+          currentUid
+            ? 'SELECT id, user_id, ipo_id, status FROM ipo_applications WHERE owner_id = ?'
+            : 'SELECT id, user_id, ipo_id, status FROM ipo_applications WHERE (owner_id IS NULL OR owner_id = "")',
+          currentUid ? [currentUid] : [],
           'importCriticalData.prefetchApps'
         ),
       ]);
@@ -1634,23 +1729,30 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       const now = new Date().toISOString();
       const startTime = Date.now();
 
+      const currentUid = authUser?.uid || null;
       const [existingBanksList, existingAppsList, existingAllotmentsList] = await Promise.all([
         safeGetAllAsync<{ id: string; bank_name: string }>(
           db,
-          'SELECT id, bank_name FROM bank_accounts',
-          [],
+          currentUid
+            ? 'SELECT id, bank_name FROM bank_accounts WHERE owner_id = ?'
+            : 'SELECT id, bank_name FROM bank_accounts WHERE (owner_id IS NULL OR owner_id = "")',
+          currentUid ? [currentUid] : [],
           'importSecondaryData.prefetchBanks'
         ),
         safeGetAllAsync<{ id: string }>(
           db,
-          'SELECT id FROM ipo_applications',
-          [],
+          currentUid
+            ? 'SELECT id FROM ipo_applications WHERE owner_id = ?'
+            : 'SELECT id FROM ipo_applications WHERE (owner_id IS NULL OR owner_id = "")',
+          currentUid ? [currentUid] : [],
           'importSecondaryData.prefetchApps'
         ),
         safeGetAllAsync<{ id: string; application_id: string }>(
           db,
-          'SELECT id, application_id FROM ipo_allotments',
-          [],
+          currentUid
+            ? 'SELECT alt.id, alt.application_id FROM ipo_allotments alt JOIN ipo_applications a ON alt.application_id = a.id WHERE a.owner_id = ?'
+            : 'SELECT alt.id, alt.application_id FROM ipo_allotments alt JOIN ipo_applications a ON alt.application_id = a.id WHERE (a.owner_id IS NULL OR a.owner_id = "")',
+          currentUid ? [currentUid] : [],
           'importSecondaryData.prefetchAllotments'
         ),
       ]);
@@ -2086,14 +2188,29 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     }
 
     // Insert / upsert users
+    const currentUid = authUser?.uid || authUser?.id || null;
     const userToId = new Map<string, string>();
     for (const [key, u] of userMap) {
       let existing: { id: string } | null = null;
       if (u.pan_number) {
-        existing = await safeGetFirstAsync<{ id: string }>(db, 'SELECT id FROM users_table WHERE pan_number=?', [u.pan_number], 'DBContext.importCSV.user');
+        existing = await safeGetFirstAsync<{ id: string }>(
+          db,
+          currentUid
+            ? 'SELECT id FROM users_table WHERE pan_number=? AND owner_id=?'
+            : 'SELECT id FROM users_table WHERE pan_number=? AND (owner_id IS NULL OR owner_id="")',
+          currentUid ? [u.pan_number, currentUid] : [u.pan_number],
+          'DBContext.importCSV.user'
+        );
       }
       if (!existing && u.name) {
-        existing = await safeGetFirstAsync<{ id: string }>(db, 'SELECT id FROM users_table WHERE name=? AND name!=""', [u.name], 'DBContext.importCSV.userByName');
+        existing = await safeGetFirstAsync<{ id: string }>(
+          db,
+          currentUid
+            ? 'SELECT id FROM users_table WHERE name=? AND name!="" AND owner_id=?'
+            : 'SELECT id FROM users_table WHERE name=? AND name!="" AND (owner_id IS NULL OR owner_id="")',
+          currentUid ? [u.name, currentUid] : [u.name],
+          'DBContext.importCSV.userByName'
+        );
       }
 
       if (existing) {
@@ -2111,8 +2228,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         const now = new Date().toISOString();
         await safeRunAsync(
           db,
-          'INSERT INTO users_table (id, name, pan_number, client_id, upi_id, broker, tpin, upi_app, bank_name, avatar_url, default_amount_blocked, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
-          [newId, u.name || '', u.pan_number || '', (u as any).client_id || (u as any).demat || '', (u as any).upi_id || '', u.broker || '', u.tpin || '', u.upi_app || '', u.bank_name || '', u.avatar_url || '', 0, now, now],
+          'INSERT INTO users_table (id, name, pan_number, client_id, upi_id, broker, tpin, upi_app, bank_name, avatar_url, default_amount_blocked, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          [newId, u.name || '', u.pan_number || '', (u as any).client_id || (u as any).demat || '', (u as any).upi_id || '', u.broker || '', u.tpin || '', u.upi_app || '', u.bank_name || '', u.avatar_url || '', 0, currentUid, now, now],
           'DBContext.importCSV.insertUser'
         );
         userToId.set(key, newId);
@@ -2123,12 +2240,19 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     const now = new Date().toISOString();
     for (const bankName of bankSet) {
       if (!bankName) continue;
-      const existing = await safeGetFirstAsync(db, 'SELECT id FROM bank_accounts WHERE bank_name=?', [bankName], 'DBContext.importCSV.bank');
+      const existing = await safeGetFirstAsync(
+        db,
+        currentUid
+          ? 'SELECT id FROM bank_accounts WHERE bank_name=? AND owner_id=?'
+          : 'SELECT id FROM bank_accounts WHERE bank_name=? AND (owner_id IS NULL OR owner_id="")',
+        currentUid ? [bankName, currentUid] : [bankName],
+        'DBContext.importCSV.bank'
+      );
       if (!existing) {
         await safeRunAsync(
           db,
-          'INSERT INTO bank_accounts (id, bank_name, balance, created_at, updated_at) VALUES (?,?,?,?,?)',
-          [Crypto.randomUUID(), bankName, 0, now, now],
+          'INSERT INTO bank_accounts (id, bank_name, balance, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?)',
+          [Crypto.randomUUID(), bankName, 0, currentUid, now, now],
           'DBContext.importCSV.insertBank'
         );
       }
@@ -2138,7 +2262,14 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     const ipoNameToId = new Map<string, string>();
     for (const [name, ipo] of ipoMap) {
       if (!name) continue;
-      const existing = await safeGetFirstAsync<{ id: string }>(db, 'SELECT id FROM ipo_listings WHERE ipo_name=?', [name], 'DBContext.importCSV.ipo');
+      const existing = await safeGetFirstAsync<{ id: string }>(
+        db,
+        currentUid
+          ? 'SELECT id FROM ipo_listings WHERE ipo_name=? AND (owner_id=? OR owner_id IS NULL OR owner_id="")'
+          : 'SELECT id FROM ipo_listings WHERE ipo_name=? AND (owner_id IS NULL OR owner_id="")',
+        currentUid ? [name, currentUid] : [name],
+        'DBContext.importCSV.ipo'
+      );
       if (existing) {
         ipoNameToId.set(name, existing.id);
         if (ipo.logo_url) {
@@ -2153,8 +2284,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         const newId = Crypto.randomUUID();
         await safeRunAsync(
           db,
-          'INSERT INTO ipo_listings (id, ipo_name, buy_price, quantity, open_date, close_date, listing_date, logo_url, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
-          [newId, ipo.ipo_name || name, ipo.buy_price || 0, ipo.quantity || 0, ipo.open_date || '', ipo.close_date || '', ipo.listing_date || '', ipo.logo_url || '', now, now],
+          'INSERT INTO ipo_listings (id, ipo_name, buy_price, quantity, open_date, close_date, listing_date, logo_url, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+          [newId, ipo.ipo_name || name, ipo.buy_price || 0, ipo.quantity || 0, ipo.open_date || '', ipo.close_date || '', ipo.listing_date || '', ipo.logo_url || '', currentUid, now, now],
           'DBContext.importCSV.insertIPO'
         );
         ipoNameToId.set(name, newId);
@@ -2174,8 +2305,10 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       if (app.id && !usedCsvAppIds.has(app.id)) {
         existing = await safeGetFirstAsync<{ id: string }>(
           db,
-          'SELECT id FROM ipo_applications WHERE id = ? AND deleted_at IS NULL',
-          [app.id],
+          currentUid
+            ? 'SELECT id FROM ipo_applications WHERE id = ? AND owner_id = ? AND deleted_at IS NULL'
+            : 'SELECT id FROM ipo_applications WHERE id = ? AND (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL',
+          currentUid ? [app.id, currentUid] : [app.id],
           'DBContext.importCSV.appById'
         );
       }
@@ -2183,8 +2316,10 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       if (!existing) {
         const candidates = await safeGetAllAsync<{ id: string; status: string }>(
           db,
-          'SELECT id, status FROM ipo_applications WHERE user_id = ? AND ipo_id = ? AND deleted_at IS NULL',
-          [userId, ipoId],
+          currentUid
+            ? 'SELECT id, status FROM ipo_applications WHERE user_id = ? AND ipo_id = ? AND owner_id = ? AND deleted_at IS NULL'
+            : 'SELECT id, status FROM ipo_applications WHERE user_id = ? AND ipo_id = ? AND (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL',
+          currentUid ? [userId, ipoId, currentUid] : [userId, ipoId],
           'DBContext.importCSV.appCandidates'
         );
         const statusMatch = candidates.find((c) => !usedCsvAppIds.has(c.id) && c.status === app.status);
@@ -2243,7 +2378,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         usedCsvAppIds.add(newId);
         await safeRunAsync(
           db,
-          'INSERT INTO ipo_applications (id, user_id, ipo_id, status, shares_count, sell_price, sale_date, tax, user_cut, bank_name, upi_app, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          'INSERT INTO ipo_applications (id, user_id, ipo_id, status, shares_count, sell_price, sale_date, tax, user_cut, bank_name, upi_app, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
           [
             newId,
             userId,
@@ -2256,6 +2391,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
             app.userCut ?? 0,
             app.bank || '',
             app.upiApp || '',
+            currentUid,
             now,
             now,
           ],

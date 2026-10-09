@@ -1,6 +1,8 @@
 import { ApiClient } from '../api/ApiClient';
 import { ENDPOINTS } from '../api/Endpoints';
 import { API_BASE_URL } from '@/constants/apiConfig';
+import { getAuthHeaders } from '../api/authHeaders';
+import { ApiError } from '../api/ApiError';
 
 export interface BackendJobItem {
   id: string;
@@ -33,6 +35,18 @@ export interface BackendJobResponse {
   items: BackendJobItem[];
 }
 
+export interface AllotmentIntelligenceResponse {
+  jobId: string;
+  ipoId: string;
+  status: string;
+  summary: {
+    totalApplications: number;
+    allottedCount: number;
+    notAllottedCount: number;
+    allotmentRatePercentage: number;
+  };
+}
+
 export class AllotmentApiService {
   private apiClient: ApiClient;
 
@@ -46,21 +60,25 @@ export class AllotmentApiService {
 
   /**
    * Creates a bulk allotment check job on the backend for an IPO ID.
-   * The server loads saved PANs for the authenticated user automatically.
+   * Identity is derived exclusively from the verified Firebase token.
    */
   public async createJob(
     ipoId: string,
-    userId?: string,
+    _userId?: string,
   ): Promise<BackendJobResponse> {
-    const headers: Record<string, string> = {};
-    if (userId) {
-      headers['x-user-id'] = userId;
+    const authHeaders = await getAuthHeaders();
+    if (!authHeaders.Authorization) {
+      throw new ApiError(
+        'Authentication required to create allotment check job',
+        'UNAUTHORIZED',
+        401,
+      );
     }
 
     const response = await this.apiClient.post<BackendJobResponse>(
       ENDPOINTS.ALLOTMENT_JOBS,
       { ipoId },
-      headers,
+      authHeaders,
     );
 
     if (!response.data) {
@@ -72,20 +90,25 @@ export class AllotmentApiService {
 
   /**
    * Fetches current job status, progress, and individual items.
+   * Requires verified token matching the job owner.
    */
   public async getJob(
     jobId: string,
-    userId?: string,
+    _userId?: string,
   ): Promise<BackendJobResponse> {
-    const headers: Record<string, string> = {};
-    if (userId) {
-      headers['x-user-id'] = userId;
+    const authHeaders = await getAuthHeaders();
+    if (!authHeaders.Authorization) {
+      throw new ApiError(
+        'Authentication required to fetch allotment job',
+        'UNAUTHORIZED',
+        401,
+      );
     }
 
     const response = await this.apiClient.get<BackendJobResponse>(
       ENDPOINTS.ALLOTMENT_JOB_BY_ID(jobId),
       undefined,
-      headers,
+      authHeaders,
     );
 
     if (!response.data) {
@@ -100,17 +123,21 @@ export class AllotmentApiService {
    */
   public async retryJob(
     jobId: string,
-    userId?: string,
+    _userId?: string,
   ): Promise<BackendJobResponse> {
-    const headers: Record<string, string> = {};
-    if (userId) {
-      headers['x-user-id'] = userId;
+    const authHeaders = await getAuthHeaders();
+    if (!authHeaders.Authorization) {
+      throw new ApiError(
+        'Authentication required to retry allotment job',
+        'UNAUTHORIZED',
+        401,
+      );
     }
 
     const response = await this.apiClient.post<BackendJobResponse>(
       ENDPOINTS.ALLOTMENT_JOB_RETRY(jobId),
       {},
-      headers,
+      authHeaders,
     );
 
     if (!response.data) {
@@ -121,7 +148,35 @@ export class AllotmentApiService {
   }
 
   /**
-   * Fetches backend IPO list to resolve canonical backend IPO IDs.
+   * Retrieves aggregated intelligence for an owned allotment job.
+   */
+  public async getJobIntelligence(
+    jobId: string,
+  ): Promise<AllotmentIntelligenceResponse> {
+    const authHeaders = await getAuthHeaders();
+    if (!authHeaders.Authorization) {
+      throw new ApiError(
+        'Authentication required to fetch job intelligence',
+        'UNAUTHORIZED',
+        401,
+      );
+    }
+
+    const response = await this.apiClient.get<AllotmentIntelligenceResponse>(
+      `/api/v1/allotment/jobs/${jobId}/intelligence`,
+      undefined,
+      authHeaders,
+    );
+
+    if (!response.data) {
+      throw new Error('Failed to fetch allotment job intelligence: Empty response data');
+    }
+
+    return response.data;
+  }
+
+  /**
+   * Fetches backend IPO list to resolve canonical backend IPO IDs (Public).
    */
   public async fetchBackendIpos(): Promise<any[]> {
     const response = await this.apiClient.get<any[]>('/api/v1/ipos');

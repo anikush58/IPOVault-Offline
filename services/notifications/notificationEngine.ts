@@ -502,12 +502,21 @@ export async function registerDevicePushTokenAsync(userId: string): Promise<stri
 
     if (!pushToken) return null;
 
-    // Send token to backend API
+    // Send token to backend API with verified Bearer token
+    const { getAuthHeaders } = require('@/services/api/authHeaders');
+    const authHeaders = await getAuthHeaders();
+    if (!authHeaders.Authorization) {
+      if (__DEV__) {
+        console.log('[Push] User not authenticated; skipped backend token registration');
+      }
+      return pushToken;
+    }
+
     const response = await fetch(`${API_BASE_URL}/api/v1/notifications/push-token`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-user-id': userId,
+        ...authHeaders,
       },
       body: JSON.stringify({
         token: pushToken,
@@ -516,7 +525,7 @@ export async function registerDevicePushTokenAsync(userId: string): Promise<stri
     });
 
     if (__DEV__) {
-      console.log(`[Push] Registered push token with backend for user ${userId}: HTTP ${response.status}`);
+      console.log(`[Push] Registered push token with backend: HTTP ${response.status}`);
     }
 
     return pushToken;

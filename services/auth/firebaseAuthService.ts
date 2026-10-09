@@ -300,3 +300,18 @@ export function subscribeToAuthState(
     callback(mapFirebaseUser(user));
   });
 }
+
+/**
+ * Retrieves cryptographically signed Firebase ID token for the active session.
+ * Used for Bearer authorization in backend API requests.
+ */
+export async function getFirebaseAuthToken(forceRefresh = false): Promise<string | null> {
+  const user = firebaseAuth.currentUser;
+  if (!user) return null;
+  try {
+    return await user.getIdToken(forceRefresh);
+  } catch (err) {
+    console.warn('[firebaseAuthService] Failed to get ID token:', err);
+    return null;
+  }
+}

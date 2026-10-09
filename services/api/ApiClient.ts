@@ -1,9 +1,10 @@
 import { ApiClientConfig, MobileApiResponse } from '../../types/api';
 import { ApiError } from './ApiError';
+import { getFirebaseAuthToken } from '../auth/firebaseAuthService';
 
 export interface ApiRequestTrace {
   id: string;
-  method: 'GET' | 'POST';
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   path: string;
   fullUrl?: string;
   startTime: number;
@@ -56,6 +57,7 @@ export class ApiClient {
     path: string,
     params?: Record<string, string | number>,
     customHeaders?: Record<string, string>,
+    isRetry = false,
   ): Promise<MobileApiResponse<T>> {
     const cleanBaseUrl = this.baseUrl.replace(/\/+$/, '');
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
@@ -91,6 +93,25 @@ export class ApiClient {
       });
 
       httpStatus = response.status;
+
+      // Single 401 retry with refreshed token if previous token was expired
+      if (httpStatus === 401 && !isRetry && customHeaders?.Authorization) {
+        clearTimeout(timer);
+        try {
+          const freshToken = await getFirebaseAuthToken(true);
+          if (freshToken) {
+            return await this.get<T>(
+              path,
+              params,
+              { ...customHeaders, Authorization: `Bearer ${freshToken}` },
+              true,
+            );
+          }
+        } catch {
+          // Fall through to standard 401 error handling
+        }
+      }
+
       const body: any = await response.json();
 
       if (!response.ok || body?.success === false) {
@@ -153,6 +174,7 @@ export class ApiClient {
     path: string,
     bodyData?: unknown,
     customHeaders?: Record<string, string>,
+    isRetry = false,
   ): Promise<MobileApiResponse<T>> {
     const cleanBaseUrl = this.baseUrl.replace(/\/+$/, '');
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
@@ -176,6 +198,25 @@ export class ApiClient {
       });
 
       httpStatus = response.status;
+
+      // Single 401 retry with refreshed token if previous token was expired
+      if (httpStatus === 401 && !isRetry && customHeaders?.Authorization) {
+        clearTimeout(timer);
+        try {
+          const freshToken = await getFirebaseAuthToken(true);
+          if (freshToken) {
+            return await this.post<T>(
+              path,
+              bodyData,
+              { ...customHeaders, Authorization: `Bearer ${freshToken}` },
+              true,
+            );
+          }
+        } catch {
+          // Fall through to standard 401 error handling
+        }
+      }
+
       const body: any = await response.json();
 
       if (!response.ok || body?.success === false) {
@@ -219,6 +260,226 @@ export class ApiClient {
       ApiClient.notifyListeners({
         id: requestId,
         method: 'POST',
+        path,
+        fullUrl: url,
+        startTime,
+        endTime: Date.now(),
+        durationMs: Date.now() - startTime,
+        status: httpStatus,
+        success: httpStatus >= 200 && httpStatus < 300,
+        aborted: isAborted,
+        errorName: errName,
+        errorMessage: errMsg,
+        errorCode: errCode,
+      });
+    }
+  }
+
+  public async delete<T>(
+    path: string,
+    params?: Record<string, string | number>,
+    customHeaders?: Record<string, string>,
+    isRetry = false,
+  ): Promise<MobileApiResponse<T>> {
+    const cleanBaseUrl = this.baseUrl.replace(/\/+$/, '');
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    let url = `${cleanBaseUrl}${cleanPath}`;
+    if (params) {
+      const searchParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          searchParams.append(key, String(value));
+        }
+      });
+      const queryString = searchParams.toString();
+      if (queryString) {
+        url += `?${queryString}`;
+      }
+    }
+
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const startTime = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    let httpStatus = 0;
+    let isAborted = false;
+    let errName: string | undefined;
+    let errMsg = 'HTTP Request Failed';
+    let errCode: string | undefined;
+
+    try {
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers: { ...this.headers, ...customHeaders },
+        signal: controller.signal,
+      });
+
+      httpStatus = response.status;
+
+      if (httpStatus === 401 && !isRetry && customHeaders?.Authorization) {
+        clearTimeout(timer);
+        try {
+          const freshToken = await getFirebaseAuthToken(true);
+          if (freshToken) {
+            return await this.delete<T>(
+              path,
+              params,
+              { ...customHeaders, Authorization: `Bearer ${freshToken}` },
+              true,
+            );
+          }
+        } catch {
+          // Fall through to standard 401 error handling
+        }
+      }
+
+      const body: any = await response.json();
+
+      if (!response.ok || body?.success === false) {
+        const rawMsg =
+          typeof body?.error === 'object' && body?.error?.message
+            ? body.error.message
+            : typeof body?.message === 'string'
+            ? body.message
+            : typeof body?.error === 'string'
+            ? body.error
+            : undefined;
+        errCode = body?.error?.code || (body?.statusCode ? String(body.statusCode) : 'HTTP_ERROR');
+        errMsg = rawMsg || `HTTP ${response.status} Request Failed`;
+        throw new ApiError(
+          errMsg,
+          errCode,
+          response.status,
+          body,
+        );
+      }
+
+      return body as MobileApiResponse<T>;
+    } catch (err: unknown) {
+      isAborted = controller.signal.aborted || (err as Error)?.name === 'AbortError';
+      errName = (err as Error)?.name || 'Error';
+      errMsg = (err as Error)?.message || String(err);
+
+      if (err instanceof ApiError) {
+        httpStatus = err.status;
+        errCode = err.code;
+        throw err;
+      }
+      throw new ApiError(
+        errMsg,
+        'NETWORK_ERROR',
+        0,
+        err,
+      );
+    } finally {
+      clearTimeout(timer);
+      ApiClient.notifyListeners({
+        id: requestId,
+        method: 'DELETE',
+        path,
+        fullUrl: url,
+        startTime,
+        endTime: Date.now(),
+        durationMs: Date.now() - startTime,
+        status: httpStatus,
+        success: httpStatus >= 200 && httpStatus < 300,
+        aborted: isAborted,
+        errorName: errName,
+        errorMessage: errMsg,
+        errorCode: errCode,
+      });
+    }
+  }
+
+  public async put<T>(
+    path: string,
+    bodyData?: unknown,
+    customHeaders?: Record<string, string>,
+    isRetry = false,
+  ): Promise<MobileApiResponse<T>> {
+    const cleanBaseUrl = this.baseUrl.replace(/\/+$/, '');
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    const url = `${cleanBaseUrl}${cleanPath}`;
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const startTime = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    let httpStatus = 0;
+    let isAborted = false;
+    let errName: string | undefined;
+    let errMsg = 'HTTP Request Failed';
+    let errCode: string | undefined;
+
+    try {
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: { ...this.headers, ...customHeaders },
+        body: bodyData ? JSON.stringify(bodyData) : undefined,
+        signal: controller.signal,
+      });
+
+      httpStatus = response.status;
+
+      if (httpStatus === 401 && !isRetry && customHeaders?.Authorization) {
+        clearTimeout(timer);
+        try {
+          const freshToken = await getFirebaseAuthToken(true);
+          if (freshToken) {
+            return await this.put<T>(
+              path,
+              bodyData,
+              { ...customHeaders, Authorization: `Bearer ${freshToken}` },
+              true,
+            );
+          }
+        } catch {
+          // Fall through
+        }
+      }
+
+      const body: any = await response.json();
+
+      if (!response.ok || body?.success === false) {
+        const rawMsg =
+          typeof body?.error === 'object' && body?.error?.message
+            ? body.error.message
+            : typeof body?.message === 'string'
+            ? body.message
+            : typeof body?.error === 'string'
+            ? body.error
+            : undefined;
+        errCode = body?.error?.code || (body?.statusCode ? String(body.statusCode) : 'HTTP_ERROR');
+        errMsg = rawMsg || `HTTP ${response.status} Request Failed`;
+        throw new ApiError(
+          errMsg,
+          errCode,
+          response.status,
+          body,
+        );
+      }
+
+      return body as MobileApiResponse<T>;
+    } catch (err: unknown) {
+      isAborted = controller.signal.aborted || (err as Error)?.name === 'AbortError';
+      errName = (err as Error)?.name || 'Error';
+      errMsg = (err as Error)?.message || String(err);
+
+      if (err instanceof ApiError) {
+        httpStatus = err.status;
+        errCode = err.code;
+        throw err;
+      }
+      throw new ApiError(
+        errMsg,
+        'NETWORK_ERROR',
+        0,
+        err,
+      );
+    } finally {
+      clearTimeout(timer);
+      ApiClient.notifyListeners({
+        id: requestId,
+        method: 'PUT',
         path,
         fullUrl: url,
         startTime,

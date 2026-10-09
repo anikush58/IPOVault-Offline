@@ -8,6 +8,7 @@ import {
   sendPasswordReset,
   signOutFirebaseUser,
 } from '@/services/auth/firebaseAuthService';
+import { cancelDebouncedFirestoreSync } from '@/services/cloud/firestoreSyncService';
 
 export type AuthUser = AuthUserProfile;
 
@@ -74,6 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    cancelDebouncedFirestoreSync();
     await signOutFirebaseUser();
     setUser(null);
   };
