@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Image,
   Modal,
@@ -12,8 +12,10 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as DocumentPicker from 'expo-document-picker';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
@@ -36,12 +38,71 @@ export default function SettingsAccountScreen() {
   const [busy, setBusy] = useState(false);
   const [showManageGoogleModal, setShowManageGoogleModal] = useState(false);
   const [showUidModal, setShowUidModal] = useState(false);
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [customUsername, setCustomUsername] = useState<string | null>(null);
+
+  useEffect(() => {
+    safeAsyncStorage.getItem('@ipovault_avatar_uri').then((stored) => {
+      if (stored) setAvatarUri(stored);
+    });
+    safeAsyncStorage.getItem('@ipovault_username').then((stored) => {
+      if (stored && stored.trim()) setCustomUsername(stored.trim());
+    });
+  }, []);
+
+  const handlePickAvatar = async () => {
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+
+    if (avatarUri) {
+      showConfirm({
+        title: 'Profile Photo',
+        message: 'Choose an action for your profile photo.',
+        confirmText: 'Change Photo',
+        cancelText: 'Remove Photo',
+        onConfirm: async () => {
+          await pickImage();
+        },
+        onCancel: async () => {
+          setAvatarUri(null);
+          await safeAsyncStorage.removeItem('@ipovault_avatar_uri');
+          showSuccess('Photo Removed', 'Profile photo has been reset.');
+        },
+      });
+    } else {
+      await pickImage();
+    }
+  };
+
+  const pickImage = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['image/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets?.[0]?.uri) {
+        const uri = result.assets[0].uri;
+        setAvatarUri(uri);
+        await safeAsyncStorage.setItem('@ipovault_avatar_uri', uri);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        showSuccess('Photo Updated', 'Your profile picture has been updated.');
+      }
+    } catch (e: any) {
+      showError('Error', e?.message || 'Could not select photo.');
+    }
+  };
 
   const topPad = Platform.OS === 'web' ? 24 : insets.top;
 
-  const emailStr = authUser?.email || 'Guest User';
-  const nameStr = authUser?.displayName || (authUser?.email ? authUser.email.split('@')[0] : 'IPOVault User');
-  const initial = nameStr.charAt(0).toUpperCase();
+  const emailStr = authUser?.email?.trim() || 'Guest User';
+  const nameStr =
+    (customUsername && customUsername.trim()) ||
+    (authUser?.displayName && authUser.displayName.trim()) ||
+    (authUser?.email && authUser.email.includes('@') ? authUser.email.split('@')[0].trim() : '') ||
+    'IPOVault User';
+  const initial = (nameStr.replace(/[^a-zA-Z0-9]/g, '').charAt(0) || nameStr.charAt(0) || 'U').toUpperCase();
 
   const handleCopyUid = async () => {
     if (!authUser?.uid) return;
@@ -63,7 +124,7 @@ export default function SettingsAccountScreen() {
     }
     showConfirm({
       title: 'Reset Password',
-      message: `Send a password reset email to ${authUser.email}?`,
+      message: `Send a password reset email to\n${authUser.email}?`,
       confirmText: 'Send Email',
       cancelText: 'Cancel',
       onConfirm: async () => {
@@ -75,7 +136,7 @@ export default function SettingsAccountScreen() {
           } else {
             showSuccess(
               'Reset Link Sent',
-              `A password reset link has been sent to ${authUser.email}. Please check your email inbox to update your password.`
+              `A password reset link has been sent to\n${authUser.email}\n\nPlease check your email inbox to update your password.`
             );
           }
         } catch (e: any) {
@@ -90,7 +151,7 @@ export default function SettingsAccountScreen() {
   const handleLogout = () => {
     showConfirm({
       title: 'Log Out',
-      message: `Are you sure you want to sign out${authUser?.email ? ` (${authUser.email})` : ''}?\n\nYour cloud backup is safe. Local session data will be cleared on this device.`,
+      message: 'Are you sure you want to sign out?\n\nYour cloud backup is safe. Local session data will be cleared on this device.',
       confirmText: 'Log Out',
       cancelText: 'Cancel',
       isDanger: true,
@@ -139,7 +200,7 @@ export default function SettingsAccountScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScreenHeader
         eyebrow="SETTINGS"
-        title="Account"
+        title="Edit Profile"
         centerTitle
         showBack
       />
@@ -158,7 +219,9 @@ export default function SettingsAccountScreen() {
 
         {/* Profile Card */}
         <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={handlePickAvatar}
             style={[
               styles.avatarWrap,
               {
@@ -167,12 +230,12 @@ export default function SettingsAccountScreen() {
               },
             ]}
           >
-            {authUser?.photoURL ? (
-              <Image source={{ uri: authUser.photoURL }} style={styles.avatarImg} />
+            {avatarUri || authUser?.photoURL ? (
+              <Image source={{ uri: (avatarUri || authUser?.photoURL)! }} style={styles.avatarImg} />
             ) : (
               <Text style={[styles.avatarText, { color: '#3B82F6' }]}>{initial}</Text>
             )}
-          </View>
+          </TouchableOpacity>
 
           <View style={styles.profileInfoWrap}>
             <Text style={[styles.profileName, { color: colors.foreground }]} numberOfLines={1}>
@@ -398,7 +461,7 @@ const styles = StyleSheet.create({
   avatarImg: { width: '100%', height: '100%' },
   avatarText: { fontSize: 22, fontFamily: 'GoogleSansFlex_700Bold' },
   profileInfoWrap: { flex: 1, gap: 2 },
-  profileName: { fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.2 },
+  profileName: { fontSize: 16, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: -0.2 },
   profileEmail: { fontSize: 12.5, fontFamily: 'GoogleSansFlex_400Regular' },
   googleBadge: {
     flexDirection: 'row',
