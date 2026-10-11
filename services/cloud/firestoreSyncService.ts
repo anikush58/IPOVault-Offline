@@ -1062,11 +1062,27 @@ export async function applySecondaryDeltaToSQLite(
             'applySecondaryDelta.deleteBank'
           );
         } else {
-          const local = await db.getFirstAsync<{ updated_at: string }>(
-            'SELECT updated_at FROM bank_accounts WHERE id = ?',
+          const local = await db.getFirstAsync<{ id: string; updated_at: string }>(
+            'SELECT id, updated_at FROM bank_accounts WHERE id = ?',
             [b.id]
           );
-          if (local?.updated_at && b.updated_at && local.updated_at > b.updated_at) {
+          if (!local) {
+            // Check for matching offline account to adopt (case-insensitive & whitespace trimmed)
+            const offline = await db.getFirstAsync<{ id: string }>(
+              'SELECT id FROM bank_accounts WHERE (owner_id IS NULL OR owner_id = "") AND LOWER(TRIM(bank_name)) = LOWER(TRIM(?)) AND LOWER(TRIM(COALESCE(upi_app, ""))) = LOWER(TRIM(?)) AND deleted_at IS NULL',
+              [b.bank_name || 'Bank', b.upi_app || '']
+            );
+            if (offline) {
+              await safeRunAsync(
+                db,
+                'UPDATE bank_accounts SET id = ?, bank_name = ?, balance = ?, upi_app = ?, owner_id = ?, updated_at = ? WHERE id = ?',
+                [b.id, b.bank_name || 'Bank', b.balance || 0, b.upi_app || '', uid, b.updated_at || nowIso, offline.id],
+                'applySecondaryDelta.adoptOfflineBank'
+              );
+              count++;
+              continue;
+            }
+          } else if (local.updated_at && b.updated_at && local.updated_at > b.updated_at) {
             continue;
           }
           await safeRunAsync(
