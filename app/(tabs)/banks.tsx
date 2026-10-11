@@ -26,189 +26,13 @@ import { useTheme } from '@/context/ThemeContext';
 import { IconButton } from '@/components/ui/IconButton';
 import { useDB, type BankAccount } from '@/context/DBContext';
 import { BanksOverviewCard } from '@/components/BanksOverviewCard';
+import { BankSheet } from '@/components/BankSheet';
 import { formatCurrency } from '@/utils/formatters';
 import { calcBankSlots } from '@/utils/calculations';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const IPO_LOT_COST = 15000;
-
-// ── Balance Modal ─────────────────────────────────────────────────────────────
-
-function BankModal({
-  visible,
-  bank,
-  onClose,
-  onSave,
-}: {
-  visible: boolean;
-  bank: BankAccount | null; // null = add mode
-  onClose: () => void;
-  onSave: (name: string, balance: number, upiApp?: string) => void;
-}) {
-  const colors = useColors();
-  const { resolvedScheme } = useTheme();
-  const isDark = resolvedScheme === 'dark';
-  const isAdd = bank === null;
-
-  const [name, setName] = useState('');
-  const [balance, setBalance] = useState('');
-  const [upiApp, setUpiApp] = useState('');
-
-  const UPI_APPS = ['GPay', 'BHIM', 'PayTM', 'PhonePe', 'IDFC ASBA', 'BoB ASBA'];
-
-  React.useEffect(() => {
-    if (visible) {
-      setName(bank?.bank_name ?? '');
-      setBalance(bank ? String(bank.balance) : '');
-      setUpiApp(bank?.upi_app ?? '');
-    }
-  }, [visible, bank]);
-
-  const { showError } = useDialog();
-
-  const handleSave = () => {
-    const trimmed = name.trim();
-    const num = parseFloat(balance.replace(/,/g, ''));
-    if (isAdd && !trimmed) {
-      showError('Required', 'Enter a bank name.'); return;
-    }
-    if (isNaN(num) || num < 0) {
-      showError('Invalid', 'Enter a valid balance amount.'); return;
-    }
-    onSave(trimmed, num, upiApp);
-  };
-
-  if (!visible) return null;
-
-  return (
-    <Modal
-      visible={visible}
-      animationType="fade"
-      transparent
-      statusBarTranslucent
-      onRequestClose={onClose}
-    >
-      <Pressable style={ms.centerModalOverlay} onPress={onClose}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={{ width: '100%', alignItems: 'center' }}
-        >
-          <Pressable
-            style={[
-              ms.modalCard,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-              },
-            ]}
-            onPress={() => {}}
-          >
-            {/* Header */}
-            <View style={[ms.modalHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[ms.modalTitle, { color: colors.foreground }]}>
-                {isAdd ? 'Add Bank Account' : 'Update Bank Account'}
-              </Text>
-              <TouchableOpacity onPress={onClose} style={ms.closeBtn} hitSlop={8}>
-                <Feather name="x" size={20} color={colors.mutedForeground} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ padding: 20, gap: 14 }}
-            >
-              {isAdd && (
-                <View>
-                  <Text style={[ms.stepLabel, { color: colors.mutedForeground }]}>BANK NAME</Text>
-                  <TextInput
-                    style={[
-                      ms.input,
-                      { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground },
-                    ]}
-                    placeholder="e.g. HDFC Bank"
-                    placeholderTextColor={colors.mutedForeground}
-                    value={name}
-                    onChangeText={setName}
-                    autoCapitalize="words"
-                  />
-                </View>
-              )}
-
-              <View>
-                <Text style={[ms.stepLabel, { color: colors.mutedForeground }]}>CURRENT BALANCE (₹)</Text>
-                <TextInput
-                  style={[
-                    ms.input,
-                    { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground },
-                  ]}
-                  placeholder="e.g. 75000"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={balance}
-                  onChangeText={setBalance}
-                  keyboardType="numeric"
-                  autoFocus={!isAdd}
-                />
-              </View>
-
-              {/* BIND DEFAULT UPI APP */}
-              <View>
-                <Text style={[ms.stepLabel, { color: colors.mutedForeground }]}>BIND DEFAULT UPI APP (AUTO-SELECT IN BULK APPLY)</Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
-                  {UPI_APPS.map((app) => {
-                    const isSelected = upiApp === app;
-                    return (
-                      <TouchableOpacity
-                        key={app}
-                        onPress={() => setUpiApp(isSelected ? '' : app)}
-                        style={{
-                          paddingHorizontal: 12,
-                          paddingVertical: 6,
-                          borderRadius: 20,
-                          borderWidth: 1,
-                          borderColor: isSelected ? colors.primary : colors.border,
-                          backgroundColor: isSelected ? (isDark ? '#312E81' : '#EEF2FF') : colors.surface,
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontSize: 12,
-                            fontFamily: isSelected ? 'GoogleSansFlex_700Bold' : 'GoogleSansFlex_400Regular',
-                            color: isSelected ? colors.primary : colors.foreground,
-                          }}
-                        >
-                          {app}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {balance.length > 0 && !isNaN(parseFloat(balance)) && (
-                <View style={[ms.preview, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  <Feather name="trending-up" size={14} color={colors.primary} />
-                  <Text style={[ms.previewText, { color: colors.mutedForeground }]}>
-                    IPO capacity:{' '}
-                    <Text style={[ms.previewBold, { color: colors.primary }]}>
-                      {Math.floor(parseFloat(balance) / IPO_LOT_COST)} lots
-                    </Text>{' '}
-                    at ₹{IPO_LOT_COST.toLocaleString()} each
-                  </Text>
-                </View>
-              )}
-
-              <TouchableOpacity onPress={handleSave} style={[ms.goldBtn, { backgroundColor: colors.primary }]} activeOpacity={0.8}>
-                <Text style={[ms.goldBtnText, { color: colors.primaryForeground }]}>{isAdd ? 'Add Bank Account' : 'Save Details'}</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Pressable>
-    </Modal>
-  );
-}
 
 // ── Bank Card ─────────────────────────────────────────────────────────────────
 
@@ -522,19 +346,24 @@ export default function BanksScreen() {
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
               Add your bank accounts to track available capital and how many IPOs you can apply for.
             </Text>
-            <TouchableOpacity onPress={openAdd} style={[styles.emptyBtn, { overflow: 'hidden' }]}>
-              <LinearGradient colors={[colors.primary, colors.primaryLight]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
-              <Feather name="plus" size={16} color={colors.primaryForeground} />
+            <TouchableOpacity
+              onPress={openAdd}
+              style={[styles.emptyBtn, { backgroundColor: colors.primary }]}
+              activeOpacity={0.85}
+            >
               <Text style={[styles.emptyBtnText, { color: colors.primaryForeground }]}>Add Bank Account</Text>
             </TouchableOpacity>
           </View>
         )}
       />
 
-      <BankModal
+      <BankSheet
         visible={modalVisible}
         bank={editingBank}
-        onClose={() => setModalVisible(false)}
+        onClose={() => {
+          setModalVisible(false);
+          setEditingBank(null);
+        }}
         onSave={handleSave}
       />
     </View>
@@ -621,70 +450,6 @@ const styles = StyleSheet.create({
   emptyIcon: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   emptyTitle: { fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3, marginBottom: 8 },
   emptyText: { fontSize: 14, fontFamily: 'GoogleSansFlex_400Regular', textAlign: 'center', lineHeight: 22, marginBottom: 24 },
-  emptyBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 22, paddingVertical: 13, borderRadius: 14 },
+  emptyBtn: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 13, borderRadius: 14 },
   emptyBtnText: { color: '#fff', fontSize: 15, fontFamily: 'GoogleSansFlex_600SemiBold' },
-});
-
-// ── Modal styles ──────────────────────────────────────────────────────────────
-
-const ms = StyleSheet.create({
-  centerModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalCard: {
-    width: '100%',
-    maxWidth: 400,
-    borderRadius: 24,
-    borderWidth: 1,
-    overflow: 'hidden',
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-  },
-  modalTitle: { fontSize: 18, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
-  closeBtn: { minWidth: 36, minHeight: 36, alignItems: 'center', justifyContent: 'center' },
-  stepLabel: { fontSize: 10, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 6 },
-  input: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    minHeight: 48,
-  },
-  preview: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 16,
-  },
-  previewText: { fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', flex: 1 },
-  previewBold: { fontFamily: 'GoogleSansFlex_700Bold' },
-  goldBtn: {
-    backgroundColor: '#0F172A',
-    borderRadius: 16,
-    minHeight: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 12,
-  },
-  goldBtnText: { color: '#FFFFFF', fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 0.1 },
 });

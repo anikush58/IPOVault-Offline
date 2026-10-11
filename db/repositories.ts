@@ -17,7 +17,7 @@ export interface IUserRepository {
 
 export interface IBankRepository {
   getAll(): Promise<BankAccount[]>;
-  add(bankName: string, balance: number, upiApp?: string, ownerId?: string | null): Promise<void>;
+  add(bankName: string, balance: number, upiApp?: string, ownerId?: string | null): Promise<BankAccount>;
   updateBalance(id: string, balance: number, bankName?: string, upiApp?: string): Promise<void>;
   delete(id: string): Promise<void>;
 }
@@ -373,6 +373,20 @@ export class ApplicationRepository implements IApplicationRepository {
       userMap = new Map(usersList.map((u) => [u.id, u]));
     }
 
+    // Load bank accounts to auto-bind upi_app if bank_name is provided but upi_app is not
+    const allBanks = await safeGetAllAsync<{ bank_name: string; upi_app: string }>(
+      this.db,
+      'SELECT bank_name, upi_app FROM bank_accounts WHERE deleted_at IS NULL',
+      [],
+      'ApplicationRepository.addBulk.banks'
+    );
+    const bankUpiMap = new Map<string, string>();
+    for (const b of allBanks) {
+      if (b.bank_name && b.upi_app) {
+        bankUpiMap.set(b.bank_name.toLowerCase().trim(), b.upi_app.trim());
+      }
+    }
+
     for (const uid of userIds) {
       if (!uid) {
         if (__DEV__) console.warn('[ApplicationRepository.addBulk] Skipping empty uid');
@@ -392,7 +406,10 @@ export class ApplicationRepository implements IApplicationRepository {
         const rawUpi = typeof upiApp === 'object' && upiApp !== null ? upiApp[uid] : upiApp;
 
         const resolvedBank = rawBank && rawBank.trim() !== '' ? rawBank.trim() : (userObj?.bank_name || '');
-        const resolvedUpi = rawUpi && rawUpi.trim() !== '' ? rawUpi.trim() : (userObj?.upi_app || '');
+        let resolvedUpi = rawUpi && rawUpi.trim() !== '' ? rawUpi.trim() : (userObj?.upi_app || '');
+        if (!resolvedUpi && resolvedBank) {
+          resolvedUpi = bankUpiMap.get(resolvedBank.toLowerCase().trim()) || '';
+        }
 
         const userLots =
           typeof lotCounts === 'object' && lotCounts !== null
@@ -652,9 +669,10 @@ export class BankRepository implements IBankRepository {
     );
   }
 
-  async add(bankName: string, balance: number, upiApp?: string, ownerId?: string | null): Promise<void> {
+  async add(bankName: string, balance: number, upiApp?: string, ownerId?: string | null): Promise<BankAccount> {
     const id = Crypto.randomUUID();
     const now = getCurrentTime();
+    const trimmedUpiApp = upiApp ? upiApp.trim() : '';
     const sql = `
       INSERT INTO bank_accounts (
         id, bank_name, balance, upi_app, sync_version, sync_status, owner_id, created_at, updated_at
@@ -664,12 +682,21 @@ export class BankRepository implements IBankRepository {
       id,
       bankName.trim(),
       balance,
-      upiApp ? upiApp.trim() : '',
+      trimmedUpiApp,
       ownerId || null,
       now,
       now,
     ];
     await safeRunAsync(this.db, sql, params, 'BankRepository.add');
+    return {
+      id,
+      bank_name: bankName.trim(),
+      balance,
+      upi_app: trimmedUpiApp,
+      owner_id: ownerId || undefined,
+      created_at: now,
+      updated_at: now,
+    };
   }
 
 

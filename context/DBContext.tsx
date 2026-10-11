@@ -17,6 +17,8 @@ import {
   syncUserDataToFirestore,
   fetchUserDataFromFirestore,
   syncDeltaFromFirestore,
+  syncSingleDocUpsert,
+  syncSingleDocDelete,
   clearLocalSyncCursor,
   isCloudSyncBusy,
   persistImagesInBackground,
@@ -114,6 +116,9 @@ export type BankAccount = {
   bank_name: string;
   balance: number;
   upi_app?: string;
+  owner_id?: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 
@@ -454,7 +459,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
     const bankRows = currentUid
       ? await db.getAllAsync<BankAccount>(
-          'SELECT * FROM bank_accounts WHERE owner_id = ? AND deleted_at IS NULL ORDER BY bank_name',
+          'SELECT * FROM bank_accounts WHERE (owner_id = ? OR owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL ORDER BY bank_name',
           [currentUid]
         )
       : await db.getAllAsync<BankAccount>(
@@ -995,20 +1000,54 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
   const addBankAccount = async (bankName: string, balance: number, upiApp?: string) => {
     const repo = new BankRepository(db);
     const currentUid = authUser?.uid || authUser?.id || null;
-    await repo.add(bankName, balance, upiApp, currentUid);
+    const createdBank = await repo.add(bankName, balance, upiApp, currentUid);
     await refresh();
+    if (currentUid && createdBank?.id) {
+      syncSingleDocUpsert(currentUid, 'bankAccounts', createdBank.id, {
+        bank_name: createdBank.bank_name,
+        balance: createdBank.balance,
+        upi_app: createdBank.upi_app || '',
+      }).catch((e) => {
+        if (isDev) console.warn('[DBContext.addBankAccount] Live cloud upsert warning:', e);
+      });
+      scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
+    }
   };
 
   const updateBankBalance = async (id: string, balance: number, bankName?: string, upiApp?: string) => {
     const repo = new BankRepository(db);
     await repo.updateBalance(id, balance, bankName, upiApp);
     await refresh();
+    const currentUid = authUser?.uid || authUser?.id || null;
+    if (currentUid && id) {
+      const updatedRow = await db.getFirstAsync<BankAccount>(
+        'SELECT * FROM bank_accounts WHERE id = ?',
+        [id]
+      );
+      if (updatedRow) {
+        syncSingleDocUpsert(currentUid, 'bankAccounts', id, {
+          bank_name: updatedRow.bank_name,
+          balance: updatedRow.balance,
+          upi_app: updatedRow.upi_app || '',
+        }).catch((e) => {
+          if (isDev) console.warn('[DBContext.updateBankBalance] Live cloud upsert warning:', e);
+        });
+      }
+      scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
+    }
   };
 
   const deleteBankAccount = async (id: string) => {
     const repo = new BankRepository(db);
     await repo.delete(id);
     await refresh();
+    const currentUid = authUser?.uid || authUser?.id || null;
+    if (currentUid && id) {
+      syncSingleDocDelete(currentUid, 'bankAccounts', id).catch((e) => {
+        if (isDev) console.warn('[DBContext.deleteBankAccount] Live cloud delete warning:', e);
+      });
+      scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
+    }
   };
 
   // ── Data management ────────────────────────────────────────────────────────
@@ -1731,11 +1770,11 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
       const currentUid = authUser?.uid || null;
       const [existingBanksList, existingAppsList, existingAllotmentsList] = await Promise.all([
-        safeGetAllAsync<{ id: string; bank_name: string }>(
+        safeGetAllAsync<BankAccount>(
           db,
           currentUid
-            ? 'SELECT id, bank_name FROM bank_accounts WHERE owner_id = ?'
-            : 'SELECT id, bank_name FROM bank_accounts WHERE (owner_id IS NULL OR owner_id = "")',
+            ? 'SELECT id, bank_name, balance, upi_app, owner_id, updated_at FROM bank_accounts WHERE (owner_id = ? OR owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL'
+            : 'SELECT id, bank_name, balance, upi_app, owner_id, updated_at FROM bank_accounts WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL',
           currentUid ? [currentUid] : [],
           'importSecondaryData.prefetchBanks'
         ),
@@ -1757,9 +1796,16 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         ),
       ]);
 
-      const existingBanksByName = new Map<string, string>();
+      const existingBanksById = new Map<string, BankAccount>();
+      const existingBanksByCompositeKey = new Map<string, BankAccount>();
       for (const b of existingBanksList || []) {
-        if (b.bank_name) existingBanksByName.set(b.bank_name.trim().toLowerCase(), b.id);
+        if (b.id) existingBanksById.set(b.id, b);
+        if (b.bank_name) {
+          const compKey = `${b.bank_name.trim().toLowerCase()}:::${(b.upi_app || '').trim().toLowerCase()}`;
+          if (!existingBanksByCompositeKey.has(compKey)) {
+            existingBanksByCompositeKey.set(compKey, b);
+          }
+        }
       }
 
       const existingAppsById = new Set<string>();
@@ -1778,18 +1824,66 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           // 1. Process Banks
           for (const bank of data.banks ?? []) {
             if (!bank || !bank.bank_name) continue;
-            const bankNameKey = bank.bank_name.trim().toLowerCase();
-            const existingId = existingBanksByName.get(bankNameKey);
-            if (!existingId) {
-              const id = Crypto.randomUUID();
+            const bankName = bank.bank_name.trim();
+            const upiApp = (bank.upi_app || '').trim();
+            const compKey = `${bankName.toLowerCase()}:::${upiApp.toLowerCase()}`;
+
+            // Match 1: Stable Account ID
+            let existing = bank.id ? existingBanksById.get(bank.id) : null;
+
+            // Match 2: Composite identity (bank_name + upi_app) for offline adoption or ID-less imports
+            if (!existing) {
+              existing = existingBanksByCompositeKey.get(compKey) || null;
+            }
+
+            if (existing) {
+              const newBalance = bank.balance !== undefined && bank.balance !== null ? bank.balance : existing.balance;
+              const newUpiApp = bank.upi_app !== undefined && bank.upi_app !== null ? bank.upi_app.trim() : (existing.upi_app || '');
+              const newOwnerId = authUser?.uid || existing.owner_id || null;
+
+              await safeRunAsync(
+                db,
+                `UPDATE bank_accounts SET
+                  bank_name = ?,
+                  balance = ?,
+                  upi_app = ?,
+                  owner_id = ?,
+                  updated_at = ?
+                WHERE id = ?`,
+                [bankName, newBalance, newUpiApp, newOwnerId, now, existing.id],
+                'importSecondaryData.updateBank'
+              );
+
+              const updatedObj: BankAccount = {
+                ...existing,
+                bank_name: bankName,
+                balance: newBalance,
+                upi_app: newUpiApp,
+                owner_id: newOwnerId || undefined,
+                updated_at: now,
+              };
+              existingBanksById.set(existing.id, updatedObj);
+              existingBanksByCompositeKey.set(compKey, updatedObj);
+            } else {
+              const id = bank.id || Crypto.randomUUID();
               const balance = bank.balance ?? 0;
               await safeRunAsync(
                 db,
-                'INSERT INTO bank_accounts (id, bank_name, balance, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?)',
-                [id, bank.bank_name, balance, authUser?.uid || null, now, now],
+                'INSERT INTO bank_accounts (id, bank_name, balance, upi_app, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?)',
+                [id, bankName, balance, upiApp, authUser?.uid || null, bank.created_at || now, bank.updated_at || now],
                 'importSecondaryData.insertBank'
               );
-              existingBanksByName.set(bankNameKey, id);
+              const createdObj: BankAccount = {
+                id,
+                bank_name: bankName,
+                balance,
+                upi_app: upiApp,
+                owner_id: authUser?.uid || undefined,
+                created_at: bank.created_at || now,
+                updated_at: bank.updated_at || now,
+              };
+              existingBanksById.set(id, createdObj);
+              existingBanksByCompositeKey.set(compKey, createdObj);
               bankImported++;
             }
           }
@@ -2240,19 +2334,28 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     const now = new Date().toISOString();
     for (const bankName of bankSet) {
       if (!bankName) continue;
-      const existing = await safeGetFirstAsync(
+      const existing = await safeGetFirstAsync<{ id: string }>(
         db,
         currentUid
-          ? 'SELECT id FROM bank_accounts WHERE bank_name=? AND owner_id=?'
-          : 'SELECT id FROM bank_accounts WHERE bank_name=? AND (owner_id IS NULL OR owner_id="")',
+          ? 'SELECT id FROM bank_accounts WHERE bank_name=? AND (owner_id=? OR owner_id IS NULL OR owner_id="") AND deleted_at IS NULL'
+          : 'SELECT id FROM bank_accounts WHERE bank_name=? AND (owner_id IS NULL OR owner_id="") AND deleted_at IS NULL',
         currentUid ? [bankName, currentUid] : [bankName],
         'DBContext.importCSV.bank'
       );
-      if (!existing) {
+      if (existing) {
+        if (currentUid) {
+          await safeRunAsync(
+            db,
+            'UPDATE bank_accounts SET owner_id = COALESCE(owner_id, ?) WHERE id = ?',
+            [currentUid, existing.id],
+            'DBContext.importCSV.adoptBank'
+          );
+        }
+      } else {
         await safeRunAsync(
           db,
-          'INSERT INTO bank_accounts (id, bank_name, balance, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?)',
-          [Crypto.randomUUID(), bankName, 0, currentUid, now, now],
+          'INSERT INTO bank_accounts (id, bank_name, balance, upi_app, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?)',
+          [Crypto.randomUUID(), bankName, 0, '', currentUid, now, now],
           'DBContext.importCSV.insertBank'
         );
       }
