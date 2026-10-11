@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Animated,
   Image,
@@ -15,7 +15,7 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { useColors } from '@/hooks/useColors';
@@ -148,21 +148,37 @@ export default function SettingsScreen() {
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
-  const [avatarUri, setAvatarUri] = useState<string | null>(null);
-  const [usernameStr, setUsernameStr] = useState('anikush213');
-  const [editNameInput, setEditNameInput] = useState('anikush213');
+  const defaultDisplayName =
+    (authUser?.displayName && authUser.displayName.trim()) ||
+    (authUser?.email && authUser.email.includes('@') ? authUser.email.split('@')[0].trim() : '') ||
+    'IPOVault User';
 
-  useEffect(() => {
-    safeAsyncStorage.getItem('@ipovault_username').then((stored) => {
-      if (stored) {
-        setUsernameStr(stored);
-        setEditNameInput(stored);
-      }
-    });
-    safeAsyncStorage.getItem('@ipovault_avatar_uri').then((stored) => {
-      if (stored) setAvatarUri(stored);
-    });
-  }, []);
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [usernameStr, setUsernameStr] = useState(defaultDisplayName);
+  const [editNameInput, setEditNameInput] = useState(defaultDisplayName);
+
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      safeAsyncStorage.getItem('@ipovault_username').then((stored) => {
+        if (!isMounted) return;
+        if (stored && stored.trim()) {
+          setUsernameStr(stored.trim());
+          setEditNameInput(stored.trim());
+        } else {
+          setUsernameStr(defaultDisplayName);
+          setEditNameInput(defaultDisplayName);
+        }
+      });
+      safeAsyncStorage.getItem('@ipovault_avatar_uri').then((stored) => {
+        if (!isMounted) return;
+        setAvatarUri(stored || null);
+      });
+      return () => {
+        isMounted = false;
+      };
+    }, [defaultDisplayName])
+  );
 
   const handlePickAvatar = async () => {
     try {
@@ -210,13 +226,17 @@ export default function SettingsScreen() {
 
   const handleSaveName = async (newName: string) => {
     const trimmed = newName.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      setUsernameStr(defaultDisplayName);
+      await safeAsyncStorage.removeItem('@ipovault_username');
+      return;
+    }
     setUsernameStr(trimmed);
     await safeAsyncStorage.setItem('@ipovault_username', trimmed);
   };
 
-  const emailStr = authUser?.email || 'Guest Account (Offline)';
-  const initial = (usernameStr.charAt(0) || 'A').toUpperCase();
+  const emailStr = authUser?.email?.trim() || 'Guest Account (Offline)';
+  const initial = (usernameStr.replace(/[^a-zA-Z0-9]/g, '').charAt(0) || usernameStr.charAt(0) || 'U').toUpperCase();
 
   const navigateTo = (route: string) => {
     try {

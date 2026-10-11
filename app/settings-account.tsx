@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Image,
   Modal,
@@ -13,7 +13,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { useColors } from '@/hooks/useColors';
@@ -41,14 +41,20 @@ export default function SettingsAccountScreen() {
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [customUsername, setCustomUsername] = useState<string | null>(null);
 
-  useEffect(() => {
-    safeAsyncStorage.getItem('@ipovault_avatar_uri').then((stored) => {
-      if (stored) setAvatarUri(stored);
-    });
-    safeAsyncStorage.getItem('@ipovault_username').then((stored) => {
-      if (stored && stored.trim()) setCustomUsername(stored.trim());
-    });
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      safeAsyncStorage.getItem('@ipovault_avatar_uri').then((stored) => {
+        if (isMounted) setAvatarUri(stored || null);
+      });
+      safeAsyncStorage.getItem('@ipovault_username').then((stored) => {
+        if (isMounted) setCustomUsername(stored && stored.trim() ? stored.trim() : null);
+      });
+      return () => {
+        isMounted = false;
+      };
+    }, [])
+  );
 
   const handlePickAvatar = async () => {
     try {
