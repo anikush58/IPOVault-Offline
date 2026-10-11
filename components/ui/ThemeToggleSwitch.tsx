@@ -14,9 +14,9 @@ export function ThemeToggleSwitch({ size = 'md' }: ThemeToggleSwitchProps) {
   const isDark = resolvedScheme === 'dark';
   const colors = useColors();
 
-  const trackWidth = size === 'sm' ? 54 : 62;
-  const trackHeight = size === 'sm' ? 28 : 32;
-  const thumbSize = size === 'sm' ? 22 : 26;
+  const trackWidth = size === 'sm' ? 56 : 64;
+  const trackHeight = size === 'sm' ? 30 : 34;
+  const thumbSize = size === 'sm' ? 24 : 28;
   const padding = 3;
   const travelDistance = trackWidth - thumbSize - padding * 2;
 
@@ -25,15 +25,17 @@ export function ThemeToggleSwitch({ size = 'md' }: ThemeToggleSwitchProps) {
   useEffect(() => {
     Animated.spring(anim, {
       toValue: isDark ? 1 : 0,
-      damping: 18,
-      stiffness: 220,
+      damping: 17,
+      stiffness: 240,
       mass: 0.8,
       useNativeDriver: true,
     }).start();
   }, [isDark]);
 
   const toggle = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch {}
     setPreference(isDark ? 'light' : 'dark');
   };
 
@@ -42,32 +44,39 @@ export function ThemeToggleSwitch({ size = 'md' }: ThemeToggleSwitchProps) {
     outputRange: [0, travelDistance],
   });
 
+  const rotate = anim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '180deg'],
+  });
+
   return (
     <TouchableOpacity
-      activeOpacity={0.85}
+      activeOpacity={0.88}
       onPress={toggle}
+      accessibilityRole="switch"
+      accessibilityLabel={`Switch to ${isDark ? 'light' : 'dark'} mode`}
       style={[
         styles.track,
         {
           width: trackWidth,
           height: trackHeight,
           borderRadius: trackHeight / 2,
-          backgroundColor: isDark ? '#1E232D' : '#F1F3F7',
-          borderColor: isDark ? '#333D4B' : '#E2E8F0',
+          backgroundColor: isDark ? '#0F172A' : '#F1F5F9',
+          borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)',
         },
       ]}
     >
-      {/* Sun Icon Placeholder on Left */}
-      <View style={[styles.iconSlot, { left: padding, width: thumbSize, height: thumbSize }]}>
-        <Feather name="sun" size={size === 'sm' ? 12.5 : 14.5} color={isDark ? '#64748B' : '#F59E0B'} />
+      {/* Background Sun Placeholder (Left) */}
+      <View style={[styles.iconSlot, { left: padding + 1, width: thumbSize, height: thumbSize }]}>
+        <Feather name="sun" size={size === 'sm' ? 12 : 13.5} color={isDark ? '#475569' : '#F59E0B'} />
       </View>
 
-      {/* Moon Icon Placeholder on Right */}
-      <View style={[styles.iconSlot, { right: padding, width: thumbSize, height: thumbSize }]}>
-        <Feather name="moon" size={size === 'sm' ? 12.5 : 14.5} color={isDark ? '#93C5FD' : '#94A3B8'} />
+      {/* Background Moon Placeholder (Right) */}
+      <View style={[styles.iconSlot, { right: padding + 1, width: thumbSize, height: thumbSize }]}>
+        <Feather name="moon" size={size === 'sm' ? 12 : 13.5} color={isDark ? '#38BDF8' : '#94A3B8'} />
       </View>
 
-      {/* Animated Sliding Thumb */}
+      {/* Animated Floating Thumb */}
       <Animated.View
         style={[
           styles.thumb,
@@ -76,21 +85,23 @@ export function ThemeToggleSwitch({ size = 'md' }: ThemeToggleSwitchProps) {
             height: thumbSize,
             borderRadius: thumbSize / 2,
             transform: [{ translateX }],
-            backgroundColor: isDark ? '#0F172A' : '#FFFDF5',
-            borderColor: isDark ? 'rgba(56, 189, 248, 0.3)' : '#FDE68A',
-            shadowColor: isDark ? '#000000' : '#D97706',
-            shadowOpacity: isDark ? 0.35 : 0.18,
-            shadowRadius: 3,
+            backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+            borderColor: isDark ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 0, 0, 0.06)',
+            shadowColor: isDark ? '#000000' : '#000000',
+            shadowOpacity: isDark ? 0.45 : 0.12,
+            shadowRadius: 3.5,
             shadowOffset: { width: 0, height: 1.5 },
-            elevation: 2,
+            elevation: 3,
           },
         ]}
       >
-        {isDark ? (
-          <Feather name="moon" size={size === 'sm' ? 12.5 : 14.5} color="#60A5FA" />
-        ) : (
-          <Feather name="sun" size={size === 'sm' ? 12.5 : 14.5} color="#D97706" />
-        )}
+        <Animated.View style={{ transform: [{ rotate }] }}>
+          {isDark ? (
+            <Feather name="moon" size={size === 'sm' ? 13 : 14.5} color="#38BDF8" />
+          ) : (
+            <Feather name="sun" size={size === 'sm' ? 13 : 14.5} color="#F59E0B" />
+          )}
+        </Animated.View>
       </Animated.View>
     </TouchableOpacity>
   );

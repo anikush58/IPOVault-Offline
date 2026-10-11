@@ -346,7 +346,7 @@ const styles = StyleSheet.create({
   },
   rowTitle: {
     fontSize: 14.5,
-    fontFamily: 'GoogleSansFlex_700Bold',
+    fontFamily: 'GoogleSansFlex_600SemiBold',
     letterSpacing: -0.1,
   },
   rowSub: {
@@ -373,7 +373,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 18,
-    fontFamily: 'GoogleSansFlex_700Bold',
+    fontFamily: 'GoogleSansFlex_600SemiBold',
     letterSpacing: -0.3,
   },
   modalSubTitle: {

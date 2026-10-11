@@ -3,6 +3,7 @@ import {
   Animated,
   DeviceEventEmitter,
   Image,
+  Keyboard,
   Platform,
   ScrollView,
   StyleSheet,
@@ -80,11 +81,16 @@ export default function IPOManagementScreen() {
 
   const toggleSearch = () => {
     if (showSearch) {
+      Keyboard.dismiss();
+      searchRef.current?.blur();
       setShowSearch(false);
       setSearchQuery('');
     } else {
       setShowSearch(true);
-      setTimeout(() => searchRef.current?.focus(), 100);
+      requestAnimationFrame(() => {
+        searchRef.current?.focus();
+      });
+      setTimeout(() => searchRef.current?.focus(), 80);
     }
   };
 
@@ -249,8 +255,8 @@ export default function IPOManagementScreen() {
                 autoCorrect={false}
               />
               {searchQuery.length > 0 && (
-                <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-                  <Feather name="x-circle" size={15} color={colors.mutedForeground} />
+                <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10}>
+                  <Feather name="x-circle" size={18} color={colors.mutedForeground} />
                 </TouchableOpacity>
               )}
             </View>

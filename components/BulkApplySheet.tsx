@@ -497,7 +497,22 @@ export function BulkApplySheet({ visible, onClose }: Props) {
 
             {/* Header - Left aligned heading with clean top spacing below scoop */}
             <View style={styles.sheetHeader}>
-              <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Bulk Application Creator</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                <View
+                  style={[
+                    styles.headerIconWrap,
+                    { backgroundColor: colors.primary + '18' },
+                  ]}
+                >
+                  <Feather name="layers" size={18} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Bulk Application Creator</Text>
+                  <Text style={[styles.sheetSubtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
+                    Apply across multiple investor profiles
+                  </Text>
+                </View>
+              </View>
             </View>
 
             <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 13, gap: 12 }}>
@@ -701,6 +716,12 @@ export function BulkApplySheet({ visible, onClose }: Props) {
                     key={bName}
                     onPress={() => {
                       setBulkBankName(bName);
+                      const matched = bankAccounts.find(
+                        (b) => b.bank_name.toLowerCase().trim() === bName.toLowerCase().trim()
+                      );
+                      if (matched?.upi_app) {
+                        setBulkUPIApp(matched.upi_app);
+                      }
                       setShowBankPicker(false);
                     }}
                     style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: bulkBankName === bName ? (isDark ? '#27272A' : '#F1F5F9') : 'transparent' }]}
@@ -768,10 +789,18 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'center',
     paddingHorizontal: 20,
-    paddingTop: 38,
+    paddingTop: 36,
     paddingBottom: 12,
   },
-  sheetTitle: { fontSize: 18, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3, textAlign: 'left' },
+  headerIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetTitle: { fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3, textAlign: 'left' },
+  sheetSubtitle: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 1 },
   closeBtn: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   stepLabel: { fontSize: 10, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 6 },
   pickerTrigger: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 48 },

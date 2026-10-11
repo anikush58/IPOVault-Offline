@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -93,64 +94,69 @@ export function ScoopedBottomSheet({
           onPress={handleClose}
         />
 
-        <Pressable
-          onLayout={(e) => {
-            const { width, height } = e.nativeEvent.layout;
-            setSheetWidth(width);
-            setSheetHeight(height);
-          }}
-          style={[
-            styles.sheetContainer,
-            {
-              maxHeight: maxHeight as any,
-              paddingBottom: bottomPad,
-            },
-            style,
-          ]}
-          onPress={() => {}}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardAvoid}
         >
-          {/* Scooped SVG Background */}
-          {sheetWidth > 0 && sheetHeight > 0 && (
-            <Svg
-              width={sheetWidth}
-              height={sheetHeight}
-              style={StyleSheet.absoluteFill}
-              pointerEvents="none"
-            >
-              <Path
-                d={getScoopedPath(sheetWidth, sheetHeight)}
-                fill={colors.background}
-                stroke={colors.border}
-                strokeWidth={1}
-              />
-            </Svg>
-          )}
-
-          {/* Floating Scooped Close Cross Button */}
-          {showCloseButton && (
-            <View style={styles.closeBtnWrapper} pointerEvents="box-none">
-              <TouchableOpacity
-                onPress={handleClose}
-                activeOpacity={0.8}
-                hitSlop={8}
-                style={[
-                  styles.closeCircleBtn,
-                  {
-                    backgroundColor: isDark ? colors.card : '#FFFFFF',
-                    borderColor: colors.border,
-                  },
-                ]}
+          <Pressable
+            onLayout={(e) => {
+              const { width, height } = e.nativeEvent.layout;
+              setSheetWidth(width);
+              setSheetHeight(height);
+            }}
+            style={[
+              styles.sheetContainer,
+              {
+                maxHeight: maxHeight as any,
+                paddingBottom: bottomPad,
+              },
+              style,
+            ]}
+            onPress={() => {}}
+          >
+            {/* Scooped SVG Background */}
+            {sheetWidth > 0 && sheetHeight > 0 && (
+              <Svg
+                width={sheetWidth}
+                height={sheetHeight}
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
               >
-                <Feather name="x" size={21} color={colors.foreground} />
-              </TouchableOpacity>
-            </View>
-          )}
+                <Path
+                  d={getScoopedPath(sheetWidth, sheetHeight)}
+                  fill={colors.background}
+                  stroke={colors.border}
+                  strokeWidth={1}
+                />
+              </Svg>
+            )}
 
-          {/* Sheet Content */}
-          <View style={styles.contentContainer}>
-            {children}
-          </View>
-        </Pressable>
+            {/* Floating Scooped Close Cross Button */}
+            {showCloseButton && (
+              <View style={styles.closeBtnWrapper} pointerEvents="box-none">
+                <TouchableOpacity
+                  onPress={handleClose}
+                  activeOpacity={0.8}
+                  hitSlop={8}
+                  style={[
+                    styles.closeCircleBtn,
+                    {
+                      backgroundColor: isDark ? colors.card : '#FFFFFF',
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <Feather name="x" size={21} color={colors.foreground} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Sheet Content */}
+            <View style={styles.contentContainer}>
+              {children}
+            </View>
+          </Pressable>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
@@ -159,6 +165,10 @@ export function ScoopedBottomSheet({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
+    justifyContent: 'flex-end',
+  },
+  keyboardAvoid: {
+    width: '100%',
     justifyContent: 'flex-end',
   },
   sheetContainer: {

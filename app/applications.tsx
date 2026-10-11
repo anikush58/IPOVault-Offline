@@ -3,6 +3,7 @@ import {
   Animated,
   DeviceEventEmitter,
   FlatList,
+  Keyboard,
   Platform,
   Pressable,
   RefreshControl,
@@ -152,20 +153,26 @@ export default function ApplicationsScreen() {
 
   const toggleSearch = () => {
     if (showSearch) {
+      Keyboard.dismiss();
+      searchRef.current?.blur();
       Animated.timing(searchAnim, { toValue: 0, duration: 180, useNativeDriver: false }).start();
       setShowSearch(false);
       setSearchQuery('');
     } else {
       setShowSearch(true);
-      Animated.timing(searchAnim, { toValue: 1, duration: 220, useNativeDriver: false }).start(() =>
-        searchRef.current?.focus(),
-      );
+      Animated.timing(searchAnim, { toValue: 1, duration: 200, useNativeDriver: false }).start();
+      requestAnimationFrame(() => {
+        searchRef.current?.focus();
+      });
+      setTimeout(() => {
+        searchRef.current?.focus();
+      }, 80);
     }
   };
 
   const searchBarHeight = searchAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, 52],
+    outputRange: [0, 54],
   });
   const searchBarOpacity = searchAnim.interpolate({
     inputRange: [0, 0.4, 1],
@@ -365,8 +372,8 @@ export default function ApplicationsScreen() {
             autoCorrect={false}
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-              <Feather name="x-circle" size={14} color={colors.mutedForeground} />
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10}>
+              <Feather name="x-circle" size={18} color={colors.mutedForeground} />
             </TouchableOpacity>
           )}
         </View>
@@ -374,11 +381,17 @@ export default function ApplicationsScreen() {
 
       {/* SectionList with Sticky Tab Pills Header */}
       <SectionList
+        style={{ flex: 1 }}
         sections={[{ title: 'Applications', data: filtered }]}
         keyExtractor={(item) => item.id.toString()}
         stickySectionHeadersEnabled={true}
         refreshControl={
-          <RefreshControl refreshing={isLoading} onRefresh={refresh} tintColor={colors.primary} />
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={refresh}
+            tintColor={colors.primary}
+            progressViewOffset={showSearch ? 52 : 0}
+          />
         }
         ListHeaderComponent={() => (
           <View>
@@ -668,18 +681,19 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   searchBar: {
     borderBottomWidth: 0,
-    justifyContent: 'center',
     paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
     overflow: 'hidden',
   },
   searchInner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 12,
-    height: 38,
+    height: 42,
   },
   searchInput: {
     flex: 1,

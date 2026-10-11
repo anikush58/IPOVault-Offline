@@ -276,7 +276,7 @@ export function AddIPOModal({ visible, onClose }: Props) {
       <View style={[styles.flex, { backgroundColor: colors.background }]}>
         <KeyboardAvoidingView
           style={[styles.flex, { backgroundColor: colors.background }]}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           {/* Header */}
           <View style={[styles.header, { paddingTop: topPad + 14, borderBottomColor: colors.border, backgroundColor: colors.background }]}>
@@ -365,9 +365,9 @@ export function AddIPOModal({ visible, onClose }: Props) {
 
             {/* Numeric fields */}
             {[
-              { label: 'Cut-off Price (₹) *', value: price, setter: setPrice, placeholder: 'e.g. 360', numeric: true },
-              { label: 'Lot Size (Qty) *', value: qty, setter: setQty, placeholder: 'e.g. 40', numeric: true },
-            ].map(({ label, value, setter, placeholder, numeric }) => (
+              { label: 'Cut-off Price (₹) *', value: price, setter: setPrice, placeholder: 'e.g. 360', keyboardType: 'decimal-pad' as const },
+              { label: 'Lot Size (Qty) *', value: qty, setter: setQty, placeholder: 'e.g. 40', keyboardType: 'number-pad' as const },
+            ].map(({ label, value, setter, placeholder, keyboardType }) => (
               <View key={label} style={styles.field}>
                 <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>{label}</Text>
                 <TextInput
@@ -376,7 +376,7 @@ export function AddIPOModal({ visible, onClose }: Props) {
                   onChangeText={setter}
                   placeholder={placeholder}
                   placeholderTextColor={colors.mutedForeground}
-                  keyboardType={numeric ? 'decimal-pad' : 'default'}
+                  keyboardType={keyboardType}
                 />
               </View>
             ))}

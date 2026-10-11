@@ -4,6 +4,7 @@ import {
   Animated,
   DeviceEventEmitter,
   FlatList,
+  Keyboard,
   LayoutAnimation,
   Platform,
   Pressable,
@@ -183,38 +184,56 @@ export default function ApplicationsScreen() {
     extrapolate: 'clamp',
   });
 
-  const stickyTabsOpacity = scrollY.interpolate({
-    inputRange: [Math.max(0, listHeaderHeight - 8), Math.max(1, listHeaderHeight)],
-    outputRange: [0, 1],
-    extrapolate: 'clamp',
-  });
+  const stickyTabsOpacity = React.useMemo(() => {
+    return scrollY.interpolate({
+      inputRange: [Math.max(0, listHeaderHeight - 8), Math.max(1, listHeaderHeight)],
+      outputRange: [0, 1],
+      extrapolate: 'clamp',
+    });
+  }, [scrollY, listHeaderHeight]);
 
-  const inListTabsOpacity = scrollY.interpolate({
-    inputRange: [Math.max(0, listHeaderHeight - 8), Math.max(1, listHeaderHeight)],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
-  });
+  const inListTabsOpacity = React.useMemo(() => {
+    return scrollY.interpolate({
+      inputRange: [Math.max(0, listHeaderHeight - 8), Math.max(1, listHeaderHeight)],
+      outputRange: [1, 0],
+      extrapolate: 'clamp',
+    });
+  }, [scrollY, listHeaderHeight]);
 
   const toggleSearch = () => {
     if (showSearch) {
+      Keyboard.dismiss();
+      searchRef.current?.blur();
       Animated.timing(searchAnim, { toValue: 0, duration: 180, useNativeDriver: false }).start();
       setShowSearch(false);
       setSearchQuery('');
     } else {
       setShowSearch(true);
-      Animated.timing(searchAnim, { toValue: 1, duration: 220, useNativeDriver: false }).start(() =>
-        searchRef.current?.focus(),
-      );
+      Animated.timing(searchAnim, { toValue: 1, duration: 200, useNativeDriver: false }).start();
+      requestAnimationFrame(() => {
+        searchRef.current?.focus();
+      });
+      setTimeout(() => {
+        searchRef.current?.focus();
+      }, 80);
     }
   };
 
   const searchBarHeight = searchAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, 52],
+    outputRange: [0, 54],
   });
   const searchBarOpacity = searchAnim.interpolate({
     inputRange: [0, 0.4, 1],
     outputRange: [0, 0, 1],
+  });
+  const searchSpacerHeight = searchAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 48],
+  });
+  const stickyTabsTop = searchAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [topPad + 56, topPad + 110],
   });
 
   const hasFilter = filterUserIds.length > 0 || filterBrokers.length > 0 || filterIpoNames.length > 0 || filterBankNames.length > 0;
@@ -554,8 +573,8 @@ export default function ApplicationsScreen() {
               autoCorrect={false}
             />
             {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-                <Feather name="x-circle" size={14} color={colors.mutedForeground} />
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10}>
+                <Feather name="x-circle" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             )}
           </View>
@@ -567,26 +586,30 @@ export default function ApplicationsScreen() {
         style={[
           styles.floatingStickyTabsBar,
           {
-            top: topPad + 56,
-            opacity: stickyTabsOpacity,
+            top: stickyTabsTop,
           },
         ]}
         pointerEvents="box-none"
       >
-        <BlurView
-          intensity={Platform.OS === 'ios' ? 90 : 75}
-          tint={isDark ? 'dark' : 'light'}
-          style={StyleSheet.absoluteFill}
-        />
-        <LinearGradient
-          colors={
-            isDark
-              ? ['rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.40)']
-              : ['rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.40)']
-          }
-          style={StyleSheet.absoluteFill}
-        />
-        {renderTabPills()}
+        <Animated.View
+          style={{ opacity: stickyTabsOpacity }}
+          pointerEvents="box-none"
+        >
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 90 : 75}
+            tint={isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.40)']
+                : ['rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.40)']
+            }
+            style={StyleSheet.absoluteFill}
+          />
+          {renderTabPills()}
+        </Animated.View>
       </Animated.View>
 
       {/* SectionList with Smooth Blurred Stickiness */}
@@ -601,7 +624,7 @@ export default function ApplicationsScreen() {
         )}
         scrollEventThrottle={16}
         contentContainerStyle={{
-          paddingTop: topPad + 68,
+          paddingTop: topPad + 56,
           paddingBottom: insets.bottom + (isSelectionMode ? 170 : 90),
         }}
         refreshControl={
@@ -611,11 +634,23 @@ export default function ApplicationsScreen() {
               await Promise.all([refresh(), loadBrokerPortfolio()]);
             }}
             tintColor={colors.primary}
-            progressViewOffset={topPad + 60}
+            progressViewOffset={topPad + (showSearch ? 110 : 56)}
           />
         }
         ListHeaderComponent={() => (
-          <View onLayout={(e) => setListHeaderHeight(e.nativeEvent.layout.height)}>
+          <View>
+            {/* Animated search spacer to shift content down seamlessly */}
+            <Animated.View style={{ height: searchSpacerHeight }} />
+
+            <View
+              onLayout={(e) => {
+                const h = Math.round(e.nativeEvent.layout.height);
+                if (h > 0 && Math.abs(h - listHeaderHeight) > 4) {
+                  setListHeaderHeight(h);
+                }
+              }}
+            >
+
             {/* Active filter chip */}
             {hasFilter && (
               <View style={[styles.filterBar, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
@@ -647,6 +682,7 @@ export default function ApplicationsScreen() {
                 <Text style={[styles.checkAllotmentBtnText, { color: colors.primaryForeground }]}>🔍 Check Allotment</Text>
               </TouchableOpacity>
             )}
+            </View>
           </View>
         )}
         renderSectionHeader={() => (
@@ -842,18 +878,19 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   searchBar: {
     borderBottomWidth: 0,
-    justifyContent: 'center',
     paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
     overflow: 'hidden',
   },
   searchInner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 12,
-    height: 38,
+    height: 42,
   },
   searchInput: {
     flex: 1,

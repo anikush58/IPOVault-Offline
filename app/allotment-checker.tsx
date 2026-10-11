@@ -2163,42 +2163,73 @@ export default function AllotmentCheckerScreen() {
     >
       {/* Full Screen Background Graphic for Idle State */}
       {!selectedIpo && (
-        <Image
-          source={ALLOTMENT_HERO_GRAPHIC}
-          style={StyleSheet.absoluteFillObject}
-          resizeMode="cover"
-        />
+        <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+          <Image
+            source={ALLOTMENT_HERO_GRAPHIC}
+            style={StyleSheet.absoluteFillObject}
+            resizeMode="cover"
+          />
+          {isDark && (
+            <View
+              style={[
+                StyleSheet.absoluteFillObject,
+                { backgroundColor: 'rgba(15, 23, 42, 0.78)' },
+              ]}
+            />
+          )}
+        </View>
       )}
 
       {/* Top Header */}
       <View style={styles.header}>
-        <IconButton
-          name="arrow-left"
-          variant="surface"
-          size="md"
-          onPress={() => {
-            if (selectedIpo) {
-              handleSwitchIpo();
-            } else {
-              router.back();
-            }
-          }}
-        />
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <View style={styles.headerSideLeft}>
+          <IconButton
+            name="arrow-left"
+            variant="surface"
+            size="md"
+            onPress={() => {
+              if (selectedIpo) {
+                handleSwitchIpo();
+              } else {
+                router.back();
+              }
+            }}
+          />
+        </View>
+        <View style={styles.headerCenter}>
           <Text style={[styles.headerEyebrow, { color: colors.mutedForeground }]}>
             IPO
           </Text>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+          <Text
+            style={[styles.headerTitle, { color: colors.foreground }]}
+            numberOfLines={1}
+          >
             Allotment Checker
           </Text>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <IconButton
-            name="award"
-            variant="surface"
-            size="md"
+        <View style={styles.headerSideRight}>
+          <TouchableOpacity
+            style={[
+              styles.historyHeaderBtn,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+              },
+            ]}
             onPress={() => setShowHistoryModal(true)}
-          />
+            activeOpacity={0.8}
+            hitSlop={6}
+          >
+            <Feather name="clock" size={18} color={colors.foreground} />
+            <View
+              style={[
+                styles.historyTickBadge,
+                { backgroundColor: '#10B981', borderColor: colors.card },
+              ]}
+            >
+              <Feather name="check" size={8} color="#FFFFFF" />
+            </View>
+          </TouchableOpacity>
           <IconButton
             name="terminal"
             variant={showDiagnostics ? 'primary' : 'surface'}
@@ -2211,7 +2242,11 @@ export default function AllotmentCheckerScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: 8 },
+          !selectedIpo && styles.scrollContentIdle,
+          {
+            paddingTop: 8,
+            paddingBottom: Platform.OS === 'web' ? 24 : insets.bottom + 16,
+          },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -2254,18 +2289,157 @@ export default function AllotmentCheckerScreen() {
                 </Text>
               </View>
             </View>
-            <View
-              style={[
-                styles.ipoSelectorChevronWrap,
-                {
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#F8FAFC',
-                  borderColor: colors.border,
-                },
-              ]}
-            >
-              <Feather name="chevron-down" size={18} color={colors.foreground} />
-            </View>
+            <Feather
+              name="chevron-down"
+              size={20}
+              color={colors.mutedForeground}
+              style={{ marginLeft: 8, marginRight: 2 }}
+            />
           </TouchableOpacity>
+        )}
+
+        {/* Idle Spacer to push intro/trust content to bottom 30% */}
+        {!selectedIpo && <View style={{ flex: 1, minHeight: 32 }} />}
+
+        {/* Idle Intro & Trust Section (Bottom 30%) */}
+        {!selectedIpo && (
+          <View style={styles.idleBottomHeroContainer}>
+            <View style={styles.idleHeroTextWrap}>
+              <Text
+                style={[
+                  styles.idleHeroTitle,
+                  { color: isDark ? '#FFFFFF' : '#0F172A' },
+                ]}
+              >
+                Check Your IPO Allotment
+              </Text>
+              <Text
+                style={[
+                  styles.idleHeroSubtitle,
+                  { color: isDark ? '#94A3B8' : '#64748B' },
+                ]}
+              >
+                Enter your PAN and application details to instantly check your IPO allotment status.
+              </Text>
+            </View>
+
+            {/* Trust Badges */}
+            <View style={styles.trustBadgesRow}>
+              {/* Badge 1: Secure & Private */}
+              <View style={styles.trustBadgeItem}>
+                <Ionicons
+                  name="shield-checkmark-outline"
+                  size={24}
+                  color={isDark ? '#38BDF8' : '#1E293B'}
+                  style={styles.trustBadgeIcon}
+                />
+                <View style={styles.trustBadgeTextWrap}>
+                  <Text
+                    style={[
+                      styles.trustBadgeTitle,
+                      { color: isDark ? '#F1F5F9' : '#0F172A' },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    Secure & Private
+                  </Text>
+                  <Text
+                    style={[
+                      styles.trustBadgeSubtitle,
+                      { color: isDark ? '#94A3B8' : '#64748B' },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    Your data is protected
+                  </Text>
+                </View>
+              </View>
+
+              {/* Vertical Divider */}
+              <View
+                style={[
+                  styles.trustBadgeDivider,
+                  {
+                    backgroundColor: isDark
+                      ? 'rgba(255, 255, 255, 0.15)'
+                      : '#CBD5E1',
+                  },
+                ]}
+              />
+
+              {/* Badge 2: Fast & Accurate */}
+              <View style={styles.trustBadgeItem}>
+                <Ionicons
+                  name="flash-outline"
+                  size={24}
+                  color={isDark ? '#FBBF24' : '#1E293B'}
+                  style={styles.trustBadgeIcon}
+                />
+                <View style={styles.trustBadgeTextWrap}>
+                  <Text
+                    style={[
+                      styles.trustBadgeTitle,
+                      { color: isDark ? '#F1F5F9' : '#0F172A' },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    Fast & Accurate
+                  </Text>
+                  <Text
+                    style={[
+                      styles.trustBadgeSubtitle,
+                      { color: isDark ? '#94A3B8' : '#64748B' },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    Get results in seconds
+                  </Text>
+                </View>
+              </View>
+
+              {/* Vertical Divider */}
+              <View
+                style={[
+                  styles.trustBadgeDivider,
+                  {
+                    backgroundColor: isDark
+                      ? 'rgba(255, 255, 255, 0.15)'
+                      : '#CBD5E1',
+                  },
+                ]}
+              />
+
+              {/* Badge 3: All Major Registrars */}
+              <View style={styles.trustBadgeItem}>
+                <Feather
+                  name="globe"
+                  size={21}
+                  color={isDark ? '#34D399' : '#1E293B'}
+                  style={styles.trustBadgeIcon}
+                />
+                <View style={styles.trustBadgeTextWrap}>
+                  <Text
+                    style={[
+                      styles.trustBadgeTitle,
+                      { color: isDark ? '#F1F5F9' : '#0F172A' },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    All Major Registrars
+                  </Text>
+                  <Text
+                    style={[
+                      styles.trustBadgeSubtitle,
+                      { color: isDark ? '#94A3B8' : '#64748B' },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    KFintech, MUFG, Link Intime
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
         )}
 
         {/* Selected IPO Info Card (Shown when an IPO is selected) */}
@@ -3011,7 +3185,17 @@ export default function AllotmentCheckerScreen() {
           >
             <View style={[styles.pickerModalHeader, { borderBottomColor: colors.border }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Feather name="clock" size={18} color={colors.primary} />
+                <View style={{ position: 'relative' }}>
+                  <Feather name="clock" size={18} color={colors.primary} />
+                  <View
+                    style={[
+                      styles.modalHistoryTickBadge,
+                      { backgroundColor: '#10B981', borderColor: colors.card },
+                    ]}
+                  >
+                    <Feather name="check" size={7} color="#FFFFFF" />
+                  </View>
+                </View>
                 <Text style={[styles.pickerModalTitle, { color: colors.foreground }]}>
                   Allotment History
                 </Text>
@@ -3284,6 +3468,55 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
+  },
+  headerSideLeft: {
+    width: 96,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  headerSideRight: {
+    width: 96,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  historyHeaderBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  historyTickBadge: {
+    position: 'absolute',
+    right: 7,
+    bottom: 7,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalHistoryTickBadge: {
+    position: 'absolute',
+    right: -5,
+    bottom: -3,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerEyebrow: {
     fontSize: 10,
@@ -3742,25 +3975,73 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 8,
   },
-  emptyHeroContainer: {
-    alignItems: 'center',
-    paddingTop: 66,
-    paddingBottom: 24,
-    paddingHorizontal: 8,
-    gap: 12,
+  scrollContentIdle: {
+    flexGrow: 1,
+    justifyContent: 'space-between',
   },
-  emptyHeroTitle: {
-    fontSize: 20,
+  idleBottomHeroContainer: {
+    width: '100%',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    paddingTop: 16,
+    paddingBottom: 8,
+    marginBottom: 20,
+    gap: 16,
+  },
+  idleHeroTextWrap: {
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+  },
+  idleHeroTitle: {
+    fontSize: 22,
     fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.3,
+    letterSpacing: -0.4,
     textAlign: 'center',
   },
-  emptyHeroSubtitle: {
-    fontSize: 13,
+  idleHeroSubtitle: {
+    fontSize: 13.5,
     fontFamily: 'GoogleSansFlex_400Regular',
     textAlign: 'center',
-    lineHeight: 19,
-    maxWidth: 320,
+    lineHeight: 19.5,
+    maxWidth: 340,
+  },
+  trustBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingTop: 4,
+    paddingHorizontal: 2,
+  },
+  trustBadgeItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 2,
+  },
+  trustBadgeIcon: {
+    flexShrink: 0,
+  },
+  trustBadgeTextWrap: {
+    flex: 1,
+    gap: 1.5,
+  },
+  trustBadgeTitle: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.2,
+  },
+  trustBadgeSubtitle: {
+    fontSize: 9.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    lineHeight: 12,
+  },
+  trustBadgeDivider: {
+    width: 1,
+    height: 24,
+    marginHorizontal: 3,
   },
   celebrationModalOverlay: {
     flex: 1,

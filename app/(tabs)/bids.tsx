@@ -932,7 +932,7 @@ export default function BidsScreen() {
                         <TextInput
                           value={allottedShares}
                           onChangeText={setAllottedShares}
-                          keyboardType="numeric"
+                          keyboardType="number-pad"
                           style={[styles.sharesInput, { borderColor: colors.border, backgroundColor: colors.card, color: colors.foreground }]}
                         />
                       </View>

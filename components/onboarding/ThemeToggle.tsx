@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, View, TouchableOpacity } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/context/ThemeContext';
 
 export function ThemeToggle() {
@@ -8,29 +9,34 @@ export function ThemeToggle() {
   const isDark = resolvedScheme === 'dark';
 
   const toggleTheme = (target: 'light' | 'dark') => {
+    try {
+      Haptics.selectionAsync();
+    } catch {}
     setPreference(target);
   };
 
   return (
     <View style={[styles.container, isDark ? styles.containerDark : styles.containerLight]}>
+      {/* Light Segment */}
       <TouchableOpacity
-        activeOpacity={0.8}
+        activeOpacity={0.85}
         onPress={() => toggleTheme('light')}
         style={[styles.segment, !isDark && styles.activeSegmentLight]}
         accessibilityRole="button"
         accessibilityLabel="Light Theme"
       >
-        <Feather name="sun" size={15} color={!isDark ? '#C39B27' : '#9CA3AF'} />
+        <Feather name="sun" size={14.5} color={!isDark ? '#F59E0B' : '#64748B'} />
       </TouchableOpacity>
 
+      {/* Dark Segment */}
       <TouchableOpacity
-        activeOpacity={0.8}
+        activeOpacity={0.85}
         onPress={() => toggleTheme('dark')}
         style={[styles.segment, isDark && styles.activeSegmentDark]}
         accessibilityRole="button"
         accessibilityLabel="Dark Theme"
       >
-        <Feather name="moon" size={15} color={isDark ? '#C39B27' : '#6B7280'} />
+        <Feather name="moon" size={14.5} color={isDark ? '#38BDF8' : '#94A3B8'} />
       </TouchableOpacity>
     </View>
   );
@@ -43,15 +49,15 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     padding: 3,
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 1.2,
   },
   containerDark: {
-    backgroundColor: '#171717',
-    borderColor: '#262626',
+    backgroundColor: '#0F172A',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
   containerLight: {
-    backgroundColor: '#F3F4F6',
-    borderColor: '#E5E7EB',
+    backgroundColor: '#F1F5F9',
+    borderColor: 'rgba(0, 0, 0, 0.08)',
   },
   segment: {
     width: 32,
@@ -61,9 +67,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   activeSegmentDark: {
-    backgroundColor: '#262626',
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.3)',
+    shadowColor: '#000000',
+    shadowOpacity: 0.35,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
   },
   activeSegmentLight: {
     backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.06)',
+    shadowColor: '#000000',
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
   },
 });

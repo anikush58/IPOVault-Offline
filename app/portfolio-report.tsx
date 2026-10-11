@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import {
   Animated,
   Image,
+  Keyboard,
   Platform,
   RefreshControl,
   ScrollView,
@@ -424,14 +425,20 @@ export default function PortfolioReportScreen() {
 
   const toggleSearch = () => {
     if (showSearch) {
+      Keyboard.dismiss();
+      searchRef.current?.blur();
       Animated.timing(searchAnim, { toValue: 0, duration: 180, useNativeDriver: false }).start();
       setShowSearch(false);
       setSearchQuery('');
     } else {
       setShowSearch(true);
-      Animated.timing(searchAnim, { toValue: 1, duration: 220, useNativeDriver: false }).start(() =>
-        searchRef.current?.focus(),
-      );
+      Animated.timing(searchAnim, { toValue: 1, duration: 200, useNativeDriver: false }).start();
+      requestAnimationFrame(() => {
+        searchRef.current?.focus();
+      });
+      setTimeout(() => {
+        searchRef.current?.focus();
+      }, 80);
     }
   };
 
@@ -461,7 +468,6 @@ export default function PortfolioReportScreen() {
           <View style={styles.headerActions}>
             <IconButton
               name={showSearch ? 'x' : 'search'}
-              iconSize={showSearch ? 15 : 18}
               variant={showSearch || searchQuery.length > 0 ? 'primary' : 'surface'}
               size="md"
               onPress={toggleSearch}
@@ -500,8 +506,8 @@ export default function PortfolioReportScreen() {
               autoCorrect={false}
             />
             {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-                <Feather name="x-circle" size={14} color={colors.mutedForeground} />
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10}>
+                <Feather name="x-circle" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             )}
           </View>

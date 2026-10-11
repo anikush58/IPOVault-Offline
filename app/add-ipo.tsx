@@ -491,7 +491,7 @@ export default function AddIPOScreen() {
               onChangeText={setFormPrice}
               placeholder="e.g. 360"
               placeholderTextColor={colors.mutedForeground}
-              keyboardType="numeric"
+              keyboardType="decimal-pad"
               style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground }]}
             />
           </View>
@@ -505,7 +505,7 @@ export default function AddIPOScreen() {
               onChangeText={setFormLotSize}
               placeholder="e.g. 40"
               placeholderTextColor={colors.mutedForeground}
-              keyboardType="numeric"
+              keyboardType="number-pad"
               style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground }]}
             />
           </View>

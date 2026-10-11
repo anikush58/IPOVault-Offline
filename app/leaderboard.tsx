@@ -3,6 +3,7 @@ import {
   Animated,
   FlatList,
   Image,
+  Keyboard,
   Platform,
   RefreshControl,
   StyleSheet,
@@ -913,9 +914,11 @@ export default function LeaderboardScreen() {
 
   const toggleSearch = () => {
     if (showSearch) {
+      Keyboard.dismiss();
+      searchRef.current?.blur();
       Animated.timing(searchAnim, {
         toValue: 0,
-        duration: 200,
+        duration: 180,
         useNativeDriver: false,
       }).start(() => {
         setShowSearch(false);
@@ -927,9 +930,13 @@ export default function LeaderboardScreen() {
         toValue: 1,
         duration: 200,
         useNativeDriver: false,
-      }).start(() => {
+      }).start();
+      requestAnimationFrame(() => {
         searchRef.current?.focus();
       });
+      setTimeout(() => {
+        searchRef.current?.focus();
+      }, 80);
     }
   };
 
@@ -1047,8 +1054,8 @@ export default function LeaderboardScreen() {
               clearButtonMode="while-editing"
             />
             {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-                <Feather name="x-circle" size={14} color={colors.mutedForeground} />
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10}>
+                <Feather name="x-circle" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             )}
           </View>
@@ -1073,7 +1080,7 @@ export default function LeaderboardScreen() {
         renderItem={renderItem}
         contentContainerStyle={[
           styles.listContent,
-          { paddingTop: topPad + 114 },
+          { paddingTop: topPad + (showSearch ? 179 : 127) },
         ]}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
@@ -1086,7 +1093,7 @@ export default function LeaderboardScreen() {
             onRefresh={refresh}
             colors={[colors.primary]}
             tintColor={colors.primary}
-            progressViewOffset={topPad + 110}
+            progressViewOffset={topPad + (showSearch ? 175 : 123)}
           />
         }
         ListHeaderComponent={
@@ -1176,7 +1183,7 @@ const styles = StyleSheet.create({
   },
   tabBarWrap: {
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 21,
     paddingBottom: 4,
     borderBottomWidth: 0,
   },

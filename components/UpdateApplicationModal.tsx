@@ -244,7 +244,7 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
     <Modal visible={!!app} animationType="fade" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         {/* Centered Modal Backdrop */}
         <View style={styles.centerModalOverlay}>
@@ -253,9 +253,28 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
 
           {/* Centered Card Dialog Box (Plain View so touch gestures pass directly to ScrollView) */}
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {/* Header: Title on left, Close Cross Icon on top right */}
+            {/* Header: Title with Icon on left, Close Cross Icon on top right */}
             <View style={[styles.modalHeader, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
-              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Update Application</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, marginRight: 8 }}>
+                <View
+                  style={[
+                    styles.headerIconWrap,
+                    { backgroundColor: colors.primary + '18' },
+                  ]}
+                >
+                  <Feather
+                    name="edit-3"
+                    size={18}
+                    color={colors.primary}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.modalTitle, { color: colors.foreground }]}>Update Application</Text>
+                  <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
+                    Modify bidding status & allotment outcome
+                  </Text>
+                </View>
+              </View>
               <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={8}>
                 <Feather name="x" size={20} color={colors.mutedForeground} />
               </TouchableOpacity>
@@ -652,7 +671,15 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: 1,
   },
-  modalTitle: { fontSize: 18, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
+  headerIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitle: { fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
+  modalSubtitle: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 1 },
   closeBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18 },
   content: { padding: 18, gap: 0 },
   infoCard: { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 16 },

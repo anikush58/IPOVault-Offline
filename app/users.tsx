@@ -549,7 +549,7 @@ export default function UsersScreen() {
 
           <View style={{ flex: 1, justifyContent: 'center', marginLeft: 8 }}>
             <Text style={[styles.headerEyebrow, { color: colors.primary }]}>
-              PROFILES
+              Manage
             </Text>
             <Text style={[styles.headerTitle, { color: colors.foreground }]}>
               Users
@@ -565,7 +565,7 @@ export default function UsersScreen() {
         </View>
 
         {/* Pill Style Tab Control Bar */}
-        <View style={{ paddingHorizontal: 10, marginTop: 4, marginBottom: 8 }}>
+        <View style={{ paddingHorizontal: 10, marginTop: 17, marginBottom: 8 }}>
           <Tabs
             variant="pills"
             height={36}
@@ -584,7 +584,7 @@ export default function UsersScreen() {
         data={displayedUsers}
         keyExtractor={(item: any) => item.id}
         contentContainerStyle={{
-          paddingTop: topPad + 114,
+          paddingTop: topPad + 127,
           paddingBottom: insets.bottom + 90,
         }}
         onScroll={Animated.event(
@@ -597,7 +597,7 @@ export default function UsersScreen() {
             refreshing={isLoading}
             onRefresh={handleRefresh}
             tintColor={colors.primary}
-            progressViewOffset={topPad + 110}
+            progressViewOffset={topPad + 123}
           />
         }
         renderItem={({ item, index }: { item: User; index: number }) => {
@@ -670,12 +670,6 @@ export default function UsersScreen() {
                 ]}
                 activeOpacity={0.85}
               >
-                <Feather
-                  name="plus"
-                  size={16}
-                  color={colors.primaryForeground}
-                  style={{ marginRight: 6 }}
-                />
                 <Text
                   style={[
                     styles.emptyAddBtnText,

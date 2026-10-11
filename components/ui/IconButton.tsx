@@ -57,14 +57,14 @@ export function IconButton({
 
   const getSpecs = (): { dimension: number; iconSize: number; radius: number; bg: string; border: string; iconColor: string } => {
     let dimension = 44;
-    let iconSize = customIconSize ?? (name === 'x' ? 15 : 18);
+    let iconSize = customIconSize ?? (name === 'x' ? 22 : 18);
 
     if (size === 'lg') {
       dimension = 50;
-      iconSize = customIconSize ?? (name === 'x' ? 18 : 22);
+      iconSize = customIconSize ?? (name === 'x' ? 25 : 22);
     } else if (size === 'sm') {
       dimension = 36;
-      iconSize = customIconSize ?? (name === 'x' ? 14 : 16);
+      iconSize = customIconSize ?? (name === 'x' ? 18 : 16);
     }
 
     let radius: number = round ? dimension / 2 : DesignSystem.radius.sm;
@@ -74,7 +74,7 @@ export function IconButton({
     let iconColor = colors.foreground;
 
     if (name === 'x' && (variant === 'primary' || variant === 'surface')) {
-      iconSize = customIconSize ?? (size === 'lg' ? 16 : size === 'sm' ? 12 : 13);
+      iconSize = customIconSize ?? (size === 'lg' ? 25 : size === 'sm' ? 18 : 22);
       bg = colors.primary;
       border = 'transparent';
       iconColor = colors.primaryForeground;

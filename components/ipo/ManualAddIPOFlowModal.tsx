@@ -115,9 +115,21 @@ export const ManualAddIPOFlowModal = React.memo(function ManualAddIPOFlowModal({
         <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
-            <View>
-              <Text style={[styles.eyebrow, { color: colors.primary }]}>STEP 1 OF 2</Text>
-              <Text style={[styles.title, { color: colors.foreground }]}>Check Existing IPO</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, marginRight: 8 }}>
+              <View
+                style={[
+                  styles.headerIconWrap,
+                  { backgroundColor: colors.primary + '18' },
+                ]}
+              >
+                <Feather name="search" size={18} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.title, { color: colors.foreground }]}>Check Existing IPO</Text>
+                <Text style={[styles.subtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
+                  Step 1 of 2 · Search database before adding
+                </Text>
+              </View>
             </View>
             <TouchableOpacity onPress={onClose} style={[styles.closeBtn, { backgroundColor: colors.surface }]} hitSlop={8}>
               <Feather name="x" size={18} color={colors.foreground} />
@@ -219,15 +231,22 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     borderBottomWidth: 1,
   },
-  eyebrow: {
-    fontSize: 10,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 0.8,
+  headerIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
-    fontSize: 18,
+    fontSize: 17,
     fontFamily: 'GoogleSansFlex_700Bold',
-    marginTop: 2,
+    letterSpacing: -0.3,
+  },
+  subtitle: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 1,
   },
   closeBtn: {
     width: 32,

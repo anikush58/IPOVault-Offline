@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
+  Keyboard,
   Platform,
   RefreshControl,
   ScrollView,
@@ -305,12 +306,15 @@ export default function IPOHubScreen() {
 
         <View style={styles.actionsRight}>
           <IconButton
-            name="search"
+            name={showSearch ? 'x' : 'search'}
             variant={showSearch ? 'primary' : 'surface'}
             size="md"
             onPress={() => {
+              if (showSearch) {
+                Keyboard.dismiss();
+                setSearchQuery('');
+              }
               setShowSearch((prev) => !prev);
-              if (showSearch) setSearchQuery('');
             }}
           />
 
