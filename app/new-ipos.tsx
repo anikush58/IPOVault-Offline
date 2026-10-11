@@ -3,6 +3,7 @@ import {
   Animated,
   FlatList,
   Image,
+  Keyboard,
   Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -38,6 +39,7 @@ import { formatCurrency, formatIssueSize } from '@/utils/formatters';
 import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 import { triggerCentralizedIPOSync } from '@/services/ipo/centralizedSync';
 import { getISTDateTime } from '@/services/ipo/statusNormalizer';
+import { getCachedBackendIpos, saveBackendIposToCache } from '@/services/ipo/ipoHubCacheService';
 
 type NewIpoTab = 'live' | 'upcoming' | 'closed' | 'listed';
 type SortOption = 'DEFAULT' | 'GMP';
@@ -719,14 +721,20 @@ export default function NewIposScreen() {
 
   const toggleSearch = useCallback(() => {
     if (showSearch) {
+      Keyboard.dismiss();
+      searchRef.current?.blur();
       Animated.timing(searchAnim, { toValue: 0, duration: 180, useNativeDriver: false }).start();
       setShowSearch(false);
       setSearchQuery('');
     } else {
       setShowSearch(true);
-      Animated.timing(searchAnim, { toValue: 1, duration: 220, useNativeDriver: false }).start(() =>
-        searchRef.current?.focus()
-      );
+      Animated.timing(searchAnim, { toValue: 1, duration: 200, useNativeDriver: false }).start();
+      requestAnimationFrame(() => {
+        searchRef.current?.focus();
+      });
+      setTimeout(() => {
+        searchRef.current?.focus();
+      }, 80);
     }
   }, [showSearch, searchAnim]);
 
@@ -803,41 +811,147 @@ export default function NewIposScreen() {
   }, [screenWidth, activeTab]);
 
   const db = useSQLiteContext();
+  const mountTimeRef = useRef(Date.now());
+  const isFetchingRef = useRef(false);
+  const lastFetchedAtRef = useRef(0);
+  const hasHydratedCacheRef = useRef(false);
+  const firstCardRenderLoggedRef = useRef(false);
+  const requestIdRef = useRef(0);
+  const inFlightQueryRef = useRef<string | null>(null);
 
-  const fetchBackendIpos = useCallback(async () => {
+  // Extracted SQLite Cache Hydration (Offline-first / Instant Render)
+  const hydrateFromCache = useCallback(async () => {
+    if (!db) return [];
+    try {
+      const cached = await getCachedBackendIpos(db, searchQuery);
+      if (cached.length > 0) {
+        hasHydratedCacheRef.current = true;
+        setRawIpos(cached);
+        setLoading(false);
+        if (!firstCardRenderLoggedRef.current) {
+          firstCardRenderLoggedRef.current = true;
+          const elapsed = Date.now() - mountTimeRef.current;
+          console.log(`[IPO Hub Timing] First visible IPO cards (${cached.length} items) in ${elapsed}ms (Source: SQLite Cache)`);
+        }
+      }
+      return cached;
+    } catch (err) {
+      if (__DEV__) console.warn('[IPO Hub] Cache hydration error:', err);
+      return [];
+    }
+  }, [db, searchQuery]);
+
+  useEffect(() => {
+    let isMounted = true;
+    hydrateFromCache().then((cached) => {
+      if (isMounted && cached && cached.length > 0) {
+        setLoading(false);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [hydrateFromCache]);
+
+  const fetchBackendIpos = useCallback(async (isUserRefresh = false) => {
+    const trimmedQuery = searchQuery.trim();
+    const isSearchMode = !!trimmedQuery;
+
+    // Preserve deduplication for identical non-search background requests
+    // while ensuring that newly typed search queries are NEVER dropped.
+    if (isFetchingRef.current && !isUserRefresh) {
+      if (!isSearchMode && inFlightQueryRef.current === null) {
+        return; // Deduplicate background polling when catalog fetch is already in flight
+      }
+      if (isSearchMode && inFlightQueryRef.current === trimmedQuery) {
+        return; // Deduplicate identical in-flight search query
+      }
+    }
+
+    // Assign incrementing request ID to discard stale responses
+    const thisRequestId = ++requestIdRef.current;
+    inFlightQueryRef.current = isSearchMode ? trimmedQuery : null;
+    isFetchingRef.current = true;
+    const fetchStart = Date.now();
+
     try {
       setError(null);
       const data = await backendIpoApiService.listBackendIpos({
-        q: searchQuery.trim() || undefined,
+        q: trimmedQuery || undefined,
       });
-      setRawIpos(data);
+
+      // Discard stale responses if a newer request was dispatched while this was running
+      if (thisRequestId !== requestIdRef.current) {
+        return;
+      }
+
+      if (Array.isArray(data)) {
+        setRawIpos(data);
+        lastFetchedAtRef.current = Date.now();
+
+        const elapsed = Date.now() - fetchStart;
+        console.log(`[IPO Hub Timing] Background refresh completed in ${elapsed}ms (${data.length} items)`);
+
+        if (!firstCardRenderLoggedRef.current && data.length > 0) {
+          firstCardRenderLoggedRef.current = true;
+          console.log(`[IPO Hub Timing] First visible IPO cards (${data.length} items) in ${Date.now() - mountTimeRef.current}ms (Source: Backend API)`);
+        }
+
+        // Asynchronously update local SQLite cache when not filtering by search query
+        if (db && data.length > 0 && !trimmedQuery) {
+          saveBackendIposToCache(db, data).catch(() => {});
+        }
+      }
     } catch (e: any) {
-      setError(e?.message || 'Failed to connect to IPOVault backend API');
+      if (thisRequestId !== requestIdRef.current) {
+        return;
+      }
+      console.warn('[IPO Hub] Network fetch error:', e?.message || e);
+      // Keep valid cached cards if available; only display connection error screen if rawIpos is empty!
+      setRawIpos((prev) => {
+        if (prev.length === 0) {
+          setError(e?.message || 'Failed to connect to IPOVault backend API');
+        }
+        return prev;
+      });
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (thisRequestId === requestIdRef.current) {
+        isFetchingRef.current = false;
+        inFlightQueryRef.current = null;
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [searchQuery]);
+  }, [searchQuery, db]);
 
   useEffect(() => {
-    setLoading(true);
+    // Fetch on mount or when searchQuery changes
     fetchBackendIpos();
   }, [fetchBackendIpos]);
 
-  // Screen Focus Auto-Refresh
+  // Screen Focus Auto-Refresh with 15-second debounce / cooldown
   useFocusEffect(
     useCallback(() => {
-      fetchBackendIpos();
+      const now = Date.now();
+      if (now - lastFetchedAtRef.current >= 15000 && !isFetchingRef.current) {
+        fetchBackendIpos();
+      }
     }, [fetchBackendIpos])
   );
 
   // 15-Second Periodic Polling & Global Event Sync Auto-Refresh
   useEffect(() => {
     const timer = setInterval(() => {
-      fetchBackendIpos();
+      const now = Date.now();
+      if (now - lastFetchedAtRef.current >= 15000 && !isFetchingRef.current) {
+        fetchBackendIpos();
+      }
     }, 15000);
 
-    const unsubscribe = backendSyncEmitter.subscribe(() => {
+    const unsubscribe = backendSyncEmitter.subscribe(async () => {
+      // 1. Re-hydrate immediately from local SQLite cache so newly synced IPOs are visible instantly
+      await hydrateFromCache();
+      // 2. Trigger background reconciliation fetch
       fetchBackendIpos();
     });
 
@@ -845,12 +959,12 @@ export default function NewIposScreen() {
       clearInterval(timer);
       unsubscribe();
     };
-  }, [fetchBackendIpos]);
+  }, [fetchBackendIpos, hydrateFromCache]);
 
   const onRefresh = useCallback(async () => {
     try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
     setRefreshing(true);
-    await fetchBackendIpos();
+    await fetchBackendIpos(true);
     if (db) {
       triggerCentralizedIPOSync(db, { force: true, source: 'IPO Hub Manual Refresh' }).catch(() => {});
     }
@@ -994,9 +1108,9 @@ export default function NewIposScreen() {
     [router]
   );
 
-  const renderTabCard = useCallback(
+  const renderItemForTab = useCallback(
     (tab: NewIpoTab) => {
-      const TabCardItem = ({ item }: { item: BackendIpo }) => {
+      return ({ item }: { item: BackendIpo }) => {
         const stats = appStatsMap.get(item.id) || { total: 0, applied: 0, allotted: 0 };
         return (
           <NewIpoCardItem
@@ -1013,11 +1127,16 @@ export default function NewIposScreen() {
           />
         );
       };
-      TabCardItem.displayName = 'TabCardItem';
-      return TabCardItem;
     },
     [appStatsMap, colors, isDark, handleCardPress, handleApplyPress]
   );
+
+  const renderLiveItem = useMemo(() => renderItemForTab('live'), [renderItemForTab]);
+  const renderUpcomingItem = useMemo(() => renderItemForTab('upcoming'), [renderItemForTab]);
+  const renderClosedItem = useMemo(() => renderItemForTab('closed'), [renderItemForTab]);
+  const renderListedItem = useMemo(() => renderItemForTab('listed'), [renderItemForTab]);
+
+  const keyExtractor = useCallback((item: any) => item.id || item.symbol, []);
 
   const tabsConfig = useMemo(
     () => [
@@ -1117,8 +1236,8 @@ export default function NewIposScreen() {
               autoCorrect={false}
             />
             {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-                <Feather name="x-circle" size={14} color={colors.mutedForeground} />
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10}>
+                <Feather name="x-circle" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             )}
           </View>
@@ -1193,6 +1312,15 @@ export default function NewIposScreen() {
         >
           {TABS.map((tab) => {
             const listData = sortedTabLists[tab];
+            const renderItem =
+              tab === 'live'
+                ? renderLiveItem
+                : tab === 'upcoming'
+                ? renderUpcomingItem
+                : tab === 'closed'
+                ? renderClosedItem
+                : renderListedItem;
+
             return (
               <View key={tab} style={{ width: screenWidth, flex: 1 }}>
                 {listData.length === 0 ? (
@@ -1219,8 +1347,8 @@ export default function NewIposScreen() {
                 ) : (
                   <AnimatedFlatList
                     data={listData}
-                    keyExtractor={(item: any) => item.id}
-                    renderItem={renderTabCard(tab)}
+                    keyExtractor={keyExtractor}
+                    renderItem={renderItem}
                     contentContainerStyle={{
                       paddingTop: listTopPad,
                       paddingBottom: Math.max(insets.bottom + 85, 100),

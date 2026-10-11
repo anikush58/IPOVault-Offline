@@ -102,6 +102,11 @@ export class IPOParser {
       is_favorite: raw.is_favorite ?? 0,
       source_type: raw.source_type || 'SERVER',
       
+      lifecycle_status: raw.lifecycle_status || normalizedStatus,
+      lifecycle_confidence: raw.lifecycle_confidence || undefined,
+      lifecycle_source: raw.lifecycle_source || undefined,
+      lifecycle_last_verified_at: raw.lifecycle_last_verified_at || undefined,
+
       sync_version: raw.sync_version ?? 0,
       created_at: raw.created_at || now,
       updated_at: raw.updated_at || now,
