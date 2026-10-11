@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   FlatList,
   KeyboardAvoidingView,
@@ -48,12 +49,14 @@ function BankCard({
   bank,
   blocked,
   ipoPrice = 15000,
+  isDeleting = false,
   onEdit,
   onDelete,
 }: {
   bank: BankAccount;
   blocked: number;
   ipoPrice?: number;
+  isDeleting?: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -95,16 +98,22 @@ function BankCard({
           <TouchableOpacity
             onPress={onEdit}
             activeOpacity={0.7}
-            style={[styles.softActionBtn, { backgroundColor: isDark ? 'rgba(59,130,246,0.15)' : '#EFF6FF' }]}
+            disabled={isDeleting}
+            style={[styles.softActionBtn, { backgroundColor: isDark ? 'rgba(59,130,246,0.15)' : '#EFF6FF', opacity: isDeleting ? 0.5 : 1 }]}
           >
             <Feather name="edit-2" size={13} color="#3B82F6" />
           </TouchableOpacity>
           <TouchableOpacity
             onPress={onDelete}
             activeOpacity={0.7}
-            style={[styles.softActionBtn, { backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : '#FEE2E2' }]}
+            disabled={isDeleting}
+            style={[styles.softActionBtn, { backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : '#FEE2E2', opacity: isDeleting ? 0.5 : 1 }]}
           >
-            <Feather name="trash-2" size={13} color="#EF4444" />
+            {isDeleting ? (
+              <ActivityIndicator size={12} color="#EF4444" />
+            ) : (
+              <Feather name="trash-2" size={13} color="#EF4444" />
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -163,7 +172,7 @@ export default function BanksScreen() {
   const router = useRouter();
   const { from } = useLocalSearchParams<{ from?: string }>();
   const { bankAccounts, ipos, applications, isLoading, refresh, addBankAccount, updateBankBalance, deleteBankAccount } = useDB();
-  const { showError } = useDialog();
+  const { showConfirm, showError } = useDialog();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
@@ -210,17 +219,25 @@ export default function BanksScreen() {
     setModalVisible(true);
   };
 
-  const { showConfirm } = useDialog();
+  const [deletingBankId, setDeletingBankId] = useState<string | null>(null);
 
   const handleDelete = (bank: BankAccount) => {
+    if (deletingBankId) return;
     showConfirm({
       title: 'Delete Bank Account',
       message: `Remove "${bank.bank_name}" from your tracked accounts?`,
       confirmText: 'Delete',
       isDanger: true,
       onConfirm: async () => {
-        await deleteBankAccount(bank.id);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        try {
+          setDeletingBankId(bank.id);
+          await deleteBankAccount(bank.id);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        } catch {
+          showError('Delete Failed', 'Could not delete bank account. Please try again.');
+        } finally {
+          setDeletingBankId(null);
+        }
       },
     });
   };
@@ -344,6 +361,7 @@ export default function BanksScreen() {
               bank={item}
               blocked={getBankBlocked(item.bank_name)}
               ipoPrice={activeIpoLotCost}
+              isDeleting={deletingBankId === item.id}
               onEdit={() => openEdit(item)}
               onDelete={() => handleDelete(item)}
             />

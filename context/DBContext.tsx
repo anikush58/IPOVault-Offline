@@ -298,6 +298,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isRestoring, setIsRestoring] = useState(false);
   const syncedUidRef = React.useRef<string | null>(null);
+  const deletingBankIdsRef = React.useRef<Set<string>>(new Set());
 
   const isDev = typeof __DEV__ !== 'undefined' ? Boolean(__DEV__) : process.env.NODE_ENV !== 'production';
 
@@ -465,7 +466,10 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       : await db.getAllAsync<BankAccount>(
           'SELECT * FROM bank_accounts WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL ORDER BY bank_name'
         );
-    setBankAccounts(bankRows);
+    const filteredBankRows = deletingBankIdsRef.current.size > 0
+      ? bankRows.filter((b) => !deletingBankIdsRef.current.has(b.id))
+      : bankRows;
+    setBankAccounts(filteredBankRows);
     const duration = Date.now() - t0;
     if (isDev) {
       console.log(`[CloudSync Timing] Stage 2 secondary refresh: ${duration}ms (banks: ${bankRows.length})`);
@@ -1038,10 +1042,46 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
   };
 
   const deleteBankAccount = async (id: string) => {
-    const repo = new BankRepository(db);
-    await repo.delete(id);
-    await refresh();
+    if (!id) return;
+    if (deletingBankIdsRef.current.has(id)) {
+      if (isDev) console.log(`[DBContext.deleteBankAccount] Deletion already in-flight for bank ${id}`);
+      return;
+    }
+
+    const t0 = Date.now();
     const currentUid = authUser?.uid || authUser?.id || null;
+
+    // Snapshot existing accounts in case local SQLite rollback is needed
+    let snapshotBank: BankAccount | undefined;
+    setBankAccounts((prev) => {
+      snapshotBank = prev.find((b) => b.id === id);
+      return prev.filter((b) => b.id !== id);
+    });
+
+    deletingBankIdsRef.current.add(id);
+
+    try {
+      const repo = new BankRepository(db);
+      await repo.delete(id, currentUid);
+      if (isDev) {
+        console.log(`[DBContext.deleteBankAccount] Fast local deletion completed in ${Date.now() - t0}ms for bank ${id}`);
+      }
+    } catch (dbError) {
+      deletingBankIdsRef.current.delete(id);
+      if (snapshotBank) {
+        const toRestore = snapshotBank;
+        setBankAccounts((prev) => {
+          if (prev.some((b) => b.id === id)) return prev;
+          return [...prev, toRestore].sort((a, b) => a.bank_name.localeCompare(b.bank_name));
+        });
+      }
+      if (isDev) console.error('[DBContext.deleteBankAccount] Local delete failed, state rolled back:', dbError);
+      throw dbError;
+    } finally {
+      deletingBankIdsRef.current.delete(id);
+    }
+
+    // Non-blocking off-critical-path background cloud sync
     if (currentUid && id) {
       syncSingleDocDelete(currentUid, 'bankAccounts', id).catch((e) => {
         if (isDev) console.warn('[DBContext.deleteBankAccount] Live cloud delete warning:', e);
@@ -1237,11 +1277,21 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       'DBContext.exportJSON.masterIpos'
     );
 
+    const deletedBanks = currentUid
+      ? await safeGetAllAsync<{ id: string; updated_at: string; deleted_at: string }>(
+          db,
+          'SELECT id, updated_at, deleted_at FROM bank_accounts WHERE (owner_id = ? OR owner_id IS NULL OR owner_id = "") AND deleted_at IS NOT NULL',
+          [currentUid],
+          'DBContext.exportJSON.deletedBanks'
+        )
+      : [];
+
     return JSON.stringify(
       {
         version: 1,
         exported_at: new Date().toISOString(),
         banks: bankAccounts,
+        deleted_banks: deletedBanks || [],
         users: processedUsers,
         ipos: processedIpos,
         master_ipos: rawMasterIpos || [],

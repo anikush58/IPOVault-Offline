@@ -19,7 +19,7 @@ export interface IBankRepository {
   getAll(): Promise<BankAccount[]>;
   add(bankName: string, balance: number, upiApp?: string, ownerId?: string | null): Promise<BankAccount>;
   updateBalance(id: string, balance: number, bankName?: string, upiApp?: string): Promise<void>;
-  delete(id: string): Promise<void>;
+  delete(id: string, ownerId?: string | null): Promise<void>;
 }
 
 export interface IIPORepository {
@@ -726,17 +726,24 @@ export class BankRepository implements IBankRepository {
     await safeRunAsync(this.db, sql, params, 'BankRepository.updateBalance');
   }
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, ownerId?: string | null): Promise<void> {
     if (!id) {
       if (__DEV__) console.warn('[BankRepository.delete] Called with invalid/null id');
       return;
     }
     const now = getCurrentTime();
-    const sql = `
+    let sql = `
       UPDATE bank_accounts SET
         deleted_at = ?, updated_at = ?, sync_version = sync_version + 1, sync_status = 'PENDING'
       WHERE id = ?
     `;
-    await safeRunAsync(this.db, sql, [now, now, id], 'BankRepository.delete');
+    const params: any[] = [now, now, id];
+    if (ownerId) {
+      sql += ' AND (owner_id = ? OR owner_id IS NULL OR owner_id = "")';
+      params.push(ownerId);
+    } else if (ownerId === null || ownerId === '') {
+      sql += ' AND (owner_id IS NULL OR owner_id = "")';
+    }
+    await safeRunAsync(this.db, sql, params, 'BankRepository.delete');
   }
 }

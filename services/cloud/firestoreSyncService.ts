@@ -32,6 +32,7 @@ export interface IPOVaultExportData {
   version?: number;
   exported_at?: string;
   banks?: any[];
+  deleted_banks?: any[];
   users?: any[];
   ipos?: any[];
   master_ipos?: any[];
@@ -543,6 +544,19 @@ export async function syncUserDataToFirestore(
         batches[currentBatchIndex].set(
           dRef,
           { ...b, owner_id: uid, updated_at: nowIso, deleted_at: null },
+          { merge: true }
+        )
+      );
+    }
+
+    // Subcollection: bankAccounts tombstones (/users/{uid}/bankAccounts/{id})
+    for (const b of exportData.deleted_banks || []) {
+      if (!b?.id) continue;
+      const dRef = doc(firestore, `users/${uid}/bankAccounts/${b.id}`);
+      addBatchOp(() =>
+        batches[currentBatchIndex].set(
+          dRef,
+          { id: b.id, owner_id: uid, updated_at: b.updated_at || nowIso, deleted_at: b.deleted_at || b.updated_at || nowIso },
           { merge: true }
         )
       );
@@ -1062,8 +1076,8 @@ export async function applySecondaryDeltaToSQLite(
             'applySecondaryDelta.deleteBank'
           );
         } else {
-          const local = await db.getFirstAsync<{ id: string; updated_at: string }>(
-            'SELECT id, updated_at FROM bank_accounts WHERE id = ?',
+          const local = await db.getFirstAsync<{ id: string; updated_at: string; deleted_at?: string | null }>(
+            'SELECT id, updated_at, deleted_at FROM bank_accounts WHERE id = ?',
             [b.id]
           );
           if (!local) {
@@ -1082,6 +1096,9 @@ export async function applySecondaryDeltaToSQLite(
               count++;
               continue;
             }
+          } else if (local.deleted_at && (!b.updated_at || local.updated_at >= b.updated_at)) {
+            // Stale cloud response must NOT resurrect a locally deleted account
+            continue;
           } else if (local.updated_at && b.updated_at && local.updated_at > b.updated_at) {
             continue;
           }
