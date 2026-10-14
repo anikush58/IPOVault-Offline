@@ -2787,7 +2787,7 @@ const styles = StyleSheet.create({
   },
   primaryCtaBtn: {
     height: 48,
-    borderRadius: 12,
+    borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
   },

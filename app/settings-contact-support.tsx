@@ -29,6 +29,9 @@ export default function SettingsContactSupportScreen() {
   const isDark = resolvedScheme === 'dark';
   const { showSuccess } = useDialog();
 
+  const settingIconColor = isDark ? '#FFFFFF' : '#111827';
+  const settingIconBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)';
+
   const [showInAppFeedbackModal, setShowInAppFeedbackModal] = useState(false);
   const [feedbackText, setFeedbackText] = useState('');
 
@@ -79,8 +82,8 @@ export default function SettingsContactSupportScreen() {
             activeOpacity={0.7}
             onPress={() => setShowInAppFeedbackModal(true)}
           >
-            <View style={[styles.iconWrap, { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.15)' : '#F5F3FF' }]}>
-              <Feather name="message-square" size={17} color="#8B5CF6" />
+            <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="message-square" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>In-App Support</Text>
@@ -97,8 +100,8 @@ export default function SettingsContactSupportScreen() {
             activeOpacity={0.7}
             onPress={handleEmailSupport}
           >
-            <View style={[styles.iconWrap, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' }]}>
-              <Feather name="mail" size={17} color="#3B82F6" />
+            <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="mail" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>Email Support</Text>
@@ -115,8 +118,8 @@ export default function SettingsContactSupportScreen() {
             activeOpacity={0.7}
             onPress={handleWhatsAppSupport}
           >
-            <View style={[styles.iconWrap, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5' }]}>
-              <Feather name="message-circle" size={17} color="#10B981" />
+            <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="message-circle" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>WhatsApp Support</Text>
@@ -130,8 +133,8 @@ export default function SettingsContactSupportScreen() {
 
         {/* Support Hours Card */}
         <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 14 }]}>
-          <View style={[styles.iconWrap, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' }]}>
-            <Feather name="clock" size={17} color="#3B82F6" />
+          <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
+            <Feather name="clock" size={17} color={settingIconColor} />
           </View>
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={[styles.infoTitle, { color: colors.foreground }]}>Support Hours</Text>
@@ -325,14 +328,14 @@ const styles = StyleSheet.create({
   },
   primaryBtn: {
     height: 44,
-    borderRadius: 12,
+    borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
   },
   primaryBtnText: { fontSize: 13.5, fontFamily: 'GoogleSansFlex_700Bold' },
   secondaryBtn: {
     height: 44,
-    borderRadius: 12,
+    borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,

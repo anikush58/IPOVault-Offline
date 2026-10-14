@@ -69,7 +69,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: 14,
+    borderRadius: 9999,
   },
   btnText: {
     color: '#FFFFFF',

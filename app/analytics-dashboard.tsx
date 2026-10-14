@@ -1082,7 +1082,7 @@ const styles = StyleSheet.create({
   retryBtn: {
     paddingHorizontal: 18,
     paddingVertical: 10,
-    borderRadius: 14,
+    borderRadius: 9999,
   },
   card: {
     padding: 16,

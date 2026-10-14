@@ -15,6 +15,7 @@ import { firestore } from '../auth/firebaseConfig';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { safeRunAsync, runWithTransaction } from '@/utils/sqliteDebug';
 import { saveBase64ToLocalImage } from '@/utils/imageUtils';
+import { concurrencyTelemetry } from '@/utils/concurrencyTelemetry';
 
 export const LAST_FIRESTORE_SYNC_KEY = 'ipovault_last_firestore_sync_ts';
 export const FIRESTORE_MIGRATED_KEY_PREFIX = 'ipovault_migrated_to_firestore_';
@@ -198,12 +199,14 @@ export async function clearLocalSyncCursor(uid: string): Promise<void> {
 
 const DEFAULT_FIRESTORE_TIMEOUT_MS = 10000;
 
-async function safeGetDocs(queryRef: any, timeoutMs: number = DEFAULT_FIRESTORE_TIMEOUT_MS): Promise<any> {
+async function safeGetDocs(queryRef: any, timeoutMs: number = DEFAULT_FIRESTORE_TIMEOUT_MS, callerTag = 'firestore.getDocs'): Promise<any> {
+  const probe = concurrencyTelemetry.startExecuting('FIRESTORE_OP', callerTag);
   return new Promise((resolve) => {
     let resolved = false;
     const timer = setTimeout(() => {
       if (!resolved) {
         resolved = true;
+        probe.finish(new Error(`Timeout after ${timeoutMs}ms`));
         if (isDev) console.warn(`[firestoreSyncService] getDocs query timed out after ${timeoutMs}ms.`);
         resolve(null);
       }
@@ -214,6 +217,7 @@ async function safeGetDocs(queryRef: any, timeoutMs: number = DEFAULT_FIRESTORE_
         if (!resolved) {
           resolved = true;
           clearTimeout(timer);
+          probe.finish();
           resolve(snap);
         }
       })
@@ -221,6 +225,7 @@ async function safeGetDocs(queryRef: any, timeoutMs: number = DEFAULT_FIRESTORE_
         if (!resolved) {
           resolved = true;
           clearTimeout(timer);
+          probe.finish(err);
           if (isDev) console.warn('[firestoreSyncService] safeGetDocs error:', err);
           resolve(null);
         }
@@ -228,12 +233,14 @@ async function safeGetDocs(queryRef: any, timeoutMs: number = DEFAULT_FIRESTORE_
   });
 }
 
-async function safeGetDoc(docRef: any, timeoutMs: number = DEFAULT_FIRESTORE_TIMEOUT_MS): Promise<any> {
+async function safeGetDoc(docRef: any, timeoutMs: number = DEFAULT_FIRESTORE_TIMEOUT_MS, callerTag = 'firestore.getDoc'): Promise<any> {
+  const probe = concurrencyTelemetry.startExecuting('FIRESTORE_OP', callerTag);
   return new Promise((resolve) => {
     let resolved = false;
     const timer = setTimeout(() => {
       if (!resolved) {
         resolved = true;
+        probe.finish(new Error(`Timeout after ${timeoutMs}ms`));
         if (isDev) console.warn(`[firestoreSyncService] getDoc query timed out after ${timeoutMs}ms.`);
         resolve(null);
       }
@@ -244,6 +251,7 @@ async function safeGetDoc(docRef: any, timeoutMs: number = DEFAULT_FIRESTORE_TIM
         if (!resolved) {
           resolved = true;
           clearTimeout(timer);
+          probe.finish();
           resolve(snap);
         }
       })
@@ -251,6 +259,7 @@ async function safeGetDoc(docRef: any, timeoutMs: number = DEFAULT_FIRESTORE_TIM
         if (!resolved) {
           resolved = true;
           clearTimeout(timer);
+          probe.finish(err);
           if (isDev) console.warn('[firestoreSyncService] safeGetDoc error:', err);
           resolve(null);
         }
@@ -440,6 +449,7 @@ export async function syncUserDataToFirestore(
 
   activeSyncsByUid.add(uid);
   isSyncInProgress = true;
+  const syncProbe = concurrencyTelemetry.startExecuting('SYNC_TASK', 'firestore.syncUserData');
   try {
     const nowIso = new Date().toISOString();
     const userCount = exportData.users?.length || 0;
@@ -594,12 +604,14 @@ export async function syncUserDataToFirestore(
       allotmentCount,
     };
   } catch (err: any) {
+    syncProbe.finish(err);
     if (isDev) console.error('[firestoreSyncService] syncUserDataToFirestore error:', err);
     return {
       success: false,
       error: err?.message || 'Failed to synchronize data to Firestore.',
     };
   } finally {
+    syncProbe.finish();
     activeSyncsByUid.delete(uid);
     isSyncInProgress = false;
   }
@@ -988,12 +1000,20 @@ export async function applyCriticalDeltaToSQLite(
             'applyCriticalDelta.deleteApp'
           );
         } else {
-          const local = await db.getFirstAsync<{ updated_at: string }>(
-            'SELECT updated_at FROM ipo_applications WHERE id = ?',
+          const local = await db.getFirstAsync<{ updated_at: string; sync_status: string }>(
+            'SELECT updated_at, sync_status FROM ipo_applications WHERE id = ?',
             [app.id]
           );
-          if (local?.updated_at && app.updated_at && local.updated_at > app.updated_at) {
-            continue;
+          if (local) {
+            const localTs = local.updated_at ? new Date(local.updated_at).getTime() : 0;
+            const cloudTs = app.updated_at ? new Date(app.updated_at).getTime() : 0;
+            const isLocalPending = local.sync_status === 'PENDING';
+            if (
+              (localTs > 0 && cloudTs > 0 && localTs > cloudTs) ||
+              (isLocalPending && (cloudTs === 0 || localTs >= cloudTs))
+            ) {
+              continue;
+            }
           }
           await safeRunAsync(
             db,
@@ -1353,6 +1373,7 @@ export async function syncDeltaFromFirestore(
   activeSyncsByUid.add(uid);
   isSyncInProgress = true;
   setSuppressCloudSync(true);
+  const deltaProbe = concurrencyTelemetry.startExecuting('SYNC_TASK', 'firestore.syncDelta');
 
   const totalStartTime = Date.now();
   const stagedCallbacks: StagedSyncCallbacks =
@@ -1560,6 +1581,7 @@ export async function syncDeltaFromFirestore(
     const totalDurationMs = Date.now() - totalStartTime;
     logDevTiming('Total Incremental Delta Sync', totalDurationMs, `Stage 1: ${stage1DurationMs}ms, changed: ${stage1Changed + stage2Changed}`);
 
+    deltaProbe.finish();
     return {
       success: true,
       upToDate: false,
@@ -1569,9 +1591,11 @@ export async function syncDeltaFromFirestore(
       totalDurationMs,
     };
   } catch (err: any) {
+    deltaProbe.finish(err);
     if (isDev) console.error('[firestoreSyncService] syncDeltaFromFirestore error:', err);
     return { success: false, error: err?.message || 'Delta sync error.' };
   } finally {
+    deltaProbe.finish();
     setSuppressCloudSync(false);
     activeSyncsByUid.delete(uid);
     isSyncInProgress = false;

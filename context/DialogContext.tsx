@@ -282,7 +282,7 @@ const styles = StyleSheet.create({
   },
   btn: {
     height: 48,
-    borderRadius: 14,
+    borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 16,

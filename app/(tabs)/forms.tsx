@@ -665,7 +665,7 @@ const styles = StyleSheet.create({
   headerEyebrow: { fontSize: 11, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 2 },
   headerTitle: { fontSize: 30, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.8, lineHeight: 34 },
   desc: { fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', marginBottom: 16, lineHeight: 20 },
-  primaryBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 14, paddingVertical: 14 },
+  primaryBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 9999, paddingVertical: 14 },
   primaryBtnText: { color: '#fff', fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 0.1 },
 
   // Collapsible Cards
@@ -742,10 +742,10 @@ const styles = StyleSheet.create({
   userBlockAmt: { fontSize: 12, fontFamily: 'GoogleSansFlex_600SemiBold' },
   pickerHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1 },
   pickerSheetTitleInline: { fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
-  selectAllBtn: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6 },
+  selectAllBtn: { borderWidth: 1, borderRadius: 9999, paddingHorizontal: 14, paddingVertical: 6 },
   selectAllBtnText: { fontSize: 13, fontFamily: 'GoogleSansFlex_500Medium' },
   pickerDoneWrap: { padding: 16 },
-  pickerDoneBtn: { borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  pickerDoneBtn: { borderRadius: 9999, paddingVertical: 14, alignItems: 'center' },
   pickerDoneBtnText: { color: '#fff', fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 0.1 },
   noData: { fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', fontStyle: 'italic' },
   emptySmall: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16, borderRadius: 12 },

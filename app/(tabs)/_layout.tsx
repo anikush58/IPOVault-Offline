@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Animated, DeviceEventEmitter, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
@@ -261,13 +261,28 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
 export default function TabLayout() {
   const [showApplySheet, setShowApplySheet] = useState(false);
 
+  const handleOpenApplySheet = useCallback(() => {
+    setShowApplySheet(true);
+  }, []);
+
+  const handleCloseApplySheet = useCallback(() => {
+    setShowApplySheet(false);
+  }, []);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('OPEN_BULK_APPLY', () => {
+      setShowApplySheet(true);
+    });
+    return () => sub.remove();
+  }, []);
+
   return (
     <View style={{ flex: 1 }}>
       <Tabs
         tabBar={(props) => (
           <CustomFloatingTabBar
             {...props}
-            onOpenApply={() => setShowApplySheet(true)}
+            onOpenApply={handleOpenApplySheet}
           />
         )}
         screenOptions={{
@@ -287,7 +302,7 @@ export default function TabLayout() {
 
       <BulkApplySheet
         visible={showApplySheet}
-        onClose={() => setShowApplySheet(false)}
+        onClose={handleCloseApplySheet}
       />
     </View>
   );

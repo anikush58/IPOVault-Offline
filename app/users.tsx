@@ -82,8 +82,8 @@ export default function UsersScreen() {
   }, [authUser, users]);
 
   // Load broker accounts & investment summaries for connected user profiles
-  const loadBrokerAccounts = useCallback(async () => {
-    if (!activeUserId) return;
+  const loadBrokerAccounts = useCallback(async (): Promise<BrokerAccountItem[]> => {
+    if (!activeUserId) return [];
     try {
       const accounts = await brokerApiService.getAccounts(activeUserId);
       setBrokerAccounts(accounts);
@@ -125,10 +125,19 @@ export default function UsersScreen() {
         ...prev,
         ...summariesMap,
       }));
+      return accounts;
     } catch (err) {
       console.warn('[UsersScreen] Failed to load broker accounts / investments:', err);
+      return [];
     }
   }, [activeUserId, applications]);
+
+  // Trigger fetch when activeUserId resolves/hydrates
+  useEffect(() => {
+    if (activeUserId) {
+      loadBrokerAccounts();
+    }
+  }, [activeUserId, loadBrokerAccounts]);
 
   // Re-fetch fresh broker accounts every time screen is focused
   useFocusEffect(
@@ -139,9 +148,21 @@ export default function UsersScreen() {
 
   // Listen for background/callback broker update events
   useEffect(() => {
-    const sub = DeviceEventEmitter.addListener('BROKER_ACCOUNT_UPDATED', () => {
-      loadBrokerAccounts();
-    });
+    const sub = DeviceEventEmitter.addListener(
+      'BROKER_ACCOUNT_UPDATED',
+      (payload?: { account?: BrokerAccountItem }) => {
+        if (payload?.account) {
+          setBrokerAccounts((prev) => {
+            const exists = prev.some((a) => a.id === payload.account!.id);
+            if (exists) {
+              return prev.map((a) => (a.id === payload.account!.id ? payload.account! : a));
+            }
+            return [...prev, payload.account!];
+          });
+        }
+        loadBrokerAccounts();
+      },
+    );
     return () => {
       sub.remove();
     };
@@ -256,8 +277,18 @@ export default function UsersScreen() {
       }
 
       if (hasToken || query.status === 'success') {
-        await loadBrokerAccounts();
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        const latestAccounts = await loadBrokerAccounts();
+        const targetAccId = query.accountId || query.account_id;
+        const matchingAcc = targetAccId
+          ? latestAccounts.find((a) => a.id === targetAccId && a.connection?.status === 'CONNECTED' && a.isActive)
+          : latestAccounts.find((a) => a.connection?.status === 'CONNECTED' && a.isActive);
+        if (matchingAcc) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          setConnectedBrokerSuccess({
+            brokerName: matchingAcc.broker || 'Broker',
+            accountName: matchingAcc.accountName || undefined,
+          });
+        }
       }
     };
 
@@ -385,17 +416,42 @@ export default function UsersScreen() {
           if (query.status === 'success' || code || tokenId || authCode || requestToken) {
             if (code || tokenId || authCode || requestToken) {
               await brokerApiService.completeOAuthCallback(
-                activeUserId,
+                resolvedUserId,
                 account.id,
                 canonical.slug,
                 { code, tokenId, authCode, requestToken, state, redirectUri },
               );
             }
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            setConnectedBrokerSuccess({
-              brokerName: canonical.displayName,
-              accountName: targetUser.name,
-            });
+
+            // Verify with backend before showing success dialog (Requirement 2 & 3)
+            let verifiedAccount: BrokerAccountItem | undefined;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              const freshAccounts = await loadBrokerAccounts();
+              verifiedAccount = freshAccounts.find(
+                (a) =>
+                  a.id === account.id &&
+                  a.isActive &&
+                  a.connection?.status === 'CONNECTED' &&
+                  a.profileId === targetUser.id,
+              );
+              if (verifiedAccount) break;
+              if (attempt < 3) {
+                await new Promise((r) => setTimeout(r, 400));
+              }
+            }
+
+            if (verifiedAccount) {
+              if (Platform.OS !== 'web') {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+              }
+              // Immediately refresh and show connected state directly on user card without modal interruption
+              await loadBrokerAccounts();
+            } else {
+              showError(
+                'Connection Incomplete',
+                'Broker authorization completed, but the linked account could not be verified with the server.',
+              );
+            }
           }
         }
       }
@@ -765,7 +821,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: 14,
+    borderRadius: 9999,
   },
   emptyAddBtnText: {
     color: '#FFFFFF',

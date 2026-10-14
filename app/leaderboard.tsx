@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef } from 'react';
+import React, { useCallback, useMemo, useState, useRef } from 'react';
 import {
   Animated,
   FlatList,
@@ -16,10 +16,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import Svg, { Circle, Defs, Path, LinearGradient as SvgLinearGradient, RadialGradient, Ellipse, Stop } from 'react-native-svg';
 import { Feather } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { useDB, type ApplicationWithDetails } from '@/context/DBContext';
 import { Tabs } from '@/components/ui/Tabs';
 import { IconButton } from '@/components/ui/IconButton';
@@ -462,6 +464,176 @@ const medalStyles = StyleSheet.create({
   },
 });
 
+// ── Reusable, Easily Replaceable Podium Rank Card ─────────────────────────────
+
+export interface PodiumRankCardProps {
+  rank: 1 | 2 | 3;
+  entry?: LeaderEntry;
+  isDark: boolean;
+  cardSource?: any; // Override asset image or pass null to use CSS fallback
+}
+
+export function PodiumRankCard({
+  rank,
+  entry,
+  isDark,
+  cardSource,
+}: PodiumRankCardProps) {
+  const [imgError, setImgError] = useState(false);
+
+  const defaultAsset =
+    rank === 1
+      ? LEADERBOARD_ASSETS.rank1Card
+      : rank === 2
+      ? LEADERBOARD_ASSETS.rank2Card
+      : LEADERBOARD_ASSETS.rank3Card;
+
+  const resolvedSource = cardSource !== undefined ? cardSource : defaultAsset;
+  const hasImage = resolvedSource && !imgError;
+
+  const cardStyle =
+    rank === 1
+      ? podiumStyles.cardGold
+      : rank === 2
+      ? podiumStyles.cardSilver
+      : podiumStyles.cardBronze;
+
+  if (!entry) {
+    return <View style={[podiumStyles.cardPlaceholder, cardStyle]} />;
+  }
+
+  // Fallback themed CSS box styling when image is missing/errored/disabled
+  const fallbackBg =
+    rank === 1
+      ? (isDark ? '#231D12' : '#FFFDF0')
+      : rank === 2
+      ? (isDark ? 'rgba(30, 41, 59, 0.95)' : '#F8FAFC')
+      : (isDark ? 'rgba(38, 29, 25, 0.95)' : '#FFF7F2');
+
+  const fallbackBorder =
+    rank === 1
+      ? (isDark ? 'rgba(245, 158, 11, 0.45)' : '#FDE68A')
+      : rank === 2
+      ? (isDark ? 'rgba(148, 163, 184, 0.3)' : '#E2E8F0')
+      : (isDark ? 'rgba(217, 119, 6, 0.30)' : '#FED7AA');
+
+  return (
+    <View
+      style={[
+        podiumStyles.card,
+        cardStyle,
+        {
+          // When a custom card image is rendered, eliminate background & border clash
+          backgroundColor: hasImage ? 'transparent' : fallbackBg,
+          borderColor: hasImage ? 'transparent' : fallbackBorder,
+          borderWidth: hasImage ? 0 : 1.5,
+        },
+      ]}
+    >
+      {/* ── Replaceable Card Background Image ── */}
+      {hasImage && (
+        <Image
+          source={resolvedSource}
+          style={StyleSheet.absoluteFillObject}
+          resizeMode="stretch"
+          onError={() => setImgError(true)}
+        />
+      )}
+
+      {/* ── Medal Badge ── */}
+      <View style={rank === 1 ? podiumStyles.medalWrapGold : podiumStyles.medalWrap}>
+        <PodiumMedalBadge rank={rank} isDark={isDark} />
+      </View>
+
+      {/* ── Card Content (Name & Transaction count) ── */}
+      {rank === 1 ? (
+        <View style={podiumStyles.laurelContainer}>
+          <View style={podiumStyles.laurelLeft}>
+            <GoldenLaurelBranch />
+          </View>
+          <View style={podiumStyles.contentCenterGold}>
+            <Text
+              style={[
+                podiumStyles.nameTextGold,
+                { color: isDark ? '#FFFFFF' : '#0F172A' },
+              ]}
+              numberOfLines={2}
+            >
+              {entry.name}
+            </Text>
+            <Text
+              style={[
+                podiumStyles.subTextGold,
+                { color: isDark ? '#94A3B8' : '#64748B' },
+              ]}
+              numberOfLines={1}
+            >
+              {entry.soldCount} {entry.soldCount === 1 ? 'transaction' : 'transactions'}
+            </Text>
+          </View>
+          <View style={podiumStyles.laurelRight}>
+            <GoldenLaurelBranch flip />
+          </View>
+        </View>
+      ) : (
+        <View style={podiumStyles.contentCenter}>
+          <Text
+            style={[
+              podiumStyles.nameText,
+              { color: isDark ? '#F8FAFC' : '#0F172A' },
+            ]}
+            numberOfLines={2}
+          >
+            {entry.name}
+          </Text>
+          <Text
+            style={[
+              podiumStyles.subText,
+              { color: isDark ? '#94A3B8' : '#64748B' },
+            ]}
+            numberOfLines={1}
+          >
+            {entry.soldCount} {entry.soldCount === 1 ? 'transaction' : 'transactions'}
+          </Text>
+        </View>
+      )}
+
+      {/* ── Profit Pill ── */}
+      <View
+        style={[
+          podiumStyles.profitPill,
+          rank === 1 ? podiumStyles.profitPillGold : undefined,
+          {
+            backgroundColor:
+              rank === 1
+                ? (isDark ? 'rgba(245, 158, 11, 0.20)' : '#FEF3C7')
+                : rank === 2
+                ? (isDark ? 'rgba(148, 163, 184, 0.18)' : '#F1F5F9')
+                : (isDark ? 'rgba(234, 88, 12, 0.18)' : '#FFEDD5'),
+          },
+        ]}
+      >
+        <Text
+          style={[
+            rank === 1 ? podiumStyles.profitTextGold : podiumStyles.profitText,
+            {
+              color:
+                rank === 1
+                  ? (isDark ? '#FBBF24' : '#B45309')
+                  : rank === 2
+                  ? (isDark ? '#CBD5E1' : '#475569')
+                  : (isDark ? '#FB923C' : '#C2410C'),
+            },
+          ]}
+          numberOfLines={1}
+        >
+          {entry.netProfit >= 0 ? '+' : ''}{formatCurrency(entry.netProfit)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 // ── Top 3 Podium Component (Below Tabs) ───────────────────────────────────────
 
 function Top3Podium({
@@ -482,189 +654,13 @@ function Top3Podium({
   return (
     <View style={podiumStyles.container}>
       {/* Rank 2 (Left - Silver) */}
-      {second ? (
-        <View
-          style={[
-            podiumStyles.card,
-            podiumStyles.cardSilver,
-            {
-              backgroundColor: isDark ? 'rgba(30, 41, 59, 0.95)' : '#F8FAFC',
-              borderColor: isDark ? 'rgba(148, 163, 184, 0.3)' : '#E2E8F0',
-            },
-          ]}
-        >
-          <View style={podiumStyles.medalWrap}>
-            <PodiumMedalBadge rank={2} isDark={isDark} />
-          </View>
-          <View style={podiumStyles.contentCenter}>
-            <Text
-              style={[
-                podiumStyles.nameText,
-                { color: isDark ? '#F8FAFC' : '#0F172A' },
-              ]}
-              numberOfLines={2}
-            >
-              {second.name}
-            </Text>
-            <Text
-              style={[
-                podiumStyles.subText,
-                { color: isDark ? '#94A3B8' : '#64748B' },
-              ]}
-              numberOfLines={1}
-            >
-              {second.soldCount} {second.soldCount === 1 ? 'transaction' : 'transactions'}
-            </Text>
-          </View>
-          <View
-            style={[
-              podiumStyles.profitPill,
-              {
-                backgroundColor: isDark ? 'rgba(148, 163, 184, 0.18)' : '#F1F5F9',
-                borderColor: isDark ? 'rgba(148, 163, 184, 0.35)' : '#E2E8F0',
-              },
-            ]}
-          >
-            <Text
-              style={[
-                podiumStyles.profitText,
-                { color: isDark ? '#CBD5E1' : '#475569' },
-              ]}
-              numberOfLines={1}
-            >
-              {second.netProfit >= 0 ? '+' : ''}{formatCurrency(second.netProfit)}
-            </Text>
-          </View>
-        </View>
-      ) : (
-        <View style={[podiumStyles.cardPlaceholder, podiumStyles.cardSilver]} />
-      )}
+      <PodiumRankCard rank={2} entry={second} isDark={isDark} />
 
       {/* Rank 1 (Center - Gold) */}
-      <View
-        style={[
-          podiumStyles.card,
-          podiumStyles.cardGold,
-          {
-            backgroundColor: isDark ? '#231D12' : '#FFFDF0',
-            borderColor: isDark ? 'rgba(245, 158, 11, 0.45)' : '#FDE68A',
-          },
-        ]}
-      >
-        <View style={podiumStyles.medalWrapGold}>
-          <PodiumMedalBadge rank={1} isDark={isDark} />
-        </View>
-
-        {/* Laurel Wreaths flanking name */}
-        <View style={podiumStyles.laurelContainer}>
-          <View style={podiumStyles.laurelLeft}>
-            <GoldenLaurelBranch />
-          </View>
-          <View style={podiumStyles.contentCenterGold}>
-            <Text
-              style={[
-                podiumStyles.nameTextGold,
-                { color: isDark ? '#FFFFFF' : '#0F172A' },
-              ]}
-              numberOfLines={2}
-            >
-              {first.name}
-            </Text>
-            <Text
-              style={[
-                podiumStyles.subTextGold,
-                { color: isDark ? '#94A3B8' : '#64748B' },
-              ]}
-              numberOfLines={1}
-            >
-              {first.soldCount} {first.soldCount === 1 ? 'transaction' : 'transactions'}
-            </Text>
-          </View>
-          <View style={podiumStyles.laurelRight}>
-            <GoldenLaurelBranch flip />
-          </View>
-        </View>
-
-        <View
-          style={[
-            podiumStyles.profitPill,
-            podiumStyles.profitPillGold,
-            {
-              backgroundColor: isDark ? 'rgba(245, 158, 11, 0.20)' : '#FEF3C7',
-              borderColor: isDark ? 'rgba(245, 158, 11, 0.45)' : '#FDE68A',
-            },
-          ]}
-        >
-          <Text
-            style={[
-              podiumStyles.profitTextGold,
-              { color: isDark ? '#FBBF24' : '#B45309' },
-            ]}
-            numberOfLines={1}
-          >
-            {first.netProfit >= 0 ? '+' : ''}{formatCurrency(first.netProfit)}
-          </Text>
-        </View>
-      </View>
+      <PodiumRankCard rank={1} entry={first} isDark={isDark} />
 
       {/* Rank 3 (Right - Bronze) */}
-      {third ? (
-        <View
-          style={[
-            podiumStyles.card,
-            podiumStyles.cardBronze,
-            {
-              backgroundColor: isDark ? 'rgba(38, 29, 25, 0.95)' : '#FFF7F2',
-              borderColor: isDark ? 'rgba(217, 119, 6, 0.30)' : '#FED7AA',
-            },
-          ]}
-        >
-          <View style={podiumStyles.medalWrap}>
-            <PodiumMedalBadge rank={3} isDark={isDark} />
-          </View>
-          <View style={podiumStyles.contentCenter}>
-            <Text
-              style={[
-                podiumStyles.nameText,
-                { color: isDark ? '#F8FAFC' : '#0F172A' },
-              ]}
-              numberOfLines={2}
-            >
-              {third.name}
-            </Text>
-            <Text
-              style={[
-                podiumStyles.subText,
-                { color: isDark ? '#94A3B8' : '#64748B' },
-              ]}
-              numberOfLines={1}
-            >
-              {third.soldCount} {third.soldCount === 1 ? 'transaction' : 'transactions'}
-            </Text>
-          </View>
-          <View
-            style={[
-              podiumStyles.profitPill,
-              {
-                backgroundColor: isDark ? 'rgba(234, 88, 12, 0.18)' : '#FFEDD5',
-                borderColor: isDark ? 'rgba(234, 88, 12, 0.35)' : '#FED7AA',
-              },
-            ]}
-          >
-            <Text
-              style={[
-                podiumStyles.profitText,
-                { color: isDark ? '#FB923C' : '#C2410C' },
-              ]}
-              numberOfLines={1}
-            >
-              {third.netProfit >= 0 ? '+' : ''}{formatCurrency(third.netProfit)}
-            </Text>
-          </View>
-        </View>
-      ) : (
-        <View style={[podiumStyles.cardPlaceholder, podiumStyles.cardBronze]} />
-      )}
+      <PodiumRankCard rank={3} entry={third} isDark={isDark} />
     </View>
   );
 }
@@ -676,11 +672,11 @@ const podiumStyles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 0,
     paddingTop: 16,
-    paddingBottom: 14,
+    paddingBottom: 0,
     gap: 8,
   },
   card: {
-    borderRadius: 22,
+    borderRadius: 0,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -701,7 +697,7 @@ const podiumStyles = StyleSheet.create({
   cardGold: {
     flex: 1.18,
     minHeight: 220,
-    borderRadius: 24,
+    borderRadius: 0,
     paddingVertical: 14,
     paddingHorizontal: 4,
     marginTop: 0,
@@ -796,8 +792,8 @@ const podiumStyles = StyleSheet.create({
     textAlign: 'center',
   },
   profitPill: {
-    borderRadius: 100,
-    borderWidth: 1,
+    borderRadius: 8,
+    borderWidth: 0,
     paddingVertical: 5,
     paddingHorizontal: 8,
     alignItems: 'center',
@@ -911,6 +907,32 @@ export default function LeaderboardScreen() {
     () => filteredRankings.slice(3),
     [filteredRankings],
   );
+  const tabKeys: TabKey[] = useMemo(() => ['user', 'ipo'], []);
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+
+  const handleTabChange = useCallback((nextTab: TabKey) => {
+    if (nextTab === activeTabRef.current) return;
+    try {
+      Haptics.selectionAsync();
+    } catch {}
+    setActiveTab(nextTab);
+  }, []);
+
+  const swipeHandlers = useSwipeGesture({
+    onSwipeLeft: useCallback(() => {
+      const currentIdx = tabKeys.indexOf(activeTabRef.current);
+      if (currentIdx < tabKeys.length - 1) {
+        handleTabChange(tabKeys[currentIdx + 1]);
+      }
+    }, [handleTabChange, tabKeys]),
+    onSwipeRight: useCallback(() => {
+      const currentIdx = tabKeys.indexOf(activeTabRef.current);
+      if (currentIdx > 0) {
+        handleTabChange(tabKeys[currentIdx - 1]);
+      }
+    }, [handleTabChange, tabKeys]),
+  });
 
   const toggleSearch = () => {
     if (showSearch) {
@@ -942,12 +964,17 @@ export default function LeaderboardScreen() {
 
   const searchBarHeight = searchAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, 48],
+    outputRange: [0, 46],
   });
 
   const searchBarOpacity = searchAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [0, 1],
+  });
+
+  const tabPaddingTop = searchAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [16, 4],
   });
 
   const renderItem = ({ item, index }: { item: LeaderEntry; index: number }) => {
@@ -988,7 +1015,10 @@ export default function LeaderboardScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View
+      style={[styles.container, { backgroundColor: colors.background }]}
+      {...swipeHandlers}
+    >
       {/* Floating Blurred Header */}
       <View
         style={[
@@ -1062,15 +1092,15 @@ export default function LeaderboardScreen() {
         </Animated.View>
 
         {/* Pill Control */}
-        <View style={styles.tabBarWrap}>
+        <Animated.View style={[styles.tabBarWrap, { paddingTop: tabPaddingTop }]}>
           <Tabs
             variant="pills"
             height={36}
             tabs={tabsConfig}
             activeTab={activeTab}
-            onChange={(key) => setActiveTab(key as TabKey)}
+            onChange={(key) => handleTabChange(key as TabKey)}
           />
-        </View>
+        </Animated.View>
       </View>
 
       {/* List with Top 3 Podium in Header */}
@@ -1080,7 +1110,7 @@ export default function LeaderboardScreen() {
         renderItem={renderItem}
         contentContainerStyle={[
           styles.listContent,
-          { paddingTop: topPad + (showSearch ? 179 : 127) },
+          { paddingTop: topPad + (showSearch ? 162 : 122) },
         ]}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
@@ -1093,7 +1123,7 @@ export default function LeaderboardScreen() {
             onRefresh={refresh}
             colors={[colors.primary]}
             tintColor={colors.primary}
-            progressViewOffset={topPad + (showSearch ? 175 : 123)}
+            progressViewOffset={topPad + (showSearch ? 158 : 118)}
           />
         }
         ListHeaderComponent={
@@ -1104,13 +1134,6 @@ export default function LeaderboardScreen() {
                 isDark={isDark}
                 colors={colors}
               />
-              {remainingRankings.length > 0 && (
-                <View style={styles.sectionDividerWrap}>
-                  <Text style={[styles.sectionEyebrow, { color: colors.mutedForeground }]}>
-                    OTHER RANKINGS
-                  </Text>
-                </View>
-              )}
             </View>
           ) : null
         }
@@ -1183,7 +1206,7 @@ const styles = StyleSheet.create({
   },
   tabBarWrap: {
     paddingHorizontal: 16,
-    paddingTop: 21,
+    paddingTop: 16,
     paddingBottom: 4,
     borderBottomWidth: 0,
   },
@@ -1194,17 +1217,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   headerComponentWrap: {
-    marginBottom: 6,
-  },
-  sectionDividerWrap: {
-    paddingTop: 14,
-    paddingBottom: 6,
-    paddingHorizontal: 4,
-  },
-  sectionEyebrow: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 0.8,
+    marginBottom: 5,
   },
   rowCard: {
     flexDirection: 'row',

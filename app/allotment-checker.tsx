@@ -12,6 +12,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -49,6 +50,8 @@ import {
 import { ApiClient, ApiRequestTrace } from '@/services/api/ApiClient';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { BackendIpo } from '@/types/backend-ipo';
+import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
+import { getCachedBackendIpos, saveBackendIposToCache } from '@/services/ipo/ipoHubCacheService';
 
 import {
   AllotmentCheckerIpoItem,
@@ -979,6 +982,10 @@ const ConfettiContainer = () => {
 // MAIN SCREEN COMPONENT
 // ==========================================
 
+// Global warm cache across component remounts
+const ALLOTMENT_IPOS_CACHE_STORAGE_KEY = '@ipovault_cached_allotment_backend_ipos_v1';
+let _sharedAllotmentIposCache: BackendIpo[] = [];
+
 export default function AllotmentCheckerScreen() {
   const colors = useColors();
   const { resolvedScheme } = useTheme();
@@ -998,10 +1005,58 @@ export default function AllotmentCheckerScreen() {
     return resolveCanonicalBrokerUserId(user, users);
   }, [user, users]);
 
-  // Backend-published IPOs state
-  const [backendIpos, setBackendIpos] = useState<BackendIpo[]>([]);
+  // Backend-published IPOs state (hydrated synchronously from warm memory if available)
+  const [backendIpos, setBackendIpos] = useState<BackendIpo[]>(() => {
+    if (_sharedAllotmentIposCache.length > 0) return _sharedAllotmentIposCache;
+    const serviceCache = backendIpoApiService.getCachedIpos();
+    if (serviceCache && serviceCache.length > 0) {
+      _sharedAllotmentIposCache = serviceCache;
+      return serviceCache;
+    }
+    return [];
+  });
   const [isLoadingPublishedIpos, setIsLoadingPublishedIpos] = useState(false);
   const [directSelectedIpo, setDirectSelectedIpo] = useState<AllotmentCheckerIpoItem | null>(null);
+  const [ipoSearchQuery, setIpoSearchQuery] = useState('');
+
+  // Immediate offline-first hydration from SQLite & persistent storage
+  useEffect(() => {
+    let isMounted = true;
+    const hydrateLocalCache = async () => {
+      if (_sharedAllotmentIposCache.length > 0) return;
+
+      // Tier 1: Local SQLite ipo_master table (near-instant 1-3ms)
+      try {
+        if (db) {
+          const sqliteCached = await getCachedBackendIpos(db);
+          if (isMounted && sqliteCached.length > 0) {
+            _sharedAllotmentIposCache = sqliteCached;
+            setBackendIpos(sqliteCached);
+            return;
+          }
+        }
+      } catch (err) {
+        // Fallback to AsyncStorage
+      }
+
+      // Tier 2: SafeAsyncStorage fallback
+      try {
+        const rawCached = await safeAsyncStorage.getItem(ALLOTMENT_IPOS_CACHE_STORAGE_KEY);
+        if (isMounted && rawCached) {
+          const parsed = JSON.parse(rawCached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            _sharedAllotmentIposCache = parsed;
+            setBackendIpos(parsed);
+          }
+        }
+      } catch (err) {}
+    };
+
+    hydrateLocalCache();
+    return () => {
+      isMounted = false;
+    };
+  }, [db]);
 
   // Helper to append to chronological log
   const addLog = useCallback((message: string, type: 'info' | 'success' | 'warn' | 'error' = 'info') => {
@@ -1010,21 +1065,46 @@ export default function AllotmentCheckerScreen() {
     setEventLogs((prev) => [{ timestamp, message, type }, ...prev].slice(0, 60));
   }, []);
 
-  const fetchPublishedIpos = useCallback(async () => {
-    try {
-      setIsLoadingPublishedIpos(true);
-      const items = await backendIpoApiService.listBackendIpos();
-      setBackendIpos(items);
-      addLog(`Loaded ${items.length} published IPOs from backend`, 'info');
-    } catch (err: any) {
-      addLog(`Failed to load published IPOs: ${err?.message || String(err)}`, 'warn');
-    } finally {
-      setIsLoadingPublishedIpos(false);
-    }
-  }, [addLog]);
+  const fetchPublishedIpos = useCallback(
+    async (options?: { forceRefresh?: boolean }) => {
+      try {
+        if (_sharedAllotmentIposCache.length === 0 && backendIpos.length === 0) {
+          setIsLoadingPublishedIpos(true);
+        }
+        const items = await backendIpoApiService.listBackendIpos(undefined, options);
+        if (items && items.length > 0) {
+          _sharedAllotmentIposCache = items;
+          setBackendIpos(items);
+          addLog(`Loaded ${items.length} published IPOs from backend`, 'info');
+
+          // Asynchronously persist to SQLite and AsyncStorage for future instant loads
+          if (db) {
+            saveBackendIposToCache(db, items).catch(() => {});
+          }
+          safeAsyncStorage
+            .setItem(ALLOTMENT_IPOS_CACHE_STORAGE_KEY, JSON.stringify(items.slice(0, 100)))
+            .catch(() => {});
+        }
+      } catch (err: any) {
+        addLog(`Failed to load published IPOs: ${err?.message || String(err)}`, 'warn');
+      } finally {
+        setIsLoadingPublishedIpos(false);
+      }
+    },
+    [addLog, db, backendIpos.length],
+  );
 
   useEffect(() => {
     fetchPublishedIpos();
+  }, [fetchPublishedIpos]);
+
+  // Background live revalidation on sync events
+  useEffect(() => {
+    const unsub = backendSyncEmitter.subscribe((event) => {
+      if (event === 'applications') return;
+      fetchPublishedIpos({ forceRefresh: true });
+    });
+    return unsub;
   }, [fetchPublishedIpos]);
 
   // Selected IPO — Defaults to NULL on initial mount (idle state)
@@ -1203,6 +1283,18 @@ export default function AllotmentCheckerScreen() {
     const sorted = sortCheckerIposByAllotmentRecency(eligible);
     return sorted.map(normalizeBackendIpoForChecker);
   }, [backendIpos]);
+
+  // Filtered selectable IPOs based on search query in the picker modal
+  const filteredSelectableIpos = useMemo((): AllotmentCheckerIpoItem[] => {
+    if (!ipoSearchQuery.trim()) return selectableIpos;
+    const q = ipoSearchQuery.trim().toLowerCase();
+    return selectableIpos.filter(
+      (item) =>
+        item.ipo_name.toLowerCase().includes(q) ||
+        (item.symbol && item.symbol.toLowerCase().includes(q)) ||
+        (item.company_name && item.company_name.toLowerCase().includes(q))
+    );
+  }, [selectableIpos, ipoSearchQuery]);
 
   // Selected IPO object (strictly derived from selectedIpoId, NO fallback auto-selection)
   const selectedIpo = useMemo((): AllotmentCheckerIpoItem | null => {
@@ -1815,6 +1907,7 @@ export default function AllotmentCheckerScreen() {
   const handleSwitchIpo = useCallback(() => {
     resetCheckState();
     setSelectedIpoId(null);
+    setIpoSearchQuery('');
     setShowIpoPicker(true);
     addLog('Switched IPO selection', 'info');
   }, [resetCheckState, addLog]);
@@ -2260,7 +2353,10 @@ export default function AllotmentCheckerScreen() {
                 borderColor: colors.border,
               },
             ]}
-            onPress={() => setShowIpoPicker(true)}
+            onPress={() => {
+              setIpoSearchQuery('');
+              setShowIpoPicker(true);
+            }}
             activeOpacity={0.82}
           >
             <View style={styles.ipoSelectorLeft}>
@@ -2677,7 +2773,7 @@ export default function AllotmentCheckerScreen() {
                 backgroundColor: '#B45309',
                 paddingHorizontal: 14,
                 paddingVertical: 8,
-                borderRadius: 8,
+                borderRadius: 9999,
                 alignSelf: 'flex-start',
               }}
               onPress={() => void Linking.openURL(registrarConfig.url)}
@@ -2963,12 +3059,18 @@ export default function AllotmentCheckerScreen() {
         transparent
         animationType="fade"
         statusBarTranslucent
-        onRequestClose={() => setShowIpoPicker(false)}
+        onRequestClose={() => {
+          setIpoSearchQuery('');
+          setShowIpoPicker(false);
+        }}
       >
         <TouchableOpacity
           style={styles.pickerModalOverlay}
           activeOpacity={1}
-          onPress={() => setShowIpoPicker(false)}
+          onPress={() => {
+            setIpoSearchQuery('');
+            setShowIpoPicker(false);
+          }}
         >
           <TouchableOpacity
             activeOpacity={1}
@@ -2982,7 +3084,10 @@ export default function AllotmentCheckerScreen() {
                 Select IPO to Check Allotment
               </Text>
               <TouchableOpacity
-                onPress={() => setShowIpoPicker(false)}
+                onPress={() => {
+                  setIpoSearchQuery('');
+                  setShowIpoPicker(false);
+                }}
                 style={styles.pickerCloseBtn}
                 hitSlop={8}
               >
@@ -2990,18 +3095,64 @@ export default function AllotmentCheckerScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Fast Instant Search Bar */}
+            <View
+              style={[
+                styles.pickerSearchContainer,
+                {
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F8FAFC',
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Feather
+                name="search"
+                size={16}
+                color={colors.mutedForeground}
+                style={{ marginRight: 8 }}
+              />
+              <TextInput
+                value={ipoSearchQuery}
+                onChangeText={setIpoSearchQuery}
+                placeholder="Search IPO name or symbol..."
+                placeholderTextColor={colors.mutedForeground}
+                style={[styles.pickerSearchInput, { color: colors.foreground }]}
+                autoCapitalize="none"
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+              />
+              {ipoSearchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setIpoSearchQuery('')} hitSlop={8}>
+                  <Feather name="x-circle" size={16} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              )}
+            </View>
+
             <FlatList
-              data={selectableIpos}
+              data={filteredSelectableIpos}
               keyExtractor={(item) => item.id}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
+              initialNumToRender={20}
+              maxToRenderPerBatch={15}
+              windowSize={5}
+              removeClippedSubviews={Platform.OS === 'android'}
               ListEmptyComponent={
                 <View style={{ padding: 24, alignItems: 'center', justifyContent: 'center' }}>
-                  {isLoadingPublishedIpos ? (
+                  {isLoadingPublishedIpos && selectableIpos.length === 0 ? (
                     <ActivityIndicator size="small" color={colors.primary} />
                   ) : (
-                    <Text style={{ color: colors.mutedForeground, fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', textAlign: 'center' }}>
-                      No IPOs available for allotment checking.
+                    <Text
+                      style={{
+                        color: colors.mutedForeground,
+                        fontSize: 13,
+                        fontFamily: 'GoogleSansFlex_400Regular',
+                        textAlign: 'center',
+                      }}
+                    >
+                      {ipoSearchQuery.trim()
+                        ? `No IPOs matching "${ipoSearchQuery}"`
+                        : 'No IPOs available for allotment checking.'}
                     </Text>
                   )}
                 </View>
@@ -3015,26 +3166,44 @@ export default function AllotmentCheckerScreen() {
                       borderBottomColor: colors.border,
                       backgroundColor:
                         selectedIpoId === item.id
-                          ? (isDark ? '#27272A' : '#F1F5F9')
+                          ? isDark
+                            ? '#27272A'
+                            : '#F1F5F9'
                           : 'transparent',
                     },
                   ]}
-                  onPress={() => handleSelectIpo(item.id)}
+                  onPress={() => {
+                    setIpoSearchQuery('');
+                    handleSelectIpo(item.id);
+                  }}
                 >
-                  <Text
-                    style={[
-                      styles.pickerRowName,
-                      {
-                        color:
-                          selectedIpoId === item.id
-                            ? colors.primary
-                            : colors.foreground,
-                      },
-                    ]}
-                    numberOfLines={2}
-                  >
-                    {item.ipo_name}
-                  </Text>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text
+                      style={[
+                        styles.pickerRowName,
+                        {
+                          color:
+                            selectedIpoId === item.id
+                              ? colors.primary
+                              : colors.foreground,
+                        },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {item.ipo_name}
+                    </Text>
+                    {item.registrar ? (
+                      <Text
+                        style={[
+                          styles.pickerRowSub,
+                          { color: colors.mutedForeground },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        Registrar: {item.registrar}
+                      </Text>
+                    ) : null}
+                  </View>
                   {selectedIpoId === item.id && (
                     <Feather name="check" size={16} color={colors.primary} />
                   )}
@@ -3601,7 +3770,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 7,
-    borderRadius: 12,
+    borderRadius: 9999,
     borderWidth: 1,
   },
   switchButtonText: {
@@ -3961,6 +4130,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  pickerSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginVertical: 10,
+    paddingHorizontal: 12,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  pickerSearchInput: {
+    flex: 1,
+    fontSize: 13.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    paddingVertical: 0,
+  },
   pickerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3974,6 +4159,11 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_600SemiBold',
     flex: 1,
     marginRight: 8,
+  },
+  pickerRowSub: {
+    fontSize: 11.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 2,
   },
   scrollContentIdle: {
     flexGrow: 1,
@@ -4135,7 +4325,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#10B981',
     paddingVertical: 13,
     paddingHorizontal: 28,
-    borderRadius: 12,
+    borderRadius: 9999,
     width: '100%',
     alignItems: 'center',
   },

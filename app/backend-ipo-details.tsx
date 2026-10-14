@@ -71,7 +71,8 @@ export default function BackendIpoDetailsScreen() {
       fetchDetail();
     }, 15000);
 
-    const unsubscribe = backendSyncEmitter.subscribe(() => {
+    const unsubscribe = backendSyncEmitter.subscribe((event) => {
+      if (event === 'applications') return;
       fetchDetail();
     });
 

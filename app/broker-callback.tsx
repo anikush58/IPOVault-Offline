@@ -17,7 +17,7 @@ import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/context/AuthContext';
 import { useDB } from '@/context/DBContext';
-import { brokerApiService } from '@/services/broker/BrokerApiService';
+import { brokerApiService, getCanonicalBroker } from '@/services/broker/BrokerApiService';
 import { resolveCanonicalBrokerUserId } from '@/utils/brokerMatching';
 
 export default function BrokerCallbackScreen() {
@@ -31,6 +31,7 @@ export default function BrokerCallbackScreen() {
   const params = useLocalSearchParams<{
     status?: string;
     accountId?: string;
+    profileId?: string;
     broker?: string;
     error?: string;
     error_description?: string;
@@ -47,12 +48,11 @@ export default function BrokerCallbackScreen() {
   }, [authUser, users]);
 
   const [isProcessing, setIsProcessing] = useState(true);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [verifiedAccount, setVerifiedAccount] = useState<any | null>(null);
+  const [verifiedUserName, setVerifiedUserName] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const hasProcessedRef = useRef(false);
-
-  const isSuccess =
-    params.status === 'success' ||
-    Boolean(params.accountId && !params.error && !errorMessage);
 
   useEffect(() => {
     let mounted = true;
@@ -62,13 +62,14 @@ export default function BrokerCallbackScreen() {
       hasProcessedRef.current = true;
 
       try {
-        if (params.error || params.error_description) {
+        if (params.error || params.error_description || params.status === 'error') {
           const err =
             params.error_description ||
             params.error ||
             'Broker connection failed or was cancelled.';
           if (mounted) {
             setErrorMessage(err);
+            setIsSuccess(false);
             setIsProcessing(false);
           }
           if (Platform.OS !== 'web') {
@@ -77,45 +78,128 @@ export default function BrokerCallbackScreen() {
           return;
         }
 
-        // Trigger portfolio / accounts refresh in background
-        if (activeUserId) {
-          try {
-            await Promise.allSettled([
-              brokerApiService.getAccounts(activeUserId),
-              brokerApiService.getUserPortfolio(activeUserId),
-            ]);
-          } catch {
-            // Non-critical background refresh failure
+        const targetAccountId = params.accountId?.trim();
+        if (!targetAccountId && params.status !== 'success') {
+          if (mounted) {
+            setErrorMessage('No broker account identifier received.');
+            setIsSuccess(false);
+            setIsProcessing(false);
+          }
+          return;
+        }
+
+        // Wait for authenticated user ID if it is currently hydrating from session
+        let currentUserId = activeUserId;
+        if (!currentUserId) {
+          for (let i = 0; i < 15; i++) {
+            await new Promise((r) => setTimeout(r, 200));
+            if (!mounted) return;
+            currentUserId = resolveCanonicalBrokerUserId(authUser, users);
+            if (currentUserId) break;
           }
         }
 
-        // Emit global event so mounted screens refresh immediately
+        if (!currentUserId) {
+          if (mounted) {
+            setErrorMessage('Sign-in required to confirm broker account connection.');
+            setIsSuccess(false);
+            setIsProcessing(false);
+          }
+          return;
+        }
+
+        // Query backend with retries to safely handle delayed backend persistence / eventual consistency
+        let verifiedAcc: any | null = null;
+        const maxAttempts = 4;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            const accounts = await brokerApiService.getAccounts(currentUserId);
+            let candidate: any | undefined;
+            if (targetAccountId) {
+              candidate = accounts.find((a) => a.id === targetAccountId);
+              if (!candidate) {
+                candidate = (await brokerApiService.getAccount(currentUserId, targetAccountId)) || undefined;
+              }
+            } else if (params.profileId) {
+              const canonical = getCanonicalBroker(params.broker || brokerName);
+              candidate = accounts.find(
+                (a) =>
+                  a.profileId === params.profileId &&
+                  (!canonical || a.broker === canonical.brokerType),
+              );
+            }
+
+            if (
+              candidate &&
+              candidate.isActive &&
+              candidate.connection?.status === 'CONNECTED'
+            ) {
+              // 1. Verify account identifier match
+              if (targetAccountId && candidate.id !== targetAccountId) {
+                throw new Error('Broker account ID mismatch.');
+              }
+              // 2. Verify family profile mapping match (cannot match another family member)
+              if (params.profileId && candidate.profileId !== params.profileId) {
+                throw new Error('Broker account is linked to a different family profile.');
+              }
+              // 3. Verify broker type consistency
+              const canonical = getCanonicalBroker(params.broker || brokerName);
+              if (canonical && candidate.broker !== canonical.brokerType) {
+                throw new Error('Broker account does not match requested broker type.');
+              }
+              verifiedAcc = candidate;
+              break;
+            }
+          } catch (fetchErr: any) {
+            if (attempt === maxAttempts) throw fetchErr;
+          }
+
+          if (attempt < maxAttempts) {
+            await new Promise((r) => setTimeout(r, 500));
+            if (!mounted) return;
+          }
+        }
+
+        if (!verifiedAcc) {
+          throw new Error('Broker account connection could not be verified with the server.');
+        }
+
+        // Resolve matching local user name for UI clarity
+        const matchedLocalUser = users.find((u) => u.id === verifiedAcc!.profileId);
+        const resolvedName = matchedLocalUser?.name || verifiedAcc.accountName || null;
+
+        // Emit global event with verified account payload so listeners update immediately
         DeviceEventEmitter.emit('BROKER_ACCOUNT_UPDATED', {
           broker: brokerName,
-          accountId: params.accountId,
+          accountId: verifiedAcc.id,
+          profileId: verifiedAcc.profileId,
+          account: verifiedAcc,
           status: 'success',
         });
+
+        // Trigger portfolio refresh in background
+        brokerApiService.getUserPortfolio(currentUserId).catch(() => {});
 
         if (Platform.OS !== 'web') {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
 
+        // Return directly to the originating screen without intermediate screens or delay
         if (mounted) {
-          setIsProcessing(false);
-        }
-
-        // Auto redirect explicitly to Manage Users screen after 1.5s
-        const timer = setTimeout(() => {
-          if (mounted) {
-            navigateBack();
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace('/users' as any);
           }
-        }, 1500);
-
-        return () => clearTimeout(timer);
+        }
       } catch (err: any) {
         if (mounted) {
           setErrorMessage(err?.message || 'Failed to complete broker connection');
+          setIsSuccess(false);
           setIsProcessing(false);
+        }
+        if (Platform.OS !== 'web') {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         }
       }
     }
@@ -125,10 +209,23 @@ export default function BrokerCallbackScreen() {
     return () => {
       mounted = false;
     };
-  }, [params, activeUserId, brokerName]);
+  }, [params, activeUserId, authUser, users, brokerName]);
 
   const navigateBack = () => {
-    router.replace('/users' as any);
+    if (verifiedAccount) {
+      DeviceEventEmitter.emit('BROKER_ACCOUNT_UPDATED', {
+        broker: brokerName,
+        accountId: verifiedAccount.id,
+        profileId: verifiedAccount.profileId,
+        account: verifiedAccount,
+        status: 'success',
+      });
+    }
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/users' as any);
+    }
   };
 
   return (
@@ -281,7 +378,7 @@ const styles = StyleSheet.create({
     gap: 8,
     height: 48,
     paddingHorizontal: 24,
-    borderRadius: 14,
+    borderRadius: 9999,
     width: '100%',
   },
   actionButtonText: {

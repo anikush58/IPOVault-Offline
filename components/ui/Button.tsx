@@ -154,7 +154,7 @@ export function Button({
           height: 54,
           paddingHorizontal: 20,
           fontSize: DesignSystem.typography.size.subhead, // 15
-          radius: 100, // pill shape
+          radius: DesignSystem.radius.pill,
           iconSize: 18,
         };
       case 'sm':
@@ -162,7 +162,7 @@ export function Button({
           height: 36,
           paddingHorizontal: 12,
           fontSize: DesignSystem.typography.size.bodySm, // 12
-          radius: 100, // pill shape
+          radius: DesignSystem.radius.pill,
           iconSize: 14,
         };
       case 'md':
@@ -171,7 +171,7 @@ export function Button({
           height: 46,
           paddingHorizontal: 16,
           fontSize: DesignSystem.typography.size.bodyLg, // 14
-          radius: 100, // pill shape
+          radius: DesignSystem.radius.pill,
           iconSize: 16,
         };
     }

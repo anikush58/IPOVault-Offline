@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -28,6 +28,7 @@ import { resolveCanonicalBrokerUserId } from '@/utils/brokerMatching';
 import { StatusBadge } from './StatusBadge';
 import { formatCurrency, getResolvedLogoUrl, todayISO } from '@/utils/formatters';
 import { calcBuyValue, calcNetProfit, calcProfitLoss, calcSaleValue } from '@/utils/calculations';
+import { resolveBankLinkedUpiApp, UPI_APPS } from '@/utils/bulkApplyUtils';
 
 type Props = { application: ApplicationWithDetails | null; onClose: () => void };
 
@@ -125,7 +126,7 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
 
   const isSold = status === 'Sold';
   const isHolding = status === 'Holding';
-  const availableStatuses: ApplicationStatus[] = STATUSES.filter((s) => s !== 'Applied');
+  const availableStatuses: ApplicationStatus[] = STATUSES;
 
   const totalQty = app?.quantity ?? 1;
   const soldQtyNum = Math.min(totalQty, Math.max(1, parseInt(soldShares, 10) || totalQty));
@@ -145,18 +146,32 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
   const holdingPLPct = buyValue > 0 ? (holdingPL / buyValue) * 100 : 0;
   const isHoldingProfit = holdingPL >= 0;
 
+  const isSavingRef = useRef(false);
+
   const handleSave = async () => {
-    if (!app) return;
+    if (!app || isSavingRef.current) return;
+    isSavingRef.current = true;
     setSaving(true);
     try {
+      const resolvedBankName = (selectedBankName || '').trim();
+      const currentBank = (app.user_bank_name || '').trim();
+      let resolvedUpiApp: string | undefined = undefined;
+      if (resolvedBankName) {
+        if (resolvedBankName.toLowerCase() === currentBank.toLowerCase() && app.user_upi_app) {
+          resolvedUpiApp = app.user_upi_app;
+        } else {
+          resolvedUpiApp = resolveBankLinkedUpiApp(resolvedBankName, bankAccounts, UPI_APPS) || undefined;
+        }
+      }
+
       if (isSold) {
-        const soldQtyNum = parseInt(soldShares, 10) || app.quantity;
         const sPrice = sellPrice.trim() !== '' ? parseFloat(sellPrice) : 0;
         const sDate = saleDate.trim() !== '' ? saleDate : todayISO();
         const taxVal = tax.trim() !== '' ? parseFloat(tax) : 0;
         const userCutVal = userCut.trim() !== '' ? parseFloat(userCut) : 0;
 
-        if (app.status === 'Sold') {
+        if (soldQtyNum >= totalQty) {
+          // Full sale: directly persist Sold state, price, date, and broker account
           await updateApplication(
             app.id,
             'Sold',
@@ -164,33 +179,25 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
             sDate,
             taxVal,
             userCutVal,
-            selectedBankName.trim() || undefined,
-            undefined,
-            selectedBrokerAccountId
+            resolvedBankName || undefined,
+            resolvedUpiApp,
+            selectedBrokerAccountId,
+            soldQtyNum
           );
         } else {
+          // Partial sale: split sold shares and keep remainder in Holding with broker preserved
           await partialSellApplication(
             app.id,
             soldQtyNum,
-            app.quantity,
+            totalQty,
             sPrice,
             sDate,
             taxVal,
-            userCutVal
+            userCutVal,
+            selectedBrokerAccountId,
+            resolvedBankName || undefined,
+            resolvedUpiApp
           );
-          if (selectedBrokerAccountId !== undefined) {
-            await updateApplication(
-              app.id,
-              'Holding',
-              undefined,
-              undefined,
-              undefined,
-              undefined,
-              selectedBankName.trim() || undefined,
-              undefined,
-              selectedBrokerAccountId
-            );
-          }
         }
       } else {
         const effectivePrice = isHolding
@@ -204,8 +211,8 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
           null,
           tax.trim() !== '' ? parseFloat(tax) : 0,
           userCut.trim() !== '' ? parseFloat(userCut) : 0,
-          selectedBankName.trim() || undefined,
-          undefined,
+          resolvedBankName || undefined,
+          resolvedUpiApp,
           selectedBrokerAccountId
         );
       }
@@ -214,18 +221,21 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
     } catch {
       showError('Error', 'Failed to update.');
     } finally {
+      isSavingRef.current = false;
       setSaving(false);
     }
   };
 
   const handleDelete = () => {
-    if (!app) return;
+    if (!app || isSavingRef.current) return;
     showConfirm({
       title: 'Delete Application',
       message: 'Are you sure you want to delete this application record?',
       confirmText: 'Delete',
       isDanger: true,
       onConfirm: async () => {
+        if (isSavingRef.current) return;
+        isSavingRef.current = true;
         try {
           setSaving(true);
           await deleteApplication(app.id);
@@ -234,6 +244,7 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
         } catch {
           showError('Error', 'Failed to delete application.');
         } finally {
+          isSavingRef.current = false;
           setSaving(false);
         }
       },
@@ -719,7 +730,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     borderWidth: 1.5,
-    borderRadius: 12,
+    borderRadius: 9999,
     paddingVertical: 10,
     height: 44,
   },
@@ -727,8 +738,8 @@ const styles = StyleSheet.create({
   confirmBox: { borderWidth: 1.5, borderRadius: 14, padding: 14, marginTop: 16, gap: 10 },
   confirmText: { fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold', textAlign: 'center' },
   confirmRow: { flexDirection: 'row', gap: 10 },
-  confirmCancelBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, alignItems: 'center' },
+  confirmCancelBtn: { flex: 1, paddingVertical: 10, borderRadius: 9999, borderWidth: 1, alignItems: 'center' },
   confirmCancelText: { fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold' },
-  confirmDeleteBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
+  confirmDeleteBtn: { flex: 1, paddingVertical: 10, borderRadius: 9999, alignItems: 'center' },
   confirmDeleteText: { fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold', color: '#fff' },
 });

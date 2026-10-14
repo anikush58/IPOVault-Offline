@@ -844,7 +844,7 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 8,
+    borderRadius: 9999,
   },
   brokerActionBtnText: {
     fontSize: 11.5,

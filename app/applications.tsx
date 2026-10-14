@@ -70,40 +70,33 @@ export default function ApplicationsScreen() {
     return resolveCanonicalBrokerUserId(authUser, users);
   }, [authUser, users]);
 
-  useEffect(() => {
-    let mounted = true;
-    async function loadPortfolio() {
-      if (!activeUserId) return;
-      try {
-        const portfolio = await brokerApiService.getUserPortfolio(activeUserId);
-        if (mounted && portfolio) {
-          setBrokerPortfolio(portfolio);
-          if (portfolio.investments && db) {
-            syncBrokerHoldingPricesToLocalDb(
-              applications,
-              ipos,
-              portfolio.investments,
-              db,
-            ).catch(() => {});
-          }
+  const loadPortfolio = React.useCallback(async () => {
+    if (!activeUserId) return;
+    try {
+      const portfolio = await brokerApiService.getUserPortfolio(activeUserId);
+      if (portfolio) {
+        setBrokerPortfolio(portfolio);
+        if (portfolio.investments && db) {
+          syncBrokerHoldingPricesToLocalDb(
+            applications,
+            ipos,
+            portfolio.investments,
+            db,
+          ).catch(() => {});
         }
-
-        // Fetch market quotes for all holding applications via any connected broker quote capability
-        const holdingInstruments = extractHoldingInstrumentsForQuotes(applications, ipos);
-        if (holdingInstruments.length > 0) {
-          const quotes = await brokerApiService.getMarketQuotes(activeUserId, holdingInstruments);
-          if (mounted && quotes && Object.keys(quotes).length > 0) {
-            setMarketQuotes(quotes);
-          }
-        }
-      } catch {
-        // Non-critical fallback
       }
+
+      // Fetch market quotes for all holding applications via any connected broker quote capability
+      const holdingInstruments = extractHoldingInstrumentsForQuotes(applications, ipos);
+      if (holdingInstruments.length > 0) {
+        const quotes = await brokerApiService.getMarketQuotes(activeUserId, holdingInstruments);
+        if (quotes && Object.keys(quotes).length > 0) {
+          setMarketQuotes(quotes);
+        }
+      }
+    } catch {
+      // Non-critical fallback
     }
-    loadPortfolio();
-    return () => {
-      mounted = false;
-    };
   }, [activeUserId, applications, db, ipos]);
 
   const [activeTab, setActiveTab] = useState<TabKey>('Allotted');
@@ -388,7 +381,9 @@ export default function ApplicationsScreen() {
         refreshControl={
           <RefreshControl
             refreshing={isLoading}
-            onRefresh={refresh}
+            onRefresh={async () => {
+              await Promise.all([refresh(), loadPortfolio()]);
+            }}
             tintColor={colors.primary}
             progressViewOffset={showSearch ? 52 : 0}
           />
@@ -863,7 +858,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
     paddingVertical: 10,
-    borderRadius: 14,
+    borderRadius: 9999,
   },
   bulk4BtnText: {
     color: '#FFFFFF',

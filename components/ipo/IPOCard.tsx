@@ -742,7 +742,7 @@ const styles = StyleSheet.create({
   },
   applyBtn: {
     width: 94,
-    borderRadius: 20,
+    borderRadius: 9999,
     paddingVertical: 7.5,
     alignItems: 'center',
     justifyContent: 'center',

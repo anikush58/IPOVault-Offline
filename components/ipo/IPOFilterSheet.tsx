@@ -127,6 +127,7 @@ export function IPOFilterSheet({
       </View>
 
       <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -360,8 +361,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 10,
+    borderRadius: 9999,
+    paddingHorizontal: 12,
     paddingVertical: 6,
   },
   clearText: {
@@ -440,7 +441,7 @@ const styles = StyleSheet.create({
   },
   applyBtn: {
     height: 48,
-    borderRadius: 14,
+    borderRadius: 9999,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

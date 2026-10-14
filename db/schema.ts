@@ -1,7 +1,7 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { retryOnLock } from '@/utils/sqliteDebug';
 
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 export async function initDB(db: SQLiteDatabase) {
   // Set generous busy timeout first so any lock contention waits for up to 30s instead of throwing immediately
@@ -277,6 +277,16 @@ export async function initDB(db: SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS idx_ipo_master_dates ON ipo_master(open_date, close_date, listing_date);
     CREATE INDEX IF NOT EXISTS idx_ipo_master_favorite ON ipo_master(is_favorite);
     CREATE INDEX IF NOT EXISTS idx_ipo_allotments_app ON ipo_allotments(application_id);
+
+    -- Performance indexes for high-frequency Bulk Apply, refreshCritical, and JOIN queries
+    CREATE INDEX IF NOT EXISTS idx_ipo_app_ipo_status ON ipo_applications(ipo_id, status, deleted_at);
+    CREATE INDEX IF NOT EXISTS idx_ipo_app_lookup ON ipo_applications(ipo_id, user_id, deleted_at);
+    CREATE INDEX IF NOT EXISTS idx_ipo_app_owner_deleted ON ipo_applications(owner_id, deleted_at, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_ipo_app_user_id ON ipo_applications(user_id);
+    CREATE INDEX IF NOT EXISTS idx_users_owner_deleted ON users_table(owner_id, deleted_at, name);
+    CREATE INDEX IF NOT EXISTS idx_bank_accounts_owner_deleted ON bank_accounts(owner_id, deleted_at, bank_name);
+    CREATE INDEX IF NOT EXISTS idx_bank_accounts_name ON bank_accounts(bank_name);
+    CREATE INDEX IF NOT EXISTS idx_ipo_listings_owner_deleted ON ipo_listings(owner_id, deleted_at, id DESC);
   `));
 
   // 2. Check schema version to only run incremental migrations once
@@ -428,10 +438,22 @@ export async function initDB(db: SQLiteDatabase) {
         `));
       } catch {}
 
-      // Mark user_version as fully migrated
-      await retryOnLock(() => db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`));
+        // Ensure performance indexes exist on existing databases
+        await retryOnLock(() => db.execAsync(`
+          CREATE INDEX IF NOT EXISTS idx_ipo_app_ipo_status ON ipo_applications(ipo_id, status, deleted_at);
+          CREATE INDEX IF NOT EXISTS idx_ipo_app_lookup ON ipo_applications(ipo_id, user_id, deleted_at);
+          CREATE INDEX IF NOT EXISTS idx_ipo_app_owner_deleted ON ipo_applications(owner_id, deleted_at, id DESC);
+          CREATE INDEX IF NOT EXISTS idx_ipo_app_user_id ON ipo_applications(user_id);
+          CREATE INDEX IF NOT EXISTS idx_users_owner_deleted ON users_table(owner_id, deleted_at, name);
+          CREATE INDEX IF NOT EXISTS idx_bank_accounts_owner_deleted ON bank_accounts(owner_id, deleted_at, bank_name);
+          CREATE INDEX IF NOT EXISTS idx_bank_accounts_name ON bank_accounts(bank_name);
+          CREATE INDEX IF NOT EXISTS idx_ipo_listings_owner_deleted ON ipo_listings(owner_id, deleted_at, id DESC);
+        `));
+
+        // Mark user_version as fully migrated
+        await retryOnLock(() => db.execAsync(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`));
+      }
+    } catch (err) {
+      if (__DEV__) console.warn('[Schema Migration Notice]', err);
     }
-  } catch (err) {
-    if (__DEV__) console.warn('[Schema Migration Notice]', err);
-  }
 }

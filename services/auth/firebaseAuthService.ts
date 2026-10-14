@@ -9,7 +9,8 @@ import {
   GoogleAuthProvider,
   User as FirebaseUser,
 } from 'firebase/auth';
-import { firebaseAuth } from './firebaseConfig';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { firebaseAuth, firestore } from './firebaseConfig';
 
 export interface AuthUserProfile {
   id: string;
@@ -315,3 +316,217 @@ export async function getFirebaseAuthToken(forceRefresh = false): Promise<string
     return null;
   }
 }
+
+export interface CloudUserProfile {
+  displayName: string | null;
+  username?: string | null;
+  avatarUrl: string | null;
+  photoURL?: string | null;
+  email?: string | null;
+  updatedAt?: string | null;
+}
+
+/**
+ * Updates the user's username/displayName and profile avatar in Firebase Auth and Firestore cloud.
+ * Offline-first: returns success gracefully if no active Firebase session exists.
+ * Supports chunking for large avatar data URLs to stay within Firestore document limits.
+ */
+export async function updateUserProfileCloud(params: {
+  displayName?: string | null;
+  avatarDataUrl?: string | null;
+}): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      // Offline / guest session: local storage acts as source of truth
+      return { success: true, error: null };
+    }
+
+    const { displayName, avatarDataUrl } = params;
+    const uid = user.uid;
+
+    // 1. Update Firebase Auth user profile (displayName & photoURL if applicable)
+    const authProfileUpdate: { displayName?: string; photoURL?: string } = {};
+    if (displayName !== undefined && displayName !== null) {
+      const trimmedName = displayName.trim();
+      if (trimmedName) authProfileUpdate.displayName = trimmedName;
+    }
+
+    if (avatarDataUrl) {
+      // Firebase Auth photoURL limit is 2,048 chars (suitable for remote HTTP URLs)
+      if (avatarDataUrl.startsWith('http://') || avatarDataUrl.startsWith('https://')) {
+        authProfileUpdate.photoURL = avatarDataUrl;
+      }
+    } else if (avatarDataUrl === null) {
+      authProfileUpdate.photoURL = '';
+    }
+
+    if (Object.keys(authProfileUpdate).length > 0) {
+      try {
+        await updateProfile(user, authProfileUpdate);
+      } catch (authErr) {
+        console.warn('[firebaseAuthService] Auth updateProfile warning:', authErr);
+      }
+    }
+
+    // 2. Base Firestore Document Structure
+    const firestoreData: Record<string, any> = {
+      updatedAt: serverTimestamp(),
+      updated_at: new Date().toISOString(),
+      email: user.email || null,
+    };
+
+    if (displayName !== undefined) {
+      const trimmedName = displayName ? displayName.trim() : null;
+      firestoreData.displayName = trimmedName;
+      firestoreData.username = trimmedName;
+    }
+
+    const userDocRef = doc(firestore, 'users', uid);
+    const metaProfileDocRef = doc(firestore, `users/${uid}/metadata/account_profile`);
+
+    // 3. Handle Avatar Data & Chunking
+    if (avatarDataUrl !== undefined) {
+      if (avatarDataUrl === null) {
+        firestoreData.avatar_url = null;
+        firestoreData.photoURL = null;
+        firestoreData.has_avatar_chunks = false;
+        firestoreData.total_avatar_chunks = 0;
+      } else if (avatarDataUrl.trim()) {
+        const rawAvatar = avatarDataUrl.trim();
+        // Do not persist device-local file paths to the cloud
+        if (!rawAvatar.startsWith('file://') && !rawAvatar.startsWith('content://')) {
+          if (rawAvatar.length < 800000) {
+            firestoreData.avatar_url = rawAvatar;
+            firestoreData.photoURL = rawAvatar;
+            firestoreData.has_avatar_chunks = false;
+            firestoreData.total_avatar_chunks = 0;
+          } else {
+            // Chunk large Data URL into ~400KB chunks across dedicated sub-documents
+            try {
+              const CHUNK_SIZE = 400000;
+              const totalChunks = Math.ceil(rawAvatar.length / CHUNK_SIZE);
+              const chunkPromises = [];
+
+              for (let i = 0; i < totalChunks; i++) {
+                const chunkSlice = rawAvatar.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+                const chunkDocRef = doc(firestore, `users/${uid}/avatar_chunks/chunk_${i}`);
+                chunkPromises.push(
+                  setDoc(chunkDocRef, {
+                    index: i,
+                    chunk: chunkSlice,
+                    totalChunks,
+                    updated_at: new Date().toISOString(),
+                  }, { merge: true })
+                );
+              }
+
+              await Promise.all(chunkPromises);
+              firestoreData.avatar_url = '__chunked__';
+              firestoreData.photoURL = '__chunked__';
+              firestoreData.has_avatar_chunks = true;
+              firestoreData.total_avatar_chunks = totalChunks;
+            } catch (chunkErr) {
+              console.warn('[firebaseAuthService] Avatar chunking warning:', chunkErr);
+            }
+          }
+        }
+      }
+    }
+
+    // 4. Save to Firestore (both doc roots for compatibility with all security rules and restore points)
+    await Promise.all([
+      setDoc(userDocRef, firestoreData, { merge: true }),
+      setDoc(metaProfileDocRef, firestoreData, { merge: true }),
+    ]);
+
+    return { success: true, error: null };
+  } catch (err: any) {
+    console.error('[firebaseAuthService] updateUserProfileCloud error:', err);
+    return { success: false, error: formatAuthError(err) };
+  }
+}
+
+/**
+ * Fetches user profile from Firestore cloud (displayName, avatar_url, etc.)
+ * Safely falls back to Firebase Auth currentUser details if Firestore doc has missing fields.
+ */
+export async function fetchUserProfileCloud(
+  targetUid?: string
+): Promise<CloudUserProfile | null> {
+  try {
+    const uid = targetUid || firebaseAuth.currentUser?.uid;
+    if (!uid) return null;
+
+    const metaProfileDocRef = doc(firestore, `users/${uid}/metadata/account_profile`);
+    const userDocRef = doc(firestore, 'users', uid);
+
+    const [metaSnap, userSnap] = await Promise.all([
+      getDoc(metaProfileDocRef).catch(() => null),
+      getDoc(userDocRef).catch(() => null),
+    ]);
+
+    const metaData = metaSnap && metaSnap.exists() ? metaSnap.data() : {};
+    const userData = userSnap && userSnap.exists() ? userSnap.data() : {};
+    const mergedData = { ...userData, ...metaData };
+
+    const currentUser = firebaseAuth.currentUser;
+    const isTargetCurrentUser = currentUser && currentUser.uid === uid;
+
+    // Resolve Display Name
+    let displayName = mergedData.displayName || mergedData.username || null;
+    if (!displayName && isTargetCurrentUser && currentUser.displayName) {
+      displayName = currentUser.displayName.trim();
+    }
+
+    // Resolve Avatar URL (including chunked avatars)
+    let avatarUrl = mergedData.avatar_url || mergedData.photoURL || null;
+
+    if (mergedData.has_avatar_chunks && mergedData.total_avatar_chunks > 0) {
+      try {
+        const total = Number(mergedData.total_avatar_chunks);
+        const chunkPromises = [];
+        for (let i = 0; i < total; i++) {
+          const chunkRef = doc(firestore, `users/${uid}/avatar_chunks/chunk_${i}`);
+          chunkPromises.push(getDoc(chunkRef));
+        }
+        const chunkSnaps = await Promise.all(chunkPromises);
+        let reconstructed = '';
+        for (const snap of chunkSnaps) {
+          if (snap.exists() && snap.data()?.chunk) {
+            reconstructed += snap.data().chunk;
+          }
+        }
+        if (reconstructed.startsWith('data:')) {
+          avatarUrl = reconstructed;
+        }
+      } catch (chunkReadErr) {
+        console.warn('[firebaseAuthService] Failed to read avatar chunks:', chunkReadErr);
+      }
+    }
+
+    if ((!avatarUrl || avatarUrl === '__chunked__') && isTargetCurrentUser && currentUser.photoURL) {
+      avatarUrl = currentUser.photoURL;
+    }
+
+    if (avatarUrl === '__chunked__') {
+      avatarUrl = null;
+    }
+
+    const email = mergedData.email || (isTargetCurrentUser ? currentUser.email : null);
+    const updatedAt = mergedData.updated_at || null;
+
+    return {
+      displayName,
+      username: displayName,
+      avatarUrl,
+      photoURL: avatarUrl,
+      email,
+      updatedAt,
+    };
+  } catch (err) {
+    console.warn('[firebaseAuthService] fetchUserProfileCloud error:', err);
+    return null;
+  }
+}
+

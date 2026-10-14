@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -20,7 +20,12 @@ import { useNotifications } from '@/context/NotificationContext';
 import { IconButton } from '@/components/ui/IconButton';
 import { Tabs } from '@/components/ui/Tabs';
 import { AnimatedEntrance } from '@/components/ui/AnimatedEntrance';
-import { NotificationRecord, NotificationType } from '@/services/notifications/notificationEngine';
+import {
+  NotificationRecord,
+  NotificationType,
+  getNotificationPermissionStatus,
+  requestNotificationPermission,
+} from '@/services/notifications/notificationEngine';
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList as any);
 
@@ -48,6 +53,18 @@ export default function NotificationCenterScreen() {
   const { notifications, unreadCount, isLoading, markAsRead, markAllAsRead, deleteNotification } = useNotifications();
 
   const [activeTab, setActiveTab] = useState<'ALL' | 'UNREAD'>('ALL');
+  const [hasSystemPermission, setHasSystemPermission] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    getNotificationPermissionStatus().then((res) => {
+      setHasSystemPermission(res.granted);
+    });
+  }, []);
+
+  const handleEnableSystemNotifications = async () => {
+    const granted = await requestNotificationPermission(true);
+    setHasSystemPermission(granted);
+  };
 
   const filteredNotifications = useMemo(() => {
     if (activeTab === 'UNREAD') {
@@ -55,6 +72,40 @@ export default function NotificationCenterScreen() {
     }
     return notifications;
   }, [notifications, activeTab]);
+
+  const renderPermissionBanner = () => {
+    if (hasSystemPermission !== false) return null;
+    return (
+      <View
+        style={[
+          styles.permissionBanner,
+          {
+            backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : '#EFF6FF',
+            borderColor: isDark ? 'rgba(59, 130, 246, 0.3)' : '#BFDBFE',
+          },
+        ]}
+      >
+        <View style={[styles.permissionBannerIconWrap, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.2)' : '#DBEAFE' }]}>
+          <Feather name="bell-off" size={16} color="#3B82F6" />
+        </View>
+        <View style={styles.permissionBannerTextWrap}>
+          <Text style={[styles.permissionBannerTitle, { color: colors.foreground }]}>
+            System notifications are off
+          </Text>
+          <Text style={[styles.permissionBannerSub, { color: colors.mutedForeground }]}>
+            Enable device notifications to receive allotment and IPO closing alerts.
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.permissionBannerBtn, { backgroundColor: colors.primary }]}
+          onPress={handleEnableSystemNotifications}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.permissionBannerBtnText}>Enable</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   const handleNotificationPress = async (item: NotificationRecord) => {
     if (!item.read_at) {
@@ -76,25 +127,65 @@ export default function NotificationCenterScreen() {
   const getNotificationIcon = (type: NotificationType) => {
     switch (type) {
       case 'NEW_IPO':
-        return { name: 'calendar', color: '#3B82F6', bg: '#EFF6FF' };
+        return {
+          name: 'zap',
+          color: isDark ? '#60A5FA' : '#2563EB',
+          bg: isDark ? 'rgba(37, 99, 235, 0.16)' : '#EFF6FF',
+        };
       case 'IPO_OPEN':
-        return { name: 'play-circle', color: '#22C55E', bg: '#DCFCE7' };
+        return {
+          name: 'play-circle',
+          color: isDark ? '#4ADE80' : '#16A34A',
+          bg: isDark ? 'rgba(22, 163, 74, 0.16)' : '#DCFCE7',
+        };
       case 'IPO_CLOSING_SOON':
-        return { name: 'clock', color: colors.primary, bg: colors.primary + '18' };
+        return {
+          name: 'clock',
+          color: isDark ? '#FB923C' : '#EA580C',
+          bg: isDark ? 'rgba(234, 88, 12, 0.16)' : '#FFEDD5',
+        };
       case 'IPO_CLOSING_TODAY':
-        return { name: 'alert-circle', color: '#EF4444', bg: '#FEE2E2' };
+        return {
+          name: 'alert-circle',
+          color: isDark ? '#F87171' : '#DC2626',
+          bg: isDark ? 'rgba(220, 38, 38, 0.16)' : '#FEE2E2',
+        };
       case 'ALLOTTED':
-        return { name: 'award', color: '#22C55E', bg: '#DCFCE7' };
+        return {
+          name: 'award',
+          color: isDark ? '#4ADE80' : '#16A34A',
+          bg: isDark ? 'rgba(22, 163, 74, 0.16)' : '#DCFCE7',
+        };
       case 'PARTIALLY_ALLOTTED':
-        return { name: 'pie-chart', color: '#10B981', bg: '#D1FAE5' };
+        return {
+          name: 'pie-chart',
+          color: isDark ? '#34D399' : '#059669',
+          bg: isDark ? 'rgba(5, 150, 105, 0.16)' : '#D1FAE5',
+        };
       case 'NOT_ALLOTTED':
-        return { name: 'x-circle', color: '#6B7280', bg: '#F3F4F6' };
+        return {
+          name: 'x-circle',
+          color: isDark ? '#9CA3AF' : '#6B7280',
+          bg: isDark ? 'rgba(107, 114, 128, 0.16)' : '#F3F4F6',
+        };
       case 'GMP_CHANGE':
-        return { name: 'trending-up', color: '#8B5CF6', bg: '#F3E8FF' };
+        return {
+          name: 'trending-up',
+          color: isDark ? '#A78BFA' : '#7C3AED',
+          bg: isDark ? 'rgba(124, 58, 237, 0.16)' : '#F3E8FF',
+        };
       case 'RADAR_UPGRADE':
-        return { name: 'zap', color: '#F97316', bg: '#FFEDD5' };
+        return {
+          name: 'shield',
+          color: isDark ? '#60A5FA' : '#2563EB',
+          bg: isDark ? 'rgba(37, 99, 235, 0.16)' : '#EFF6FF',
+        };
       default:
-        return { name: 'bell', color: colors.primary, bg: colors.primary + '18' };
+        return {
+          name: 'bell',
+          color: isDark ? '#93C5FD' : '#2563EB',
+          bg: isDark ? 'rgba(37, 99, 235, 0.16)' : '#EFF6FF',
+        };
     }
   };
 
@@ -137,33 +228,35 @@ export default function NotificationCenterScreen() {
         </Animated.View>
 
         <View style={styles.header}>
-          <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
-
-          <View style={styles.titleRow}>
-            <Text style={[styles.headerTitle, { color: colors.foreground }]}>Notifications</Text>
-            {unreadCount > 0 && (
-              <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}>
-                <Text style={[styles.unreadBadgeText, { color: '#FFFFFF' }]}>{unreadCount}</Text>
-              </View>
-            )}
+          <View style={styles.headerSide}>
+            <IconButton name="chevron-left" variant="surface" size="md" onPress={() => router.back()} />
           </View>
 
-          <TouchableOpacity
-            onPress={markAllAsRead}
-            disabled={unreadCount === 0}
-            style={{ opacity: unreadCount === 0 ? 0.4 : 1 }}
-          >
-            <Text style={[styles.markAllText, { color: colors.primary }]}>Mark all read</Text>
-          </TouchableOpacity>
+          <View style={styles.headerCenter}>
+            <Text style={[styles.headerEyebrow, { color: colors.primary }]}>ALERTS</Text>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>Notifications</Text>
+          </View>
+
+          <View style={[styles.headerSide, { alignItems: 'flex-end' }]}>
+            <TouchableOpacity
+              onPress={markAllAsRead}
+              disabled={unreadCount === 0}
+              style={{ opacity: unreadCount === 0 ? 0.35 : 1 }}
+              hitSlop={8}
+            >
+              <Text style={[styles.markAllText, { color: colors.primary }]}>Mark all read</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Filter Tabs */}
-        <View style={{ borderBottomWidth: 1, borderBottomColor: colors.border }}>
+        {/* Filter Tabs matching App Design System */}
+        <View style={styles.tabsWrap}>
           <Tabs
-            variant="underline"
+            variant="pills"
+            height={36}
             tabs={[
-              { key: 'ALL', label: `ALL (${notifications.length})` },
-              { key: 'UNREAD', label: `UNREAD (${unreadCount})` },
+              { id: 'ALL', key: 'ALL', label: 'All', count: notifications.length },
+              { id: 'UNREAD', key: 'UNREAD', label: 'Unread', count: unreadCount },
             ]}
             activeTab={activeTab}
             onChange={setActiveTab}
@@ -177,7 +270,8 @@ export default function NotificationCenterScreen() {
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : filteredNotifications.length === 0 ? (
-        <View style={[styles.emptyView, { paddingTop: topPad + 110 }]}>
+        <View style={[styles.emptyView, { paddingTop: topPad + 115 }]}>
+          {renderPermissionBanner()}
           <Feather name="bell-off" size={44} color={colors.mutedForeground} style={{ marginBottom: 12 }} />
           <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No Notifications</Text>
           <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
@@ -190,7 +284,8 @@ export default function NotificationCenterScreen() {
         <AnimatedFlatList
           data={filteredNotifications}
           keyExtractor={(item: any) => item.id}
-          contentContainerStyle={[styles.listContainer, { paddingTop: topPad + 110 }]}
+          contentContainerStyle={[styles.listContainer, { paddingTop: topPad + 115 }]}
+          ListHeaderComponent={renderPermissionBanner}
           onScroll={Animated.event(
             [{ nativeEvent: { contentOffset: { y: scrollY } } }],
             { useNativeDriver: true }
@@ -232,7 +327,7 @@ export default function NotificationCenterScreen() {
                     </Text>
                   </View>
 
-                  {isUnread && <View style={[styles.dotIndicator, { backgroundColor: colors.primary }]} />}
+                  {isUnread && <View style={styles.dotIndicator} />}
 
                   <TouchableOpacity
                     onPress={() => deleteNotification(item.id)}
@@ -268,16 +363,38 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     height: 56,
   },
-  headerIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerTitle: { fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.2 },
-  unreadBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10 },
-  unreadBadgeText: { color: '#FFFFFF', fontSize: 10, fontFamily: 'GoogleSansFlex_700Bold' },
-  markAllText: { fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold' },
-
-  tabBar: { flexDirection: 'row', borderBottomWidth: 1 },
-  tabBtn: { flex: 1, paddingVertical: 14, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabText: { fontSize: 12, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 0.5 },
+  headerSide: {
+    minWidth: 80,
+    justifyContent: 'center',
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerEyebrow: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    marginBottom: 1,
+  },
+  headerTitle: {
+    fontSize: 17,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  markAllText: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  tabsWrap: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 10,
+  },
 
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyView: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
@@ -299,6 +416,51 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold', flex: 1, marginRight: 8 },
   timeText: { fontSize: 11, fontFamily: 'GoogleSansFlex_400Regular' },
   cardText: { fontSize: 12.5, fontFamily: 'GoogleSansFlex_400Regular', lineHeight: 17 },
-  dotIndicator: { width: 8, height: 8, borderRadius: 4, marginTop: 4 },
+  dotIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
+    marginTop: 6,
+  },
   deleteBtn: { padding: 4, marginLeft: 2 },
+  permissionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 12,
+    marginBottom: 12,
+  },
+  permissionBannerIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  permissionBannerTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  permissionBannerTitle: {
+    fontSize: 13,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  permissionBannerSub: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    lineHeight: 15,
+  },
+  permissionBannerBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  permissionBannerBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
 });

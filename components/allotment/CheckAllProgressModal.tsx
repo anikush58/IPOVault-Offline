@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     height: 56,
-    borderRadius: DesignSystem.radius.md,
+    borderRadius: DesignSystem.radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
   },
   cancelBtn: {
     height: 50,
-    borderRadius: DesignSystem.radius.md,
+    borderRadius: DesignSystem.radius.pill,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',

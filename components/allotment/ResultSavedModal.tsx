@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     height: 50,
-    borderRadius: DesignSystem.radius.md,
+    borderRadius: DesignSystem.radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',

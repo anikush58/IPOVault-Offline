@@ -11,6 +11,7 @@ import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { ensureBase64DataUrl, extractBase64Payload, saveBase64ToLocalImage } from '@/utils/imageUtils';
 import { getEffectiveAvatarUrl } from '@/utils/avatarUtils';
 import { getRegistrarConfig } from '@/services/allotment/registrarConfig';
+import { startPerfTimer } from '@/utils/performanceMetrics';
 import {
   scheduleDebouncedFirestoreSync,
   cancelDebouncedFirestoreSync,
@@ -202,7 +203,8 @@ type DBContextType = {
     userIds: string[],
     bankName?: string | Record<string, string>,
     upiApp?: string | Record<string, string>,
-    lotCounts?: Record<string, number> | number
+    lotCounts?: Record<string, number> | number,
+    ipoListingData?: any
   ) => Promise<void>;
   updateApplication: (
     id: string,
@@ -213,7 +215,8 @@ type DBContextType = {
     userCut?: number,
     bankName?: string,
     upiApp?: string,
-    brokerAccountId?: string | null
+    brokerAccountId?: string | null,
+    sharesCount?: number | null
   ) => Promise<void>;
   partialSellApplication: (
     id: string,
@@ -222,7 +225,10 @@ type DBContextType = {
     sellPrice: number,
     saleDate: string | null,
     tax?: number,
-    userCut?: number
+    userCut?: number,
+    brokerAccountId?: string | null,
+    bankName?: string,
+    upiApp?: string
   ) => Promise<void>;
   updateApplicationDetails: (
     id: string,
@@ -395,8 +401,9 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     setIPOs([...enrichedIpoRows, ...masterRows]);
 
     const appRows = currentUid
-      ? await db.getAllAsync<ApplicationWithDetails>(`
-          SELECT a.id, a.user_id, a.ipo_id, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
+      ? await safeGetAllAsync<ApplicationWithDetails>(
+          db,
+          `SELECT a.id, a.user_id, a.ipo_id, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
                  a.shares_count, a.is_favorite, a.broker_account_id, a.created_at, a.updated_at,
                  u.name        AS user_name,
                  u.broker      AS user_broker,
@@ -413,11 +420,14 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           FROM   ipo_applications a
           JOIN   users_table u ON a.user_id = u.id
           JOIN   ipo_listings i ON a.ipo_id = i.id
-          WHERE  a.owner_id = ? AND a.deleted_at IS NULL AND u.deleted_at IS NULL AND i.deleted_at IS NULL
-          ORDER  BY a.id DESC
-        `, [currentUid])
-      : await db.getAllAsync<ApplicationWithDetails>(`
-          SELECT a.id, a.user_id, a.ipo_id, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
+          WHERE  (a.owner_id = ? OR a.owner_id IS NULL OR a.owner_id = '') AND a.deleted_at IS NULL AND u.deleted_at IS NULL AND i.deleted_at IS NULL
+          ORDER  BY a.id DESC`,
+          [currentUid],
+          'DBContext.refreshCritical.apps'
+        )
+      : await safeGetAllAsync<ApplicationWithDetails>(
+          db,
+          `SELECT a.id, a.user_id, a.ipo_id, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
                  a.shares_count, a.is_favorite, a.broker_account_id, a.created_at, a.updated_at,
                  u.name        AS user_name,
                  u.broker      AS user_broker,
@@ -435,8 +445,10 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           JOIN   users_table u ON a.user_id = u.id
           JOIN   ipo_listings i ON a.ipo_id = i.id
           WHERE  (a.owner_id IS NULL OR a.owner_id = '') AND a.deleted_at IS NULL AND u.deleted_at IS NULL AND i.deleted_at IS NULL
-          ORDER  BY a.id DESC
-        `);
+          ORDER  BY a.id DESC`,
+          [],
+          'DBContext.refreshCritical.apps'
+        );
     setApplications(appRows);
 
     setIsLoading(false);
@@ -450,21 +462,18 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     const t0 = Date.now();
     const currentUid = authUser?.uid || authUser?.id || null;
 
-    // Repair legacy rows where id is null or empty
-    const nullBankRows = await db.getAllAsync<{ rowid: number }>(
-      'SELECT rowid FROM bank_accounts WHERE id IS NULL OR id = ""',
-    );
-    for (const r of nullBankRows) {
-      await db.runAsync('UPDATE bank_accounts SET id = ? WHERE rowid = ?', [Crypto.randomUUID(), r.rowid]);
-    }
-
     const bankRows = currentUid
-      ? await db.getAllAsync<BankAccount>(
+      ? await safeGetAllAsync<BankAccount>(
+          db,
           'SELECT * FROM bank_accounts WHERE (owner_id = ? OR owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL ORDER BY bank_name',
-          [currentUid]
+          [currentUid],
+          'DBContext.refreshSecondary.banks'
         )
-      : await db.getAllAsync<BankAccount>(
-          'SELECT * FROM bank_accounts WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL ORDER BY bank_name'
+      : await safeGetAllAsync<BankAccount>(
+          db,
+          'SELECT * FROM bank_accounts WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL ORDER BY bank_name',
+          [],
+          'DBContext.refreshSecondary.banks'
         );
     const filteredBankRows = deletingBankIdsRef.current.size > 0
       ? bankRows.filter((b) => !deletingBankIdsRef.current.has(b.id))
@@ -477,11 +486,14 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
   }, [db, authUser?.uid, authUser?.id]);
 
 
-  const refresh = useCallback(async () => {
-    // Self-healing migration: Synchronize ipo_applications status with ipo_allotments table
+  const inFlightRefreshRef = React.useRef<Promise<void> | null>(null);
+
+  const reconcileAllotmentStatuses = useCallback(async () => {
+    // One-time self-healing reconciliation: Synchronize ipo_applications status with ipo_allotments table & repair legacy null bank IDs
     try {
       const nowIso = new Date().toISOString();
-      await db.runAsync(
+      await safeRunAsync(
+        db,
         `UPDATE ipo_applications
          SET status = 'Not Allotted', updated_at = ?
          WHERE status IN ('Applied', 'Mandate Approved')
@@ -489,9 +501,11 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
              SELECT application_id FROM ipo_allotments
              WHERE UPPER(TRIM(allotment_status)) IN ('NOT_ALLOTTED', 'NOT ALLOTTED', 'REJECTED')
            )`,
-        [nowIso]
+        [nowIso],
+        'DBContext.reconcile.notAllotted'
       );
-      await db.runAsync(
+      await safeRunAsync(
+        db,
         `UPDATE ipo_applications
          SET status = 'Allotted', updated_at = ?
          WHERE status IN ('Applied', 'Mandate Approved')
@@ -499,9 +513,11 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
              SELECT application_id FROM ipo_allotments
              WHERE UPPER(TRIM(allotment_status)) = 'ALLOTTED'
            )`,
-        [nowIso]
+        [nowIso],
+        'DBContext.reconcile.allotted'
       );
-      await db.runAsync(
+      await safeRunAsync(
+        db,
         `UPDATE ipo_applications
          SET status = 'Partially Allotted', updated_at = ?
          WHERE status IN ('Applied', 'Mandate Approved')
@@ -509,13 +525,52 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
              SELECT application_id FROM ipo_allotments
              WHERE UPPER(TRIM(allotment_status)) IN ('PARTIALLY_ALLOTTED', 'PARTIALLY ALLOTTED')
            )`,
-        [nowIso]
+        [nowIso],
+        'DBContext.reconcile.partiallyAllotted'
       );
-    } catch {}
 
-    await refreshCritical();
-    await refreshSecondary();
-  }, [db, refreshCritical, refreshSecondary]);
+      // Repair legacy bank rows where id is null or empty
+      const nullBankRows = await safeGetAllAsync<{ rowid: number }>(
+        db,
+        'SELECT rowid FROM bank_accounts WHERE id IS NULL OR id = ""',
+        [],
+        'DBContext.reconcile.nullBanks'
+      );
+      for (const r of nullBankRows) {
+        await safeRunAsync(
+          db,
+          'UPDATE bank_accounts SET id = ? WHERE rowid = ?',
+          [Crypto.randomUUID(), r.rowid],
+          'DBContext.reconcile.repairBank'
+        );
+      }
+    } catch {}
+  }, [db]);
+
+  const refresh = useCallback(async () => {
+    if (inFlightRefreshRef.current) {
+      return inFlightRefreshRef.current;
+    }
+
+    const promise = (async () => {
+      const timer = startPerfTimer('DBContext.refresh');
+      try {
+        await refreshCritical();
+        await refreshSecondary();
+        timer();
+      } finally {
+        inFlightRefreshRef.current = null;
+      }
+    })();
+
+    inFlightRefreshRef.current = promise;
+    return promise;
+  }, [refreshCritical, refreshSecondary]);
+
+  // Initial self-healing reconciliation on mount / DB load
+  useEffect(() => {
+    reconcileAllotmentStatuses().catch(() => {});
+  }, [reconcileAllotmentStatuses]);
 
   useEffect(() => {
     refresh();
@@ -615,71 +670,128 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     userIds: string[],
     bankName?: string | Record<string, string>,
     upiApp?: string | Record<string, string>,
-    lotCounts?: Record<string, number> | number
+    lotCounts?: Record<string, number> | number,
+    ipoListingData?: any
   ) => {
     if (!ipoId) return;
+    const t0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    const timer = startPerfTimer('DBContext.addBulkApplications', { applicantCount: userIds.length, ipoId });
     const now = new Date().toISOString();
     let resolvedId = ipoId;
 
-    // 1. Check if record exists in ipo_listings by id, ipo_name, or company_name
-    const existingInListings = await db.getFirstAsync<{ id: string }>(
-      'SELECT id FROM ipo_listings WHERE id = ? OR LOWER(TRIM(ipo_name)) = LOWER(TRIM(?)) OR LOWER(TRIM(company_name)) = LOWER(TRIM(?))',
-      [ipoId, ipoId, ipoId]
-    );
-
-    if (existingInListings) {
-      resolvedId = existingInListings.id;
+    if (ipoListingData) {
+      // Upsert provided listing metadata directly in a single statement
+      await safeRunAsync(
+        db,
+        `INSERT INTO ipo_listings (
+          id, ipo_name, company_name, symbol, buy_price, quantity, open_date, close_date, listing_date, allotment_date,
+          registrar, exchange, issue_type, archived, is_favorite, logo_url, created_at, updated_at,
+          sync_version, sync_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, 0, 'PENDING')
+        ON CONFLICT(id) DO UPDATE SET
+          ipo_name = excluded.ipo_name, company_name = excluded.company_name, symbol = excluded.symbol,
+          buy_price = excluded.buy_price, quantity = excluded.quantity, open_date = excluded.open_date,
+          close_date = excluded.close_date, listing_date = excluded.listing_date, allotment_date = excluded.allotment_date,
+          registrar = excluded.registrar, exchange = excluded.exchange, issue_type = excluded.issue_type,
+          logo_url = excluded.logo_url, updated_at = excluded.updated_at`,
+        [
+          ipoListingData.id || ipoId,
+          ipoListingData.ipo_name || 'IPO',
+          ipoListingData.company_name || ipoListingData.ipo_name || 'IPO',
+          ipoListingData.symbol || '',
+          ipoListingData.buy_price || 100,
+          ipoListingData.quantity || 1,
+          ipoListingData.open_date || '',
+          ipoListingData.close_date || '',
+          ipoListingData.listing_date || '',
+          ipoListingData.allotment_date || '',
+          ipoListingData.registrar || '',
+          'NSE, BSE',
+          ipoListingData.issue_type || 'Mainboard',
+          ipoListingData.logo_url || '',
+          now,
+          now,
+        ],
+        'DBContext.addBulkApplications.upsertListing'
+      );
+      resolvedId = ipoListingData.id || ipoId;
     } else {
-      // 2. Resolve from ipo_master if selected from Smart IPO Database
-      const masterRecord = await db.getFirstAsync<any>(
-        'SELECT * FROM ipo_master WHERE id = ? OR LOWER(TRIM(company_name)) = LOWER(TRIM(?)) OR LOWER(TRIM(ipo_name)) = LOWER(TRIM(?)) OR UPPER(TRIM(symbol)) = UPPER(TRIM(?))',
-        [ipoId, ipoId, ipoId, ipoId]
+      // 1. Check if record exists in ipo_listings by id, ipo_name, or company_name
+      const existingInListings = await safeGetFirstAsync<{ id: string }>(
+        db,
+        'SELECT id FROM ipo_listings WHERE id = ? OR LOWER(TRIM(ipo_name)) = LOWER(TRIM(?)) OR LOWER(TRIM(company_name)) = LOWER(TRIM(?))',
+        [ipoId, ipoId, ipoId],
+        'DBContext.addBulkApplications.checkListings'
       );
 
-      if (masterRecord) {
-        resolvedId = masterRecord.id;
-        await db.runAsync(
-          `INSERT OR IGNORE INTO ipo_listings (
-            id, ipo_name, company_name, symbol, buy_price, quantity, open_date, close_date, listing_date, allotment_date,
-            registrar, exchange, issue_type, archived, is_favorite, logo_url, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
-          [
-            masterRecord.id,
-            masterRecord.ipo_name || masterRecord.company_name || 'IPO',
-            masterRecord.company_name || masterRecord.ipo_name || 'IPO',
-            masterRecord.symbol || '',
-            masterRecord.price_band_max || masterRecord.price_band_min || 100,
-            masterRecord.lot_size || 1,
-            masterRecord.open_date || '',
-            masterRecord.close_date || '',
-            masterRecord.listing_date || '',
-            masterRecord.allotment_date || '',
-            masterRecord.registrar || '',
-            masterRecord.exchange || '',
-            masterRecord.issue_type || 'Mainboard',
-            masterRecord.is_favorite || 0,
-            masterRecord.logo_url || '',
-            now,
-            now,
-          ]
-        );
+      if (existingInListings) {
+        resolvedId = existingInListings.id;
       } else {
-        // Fallback shadow entry if neither ipo_master nor ipo_listings record exists yet
-        const shadowRegistrar = getRegistrarConfig(ipoId).name;
-        await db.runAsync(
-          `INSERT OR IGNORE INTO ipo_listings (
-            id, ipo_name, company_name, buy_price, quantity, open_date, close_date, listing_date, allotment_date,
-            registrar, exchange, issue_type, archived, is_favorite, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, '', '', '', '', ?, 'NSE, BSE', 'Mainboard', 0, 0, ?, ?)`,
-          [ipoId, ipoId, ipoId, 100, 1, shadowRegistrar, now, now]
+        // 2. Resolve from ipo_master if selected from Smart IPO Database
+        const masterRecord = await safeGetFirstAsync<any>(
+          db,
+          'SELECT * FROM ipo_master WHERE id = ? OR LOWER(TRIM(company_name)) = LOWER(TRIM(?)) OR LOWER(TRIM(ipo_name)) = LOWER(TRIM(?)) OR UPPER(TRIM(symbol)) = UPPER(TRIM(?))',
+          [ipoId, ipoId, ipoId, ipoId],
+          'DBContext.addBulkApplications.checkMaster'
         );
+
+        if (masterRecord) {
+          resolvedId = masterRecord.id;
+          await safeRunAsync(
+            db,
+            `INSERT OR IGNORE INTO ipo_listings (
+              id, ipo_name, company_name, symbol, buy_price, quantity, open_date, close_date, listing_date, allotment_date,
+              registrar, exchange, issue_type, archived, is_favorite, logo_url, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+            [
+              masterRecord.id,
+              masterRecord.ipo_name || masterRecord.company_name || 'IPO',
+              masterRecord.company_name || masterRecord.ipo_name || 'IPO',
+              masterRecord.symbol || '',
+              masterRecord.price_band_max || masterRecord.price_band_min || 100,
+              masterRecord.lot_size || 1,
+              masterRecord.open_date || '',
+              masterRecord.close_date || '',
+              masterRecord.listing_date || '',
+              masterRecord.allotment_date || '',
+              masterRecord.registrar || '',
+              masterRecord.exchange || '',
+              masterRecord.issue_type || 'Mainboard',
+              masterRecord.is_favorite || 0,
+              masterRecord.logo_url || '',
+              now,
+              now,
+            ],
+            'DBContext.addBulkApplications.insertMasterShadow'
+          );
+        } else {
+          // Fallback shadow entry if neither ipo_master nor ipo_listings record exists yet
+          const shadowRegistrar = getRegistrarConfig(ipoId).name;
+          await safeRunAsync(
+            db,
+            `INSERT OR IGNORE INTO ipo_listings (
+              id, ipo_name, company_name, buy_price, quantity, open_date, close_date, listing_date, allotment_date,
+              registrar, exchange, issue_type, archived, is_favorite, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, '', '', '', '', ?, 'NSE, BSE', 'Mainboard', 0, 0, ?, ?)`,
+            [ipoId, ipoId, ipoId, 100, 1, shadowRegistrar, now, now],
+            'DBContext.addBulkApplications.insertFallbackShadow'
+          );
+        }
       }
     }
 
     const repo = new ApplicationRepository(db);
     const currentUid = authUser?.uid || authUser?.id || null;
     await repo.addBulk(resolvedId, userIds, bankName, upiApp, lotCounts, currentUid);
-    await refresh();
+    const tCommit = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    const durationCommit = tCommit - t0;
+    timer({ status: 'committed', durationMs: durationCommit });
+    console.log(`[DBContext Trace] ApplicationRepository.addBulk transaction committed to SQLite in ${durationCommit.toFixed(1)}ms (${userIds.length} applicant(s))`);
+
+    // Trigger state refresh off the critical path so sheet closure and user confirmation are immediate
+    refresh().catch((err) => {
+      console.warn('[DBContext Trace] Post-apply background refresh error:', err?.message || err);
+    });
   };
 
   const handleBankAllotmentDebit = async (
@@ -701,6 +813,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       if (!app) return;
 
       const oldStatus = app.status;
+      if (oldStatus === newStatus) return;
+
       const bankName = (
         details?.bank_name ||
         (app.bank_name && app.bank_name.trim() !== '' ? app.bank_name : app.user_bank_name) ||
@@ -714,8 +828,11 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
       if (amount <= 0) return;
 
-      const wasAllotted = oldStatus === 'Allotted' || oldStatus === 'Partially Allotted';
-      const isAllotted = newStatus === 'Allotted' || newStatus === 'Partially Allotted';
+      const isFinanciallyAllotted = (s: ApplicationStatus) =>
+        s === 'Allotted' || s === 'Partially Allotted' || s === 'Holding' || s === 'Sold';
+
+      const wasAllotted = isFinanciallyAllotted(oldStatus);
+      const isAllotted = isFinanciallyAllotted(newStatus);
       const nowIso = new Date().toISOString();
 
       if (!wasAllotted && isAllotted) {
@@ -746,16 +863,18 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     bankName?: string,
     upiApp?: string,
     brokerAccountId?: string | null,
+    sharesCount?: number | null,
   ) => {
     await handleBankAllotmentDebit(db, id, status, bankName ? { bank_name: bankName } : undefined);
     const repo = new ApplicationRepository(db);
     await repo.update(id, status, sellPrice, saleDate, tax, userCut);
-    if (bankName !== undefined || upiApp !== undefined || brokerAccountId !== undefined) {
+    if (bankName !== undefined || upiApp !== undefined || brokerAccountId !== undefined || sharesCount !== undefined) {
       await db.runAsync(
         `UPDATE ipo_applications SET
           bank_name = COALESCE(?, bank_name),
           upi_app = COALESCE(?, upi_app),
           broker_account_id = CASE WHEN ? = 1 THEN ? ELSE broker_account_id END,
+          shares_count = CASE WHEN ? = 1 THEN ? ELSE shares_count END,
           updated_at = ?
          WHERE id = ?`,
         [
@@ -763,12 +882,22 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           upiApp ?? null,
           brokerAccountId !== undefined ? 1 : 0,
           brokerAccountId ?? null,
+          sharesCount !== undefined ? 1 : 0,
+          sharesCount ?? null,
           new Date().toISOString(),
           id,
         ]
       );
     }
     await refresh();
+    const currentUid = authUser?.uid || authUser?.id || null;
+    if (currentUid) {
+      try {
+        scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
+      } catch (err) {
+        console.warn('[updateApplication] scheduleDebouncedFirestoreSync failed:', err);
+      }
+    }
   };
 
   const partialSellApplication = async (
@@ -778,12 +907,34 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     sellPrice: number,
     saleDate: string | null,
     tax?: number,
-    userCut?: number
+    userCut?: number,
+    brokerAccountId?: string | null,
+    bankName?: string,
+    upiApp?: string,
   ) => {
     const repo = new ApplicationRepository(db);
     const currentUid = authUser?.uid || authUser?.id || null;
-    await repo.partialSell(id, soldShares, totalShares, sellPrice, saleDate, tax, userCut, currentUid);
+    await repo.partialSell(
+      id,
+      soldShares,
+      totalShares,
+      sellPrice,
+      saleDate,
+      tax,
+      userCut,
+      currentUid,
+      brokerAccountId,
+      bankName,
+      upiApp
+    );
     await refresh();
+    if (currentUid) {
+      try {
+        scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
+      } catch (err) {
+        console.warn('[partialSellApplication] scheduleDebouncedFirestoreSync failed:', err);
+      }
+    }
   };
 
   const updateApplicationDetails = async (
@@ -836,6 +987,14 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       );
     }
     await refresh();
+    const currentUid = authUser?.uid || authUser?.id || null;
+    if (currentUid) {
+      try {
+        scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
+      } catch (err) {
+        console.warn('[updateApplicationDetails] scheduleDebouncedFirestoreSync failed:', err);
+      }
+    }
   };
 
   const updateBulkApplications = async (ids: string[], status: ApplicationStatus) => {
@@ -845,6 +1004,14 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     const repo = new ApplicationRepository(db);
     await repo.updateBulkStatus(ids, status);
     await refresh();
+    const currentUid = authUser?.uid || authUser?.id || null;
+    if (currentUid) {
+      try {
+        scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
+      } catch (err) {
+        console.warn('[updateBulkApplications] scheduleDebouncedFirestoreSync failed:', err);
+      }
+    }
   };
 
   const deleteApplication = async (id: string) => {
@@ -852,11 +1019,28 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     const repo = new ApplicationRepository(db);
     await repo.delete(id);
     await refresh();
+    const currentUid = authUser?.uid || authUser?.id || null;
+    if (currentUid) {
+      try {
+        syncSingleDocDelete(currentUid, 'applications', id);
+        scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
+      } catch (err) {
+        console.warn('[deleteApplication] cloud sync failed:', err);
+      }
+    }
   };
 
   const toggleFavorite = async (id: string, isFavorite: boolean) => {
     await db.runAsync('UPDATE ipo_applications SET is_favorite=? WHERE id=?', [isFavorite ? 1 : 0, id]);
     await refresh();
+    const currentUid = authUser?.uid || authUser?.id || null;
+    if (currentUid) {
+      try {
+        scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
+      } catch (err) {
+        console.warn('[toggleFavorite] scheduleDebouncedFirestoreSync failed:', err);
+      }
+    }
   };
 
   // ── Allotments ─────────────────────────────────────────────────────────────
@@ -1371,11 +1555,11 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           currentUid ? [currentUid] : [],
           'importCriticalData.prefetchIPOs'
         ),
-        safeGetAllAsync<{ id: string; user_id: string; ipo_id: string; status: string }>(
+        safeGetAllAsync<{ id: string; user_id: string; ipo_id: string; status: string; updated_at?: string; sync_status?: string }>(
           db,
           currentUid
-            ? 'SELECT id, user_id, ipo_id, status FROM ipo_applications WHERE owner_id = ?'
-            : 'SELECT id, user_id, ipo_id, status FROM ipo_applications WHERE (owner_id IS NULL OR owner_id = "")',
+            ? 'SELECT id, user_id, ipo_id, status, updated_at, sync_status FROM ipo_applications WHERE (owner_id = ? OR owner_id IS NULL OR owner_id = "")'
+            : 'SELECT id, user_id, ipo_id, status, updated_at, sync_status FROM ipo_applications WHERE (owner_id IS NULL OR owner_id = "")',
           currentUid ? [currentUid] : [],
           'importCriticalData.prefetchApps'
         ),
@@ -1397,8 +1581,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         if (i.ipo_name) existingIposByName.set(i.ipo_name.trim().toLowerCase(), i);
       }
 
-      const existingAppsById = new Map<string, { id: string; user_id: string; ipo_id: string; status: string }>();
-      const existingAppsByCandidateKey = new Map<string, { id: string; user_id: string; ipo_id: string; status: string }>();
+      const existingAppsById = new Map<string, { id: string; user_id: string; ipo_id: string; status: string; updated_at?: string; sync_status?: string }>();
+      const existingAppsByCandidateKey = new Map<string, { id: string; user_id: string; ipo_id: string; status: string; updated_at?: string; sync_status?: string }>();
       for (const a of existingAppsList || []) {
         if (a.id) existingAppsById.set(a.id, a);
         const candKey = `${a.user_id}_${a.ipo_id}_${a.status}`;
@@ -1713,6 +1897,21 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
             if (existing) {
               usedAppIds.add(existing.id);
               appIdMap.set(app.id, existing.id);
+
+              const localTs = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
+              const cloudTs = app.updated_at ? new Date(app.updated_at).getTime() : 0;
+              const isLocalPending = existing.sync_status === 'PENDING';
+
+              // Prevent stale cloud data from overwriting newer local edits:
+              // 1. If local is strictly newer than cloud, preserve local.
+              // 2. If local is PENDING and cloud is missing timestamp or equal/older, preserve local.
+              if (
+                (localTs > 0 && cloudTs > 0 && localTs > cloudTs) ||
+                (isLocalPending && (cloudTs === 0 || localTs >= cloudTs))
+              ) {
+                continue;
+              }
+
               await safeRunAsync(
                 db,
                 `UPDATE ipo_applications SET

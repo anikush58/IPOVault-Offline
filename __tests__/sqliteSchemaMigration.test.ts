@@ -279,7 +279,7 @@ async function runTestSuite() {
 
   // TEST 1: Constant version verification
   console.log('--- TEST 1: Schema Version Bump ---');
-  assert(CURRENT_SCHEMA_VERSION === 4, 'TEST 1', 'CURRENT_SCHEMA_VERSION is incremented to 4');
+  assert(CURRENT_SCHEMA_VERSION === 5, 'TEST 1', 'CURRENT_SCHEMA_VERSION is incremented to 5');
 
   // TEST 2: Migration on Legacy Database (v3 without broker_account_id)
   console.log('\n--- TEST 2: Upgrading Existing Legacy DB (v3) to v4 ---');
@@ -365,8 +365,8 @@ async function runTestSuite() {
   // RUN initDB (simulating app open on existing device)
   await initDB(db as unknown as SQLiteDatabase);
 
-  // Assert user_version upgraded to 4
-  assert(db.userVersion === 4, 'TEST 2', `PRAGMA user_version is successfully updated to ${CURRENT_SCHEMA_VERSION}`);
+  // Assert user_version upgraded to 5
+  assert(db.userVersion === 5, 'TEST 2', `PRAGMA user_version is successfully updated to ${CURRENT_SCHEMA_VERSION}`);
 
   // Assert broker_account_id column was added to ipo_applications
   assert(appTable.columns.has('broker_account_id') === true, 'TEST 2', 'Column ipo_applications.broker_account_id was added by migration');
@@ -467,7 +467,7 @@ async function runTestSuite() {
 
   await initDB(freshDb as unknown as SQLiteDatabase);
 
-  assert(freshDb.userVersion === 4, 'TEST 5', `Fresh database initializes directly to CURRENT_SCHEMA_VERSION = 4`);
+  assert(freshDb.userVersion === 5, 'TEST 5', `Fresh database initializes directly to CURRENT_SCHEMA_VERSION = 5`);
   const freshAppTable = freshDb.tables.get('ipo_applications')!;
   assert(freshAppTable.columns.has('broker_account_id') === true, 'TEST 5', 'Fresh ipo_applications table created with broker_account_id');
 

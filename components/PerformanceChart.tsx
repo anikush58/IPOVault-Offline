@@ -46,7 +46,7 @@ type DropdownOption = {
 
 const CHART_H = 170;
 const LABEL_H = 18;
-const CHART_COLOR = '#0066FF'; // Electric blue
+const CHART_COLOR = '#10B981'; // Emerald green
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // ── Bucket helpers ────────────────────────────────────────────────────────────

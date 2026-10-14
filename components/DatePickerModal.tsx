@@ -296,7 +296,7 @@ const styles = StyleSheet.create({
   cancelBtn: {
     flex: 1,
     height: 44,
-    borderRadius: 12,
+    borderRadius: 9999,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -308,7 +308,7 @@ const styles = StyleSheet.create({
   confirmBtn: {
     flex: 2,
     height: 44,
-    borderRadius: 12,
+    borderRadius: 9999,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

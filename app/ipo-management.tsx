@@ -664,7 +664,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 9999,
     borderWidth: 1,
   },
   emptyActionBtnText: {
@@ -676,7 +676,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 18,
     paddingVertical: 11,
-    borderRadius: 12,
+    borderRadius: 9999,
   },
   emptyActionBtnPrimaryText: {
     color: '#fff',

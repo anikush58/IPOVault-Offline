@@ -6,6 +6,7 @@ import {
   Pressable,
   StyleSheet,
   TouchableOpacity,
+  useWindowDimensions,
   View,
   ViewStyle,
 } from 'react-native';
@@ -24,6 +25,7 @@ interface ScoopedBottomSheetProps {
   maxHeight?: string | number;
   style?: ViewStyle;
   showCloseButton?: boolean;
+  overlay?: React.ReactNode;
 }
 
 export function ScoopedBottomSheet({
@@ -33,16 +35,22 @@ export function ScoopedBottomSheet({
   maxHeight = '90%',
   style,
   showCloseButton = true,
+  overlay,
 }: ScoopedBottomSheetProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
-  const [sheetWidth, setSheetWidth] = useState(0);
-  const [sheetHeight, setSheetHeight] = useState(0);
+  // Initialize with synchronous window dimensions so sheet is NEVER 0x0 / transparent on frame 0 or during lag
+  const [measuredWidth, setMeasuredWidth] = useState(0);
+  const [measuredHeight, setMeasuredHeight] = useState(0);
 
   if (!visible) return null;
+
+  const effectiveWidth = measuredWidth > 0 ? measuredWidth : windowWidth;
+  const effectiveHeight = measuredHeight > 0 ? measuredHeight : Math.round(windowHeight * 0.9);
 
   const R = 32; // Top corner radius
   const SCOOP_W = 60; // Scoop half-width
@@ -86,10 +94,11 @@ export function ScoopedBottomSheet({
           tint={isDark ? 'dark' : 'light'}
           style={StyleSheet.absoluteFill}
         />
+        {/* Deep Backdrop Dimming (guarantees contrast even if native blur is unavailable) */}
         <Pressable
           style={[
             StyleSheet.absoluteFill,
-            { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.45)' : 'rgba(0, 0, 0, 0.25)' },
+            { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.70)' : 'rgba(0, 0, 0, 0.50)' },
           ]}
           onPress={handleClose}
         />
@@ -101,8 +110,10 @@ export function ScoopedBottomSheet({
           <Pressable
             onLayout={(e) => {
               const { width, height } = e.nativeEvent.layout;
-              setSheetWidth(width);
-              setSheetHeight(height);
+              if (width > 0 && height > 0) {
+                setMeasuredWidth(width);
+                setMeasuredHeight(height);
+              }
             }}
             style={[
               styles.sheetContainer,
@@ -114,22 +125,34 @@ export function ScoopedBottomSheet({
             ]}
             onPress={() => {}}
           >
-            {/* Scooped SVG Background */}
-            {sheetWidth > 0 && sheetHeight > 0 && (
-              <Svg
-                width={sheetWidth}
-                height={sheetHeight}
-                style={StyleSheet.absoluteFill}
-                pointerEvents="none"
-              >
-                <Path
-                  d={getScoopedPath(sheetWidth, sheetHeight)}
-                  fill={colors.background}
-                  stroke={colors.border}
-                  strokeWidth={1}
-                />
-              </Svg>
-            )}
+            {/* Solid Opaque Base Background (guarantees sheet body is NEVER transparent even if SVG lags or during UI thread congestion) */}
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                {
+                  backgroundColor: colors.background,
+                  borderTopLeftRadius: R,
+                  borderTopRightRadius: R,
+                  top: SCOOP_D,
+                },
+              ]}
+              pointerEvents="none"
+            />
+
+            {/* Scooped SVG Background with top cutout */}
+            <Svg
+              width={effectiveWidth}
+              height={effectiveHeight}
+              style={StyleSheet.absoluteFill}
+              pointerEvents="none"
+            >
+              <Path
+                d={getScoopedPath(effectiveWidth, effectiveHeight)}
+                fill={colors.background}
+                stroke={colors.border}
+                strokeWidth={1}
+              />
+            </Svg>
 
             {/* Floating Scooped Close Cross Button */}
             {showCloseButton && (
@@ -151,12 +174,14 @@ export function ScoopedBottomSheet({
               </View>
             )}
 
-            {/* Sheet Content */}
+            {/* Sheet Content (Flex-bounded to never overflow the bottom sheet or push CTAs off-screen) */}
             <View style={styles.contentContainer}>
               {children}
             </View>
           </Pressable>
         </KeyboardAvoidingView>
+
+        {overlay}
       </View>
     </Modal>
   );
@@ -170,6 +195,7 @@ const styles = StyleSheet.create({
   keyboardAvoid: {
     width: '100%',
     justifyContent: 'flex-end',
+    maxHeight: '100%',
   },
   sheetContainer: {
     width: '100%',
@@ -181,6 +207,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 12,
     elevation: 8,
+    display: 'flex',
+    flexDirection: 'column',
   },
   closeBtnWrapper: {
     position: 'absolute',
@@ -206,5 +234,9 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingTop: 38,
     width: '100%',
+    flexShrink: 1,
+    maxHeight: '100%',
+    display: 'flex',
+    flexDirection: 'column',
   },
 });

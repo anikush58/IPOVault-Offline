@@ -672,7 +672,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     height: 52,
     width: '100%',
-    borderRadius: 100,
+    borderRadius: 9999,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -740,7 +740,7 @@ const styles = StyleSheet.create({
   submitButton: {
     height: 52,
     width: '100%',
-    borderRadius: 100,
+    borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
@@ -810,7 +810,7 @@ const styles = StyleSheet.create({
   },
   resetSubmitButton: {
     height: 48,
-    borderRadius: 100,
+    borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 16,

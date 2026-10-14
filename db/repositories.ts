@@ -1,7 +1,8 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import * as Crypto from 'expo-crypto';
 import type { User, IPOListing, ApplicationWithDetails, BankAccount, ApplicationStatus } from '@/context/DBContext';
-import { safeGetAllAsync, safeGetFirstAsync, safeRunAsync } from '@/utils/sqliteDebug';
+import { safeGetAllAsync, safeGetFirstAsync, safeRunAsync, runWithTransaction } from '@/utils/sqliteDebug';
+import { startPerfTimer } from '@/utils/performanceMetrics';
 
 function getCurrentTime() {
   return new Date().toISOString();
@@ -60,6 +61,9 @@ export interface IApplicationRepository {
     tax?: number,
     userCut?: number,
     ownerId?: string | null,
+    brokerAccountId?: string | null,
+    bankName?: string,
+    upiApp?: string
   ): Promise<void>;
   updateBulkStatus(ids: string[], status: ApplicationStatus): Promise<void>;
   toggleFavorite(id: string, isFavorite: boolean): Promise<void>;
@@ -342,6 +346,11 @@ export class ApplicationRepository implements IApplicationRepository {
       if (__DEV__) console.warn('[ApplicationRepository.addBulk] Called with empty userIds array');
       return;
     }
+
+    const timer = startPerfTimer('ApplicationRepository.addBulk', {
+      applicantCount: userIds.length,
+    });
+
     const now = getCurrentTime();
     const existing = await safeGetAllAsync<{ user_id: string }>(
       this.db,
@@ -361,6 +370,11 @@ export class ApplicationRepository implements IApplicationRepository {
     const isSme = (ipoRow?.issue_type || '').toUpperCase() === 'SME';
 
     const uidsToFetch = userIds.filter((uid) => uid && !existingSet.has(uid));
+    if (uidsToFetch.length === 0) {
+      timer({ appliedCount: 0, skippedCount: userIds.length });
+      return;
+    }
+
     let userMap = new Map<string, { bank_name: string; upi_app: string }>();
     if (uidsToFetch.length > 0) {
       const placeholders = uidsToFetch.map(() => '?').join(',');
@@ -387,60 +401,83 @@ export class ApplicationRepository implements IApplicationRepository {
       }
     }
 
-    for (const uid of userIds) {
-      if (!uid) {
-        if (__DEV__) console.warn('[ApplicationRepository.addBulk] Skipping empty uid');
-        continue;
+    const tPrepStart = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+
+    // Pre-calculate all application rows in memory before entering write transaction
+    const insertRows: { id: string; params: any[] }[] = [];
+    for (const uid of uidsToFetch) {
+      const id = Crypto.randomUUID();
+      const userObj = userMap.get(uid);
+      const rawBank = typeof bankName === 'object' && bankName !== null ? bankName[uid] : bankName;
+      const rawUpi = typeof upiApp === 'object' && upiApp !== null ? upiApp[uid] : upiApp;
+
+      const resolvedBank = rawBank && rawBank.trim() !== '' ? rawBank.trim() : (userObj?.bank_name || '');
+      let resolvedUpi = rawUpi && rawUpi.trim() !== '' ? rawUpi.trim() : (userObj?.upi_app || '');
+      if (!resolvedUpi && resolvedBank) {
+        resolvedUpi = bankUpiMap.get(resolvedBank.toLowerCase().trim()) || '';
       }
-      if (!existingSet.has(uid)) {
-        // Soft delete any previous cancelled application for this user and IPO
+
+      const userLots =
+        typeof lotCounts === 'object' && lotCounts !== null
+          ? (lotCounts[uid] ?? (isSme ? 2 : 1))
+          : typeof lotCounts === 'number'
+          ? lotCounts
+          : isSme
+          ? 2
+          : 1;
+      const calculatedShares = userLots > 0 ? userLots * lotSize : (isSme ? 2 * lotSize : lotSize);
+
+      const params = [
+        id,
+        uid,
+        ipoId,
+        resolvedBank,
+        resolvedUpi,
+        calculatedShares,
+        ownerId || null,
+        now,
+        now,
+      ];
+      insertRows.push({ id, params });
+    }
+    const tPrepEnd = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    console.log(`[ApplicationRepository.addBulk] In-memory preparation completed in ${(tPrepEnd - tPrepStart).toFixed(1)}ms (${insertRows.length} applications)`);
+
+    // Execute batch soft-delete and all inserts inside ONE atomic SQLite transaction
+    const tTxStart = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    await runWithTransaction(
+      this.db,
+      async () => {
+        // 1. Batch soft-delete previous cancelled applications in one single statement
+        const cancelPlaceholders = uidsToFetch.map(() => '?').join(',');
         await safeRunAsync(
           this.db,
-          "UPDATE ipo_applications SET deleted_at=? WHERE ipo_id=? AND user_id=? AND status='Cancelled'",
-          [now, ipoId, uid],
-          'ApplicationRepository.addBulk.cancelOld'
+          `UPDATE ipo_applications SET deleted_at=? WHERE ipo_id=? AND user_id IN (${cancelPlaceholders}) AND status='Cancelled'`,
+          [now, ipoId, ...uidsToFetch],
+          'ApplicationRepository.addBulk.cancelOldBatch'
         );
-        const id = Crypto.randomUUID();
-        const userObj = userMap.get(uid);
-        const rawBank = typeof bankName === 'object' && bankName !== null ? bankName[uid] : bankName;
-        const rawUpi = typeof upiApp === 'object' && upiApp !== null ? upiApp[uid] : upiApp;
 
-        const resolvedBank = rawBank && rawBank.trim() !== '' ? rawBank.trim() : (userObj?.bank_name || '');
-        let resolvedUpi = rawUpi && rawUpi.trim() !== '' ? rawUpi.trim() : (userObj?.upi_app || '');
-        if (!resolvedUpi && resolvedBank) {
-          resolvedUpi = bankUpiMap.get(resolvedBank.toLowerCase().trim()) || '';
-        }
-
-        const userLots =
-          typeof lotCounts === 'object' && lotCounts !== null
-            ? (lotCounts[uid] ?? (isSme ? 2 : 1))
-            : typeof lotCounts === 'number'
-            ? lotCounts
-            : isSme
-            ? 2
-            : 1;
-        const calculatedShares = userLots > 0 ? userLots * lotSize : (isSme ? 2 * lotSize : lotSize);
-
-        const sql = `
+        // 2. Insert all application records within the same active transaction
+        const insertSql = `
           INSERT INTO ipo_applications (
             id, user_id, ipo_id, status, bank_name, upi_app, shares_count, tax, user_cut,
             is_favorite, sync_version, sync_status, owner_id, created_at, updated_at
           ) VALUES (?, ?, ?, 'Applied', ?, ?, ?, 0, 0, 0, 0, 'PENDING', ?, ?, ?)
         `;
-        const params = [
-          id,
-          uid,
-          ipoId,
-          resolvedBank,
-          resolvedUpi,
-          calculatedShares,
-          ownerId || null,
-          now,
-          now,
-        ];
-        await safeRunAsync(this.db, sql, params, 'ApplicationRepository.addBulk.insert');
-      }
-    }
+        for (const row of insertRows) {
+          await safeRunAsync(this.db, insertSql, row.params, 'ApplicationRepository.addBulk.insert');
+        }
+      },
+      'ApplicationRepository.addBulk'
+    );
+    const tTxEnd = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    console.log(`[ApplicationRepository.addBulk] Atomic transaction committed in ${(tTxEnd - tTxStart).toFixed(1)}ms`);
+
+    timer({
+      appliedCount: insertRows.length,
+      skippedCount: userIds.length - insertRows.length,
+      durationMs: tTxEnd - tPrepStart,
+    });
   }
 
 
@@ -484,6 +521,9 @@ export class ApplicationRepository implements IApplicationRepository {
     tax: number = 0,
     userCut: number = 0,
     ownerId?: string | null,
+    brokerAccountId?: string | null,
+    bankName?: string,
+    upiApp?: string,
   ): Promise<void> {
     if (!id || soldShares <= 0 || totalShares <= 0) return;
     const now = getCurrentTime();
@@ -499,6 +539,14 @@ export class ApplicationRepository implements IApplicationRepository {
 
     const actualSoldQty = Math.min(soldShares, totalShares);
     const remainingShares = totalShares - actualSoldQty;
+
+    const effectiveBrokerAccountId =
+      brokerAccountId !== undefined ? brokerAccountId : (orig.broker_account_id || null);
+    const effectiveBankName =
+      bankName !== undefined && bankName.trim() !== '' ? bankName.trim() : (orig.bank_name || '');
+    const effectiveUpiApp =
+      upiApp !== undefined && upiApp.trim() !== '' ? upiApp.trim() : (orig.upi_app || '');
+    const effectiveOwnerId = ownerId || orig.owner_id || null;
 
     // Check if an existing 'Sold' application card exists for the same user & IPO
     const existingSold = await safeGetFirstAsync<any>(
@@ -526,6 +574,9 @@ export class ApplicationRepository implements IApplicationRepository {
       const updateSoldSql = `
         UPDATE ipo_applications SET
           status = 'Sold', shares_count = ?, sell_price = ?, sale_date = ?, tax = ?, user_cut = ?,
+          broker_account_id = CASE WHEN ? = 1 THEN ? ELSE broker_account_id END,
+          bank_name = CASE WHEN ? != '' THEN ? ELSE bank_name END,
+          upi_app = CASE WHEN ? != '' THEN ? ELSE upi_app END,
           updated_at = ?, sync_version = sync_version + 1, sync_status = 'PENDING'
         WHERE id = ?
       `;
@@ -538,6 +589,12 @@ export class ApplicationRepository implements IApplicationRepository {
           saleDate ?? getCurrentTime().slice(0, 10),
           prevTax + tax,
           prevUserCut + userCut,
+          effectiveBrokerAccountId !== undefined ? 1 : 0,
+          effectiveBrokerAccountId,
+          effectiveBankName,
+          effectiveBankName,
+          effectiveUpiApp,
+          effectiveUpiApp,
           now,
           existingSold.id,
         ],
@@ -548,10 +605,29 @@ export class ApplicationRepository implements IApplicationRepository {
         // Update original holding application with remaining shares
         const updateHoldingSql = `
           UPDATE ipo_applications SET
-            status = 'Holding', shares_count = ?, updated_at = ?, sync_version = sync_version + 1, sync_status = 'PENDING'
+            status = 'Holding', shares_count = ?,
+            broker_account_id = CASE WHEN ? = 1 THEN ? ELSE broker_account_id END,
+            bank_name = CASE WHEN ? != '' THEN ? ELSE bank_name END,
+            upi_app = CASE WHEN ? != '' THEN ? ELSE upi_app END,
+            updated_at = ?, sync_version = sync_version + 1, sync_status = 'PENDING'
           WHERE id = ?
         `;
-        await safeRunAsync(this.db, updateHoldingSql, [remainingShares, now, id], 'ApplicationRepository.partialSell.updateHolding');
+        await safeRunAsync(
+          this.db,
+          updateHoldingSql,
+          [
+            remainingShares,
+            effectiveBrokerAccountId !== undefined ? 1 : 0,
+            effectiveBrokerAccountId,
+            effectiveBankName,
+            effectiveBankName,
+            effectiveUpiApp,
+            effectiveUpiApp,
+            now,
+            id,
+          ],
+          'ApplicationRepository.partialSell.updateHolding'
+        );
       } else {
         // Soft delete original holding application as 0 shares remain
         const deleteHoldingSql = `
@@ -568,31 +644,67 @@ export class ApplicationRepository implements IApplicationRepository {
         const updateSql = `
           UPDATE ipo_applications SET
             status = 'Sold', shares_count = ?, sell_price = ?, sale_date = ?, tax = ?, user_cut = ?,
+            broker_account_id = CASE WHEN ? = 1 THEN ? ELSE broker_account_id END,
+            bank_name = CASE WHEN ? != '' THEN ? ELSE bank_name END,
+            upi_app = CASE WHEN ? != '' THEN ? ELSE upi_app END,
             updated_at = ?, sync_version = sync_version + 1, sync_status = 'PENDING'
           WHERE id = ?
         `;
         await safeRunAsync(
           this.db,
           updateSql,
-          [totalShares, sellPrice, saleDate ?? getCurrentTime().slice(0, 10), tax, userCut, now, id],
+          [
+            totalShares,
+            sellPrice,
+            saleDate ?? getCurrentTime().slice(0, 10),
+            tax,
+            userCut,
+            effectiveBrokerAccountId !== undefined ? 1 : 0,
+            effectiveBrokerAccountId,
+            effectiveBankName,
+            effectiveBankName,
+            effectiveUpiApp,
+            effectiveUpiApp,
+            now,
+            id,
+          ],
           'ApplicationRepository.partialSell.fullSell'
         );
       } else {
         // Partial sell - update original holding with remaining shares
         const updateHoldingSql = `
           UPDATE ipo_applications SET
-            status = 'Holding', shares_count = ?, updated_at = ?, sync_version = sync_version + 1, sync_status = 'PENDING'
+            status = 'Holding', shares_count = ?,
+            broker_account_id = CASE WHEN ? = 1 THEN ? ELSE broker_account_id END,
+            bank_name = CASE WHEN ? != '' THEN ? ELSE bank_name END,
+            upi_app = CASE WHEN ? != '' THEN ? ELSE upi_app END,
+            updated_at = ?, sync_version = sync_version + 1, sync_status = 'PENDING'
           WHERE id = ?
         `;
-        await safeRunAsync(this.db, updateHoldingSql, [remainingShares, now, id], 'ApplicationRepository.partialSell.updateHolding');
+        await safeRunAsync(
+          this.db,
+          updateHoldingSql,
+          [
+            remainingShares,
+            effectiveBrokerAccountId !== undefined ? 1 : 0,
+            effectiveBrokerAccountId,
+            effectiveBankName,
+            effectiveBankName,
+            effectiveUpiApp,
+            effectiveUpiApp,
+            now,
+            id,
+          ],
+          'ApplicationRepository.partialSell.updateHolding'
+        );
 
         // Insert new Sold application card for sold shares
         const newId = Crypto.randomUUID();
         const insertSoldSql = `
           INSERT INTO ipo_applications (
             id, user_id, ipo_id, status, shares_count, sell_price, sale_date, tax, user_cut,
-            bank_name, upi_app, is_favorite, sync_version, sync_status, owner_id, created_at, updated_at
-          ) VALUES (?, ?, ?, 'Sold', ?, ?, ?, ?, ?, ?, ?, 0, 0, 'PENDING', ?, ?, ?)
+            bank_name, upi_app, broker_account_id, is_favorite, sync_version, sync_status, owner_id, created_at, updated_at
+          ) VALUES (?, ?, ?, 'Sold', ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'PENDING', ?, ?, ?)
         `;
         const insertSoldParams = [
           newId,
@@ -603,9 +715,10 @@ export class ApplicationRepository implements IApplicationRepository {
           saleDate ?? getCurrentTime().slice(0, 10),
           tax,
           userCut,
-          orig.bank_name || '',
-          orig.upi_app || '',
-          orig.owner_id || null,
+          effectiveBankName,
+          effectiveUpiApp,
+          effectiveBrokerAccountId,
+          effectiveOwnerId,
           now,
           now,
         ];
@@ -617,15 +730,22 @@ export class ApplicationRepository implements IApplicationRepository {
   async updateBulkStatus(ids: string[], status: ApplicationStatus): Promise<void> {
     if (!ids || ids.length === 0) return;
     const now = getCurrentTime();
-    for (const id of ids) {
-      if (!id) continue;
-      const sql = `
-        UPDATE ipo_applications SET
-          status = ?, updated_at = ?, sync_version = sync_version + 1, sync_status = 'PENDING'
-        WHERE id = ?
-      `;
-      await safeRunAsync(this.db, sql, [status, now, id], 'ApplicationRepository.updateBulkStatus');
-    }
+    const validIds = ids.filter((id) => Boolean(id));
+    if (validIds.length === 0) return;
+
+    await runWithTransaction(
+      this.db,
+      async () => {
+        const placeholders = validIds.map(() => '?').join(',');
+        const sql = `
+          UPDATE ipo_applications SET
+            status = ?, updated_at = ?, sync_version = sync_version + 1, sync_status = 'PENDING'
+          WHERE id IN (${placeholders})
+        `;
+        await safeRunAsync(this.db, sql, [status, now, ...validIds], 'ApplicationRepository.updateBulkStatus');
+      },
+      'ApplicationRepository.updateBulkStatus'
+    );
   }
 
   async toggleFavorite(id: string, isFavorite: boolean): Promise<void> {

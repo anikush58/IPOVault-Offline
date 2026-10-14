@@ -5,6 +5,7 @@ import { ipoDiagnosticsStore } from './diagnosticsStore';
 import { syncStore } from '@/services/sync/syncStatus';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { runWithTransaction, safeExecAsync, safeRunAsync } from '@/utils/sqliteDebug';
+import { concurrencyTelemetry } from '@/utils/concurrencyTelemetry';
 
 import { API_BASE_URL } from '@/constants/apiConfig';
 
@@ -57,6 +58,7 @@ export async function triggerCentralizedIPOSync(
   isSyncing = true;
   lastSyncAttemptMs = nowMs;
   const startTime = Date.now();
+  const syncProbe = concurrencyTelemetry.startExecuting('SYNC_TASK', `centralizedSync.${source}`);
 
   syncStore.update({
     state: 'Syncing',
@@ -149,37 +151,59 @@ export async function triggerCentralizedIPOSync(
         const { recordIPOOutcome } = require('./radarOutcomeService');
         const { IPOParser } = require('./ipoParser');
 
-        await runWithTransaction(
-          db,
-          async () => {
-            for (const rawData of result.data || []) {
-              if (!rawData || !rawData.id) continue;
-              const fullIpo = IPOParser.parse(rawData);
-              if (!fullIpo || !fullIpo.id) continue;
+        // Pre-compute CPU transformations outside write transaction to minimize lock duration
+        const preparedRadarBatch: Array<{
+          fullIpo: any;
+          radar: any;
+          isClosedOrListed: boolean;
+          outcomeRecord: any | null;
+        }> = [];
 
-              const radar = evaluateIPORadarScore(fullIpo, null, []);
-              await persistRadarSnapshotIfChanged(db, fullIpo, radar);
+        for (const rawData of result.data || []) {
+          if (!rawData || !rawData.id) continue;
+          const fullIpo = IPOParser.parse(rawData);
+          if (!fullIpo || !fullIpo.id) continue;
 
-              const statusLower = (fullIpo.status || '').toLowerCase();
-              if (statusLower === 'closed' || statusLower === 'listed') {
-                await markFinalPreListingSnapshot(db, fullIpo.id);
+          const radar = evaluateIPORadarScore(fullIpo, null, []);
+          const statusLower = (fullIpo.status || '').toLowerCase();
+          const isClosedOrListed = statusLower === 'closed' || statusLower === 'listed';
+          const isListedWithGain = statusLower === 'listed' && (fullIpo.listing_price != null || fullIpo.listing_gain_percent != null);
+          const outcomeRecord = isListedWithGain ? {
+            ipo_id: fullIpo.id,
+            company_name: fullIpo.company_name,
+            issue_price: fullIpo.price_band_max || fullIpo.price_band_min || 0,
+            listing_date: fullIpo.listing_date || new Date().toISOString(),
+            listing_price: fullIpo.listing_price,
+            listing_gain_percent: fullIpo.listing_gain_percent,
+            outcome_recorded_at: new Date().toISOString(),
+          } : null;
+
+          preparedRadarBatch.push({ fullIpo, radar, isClosedOrListed, outcomeRecord });
+        }
+
+        // Process radar snapshots in small cooperative chunks yielding to event loop
+        // so user-initiated interactive transactions are never blocked
+        const CHUNK_SIZE = 5;
+        for (let i = 0; i < preparedRadarBatch.length; i += CHUNK_SIZE) {
+          const chunk = preparedRadarBatch.slice(i, i + CHUNK_SIZE);
+          await runWithTransaction(
+            db,
+            async () => {
+              for (const item of chunk) {
+                await persistRadarSnapshotIfChanged(db, item.fullIpo, item.radar);
+                if (item.isClosedOrListed) {
+                  await markFinalPreListingSnapshot(db, item.fullIpo.id);
+                }
+                if (item.outcomeRecord) {
+                  await recordIPOOutcome(db, item.outcomeRecord);
+                }
               }
-
-              if (statusLower === 'listed' && (fullIpo.listing_price != null || fullIpo.listing_gain_percent != null)) {
-                await recordIPOOutcome(db, {
-                  ipo_id: fullIpo.id,
-                  company_name: fullIpo.company_name,
-                  issue_price: fullIpo.price_band_max || fullIpo.price_band_min || 0,
-                  listing_date: fullIpo.listing_date || new Date().toISOString(),
-                  listing_price: fullIpo.listing_price,
-                  listing_gain_percent: fullIpo.listing_gain_percent,
-                  outcome_recorded_at: new Date().toISOString(),
-                });
-              }
-            }
-          },
-          'centralizedSync.radarSnapshotBatch'
-        );
+            },
+            `centralizedSync.radarSnapshotBatch.${i}`
+          );
+          // Yield event loop
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
       } catch (radarErr) {
         if (__DEV__) console.warn('[IPOVault Sync] Radar sync processing error:', radarErr);
       }
@@ -268,6 +292,7 @@ export async function triggerCentralizedIPOSync(
 
     console.error(`[CentralizedSync] Unexpected sync error (Source: ${source}):`, err);
 
+    syncProbe.finish(err);
     syncStore.update({
       state: 'Error',
       error: errorMsg,
@@ -280,6 +305,7 @@ export async function triggerCentralizedIPOSync(
       error: errorMsg,
     };
   } finally {
+    syncProbe.finish();
     isSyncing = false;
   }
 }

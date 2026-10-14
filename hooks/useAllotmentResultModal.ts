@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useSQLiteContext } from 'expo-sqlite';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { safeGetAllAsync } from '@/utils/sqliteDebug';
@@ -17,8 +17,11 @@ export function useAllotmentResultModal() {
   const db = useSQLiteContext();
   const [modalState, setModalState] = useState<UnviewedAllotmentResultState | null>(null);
   const [visible, setVisible] = useState(false);
+  const inFlightRef = useRef(false);
 
   const checkUnviewedAllotmentResults = useCallback(async () => {
+    if (inFlightRef.current || !db) return;
+    inFlightRef.current = true;
     try {
       // 1. Fetch all distinct IPOs that have applications and completed allotment results
       const rows = await safeGetAllAsync<{
@@ -156,6 +159,8 @@ export function useAllotmentResultModal() {
         return;
       }
       if (__DEV__) console.warn('[useAllotmentResultModal] Error checking unviewed results:', err);
+    } finally {
+      inFlightRef.current = false;
     }
   }, [db]);
 

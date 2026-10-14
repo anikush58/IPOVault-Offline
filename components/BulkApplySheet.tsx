@@ -10,20 +10,21 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { Feather } from '@expo/vector-icons';
-import Svg, { Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useSQLiteContext } from 'expo-sqlite';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { useDB } from '@/context/DBContext';
 import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 import { useDialog } from '@/context/DialogContext';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatCurrency } from '@/utils/formatters';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
+import { ScoopedBottomSheet } from '@/components/ui/ScoopedBottomSheet';
 import { BackendIpo } from '@/types/backend-ipo';
+import { safeRunAsync } from '@/utils/sqliteDebug';
+import { startPerfTimer } from '@/utils/performanceMetrics';
 
 import { calculateNormalizedIPOStatus } from '@/services/ipo/statusNormalizer';
 
@@ -106,7 +107,11 @@ function isIpoCurrentlyOpen(record: {
   return normalizedStatus === 'OPEN' || normalizedStatus === 'CLOSING_TODAY';
 }
 
-const UPI_APPS = ['GPay', 'PhonePe', 'Paytm', 'BHIM', 'BoB ASBA', 'IDFC ASBA', 'Other'];
+import {
+  UPI_APPS,
+  resolveBankLinkedUpiApp,
+} from '@/utils/bulkApplyUtils';
+export { UPI_APPS, resolveBankLinkedUpiApp };
 
 export interface BulkIPOOption {
   id: string;
@@ -145,12 +150,18 @@ export function BulkApplySheet({ visible, onClose }: Props) {
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
 
-  const [backendIpos, setBackendIpos] = useState<BackendIpo[]>([]);
+  const [backendIpos, setBackendIpos] = useState<BackendIpo[]>(() => {
+    return backendIpoApiService.getCachedIpos() || [];
+  });
   const [loadingBackendIpos, setLoadingBackendIpos] = useState(false);
-  const [sheetWidth, setSheetWidth] = useState(0);
-  const [sheetHeight, setSheetHeight] = useState(0);
+  const isSubmittingRef = React.useRef(false);
 
-  // Reset selections & fetch live open IPOs from IPO Hub whenever sheet is opened
+  // Correlation IDs and timers for selector interactions
+  const ipoPickerTimerRef = React.useRef<{ opId: string; start: number } | null>(null);
+  const bankPickerTimerRef = React.useRef<{ opId: string; start: number } | null>(null);
+  const upiPickerTimerRef = React.useRef<{ opId: string; start: number } | null>(null);
+
+  // Reset selections & revalidate live open IPOs from IPO Hub whenever sheet is opened
   useEffect(() => {
     if (visible) {
       setBulkIPOId(null);
@@ -159,8 +170,16 @@ export function BulkApplySheet({ visible, onClose }: Props) {
       setSelectedUserIds(new Set());
       setBulkLoading(false);
 
+      const cached = backendIpoApiService.getCachedIpos();
+      if (cached && cached.length > 0) {
+        setBackendIpos(cached);
+      }
+
       let isMounted = true;
-      setLoadingBackendIpos(true);
+      const needsFetch = !cached || cached.length === 0;
+      if (needsFetch) {
+        setLoadingBackendIpos(true);
+      }
       backendIpoApiService
         .listBackendIpos()
         .then((data) => {
@@ -182,6 +201,36 @@ export function BulkApplySheet({ visible, onClose }: Props) {
   const [showIPOPicker, setShowIPOPicker] = useState(false);
   const [showBankPicker, setShowBankPicker] = useState(false);
   const [showUPIPicker, setShowUPIPicker] = useState(false);
+
+  const handleOpenIPOPicker = () => {
+    const opId = `picker_ipo_${Date.now()}`;
+    const t0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    ipoPickerTimerRef.current = { opId, start: t0 };
+    console.log(`[Picker Trace:${opId}] 1. IPO selector tap registered`);
+    setShowIPOPicker(true);
+    const elapsed = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - t0;
+    console.log(`[Picker Trace:${opId}] 2. IPO selector state update dispatched in ${elapsed.toFixed(2)}ms`);
+  };
+
+  const handleOpenBankPicker = () => {
+    const opId = `picker_bank_${Date.now()}`;
+    const t0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    bankPickerTimerRef.current = { opId, start: t0 };
+    console.log(`[Picker Trace:${opId}] 1. Bank selector tap registered`);
+    setShowBankPicker(true);
+    const elapsed = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - t0;
+    console.log(`[Picker Trace:${opId}] 2. Bank selector state update dispatched in ${elapsed.toFixed(2)}ms`);
+  };
+
+  const handleOpenUPIPicker = () => {
+    const opId = `picker_upi_${Date.now()}`;
+    const t0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    upiPickerTimerRef.current = { opId, start: t0 };
+    console.log(`[Picker Trace:${opId}] 1. UPI selector tap registered`);
+    setShowUPIPicker(true);
+    const elapsed = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - t0;
+    console.log(`[Picker Trace:${opId}] 2. UPI selector state update dispatched in ${elapsed.toFixed(2)}ms`);
+  };
 
   const openBackendOptions = useMemo(() => {
     return backendIpos
@@ -263,16 +312,17 @@ export function BulkApplySheet({ visible, onClose }: Props) {
   }, [ipos, backendIpos]);
 
   const activeIPOs = useMemo(() => {
+    if (openBackendOptions.length === 0) return openLocalOptions;
+    if (openLocalOptions.length === 0) return openBackendOptions;
     const list: BulkIPOOption[] = [...openBackendOptions];
+    const seenNames = new Set(openBackendOptions.map((b) => b.ipo_name.toLowerCase().trim()));
+    const seenIds = new Set(openBackendOptions.map((b) => b.id));
     for (const loc of openLocalOptions) {
-      if (
-        !list.some(
-          (r) =>
-            r.id === loc.id ||
-            r.ipo_name.toLowerCase().trim() === loc.ipo_name.toLowerCase().trim()
-        )
-      ) {
+      const locName = loc.ipo_name.toLowerCase().trim();
+      if (!seenIds.has(loc.id) && !seenNames.has(locName)) {
         list.push(loc);
+        seenNames.add(locName);
+        seenIds.add(loc.id);
       }
     }
     return list;
@@ -290,6 +340,34 @@ export function BulkApplySheet({ visible, onClose }: Props) {
     }
     return list;
   }, [bankAccounts]);
+
+  // Trace when picker modal overlay becomes visible
+  useEffect(() => {
+    if (showIPOPicker && ipoPickerTimerRef.current) {
+      const { opId, start } = ipoPickerTimerRef.current;
+      const duration = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - start;
+      console.log(`[Picker Trace:${opId}] 3. IPO modal visible & ${activeIPOs.length} option(s) available in ${duration.toFixed(2)}ms`);
+      ipoPickerTimerRef.current = null;
+    }
+  }, [showIPOPicker, activeIPOs.length]);
+
+  useEffect(() => {
+    if (showBankPicker && bankPickerTimerRef.current) {
+      const { opId, start } = bankPickerTimerRef.current;
+      const duration = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - start;
+      console.log(`[Picker Trace:${opId}] 3. Bank modal visible & ${availableBankNames.length} bank(s) available in ${duration.toFixed(2)}ms`);
+      bankPickerTimerRef.current = null;
+    }
+  }, [showBankPicker, availableBankNames.length]);
+
+  useEffect(() => {
+    if (showUPIPicker && upiPickerTimerRef.current) {
+      const { opId, start } = upiPickerTimerRef.current;
+      const duration = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - start;
+      console.log(`[Picker Trace:${opId}] 3. UPI modal visible & ${UPI_APPS.length} option(s) available in ${duration.toFixed(2)}ms`);
+      upiPickerTimerRef.current = null;
+    }
+  }, [showUPIPicker]);
 
   // Filtered users for selected IPO (excluding users who already have a non-cancelled application)
   const filteredUsers = useMemo(() => {
@@ -320,6 +398,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
   };
 
   const handleBulkCreate = async () => {
+    if (bulkLoading || isSubmittingRef.current) return;
     if (!bulkIPOId || !selectedIPO) {
       showError('', 'Please select an IPO first.');
       return;
@@ -329,320 +408,70 @@ export function BulkApplySheet({ visible, onClose }: Props) {
       return;
     }
 
-    setBulkLoading(true);
-    try {
-      // Sync selected IPO details into ipo_listings table to ensure complete metadata.
-      // IMPORTANT: Use INSERT OR IGNORE + UPDATE (not INSERT OR REPLACE) to avoid
-      // cascade-deleting existing ipo_applications (ipo_id FK ON DELETE CASCADE).
-      const now = new Date().toISOString();
-      await db.runAsync(
-        `INSERT OR IGNORE INTO ipo_listings (
-          id, ipo_name, company_name, symbol, buy_price, quantity, open_date, close_date, listing_date, allotment_date,
-          registrar, exchange, issue_type, archived, is_favorite, logo_url, created_at, updated_at,
-          sync_version, sync_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, 0, 'PENDING')`,
-        [
-          selectedIPO.id,
-          selectedIPO.ipo_name,
-          selectedIPO.company_name,
-          selectedIPO.symbol || '',
-          selectedIPO.buy_price,
-          selectedIPO.quantity,
-          selectedIPO.open_date || '',
-          selectedIPO.close_date || '',
-          selectedIPO.listing_date || '',
-          selectedIPO.allotment_date || '',
-          selectedIPO.registrar || '',
-          'NSE, BSE',
-          selectedIPO.issue_type || 'Mainboard',
-          selectedIPO.logo_url || '',
-          now,
-          now,
-        ]
-      );
-      // Update only metadata fields — never delete the row (which would cascade-delete applications)
-      await db.runAsync(
-        `UPDATE ipo_listings SET
-          ipo_name = ?, company_name = ?, symbol = ?, buy_price = ?, quantity = ?,
-          open_date = ?, close_date = ?, listing_date = ?, allotment_date = ?,
-          registrar = ?, exchange = ?, issue_type = ?, logo_url = ?, updated_at = ?
-         WHERE id = ?`,
-        [
-          selectedIPO.ipo_name,
-          selectedIPO.company_name,
-          selectedIPO.symbol || '',
-          selectedIPO.buy_price,
-          selectedIPO.quantity,
-          selectedIPO.open_date || '',
-          selectedIPO.close_date || '',
-          selectedIPO.listing_date || '',
-          selectedIPO.allotment_date || '',
-          selectedIPO.registrar || '',
-          'NSE, BSE',
-          selectedIPO.issue_type || 'Mainboard',
-          selectedIPO.logo_url || '',
-          now,
-          selectedIPO.id,
-        ]
-      );
+    const opId = `bulk_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const t0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    console.log(`[BulkApply Trace:${opId}] 1. Submit button registered (${selectedUserIds.size} applicant(s), IPO: ${selectedIPO.ipo_name || selectedIPO.id})`);
 
-      await addBulkApplications(
-        selectedIPO.id,
-        Array.from(selectedUserIds),
-        bulkBankName ?? undefined,
-        bulkUPIApp ?? undefined,
-        selectedIPO.issue_type === 'SME' ? 2 : 1
-      );
-      backendSyncEmitter.notifyChange();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onClose();
+    isSubmittingRef.current = true;
+    setBulkLoading(true);
+    const totalSubmitTimer = startPerfTimer('BulkApplySheet.handleBulkCreate', {
+      applicantCount: selectedUserIds.size,
+      ipoId: selectedIPO.id,
+      opId,
+    });
+
+    try {
+      // 1. Add bulk applications with complete IPO metadata directly in one unified persistence call
+      const tAddStart = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+      try {
+        await addBulkApplications(
+          selectedIPO.id,
+          Array.from(selectedUserIds),
+          bulkBankName ?? undefined,
+          bulkUPIApp ?? undefined,
+          selectedIPO.issue_type === 'SME' ? 2 : 1,
+          selectedIPO
+        );
+      } finally {
+        const addDuration = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - tAddStart;
+        console.log(`[BulkApply Trace:${opId}] 2. Local SQLite database save completed in ${addDuration.toFixed(1)}ms`);
+      }
+
+      // 2. Dispatch event to subscribers
+      const tEvtStart = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+      try {
+        backendSyncEmitter.notifyChange('applications');
+      } finally {
+        const evtDuration = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - tEvtStart;
+        console.log(`[BulkApply Trace:${opId}] 3. Scoped event dispatch completed in ${evtDuration.toFixed(1)}ms`);
+      }
+
+      // 3. Trigger Haptics and close the sheet immediately
+      const tCloseStart = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+      try {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        totalSubmitTimer({ status: 'success' });
+        onClose();
+      } finally {
+        const closeDuration = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - tCloseStart;
+        const totalDuration = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - t0;
+        console.log(`[BulkApply Trace:${opId}] 4. Sheet-close triggered in ${closeDuration.toFixed(1)}ms`);
+        console.log(`[BulkApply Trace:${opId}] 5. Total submit-to-close elapsed time: ${totalDuration.toFixed(1)}ms`);
+      }
     } catch (e: any) {
+      const errDuration = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - t0;
+      totalSubmitTimer({ status: 'error', error: e?.message, durationMs: errDuration });
+      console.error(`[BulkApply Trace:${opId}] Submit failed after ${errDuration.toFixed(1)}ms:`, e?.message || e);
       showError('Error', e?.message || 'Failed to create bulk applications.');
     } finally {
+      isSubmittingRef.current = false;
       setBulkLoading(false);
     }
   };
 
-  const R = 32;
-  const SCOOP_W = 60;
-  const SCOOP_D = 28;
-
-  const getScoopedPath = (w: number, h: number) => {
-    if (w <= 0 || h <= 0) return '';
-    const cx = w / 2;
-
-    return `M 0 ${h}
-      L 0 ${R}
-      A ${R} ${R} 0 0 1 ${R} 0
-      L ${cx - SCOOP_W} 0
-      C ${cx - 38} 0, ${cx - 32} ${SCOOP_D}, ${cx} ${SCOOP_D}
-      C ${cx + 32} ${SCOOP_D}, ${cx + 38} 0, ${cx + SCOOP_W} 0
-      L ${w - R} 0
-      A ${R} ${R} 0 0 1 ${w} ${R}
-      L ${w} ${h}
-      Z`;
-  };
-
-  if (!visible) return null;
-
-  return (
-    <>
-      <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={onClose}>
-        <View style={styles.modalOverlay}>
-          {/* Blurred Background Backdrop */}
-          <BlurView
-            intensity={Platform.OS === 'ios' ? 35 : 24}
-            tint={isDark ? 'dark' : 'light'}
-            style={StyleSheet.absoluteFill}
-          />
-          <Pressable
-            style={[
-              StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? 'rgba(0, 0, 0, 0.45)' : 'rgba(0, 0, 0, 0.25)' },
-            ]}
-            onPress={onClose}
-          />
-
-          <Pressable
-            onLayout={(e) => {
-              const { width, height } = e.nativeEvent.layout;
-              setSheetWidth(width);
-              setSheetHeight(height);
-            }}
-            style={[
-              styles.sheetContainer,
-              {
-                paddingBottom: Math.max(Math.floor(insets.bottom / 2), 13),
-              },
-            ]}
-            onPress={() => {}}
-          >
-            {/* Scooped SVG Background */}
-            {sheetWidth > 0 && sheetHeight > 0 && (
-              <Svg
-                width={sheetWidth}
-                height={sheetHeight}
-                style={StyleSheet.absoluteFill}
-                pointerEvents="none"
-              >
-                <Path
-                  d={getScoopedPath(sheetWidth, sheetHeight)}
-                  fill={colors.background}
-                  stroke={colors.border}
-                  strokeWidth={1}
-                />
-              </Svg>
-            )}
-
-            {/* Floating Scooped Close Cross Button */}
-            <View style={styles.scoopedCloseWrapper} pointerEvents="box-none">
-              <TouchableOpacity
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  onClose();
-                }}
-                activeOpacity={0.8}
-                hitSlop={8}
-                style={[
-                  styles.scoopedCloseBtn,
-                  {
-                    backgroundColor: isDark ? colors.card : '#FFFFFF',
-                    borderColor: colors.border,
-                  },
-                ]}
-              >
-                <Feather name="x" size={21} color={colors.foreground} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Header - Left aligned heading with clean top spacing below scoop */}
-            <View style={styles.sheetHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-                <View
-                  style={[
-                    styles.headerIconWrap,
-                    { backgroundColor: colors.primary + '18' },
-                  ]}
-                >
-                  <Feather name="layers" size={18} color={colors.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Bulk Application Creator</Text>
-                  <Text style={[styles.sheetSubtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
-                    Apply across multiple investor profiles
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: 13, gap: 12 }}>
-              {/* 1. SELECT IPO */}
-              <View>
-                <Text style={[styles.stepLabel, { color: colors.mutedForeground }]}>1. SELECT IPO</Text>
-                <TouchableOpacity
-                  onPress={() => setShowIPOPicker(true)}
-                  style={[styles.pickerTrigger, { borderColor: selectedIPO ? colors.foreground : colors.border, backgroundColor: colors.surface }]}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.pickerTriggerText, { color: selectedIPO ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
-                    {selectedIPO ? `${selectedIPO.ipo_name} — ${formatCurrency(selectedIPO.buy_price * selectedIPO.quantity * (selectedIPO.issue_type === 'SME' ? 2 : 1))}` : 'Choose Active IPO…'}
-                  </Text>
-                  <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
-                </TouchableOpacity>
-              </View>
-
-              {/* 2. BANK & PAYMENT METHOD */}
-              <View>
-                <Text style={[styles.stepLabel, { color: colors.mutedForeground }]}>2. BANK & PAYMENT METHOD</Text>
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  <TouchableOpacity
-                    onPress={() => setShowBankPicker(true)}
-                    style={[styles.pickerTrigger, { flex: 1, borderColor: bulkBankName ? colors.foreground : colors.border, backgroundColor: colors.surface }]}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.pickerTriggerText, { color: bulkBankName ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
-                      {bulkBankName || 'Bank Account'}
-                    </Text>
-                    <Feather name="chevron-down" size={14} color={colors.mutedForeground} />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    onPress={() => setShowUPIPicker(true)}
-                    style={[styles.pickerTrigger, { flex: 1, borderColor: bulkUPIApp ? colors.foreground : colors.border, backgroundColor: colors.surface }]}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.pickerTriggerText, { color: bulkUPIApp ? colors.foreground : colors.mutedForeground }]} numberOfLines={1}>
-                      {bulkUPIApp || 'UPI App'}
-                    </Text>
-                    <Feather name="chevron-down" size={14} color={colors.mutedForeground} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* 3. SELECT APPLICANTS */}
-              <View>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <Text style={[styles.stepLabel, { color: colors.mutedForeground, marginBottom: 0 }]}>
-                    3. SELECT APPLICANTS ({selectedUserIds.size} Selected)
-                  </Text>
-                  <TouchableOpacity onPress={toggleSelectAllUsers} activeOpacity={0.7} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 }}>
-                    <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold', color: colors.foreground }}>
-                      {selectedUserIds.size === filteredUsers.length && filteredUsers.length > 0 ? 'Deselect All' : 'Select All'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={{ paddingVertical: 4 }}>
-                  {filteredUsers.length === 0 ? (
-                    <Text style={[styles.chipEmptyText, { color: colors.mutedForeground }]}>
-                      No eligible users. Manage profiles in Users.
-                    </Text>
-                  ) : (
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                      {filteredUsers.map((u) => {
-                        const isChecked = selectedUserIds.has(u.id);
-                        return (
-                          <TouchableOpacity
-                            key={u.id}
-                            onPress={() => toggleUser(u.id)}
-                            style={[
-                              styles.chipItem,
-                              {
-                                borderColor: isChecked ? '#10B981' : colors.border,
-                                backgroundColor: isChecked ? (isDark ? colors.card : '#FFFFFF') : colors.card,
-                              },
-                            ]}
-                            activeOpacity={0.75}
-                          >
-                            <View
-                              style={[
-                                styles.checkbox,
-                                {
-                                  borderColor: isChecked ? '#10B981' : colors.mutedForeground,
-                                  backgroundColor: isChecked ? '#10B981' : 'transparent',
-                                },
-                              ]}
-                            >
-                              {isChecked && <Feather name="check" size={10} color="#FFFFFF" />}
-                            </View>
-                            <Text style={[styles.chipText, { color: colors.foreground }]}>{u.name}</Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  )}
-                </View>
-              </View>
-
-              {/* CTA Button */}
-              <TouchableOpacity
-                onPress={handleBulkCreate}
-                disabled={bulkLoading || !bulkIPOId || selectedUserIds.size === 0}
-                style={
-                  bulkLoading || !bulkIPOId || selectedUserIds.size === 0
-                    ? [styles.goldBtnDisabled, isDark && { backgroundColor: colors.surface }]
-                    : [styles.goldBtn, { backgroundColor: colors.primary }]
-                }
-                activeOpacity={0.85}
-              >
-                <Text
-                  style={
-                    bulkLoading || !bulkIPOId || selectedUserIds.size === 0
-                      ? [styles.goldBtnTextDisabled, isDark && { color: colors.mutedForeground }]
-                      : [styles.goldBtnText, { color: colors.primaryForeground }]
-                  }
-                >
-                  {bulkLoading ? 'Creating…' : `Create ${selectedUserIds.size} Application${selectedUserIds.size !== 1 ? 's' : ''}`}
-                </Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </Pressable>
-        </View>
-      </Modal>
-
-      {/* Pickers for Bulk Sheet (Centered Modals matching bids page) */}
-      {/* IPO Picker */}
-      <Modal visible={showIPOPicker} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setShowIPOPicker(false)}>
+  const renderPickerOverlay = () => {
+    if (showIPOPicker) {
+      return (
         <Pressable style={styles.centerModalOverlay} onPress={() => setShowIPOPicker(false)}>
           <Pressable style={[styles.pickerModalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => {}}>
             <View style={[styles.pickerModalHeader, { borderBottomColor: colors.border }]}>
@@ -695,10 +524,11 @@ export function BulkApplySheet({ visible, onClose }: Props) {
             </ScrollView>
           </Pressable>
         </Pressable>
-      </Modal>
+      );
+    }
 
-      {/* Bank Picker */}
-      <Modal visible={showBankPicker} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setShowBankPicker(false)}>
+    if (showBankPicker) {
+      return (
         <Pressable style={styles.centerModalOverlay} onPress={() => setShowBankPicker(false)}>
           <Pressable style={[styles.pickerModalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => {}}>
             <View style={[styles.pickerModalHeader, { borderBottomColor: colors.border }]}>
@@ -716,11 +546,9 @@ export function BulkApplySheet({ visible, onClose }: Props) {
                     key={bName}
                     onPress={() => {
                       setBulkBankName(bName);
-                      const matched = bankAccounts.find(
-                        (b) => b.bank_name.toLowerCase().trim() === bName.toLowerCase().trim()
-                      );
-                      if (matched?.upi_app) {
-                        setBulkUPIApp(matched.upi_app);
+                      const mappedUpi = resolveBankLinkedUpiApp(bName, bankAccounts, UPI_APPS);
+                      if (mappedUpi) {
+                        setBulkUPIApp(mappedUpi);
                       }
                       setShowBankPicker(false);
                     }}
@@ -734,10 +562,11 @@ export function BulkApplySheet({ visible, onClose }: Props) {
             </ScrollView>
           </Pressable>
         </Pressable>
-      </Modal>
+      );
+    }
 
-      {/* UPI App Picker */}
-      <Modal visible={showUPIPicker} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setShowUPIPicker(false)}>
+    if (showUPIPicker) {
+      return (
         <Pressable style={styles.centerModalOverlay} onPress={() => setShowUPIPicker(false)}>
           <Pressable style={[styles.pickerModalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => {}}>
             <View style={[styles.pickerModalHeader, { borderBottomColor: colors.border }]}>
@@ -763,34 +592,252 @@ export function BulkApplySheet({ visible, onClose }: Props) {
             </ScrollView>
           </Pressable>
         </Pressable>
-      </Modal>
-    </>
+      );
+    }
+
+    return null;
+  };
+
+  if (!visible) return null;
+
+  return (
+    <ScoopedBottomSheet
+      visible={visible}
+      onClose={onClose}
+      maxHeight="92%"
+      overlay={renderPickerOverlay()}
+    >
+        {/* Sheet Header */}
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <View style={styles.headerTitleGroup}>
+            <View
+              style={[
+                styles.headerIconWrap,
+                { backgroundColor: colors.primary + '18' },
+              ]}
+            >
+              <Feather name="layers" size={18} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Bulk Apply</Text>
+              <Text style={[styles.sheetSubtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
+                Apply across multiple investor profiles
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={{ flex: 1, minHeight: 0 }}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={true}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* 1. SELECT IPO */}
+            <View>
+              <Text style={[styles.stepLabel, { color: colors.mutedForeground }]}>1. SELECT IPO</Text>
+              <TouchableOpacity
+                onPress={handleOpenIPOPicker}
+                style={[
+                  styles.pickerTrigger,
+                  {
+                    borderColor: selectedIPO ? colors.foreground : colors.border,
+                    backgroundColor: colors.surface,
+                  },
+                ]}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.pickerTriggerText,
+                    { color: selectedIPO ? colors.foreground : colors.mutedForeground },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {selectedIPO
+                    ? `${selectedIPO.ipo_name} — ${formatCurrency(
+                        selectedIPO.buy_price *
+                          selectedIPO.quantity *
+                          (selectedIPO.issue_type === 'SME' ? 2 : 1)
+                      )}`
+                    : 'Choose Active IPO…'}
+                </Text>
+                <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+
+            {/* 2. BANK & PAYMENT METHOD */}
+            <View>
+              <Text style={[styles.stepLabel, { color: colors.mutedForeground }]}>2. BANK & PAYMENT METHOD</Text>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  onPress={handleOpenBankPicker}
+                  style={[
+                    styles.pickerTrigger,
+                    {
+                      flex: 1,
+                      borderColor: bulkBankName ? colors.foreground : colors.border,
+                      backgroundColor: colors.surface,
+                    },
+                  ]}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.pickerTriggerText,
+                      { color: bulkBankName ? colors.foreground : colors.mutedForeground },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {bulkBankName || 'Bank Account'}
+                  </Text>
+                  <Feather name="chevron-down" size={14} color={colors.mutedForeground} />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={handleOpenUPIPicker}
+                  style={[
+                    styles.pickerTrigger,
+                    {
+                      flex: 1,
+                      borderColor: bulkUPIApp ? colors.foreground : colors.border,
+                      backgroundColor: colors.surface,
+                    },
+                  ]}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.pickerTriggerText,
+                      { color: bulkUPIApp ? colors.foreground : colors.mutedForeground },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {bulkUPIApp || 'UPI App'}
+                  </Text>
+                  <Feather name="chevron-down" size={14} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* 3. SELECT APPLICANTS */}
+            <View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <Text style={[styles.stepLabel, { color: colors.mutedForeground, marginBottom: 0 }]}>
+                  3. SELECT APPLICANTS ({selectedUserIds.size} Selected)
+                </Text>
+                <TouchableOpacity onPress={toggleSelectAllUsers} activeOpacity={0.7} style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 4 }}>
+                  <Text style={{ fontSize: 13, fontFamily: 'GoogleSansFlex_700Bold', color: colors.foreground }}>
+                    {selectedUserIds.size === filteredUsers.length && filteredUsers.length > 0 ? 'Deselect All' : 'Select All'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ paddingVertical: 4 }}>
+                {filteredUsers.length === 0 ? (
+                  <Text style={[styles.chipEmptyText, { color: colors.mutedForeground }]}>
+                    No eligible users. Manage profiles in Users.
+                  </Text>
+                ) : (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {filteredUsers.map((u) => {
+                      const isChecked = selectedUserIds.has(u.id);
+                      return (
+                        <TouchableOpacity
+                          key={u.id}
+                          onPress={() => toggleUser(u.id)}
+                          style={[
+                            styles.chipItem,
+                            {
+                              borderColor: isChecked ? '#10B981' : colors.border,
+                              backgroundColor: isChecked ? (isDark ? colors.card : '#FFFFFF') : colors.card,
+                            },
+                          ]}
+                          activeOpacity={0.75}
+                        >
+                          <View
+                            style={[
+                              styles.checkbox,
+                              {
+                                borderColor: isChecked ? '#10B981' : colors.mutedForeground,
+                                backgroundColor: isChecked ? '#10B981' : 'transparent',
+                              },
+                            ]}
+                          >
+                            {isChecked && <Feather name="check" size={10} color="#FFFFFF" />}
+                          </View>
+                          <Text style={[styles.chipText, { color: colors.foreground }]}>{u.name}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+            </View>
+          </ScrollView>
+        </View>
+
+        {/* Sticky Bottom Footer CTA (Always visible above device navigation) */}
+        <View
+          style={[
+            styles.footer,
+            {
+              borderTopColor: colors.border,
+              paddingBottom: Math.max(insets.bottom, 16) + 8,
+            },
+          ]}
+        >
+          <TouchableOpacity
+            onPress={handleBulkCreate}
+            disabled={bulkLoading || !bulkIPOId || selectedUserIds.size === 0}
+            style={
+              bulkLoading || !bulkIPOId || selectedUserIds.size === 0
+                ? [styles.goldBtnDisabled, isDark && { backgroundColor: colors.surface }]
+                : [styles.goldBtn, { backgroundColor: colors.primary }]
+            }
+            activeOpacity={0.85}
+          >
+            <Text
+              style={
+                bulkLoading || !bulkIPOId || selectedUserIds.size === 0
+                  ? [styles.goldBtnTextDisabled, isDark && { color: colors.mutedForeground }]
+                  : [styles.goldBtnText, { color: colors.primaryForeground }]
+              }
+            >
+              {bulkLoading ? 'Creating…' : `Create ${selectedUserIds.size} Application${selectedUserIds.size !== 1 ? 's' : ''}`}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </ScoopedBottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
-  centerModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  centerModalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    zIndex: 999,
+    elevation: 20,
+  },
   pickerModalCard: { width: '92%', maxWidth: 400, borderRadius: 22, borderWidth: 1, maxHeight: '85%', overflow: 'hidden', elevation: 6 },
   pickerModalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1 },
-  sheetContainer: {
-    width: '100%',
-    maxHeight: '92%',
-    backgroundColor: 'transparent',
-    overflow: 'visible',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  sheetHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 12 },
-  sheetHeader: {
-    alignItems: 'flex-start',
-    justifyContent: 'center',
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 36,
-    paddingBottom: 12,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+  },
+  headerTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
   },
   headerIconWrap: {
     width: 40,
@@ -800,7 +847,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sheetTitle: { fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3, textAlign: 'left' },
-  sheetSubtitle: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 1 },
+  sheetSubtitle: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 2, lineHeight: 16 },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 20,
+    gap: 16,
+  },
+  footer: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    backgroundColor: 'transparent',
+  },
   closeBtn: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   stepLabel: { fontSize: 10, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 1.1, textTransform: 'uppercase', marginBottom: 6 },
   pickerTrigger: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 48 },
@@ -818,31 +877,10 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, fontFamily: 'GoogleSansFlex_500Medium' },
   chipEmptyText: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', fontStyle: 'italic', paddingVertical: 8 },
   checkbox: { width: 18, height: 18, borderRadius: 4, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
-  goldBtn: { backgroundColor: '#0F172A', borderRadius: 16, minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
-  goldBtnDisabled: { backgroundColor: '#E2E8F0', borderRadius: 16, minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
+  goldBtn: { backgroundColor: '#0F172A', borderRadius: 9999, minHeight: 52, alignItems: 'center', justifyContent: 'center' },
+  goldBtnDisabled: { backgroundColor: '#E2E8F0', borderRadius: 9999, minHeight: 52, alignItems: 'center', justifyContent: 'center' },
   goldBtnText: { color: '#FFFFFF', fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 0.1 },
   goldBtnTextDisabled: { color: '#A0AEC0', fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 0.1 },
   pickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: 18, borderBottomWidth: 1 },
   pickerRowName: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold' },
-  scoopedCloseWrapper: {
-    position: 'absolute',
-    top: -35,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    zIndex: 20,
-  },
-  scoopedCloseBtn: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 4,
-  },
 });

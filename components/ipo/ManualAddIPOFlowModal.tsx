@@ -340,7 +340,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     height: 48,
-    borderRadius: 14,
+    borderRadius: 9999,
   },
   createBtnText: {
     color: '#FFFFFF',

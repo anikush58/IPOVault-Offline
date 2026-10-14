@@ -12,6 +12,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  DeviceEventEmitter,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
@@ -28,7 +29,6 @@ import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { formatCurrency } from '@/utils/formatters';
 import { StatusBadge } from '@/components/StatusBadge';
 import { AddIPOModal } from '@/components/AddIPOModal';
-import { BulkApplySheet } from '@/components/BulkApplySheet';
 
 type ViewMode = 'home' | 'attention' | 'allBids';
 type FilterStatus = 'All' | 'Applied' | 'Allotted' | 'Not Allotted' | 'Cancelled';
@@ -308,7 +308,7 @@ export default function BidsScreen() {
   React.useEffect(() => {
     if (params.ipoId) {
       setBulkIPOId(params.ipoId);
-      setShowBulkSheet(true);
+      DeviceEventEmitter.emit('OPEN_BULK_APPLY');
     }
   }, [params.ipoId, params.autoOpenApply]);
 
@@ -476,7 +476,7 @@ export default function BidsScreen() {
                 name="plus"
                 variant="surface"
                 size="md"
-                onPress={() => setShowBulkSheet(true)}
+                onPress={() => DeviceEventEmitter.emit('OPEN_BULK_APPLY')}
               />
             }
           />
@@ -519,7 +519,7 @@ export default function BidsScreen() {
             <View style={styles.sectionWrap}>
               <Text style={[styles.sectionEyebrow, { color: colors.mutedForeground }]}>QUICK ACTION</Text>
               <TouchableOpacity
-                onPress={() => setShowBulkSheet(true)}
+                onPress={() => DeviceEventEmitter.emit('OPEN_BULK_APPLY')}
                 activeOpacity={0.8}
                 style={[styles.quickActionCard, { backgroundColor: colors.card, borderColor: colors.border }]}
               >
@@ -830,9 +830,6 @@ export default function BidsScreen() {
           </ScrollView>
         </View>
       )}
-
-      {/* ── SCREEN 2: BULK APPLICATION CREATOR BOTTOM SHEET ── */}
-      <BulkApplySheet visible={showBulkSheet} onClose={() => setShowBulkSheet(false)} />
 
       {/* ── SCREEN 4: UPDATE APPLICATION STATUS MODAL ── */}
       {selectedAppForUpdate && (
@@ -1512,8 +1509,8 @@ const styles = StyleSheet.create({
   chipEmptyText: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', fontStyle: 'italic', paddingVertical: 8 },
   checkbox: { width: 18, height: 18, borderRadius: 4, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
 
-  goldBtn: { backgroundColor: '#0F172A', borderRadius: 16, minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
-  goldBtnDisabled: { backgroundColor: '#E2E8F0', borderRadius: 16, minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
+  goldBtn: { backgroundColor: '#0F172A', borderRadius: 9999, minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
+  goldBtnDisabled: { backgroundColor: '#E2E8F0', borderRadius: 9999, minHeight: 52, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
   goldBtnText: { color: '#FFFFFF', fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 0.1 },
   goldBtnTextDisabled: { color: '#A0AEC0', fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 0.1 },
 
@@ -1544,9 +1541,9 @@ const styles = StyleSheet.create({
   confirmTitle: { fontSize: 20, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.4, textAlign: 'center', marginBottom: 6 },
   confirmSubtitle: { fontSize: 15, fontFamily: 'GoogleSansFlex_400Regular', textAlign: 'center', marginBottom: 24 },
   confirmActionsRow: { flexDirection: 'row', gap: 12, width: '100%' },
-  confirmCancelBtn: { flex: 1, minHeight: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  confirmCancelBtn: { flex: 1, minHeight: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' },
   confirmCancelText: { fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold' },
-  confirmActionBtn: { flex: 1, backgroundColor: '#0F172A', minHeight: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  confirmActionBtn: { flex: 1, backgroundColor: '#0F172A', minHeight: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' },
   confirmActionBtnText: { fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold', color: '#FFFFFF' },
 
   stepperVal: { fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold' },
@@ -1656,7 +1653,7 @@ const styles = StyleSheet.create({
   bulkBarBtn: {
     flex: 1,
     height: 40,
-    borderRadius: 14,
+    borderRadius: 9999,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

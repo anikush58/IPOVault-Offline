@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
   cancelBtn: {
     flex: 1,
     height: 48,
-    borderRadius: DesignSystem.radius.md,
+    borderRadius: DesignSystem.radius.pill,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
   },
   confirmBtn: {
     height: 48,
-    borderRadius: DesignSystem.radius.md,
+    borderRadius: DesignSystem.radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },

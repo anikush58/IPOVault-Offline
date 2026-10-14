@@ -19,6 +19,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconButton } from '@/components/ui/IconButton';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { AnimatedEntrance } from '@/components/ui/AnimatedEntrance';
+import { BannerAdView } from '@/components/ads/BannerAdView';
 
 export default function IPOHubScreen() {
   const colors = useColors();
@@ -186,6 +187,13 @@ export default function IPOHubScreen() {
             <Text style={[styles.noteText, { color: colors.mutedForeground }]}>
               Architecture Isolation: Read-only cloud catalog and analytics. Zero mutation of local SQLite offline data.
             </Text>
+          </View>
+        </AnimatedEntrance>
+
+        {/* Low-Disruption Ad Slot (Suppressed for Premium Users) */}
+        <AnimatedEntrance delay={180} distance={10}>
+          <View style={{ marginTop: 16 }}>
+            <BannerAdView />
           </View>
         </AnimatedEntrance>
       </Animated.ScrollView>

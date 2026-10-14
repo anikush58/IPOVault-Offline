@@ -27,6 +27,11 @@ import { ThemeToggleSwitch } from '@/components/ui/ThemeToggleSwitch';
 import { IOSToggle } from '@/components/ui/IOSToggle';
 import { AnimatedEntrance } from '@/components/ui/AnimatedEntrance';
 import { ScoopedBottomSheet } from '@/components/ui/ScoopedBottomSheet';
+import { useAdContext } from '@/context/AdContext';
+import {
+  getNotificationPreferences,
+  setNotificationPreference,
+} from '@/services/notifications/notificationEngine';
 
 export interface SettingRowProps {
   icon: string;
@@ -49,8 +54,8 @@ export interface SettingRowProps {
 
 export function SettingRow({
   icon,
-  iconColor = '#3B82F6',
-  iconBg = 'rgba(59, 130, 246, 0.12)',
+  iconColor,
+  iconBg,
   title,
   subtitle,
   badge,
@@ -63,6 +68,11 @@ export function SettingRow({
   const colors = useColors();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
+
+  const defaultIconColor = isDark ? '#FFFFFF' : '#111827';
+  const defaultIconBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)';
+  const resolvedIconColor = iconColor || defaultIconColor;
+  const resolvedIconBg = iconBg || defaultIconBg;
 
   return (
     <TouchableOpacity
@@ -84,8 +94,8 @@ export function SettingRow({
         },
       ]}
     >
-      <View style={[styles.navItemIconWrap, { backgroundColor: iconBg }]}>
-        <Feather name={icon as any} size={17} color={iconColor} />
+      <View style={[styles.navItemIconWrap, { backgroundColor: resolvedIconBg }]}>
+        <Feather name={icon as any} size={17} color={resolvedIconColor} />
       </View>
 
       <View style={styles.navItemTextWrap}>
@@ -125,7 +135,11 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
-  const { user: authUser, signOut, resetPassword } = useAuth();
+
+  const settingIconColor = isDark ? '#FFFFFF' : '#111827';
+  const settingIconBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)';
+
+  const { user: authUser, signOut, resetPassword, updateProfile } = useAuth();
   const { applications, users, bankAccounts, clearAllData } = useDB();
   const { showConfirm, showSuccess, showError } = useDialog();
 
@@ -138,6 +152,10 @@ export default function SettingsScreen() {
   const [showPrivacySheet, setShowPrivacySheet] = useState(false);
   const [showTermsSheet, setShowTermsSheet] = useState(false);
   const [showLicensesSheet, setShowLicensesSheet] = useState(false);
+  const [showPremiumSheet, setShowPremiumSheet] = useState(false);
+
+  // Ad Context & Monetization
+  const { isPremium, toggleDevMockPremium, showPrivacyOptions } = useAdContext();
 
   // Notification Toggle States
   const [ipoUpdates, setIpoUpdates] = useState(true);
@@ -153,9 +171,21 @@ export default function SettingsScreen() {
     (authUser?.email && authUser.email.includes('@') ? authUser.email.split('@')[0].trim() : '') ||
     'IPOVault User';
 
-  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [avatarUri, setAvatarUri] = useState<string | null>(authUser?.photoURL || null);
   const [usernameStr, setUsernameStr] = useState(defaultDisplayName);
   const [editNameInput, setEditNameInput] = useState(defaultDisplayName);
+
+  // Reactively synchronize local screen state whenever authUser profile updates (e.g. from cloud sync)
+  useEffect(() => {
+    if (authUser?.displayName && authUser.displayName.trim()) {
+      const name = authUser.displayName.trim();
+      setUsernameStr(name);
+      setEditNameInput(name);
+    }
+    if (authUser?.photoURL && authUser.photoURL.trim()) {
+      setAvatarUri(authUser.photoURL.trim());
+    }
+  }, [authUser?.displayName, authUser?.photoURL]);
 
   useFocusEffect(
     useCallback(() => {
@@ -166,18 +196,33 @@ export default function SettingsScreen() {
           setUsernameStr(stored.trim());
           setEditNameInput(stored.trim());
         } else {
-          setUsernameStr(defaultDisplayName);
-          setEditNameInput(defaultDisplayName);
+          const fallback = (authUser?.displayName && authUser.displayName.trim()) || defaultDisplayName;
+          setUsernameStr(fallback);
+          setEditNameInput(fallback);
         }
       });
       safeAsyncStorage.getItem('@ipovault_avatar_uri').then((stored) => {
         if (!isMounted) return;
-        setAvatarUri(stored || null);
+        if (stored && stored.trim()) {
+          setAvatarUri(stored.trim());
+        } else if (authUser?.photoURL && authUser.photoURL.trim()) {
+          setAvatarUri(authUser.photoURL.trim());
+        } else {
+          setAvatarUri(null);
+        }
+      });
+      getNotificationPreferences().then((prefs) => {
+        if (!isMounted) return;
+        setIpoUpdates(prefs.ipoUpdates);
+        setAllotmentResults(prefs.allotmentResults);
+        setPriceAlerts(prefs.priceAlerts);
+        setAppUpdates(prefs.appUpdates);
+        setNotificationSound(prefs.sound);
       });
       return () => {
         isMounted = false;
       };
-    }, [defaultDisplayName])
+    }, [defaultDisplayName, authUser?.displayName, authUser?.photoURL])
   );
 
   const handlePickAvatar = async () => {
@@ -196,7 +241,7 @@ export default function SettingsScreen() {
         },
         onCancel: async () => {
           setAvatarUri(null);
-          await safeAsyncStorage.removeItem('@ipovault_avatar_uri');
+          await updateProfile(usernameStr || defaultDisplayName, null);
           showSuccess('Photo Removed', 'Profile photo has been reset.');
         },
       });
@@ -215,9 +260,13 @@ export default function SettingsScreen() {
       if (!result.canceled && result.assets?.[0]?.uri) {
         const uri = result.assets[0].uri;
         setAvatarUri(uri);
-        await safeAsyncStorage.setItem('@ipovault_avatar_uri', uri);
+        const res = await updateProfile(usernameStr || defaultDisplayName, uri);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        showSuccess('Photo Updated', 'Your profile picture has been updated.');
+        if (res.error) {
+          showSuccess('Photo Updated', 'Saved locally. Cloud sync will update once connected.');
+        } else {
+          showSuccess('Photo Updated', 'Your profile picture has been saved and synced to the cloud.');
+        }
       }
     } catch (e: any) {
       showError('Error', e?.message || 'Could not select photo.');
@@ -226,13 +275,10 @@ export default function SettingsScreen() {
 
   const handleSaveName = async (newName: string) => {
     const trimmed = newName.trim();
-    if (!trimmed) {
-      setUsernameStr(defaultDisplayName);
-      await safeAsyncStorage.removeItem('@ipovault_username');
-      return;
-    }
-    setUsernameStr(trimmed);
-    await safeAsyncStorage.setItem('@ipovault_username', trimmed);
+    const targetName = trimmed || defaultDisplayName;
+    setUsernameStr(targetName);
+    const effectiveAvatar = avatarUri || authUser?.photoURL || undefined;
+    await updateProfile(targetName, effectiveAvatar);
   };
 
   const emailStr = authUser?.email?.trim() || 'Guest Account (Offline)';
@@ -420,7 +466,7 @@ export default function SettingsScreen() {
 
             {/* Compact KPI Cards (White Background) */}
             <View style={[styles.compactKpiGrid, { borderTopColor: colors.border }]}>
-              {/* Bids - Cobalt Blue */}
+              {/* Bids */}
               <View
                 style={[
                   styles.compactKpiTile,
@@ -430,8 +476,8 @@ export default function SettingsScreen() {
                   },
                 ]}
               >
-                <View style={[styles.compactKpiIconWrap, { backgroundColor: isDark ? 'rgba(37, 99, 235, 0.15)' : '#EFF6FF' }]}>
-                  <Feather name="layers" size={12.5} color="#2563EB" />
+                <View style={[styles.compactKpiIconWrap, { backgroundColor: settingIconBg }]}>
+                  <Feather name="layers" size={12.5} color={settingIconColor} />
                 </View>
                 <View style={styles.compactKpiTextWrap}>
                   <Text style={[styles.compactKpiValue, { color: colors.foreground }]}>{applications.length}</Text>
@@ -439,7 +485,7 @@ export default function SettingsScreen() {
                 </View>
               </View>
 
-              {/* Profiles - Deep Violet */}
+              {/* Profiles */}
               <View
                 style={[
                   styles.compactKpiTile,
@@ -449,8 +495,8 @@ export default function SettingsScreen() {
                   },
                 ]}
               >
-                <View style={[styles.compactKpiIconWrap, { backgroundColor: isDark ? 'rgba(124, 58, 237, 0.15)' : '#EDE9FE' }]}>
-                  <Feather name="users" size={12.5} color="#7C3AED" />
+                <View style={[styles.compactKpiIconWrap, { backgroundColor: settingIconBg }]}>
+                  <Feather name="users" size={12.5} color={settingIconColor} />
                 </View>
                 <View style={styles.compactKpiTextWrap}>
                   <Text style={[styles.compactKpiValue, { color: colors.foreground }]}>{users.length}</Text>
@@ -458,7 +504,7 @@ export default function SettingsScreen() {
                 </View>
               </View>
 
-              {/* Banks - Deep Emerald */}
+              {/* Banks */}
               <View
                 style={[
                   styles.compactKpiTile,
@@ -468,14 +514,41 @@ export default function SettingsScreen() {
                   },
                 ]}
               >
-                <View style={[styles.compactKpiIconWrap, { backgroundColor: isDark ? 'rgba(5, 150, 105, 0.15)' : '#ECFDF5' }]}>
-                  <Feather name="credit-card" size={12.5} color="#059669" />
+                <View style={[styles.compactKpiIconWrap, { backgroundColor: settingIconBg }]}>
+                  <Feather name="credit-card" size={12.5} color={settingIconColor} />
                 </View>
                 <View style={styles.compactKpiTextWrap}>
                   <Text style={[styles.compactKpiValue, { color: colors.foreground }]}>{bankAccounts.length}</Text>
                   <Text style={[styles.compactKpiLabel, { color: colors.mutedForeground }]}>BANKS</Text>
                 </View>
               </View>
+            </View>
+          </View>
+        </AnimatedEntrance>
+
+        {/* ── MEMBERSHIP & MONETIZATION ── */}
+        <AnimatedEntrance delay={100} distance={12}>
+          <View style={styles.sectionWrap}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>MEMBERSHIP & AD-FREE</Text>
+            </View>
+            <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <SettingRow
+                icon="zap"
+                iconColor={settingIconColor}
+                iconBg={settingIconBg}
+                title="Ad-Free Premium"
+                subtitle={isPremium ? 'Active (All advertisements suppressed)' : 'Enjoy IPOVault without advertisements'}
+                badge={{
+                  text: isPremium ? 'Active' : 'Free Tier',
+                  color: isPremium ? '#10B981' : '#8B5CF6',
+                  bg: isPremium
+                    ? (isDark ? 'rgba(16, 185, 129, 0.15)' : '#D1FAE5')
+                    : (isDark ? 'rgba(139, 92, 246, 0.15)' : '#F5F3FF'),
+                }}
+                isLast
+                onPress={() => setShowPremiumSheet(true)}
+              />
             </View>
           </View>
         </AnimatedEntrance>
@@ -487,11 +560,10 @@ export default function SettingsScreen() {
               <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>PREFERENCES & ALERTS</Text>
             </View>
             <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {/* Notifications - Warm Amber / Gold */}
               <SettingRow
                 icon="bell"
-                iconColor="#F59E0B"
-                iconBg={isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7'}
+                iconColor={settingIconColor}
+                iconBg={settingIconBg}
                 title="Notifications & Alerts"
                 subtitle="IPO updates, allotments & sound"
                 isLast
@@ -508,11 +580,10 @@ export default function SettingsScreen() {
               <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>DATA & STORAGE</Text>
             </View>
             <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {/* Cloud Backup - Vivid Cyan */}
               <SettingRow
                 icon="cloud"
-                iconColor="#06B6D4"
-                iconBg={isDark ? 'rgba(6, 182, 212, 0.15)' : '#CFFAFE'}
+                iconColor={settingIconColor}
+                iconBg={settingIconBg}
                 title="Data & Cloud Backup"
                 subtitle="Local SQLite and encrypted Firestore sync"
                 badge={{
@@ -535,29 +606,26 @@ export default function SettingsScreen() {
               <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>HELP & COMMUNITY</Text>
             </View>
             <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {/* Help Center - Indigo */}
               <SettingRow
                 icon="compass"
-                iconColor="#6366F1"
-                iconBg={isDark ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF'}
+                iconColor={settingIconColor}
+                iconBg={settingIconBg}
                 title="Help Center"
                 subtitle="Frequently asked questions & guides"
                 onPress={() => navigateTo('/help-center')}
               />
-              {/* Contact Support - Teal */}
               <SettingRow
                 icon="message-circle"
-                iconColor="#14B8A6"
-                iconBg={isDark ? 'rgba(20, 184, 166, 0.15)' : '#CCFBF1'}
+                iconColor={settingIconColor}
+                iconBg={settingIconBg}
                 title="Contact Support"
                 subtitle="Get direct assistance from our team"
                 onPress={() => navigateTo('/settings-contact-support')}
               />
-              {/* What's New - Hot Pink */}
               <SettingRow
                 icon="zap"
-                iconColor="#EC4899"
-                iconBg={isDark ? 'rgba(236, 72, 153, 0.15)' : '#FCE7F3'}
+                iconColor={settingIconColor}
+                iconBg={settingIconBg}
                 title="What's New in v2.3.0"
                 subtitle="Recent performance & feature upgrades"
                 badge={{
@@ -579,33 +647,43 @@ export default function SettingsScreen() {
               <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>LEGAL & ABOUT</Text>
             </View>
             <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {/* Privacy Policy - Fresh Lime */}
               <SettingRow
                 icon="shield"
-                iconColor="#84CC16"
-                iconBg={isDark ? 'rgba(132, 204, 22, 0.15)' : '#F7FEE7'}
+                iconColor={settingIconColor}
+                iconBg={settingIconBg}
                 title="Privacy Policy"
                 subtitle="How we protect your financial data"
                 onPress={() => setShowPrivacySheet(true)}
               />
-              {/* Terms of Service - Tangerine Orange */}
               <SettingRow
                 icon="file-text"
-                iconColor="#F97316"
-                iconBg={isDark ? 'rgba(249, 115, 22, 0.15)' : '#FFEDD5'}
+                iconColor={settingIconColor}
+                iconBg={settingIconBg}
                 title="Terms of Service"
                 subtitle="App usage rules & financial disclaimer"
                 onPress={() => setShowTermsSheet(true)}
               />
-              {/* Open Source Licenses - Fuchsia */}
               <SettingRow
                 icon="code"
-                iconColor="#D946EF"
-                iconBg={isDark ? 'rgba(217, 70, 239, 0.15)' : '#FAE8FF'}
+                iconColor={settingIconColor}
+                iconBg={settingIconBg}
                 title="Open Source Licenses"
                 subtitle="Third-party packages & software credits"
-                isLast
                 onPress={() => setShowLicensesSheet(true)}
+              />
+              <SettingRow
+                icon="shield"
+                iconColor={settingIconColor}
+                iconBg={settingIconBg}
+                title="Ad Privacy & Consent"
+                subtitle="Review personalized ad settings"
+                isLast
+                onPress={async () => {
+                  const opened = await showPrivacyOptions();
+                  if (!opened) {
+                    showSuccess('Ad Privacy', 'Consent management is active and non-personalized in this mode.');
+                  }
+                }}
               />
             </View>
           </View>
@@ -635,8 +713,8 @@ export default function SettingsScreen() {
       >
         <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
           <View style={styles.sheetHeaderTitleGroup}>
-            <View style={[styles.sheetIconWrap, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' }]}>
-              <Feather name="user" size={19} color="#3B82F6" />
+            <View style={[styles.sheetIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="user" size={19} color={settingIconColor} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Edit Profile</Text>
@@ -648,6 +726,7 @@ export default function SettingsScreen() {
         </View>
 
         <ScrollView
+          style={{ flex: 1 }}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.editProfileSheetContent}
           keyboardShouldPersistTaps="handled"
@@ -706,7 +785,7 @@ export default function SettingsScreen() {
                   activeOpacity={0.8}
                   onPress={async () => {
                     setAvatarUri(null);
-                    await safeAsyncStorage.removeItem('@ipovault_avatar_uri');
+                    await updateProfile(usernameStr || defaultDisplayName, null);
                     showSuccess('Photo Removed', 'Profile photo has been reset.');
                   }}
                   style={[
@@ -756,10 +835,10 @@ export default function SettingsScreen() {
                 <View
                   style={[
                     styles.editInputIconWrap,
-                    { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' },
+                    { backgroundColor: settingIconBg },
                   ]}
                 >
-                  <Feather name="user" size={14} color="#3B82F6" />
+                  <Feather name="user" size={14} color={settingIconColor} />
                 </View>
                 <TextInput
                   style={[styles.editTextInput, { color: colors.foreground }]}
@@ -803,10 +882,10 @@ export default function SettingsScreen() {
                 <View
                   style={[
                     styles.changePasswordIconWrap,
-                    { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7' },
+                    { backgroundColor: settingIconBg },
                   ]}
                 >
-                  <Feather name="lock" size={17} color="#F59E0B" />
+                  <Feather name="lock" size={17} color={settingIconColor} />
                 </View>
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={[styles.changePasswordTitle, { color: colors.foreground }]}>Change Password</Text>
@@ -833,12 +912,18 @@ export default function SettingsScreen() {
           <TouchableOpacity
             style={[styles.solidCTA, { backgroundColor: colors.primary }]}
             activeOpacity={0.85}
-            onPress={() => {
+            onPress={async () => {
               try {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               } catch {}
-              if (editNameInput.trim()) {
-                handleSaveName(editNameInput);
+              const targetName = editNameInput.trim() || defaultDisplayName;
+              setUsernameStr(targetName);
+              const effectiveAvatar = avatarUri || authUser?.photoURL || undefined;
+              const res = await updateProfile(targetName, effectiveAvatar);
+              if (res.error) {
+                showSuccess('Profile Saved', 'Saved locally. Cloud sync will update once connected.');
+              } else {
+                showSuccess('Profile Saved', 'Username and profile details saved and synced to the cloud.');
               }
               setShowEditProfileModal(false);
             }}
@@ -854,8 +939,8 @@ export default function SettingsScreen() {
       >
         <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
           <View style={styles.sheetHeaderTitleGroup}>
-            <View style={[styles.sheetIconWrap, { backgroundColor: colors.primary + '18' }]}>
-              <Feather name="bell" size={18} color={colors.primary} />
+            <View style={[styles.sheetIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="bell" size={18} color={settingIconColor} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Notification Preferences</Text>
@@ -870,62 +955,92 @@ export default function SettingsScreen() {
           <View style={[styles.sheetCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             {/* IPO Updates */}
             <View style={[styles.sheetRow, { borderBottomColor: colors.border }]}>
-              <View style={[styles.sheetRowIcon, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' }]}>
-                <Feather name="bar-chart-2" size={16} color="#3B82F6" />
+              <View style={[styles.sheetRowIcon, { backgroundColor: settingIconBg }]}>
+                <Feather name="bar-chart-2" size={16} color={settingIconColor} />
               </View>
               <View style={styles.sheetRowText}>
                 <Text style={[styles.sheetRowTitle, { color: colors.foreground }]}>IPO Updates</Text>
                 <Text style={[styles.sheetRowDesc, { color: colors.mutedForeground }]}>Opening and closing dates</Text>
               </View>
-              <IOSToggle value={ipoUpdates} onValueChange={setIpoUpdates} />
+              <IOSToggle
+                value={ipoUpdates}
+                onValueChange={(val) => {
+                  setIpoUpdates(val);
+                  setNotificationPreference('IPO_UPDATES', val);
+                }}
+              />
             </View>
 
             {/* Allotment Results */}
             <View style={[styles.sheetRow, { borderBottomColor: colors.border }]}>
-              <View style={[styles.sheetRowIcon, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7' }]}>
-                <Feather name="award" size={16} color="#F59E0B" />
+              <View style={[styles.sheetRowIcon, { backgroundColor: settingIconBg }]}>
+                <Feather name="award" size={16} color={settingIconColor} />
               </View>
               <View style={styles.sheetRowText}>
                 <Text style={[styles.sheetRowTitle, { color: colors.foreground }]}>Allotment Results</Text>
                 <Text style={[styles.sheetRowDesc, { color: colors.mutedForeground }]}>Status changes & allocations</Text>
               </View>
-              <IOSToggle value={allotmentResults} onValueChange={setAllotmentResults} />
+              <IOSToggle
+                value={allotmentResults}
+                onValueChange={(val) => {
+                  setAllotmentResults(val);
+                  setNotificationPreference('ALLOTMENT_RESULTS', val);
+                }}
+              />
             </View>
 
             {/* Price Alerts */}
             <View style={[styles.sheetRow, { borderBottomColor: colors.border }]}>
-              <View style={[styles.sheetRowIcon, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2' }]}>
-                <Feather name="trending-up" size={16} color="#EF4444" />
+              <View style={[styles.sheetRowIcon, { backgroundColor: settingIconBg }]}>
+                <Feather name="trending-up" size={16} color={settingIconColor} />
               </View>
               <View style={styles.sheetRowText}>
                 <Text style={[styles.sheetRowTitle, { color: colors.foreground }]}>Price Alerts</Text>
                 <Text style={[styles.sheetRowDesc, { color: colors.mutedForeground }]}>Significant GMP & market moves</Text>
               </View>
-              <IOSToggle value={priceAlerts} onValueChange={setPriceAlerts} />
+              <IOSToggle
+                value={priceAlerts}
+                onValueChange={(val) => {
+                  setPriceAlerts(val);
+                  setNotificationPreference('PRICE_ALERTS', val);
+                }}
+              />
             </View>
 
             {/* App Updates */}
             <View style={[styles.sheetRow, { borderBottomColor: colors.border }]}>
-              <View style={[styles.sheetRowIcon, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5' }]}>
-                <Feather name="bell" size={16} color="#10B981" />
+              <View style={[styles.sheetRowIcon, { backgroundColor: settingIconBg }]}>
+                <Feather name="bell" size={16} color={settingIconColor} />
               </View>
               <View style={styles.sheetRowText}>
                 <Text style={[styles.sheetRowTitle, { color: colors.foreground }]}>App Updates</Text>
                 <Text style={[styles.sheetRowDesc, { color: colors.mutedForeground }]}>New features & improvements</Text>
               </View>
-              <IOSToggle value={appUpdates} onValueChange={setAppUpdates} />
+              <IOSToggle
+                value={appUpdates}
+                onValueChange={(val) => {
+                  setAppUpdates(val);
+                  setNotificationPreference('APP_UPDATES', val);
+                }}
+              />
             </View>
 
             {/* Notification Sound */}
             <View style={[styles.sheetRow, { borderBottomWidth: 0 }]}>
-              <View style={[styles.sheetRowIcon, { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.15)' : '#EDE9FE' }]}>
-                <Feather name="volume-2" size={16} color="#8B5CF6" />
+              <View style={[styles.sheetRowIcon, { backgroundColor: settingIconBg }]}>
+                <Feather name="volume-2" size={16} color={settingIconColor} />
               </View>
               <View style={styles.sheetRowText}>
                 <Text style={[styles.sheetRowTitle, { color: colors.foreground }]}>Notification Sound</Text>
                 <Text style={[styles.sheetRowDesc, { color: colors.mutedForeground }]}>Play tone on important alerts</Text>
               </View>
-              <IOSToggle value={notificationSound} onValueChange={setNotificationSound} />
+              <IOSToggle
+                value={notificationSound}
+                onValueChange={(val) => {
+                  setNotificationSound(val);
+                  setNotificationPreference('SOUND', val);
+                }}
+              />
             </View>
           </View>
         </ScrollView>
@@ -954,8 +1069,8 @@ export default function SettingsScreen() {
       >
         <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
           <View style={styles.sheetHeaderTitleGroup}>
-            <View style={[styles.sheetIconWrap, { backgroundColor: colors.primary + '18' }]}>
-              <Feather name="zap" size={18} color={colors.primary} />
+            <View style={[styles.sheetIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="zap" size={18} color={settingIconColor} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.sheetTitle, { color: colors.foreground }]}>What's New in v2.3.0</Text>
@@ -969,8 +1084,8 @@ export default function SettingsScreen() {
         <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false}>
           <View style={{ gap: 12 }}>
             <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={[styles.featureIconBadge, { backgroundColor: isDark ? 'rgba(99, 102, 241, 0.16)' : '#EEF2FF' }]}>
-                <Feather name="layout" size={18} color="#6366F1" />
+              <View style={[styles.featureIconBadge, { backgroundColor: settingIconBg }]}>
+                <Feather name="layout" size={18} color={settingIconColor} />
               </View>
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={[styles.featureTitle, { color: colors.foreground }]}>Bespoke Bottom Sheets</Text>
@@ -981,8 +1096,8 @@ export default function SettingsScreen() {
             </View>
 
             <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={[styles.featureIconBadge, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5' }]}>
-                <Feather name="credit-card" size={18} color="#10B981" />
+              <View style={[styles.featureIconBadge, { backgroundColor: settingIconBg }]}>
+                <Feather name="credit-card" size={18} color={settingIconColor} />
               </View>
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={[styles.featureTitle, { color: colors.foreground }]}>Default UPI App Auto-Binding</Text>
@@ -993,8 +1108,8 @@ export default function SettingsScreen() {
             </View>
 
             <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={[styles.featureIconBadge, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.16)' : '#EFF6FF' }]}>
-                <Feather name="trending-up" size={18} color="#3B82F6" />
+              <View style={[styles.featureIconBadge, { backgroundColor: settingIconBg }]}>
+                <Feather name="trending-up" size={18} color={settingIconColor} />
               </View>
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={[styles.featureTitle, { color: colors.foreground }]}>Live Broker LTP Sync</Text>
@@ -1025,8 +1140,8 @@ export default function SettingsScreen() {
       >
         <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
           <View style={styles.sheetHeaderTitleGroup}>
-            <View style={[styles.sheetIconWrap, { backgroundColor: colors.primary + '18' }]}>
-              <Feather name="shield" size={18} color={colors.primary} />
+            <View style={[styles.sheetIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="shield" size={18} color={settingIconColor} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Privacy Policy</Text>
@@ -1081,8 +1196,8 @@ export default function SettingsScreen() {
       >
         <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
           <View style={styles.sheetHeaderTitleGroup}>
-            <View style={[styles.sheetIconWrap, { backgroundColor: colors.primary + '18' }]}>
-              <Feather name="file-text" size={18} color={colors.primary} />
+            <View style={[styles.sheetIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="file-text" size={18} color={settingIconColor} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Terms of Service</Text>
@@ -1137,8 +1252,8 @@ export default function SettingsScreen() {
       >
         <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
           <View style={styles.sheetHeaderTitleGroup}>
-            <View style={[styles.sheetIconWrap, { backgroundColor: colors.primary + '18' }]}>
-              <Feather name="code" size={18} color={colors.primary} />
+            <View style={[styles.sheetIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="code" size={18} color={settingIconColor} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Open Source Software</Text>
@@ -1166,6 +1281,102 @@ export default function SettingsScreen() {
             onPress={() => setShowLicensesSheet(false)}
           >
             <Text style={[styles.solidCTAText, { color: colors.primaryForeground }]}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </ScoopedBottomSheet>
+
+      {/* ── AD-FREE PREMIUM & MONETIZATION SHEET ── */}
+      <ScoopedBottomSheet
+        visible={showPremiumSheet}
+        onClose={() => setShowPremiumSheet(false)}
+        maxHeight="86%"
+      >
+        <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
+          <View style={styles.sheetHeaderTitleGroup}>
+            <View style={[styles.sheetIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="zap" size={18} color={settingIconColor} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.sheetTitle, { color: colors.foreground }]}>IPOVault Ad-Free</Text>
+              <Text style={[styles.sheetSubtitle, { color: colors.mutedForeground }]}>
+                {isPremium ? 'Active Subscription (Ad-Free Mode)' : 'Uninterrupted IPO tracking experience'}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false}>
+          <View style={{ gap: 14 }}>
+            {/* Feature Highlights */}
+            <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={[styles.featureIconBadge, { backgroundColor: settingIconBg }]}>
+                <Feather name="shield" size={18} color={settingIconColor} />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[styles.featureTitle, { color: colors.foreground }]}>Zero Advertisements</Text>
+                <Text style={[styles.featureDesc, { color: colors.mutedForeground }]}>
+                  All banner ads and sponsored native cards are suppressed throughout IPO Hub and IPO browsing lists.
+                </Text>
+              </View>
+            </View>
+
+            <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={[styles.featureIconBadge, { backgroundColor: settingIconBg }]}>
+                <Feather name="cpu" size={18} color={settingIconColor} />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[styles.featureTitle, { color: colors.foreground }]}>Preserved Offline Performance</Text>
+                <Text style={[styles.featureDesc, { color: colors.mutedForeground }]}>
+                  Offline SQLite operations, Firestore sync, and broker LTP monitoring run cleanly without ad request latency.
+                </Text>
+              </View>
+            </View>
+
+            {/* Development Mock Entitlement Toggle */}
+            <View style={[styles.featureCard, { backgroundColor: colors.card, borderColor: '#8B5CF6' }]}>
+              <View style={[styles.featureIconBadge, { backgroundColor: settingIconBg }]}>
+                <Feather name="toggle-right" size={18} color={settingIconColor} />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[styles.featureTitle, { color: colors.foreground }]}>Development Mock State</Text>
+                <Text style={[styles.featureDesc, { color: colors.mutedForeground }]}>
+                  Toggle ad-free suppression on/off for instant UI validation. No fake purchases are processed.
+                </Text>
+              </View>
+              <IOSToggle
+                value={isPremium}
+                onValueChange={async () => {
+                  try {
+                    Haptics.selectionAsync();
+                  } catch {}
+                  await toggleDevMockPremium();
+                }}
+                activeColor="#10B981"
+              />
+            </View>
+
+            {/* Future Google Play Billing Architecture Notice */}
+            <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={[styles.featureIconBadge, { backgroundColor: settingIconBg }]}>
+                <Feather name="shopping-bag" size={18} color={settingIconColor} />
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[styles.featureTitle, { color: colors.foreground }]}>Google Play Billing (Upcoming)</Text>
+                <Text style={[styles.featureDesc, { color: colors.mutedForeground }]}>
+                  Official in-app purchases and auto-renewing subscriptions will be wired up via Google Play Developer API in a future release.
+                </Text>
+              </View>
+            </View>
+          </View>
+        </ScrollView>
+
+        <View style={[styles.sheetFooter, { borderTopColor: colors.border }]}>
+          <TouchableOpacity
+            style={[styles.solidCTA, { backgroundColor: colors.primary }]}
+            activeOpacity={0.85}
+            onPress={() => setShowPremiumSheet(false)}
+          >
+            <Text style={[styles.solidCTAText, { color: colors.primaryForeground }]}>Done</Text>
           </TouchableOpacity>
         </View>
       </ScoopedBottomSheet>
@@ -1200,9 +1411,10 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 30,
     fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.6,
+    letterSpacing: -0.8,
+    lineHeight: 34,
   },
 
   // ── Hero Profile Card (Matches App Card Architecture) ──
@@ -1306,7 +1518,7 @@ const styles = StyleSheet.create({
     gap: 5,
     height: 28,
     paddingHorizontal: 13,
-    borderRadius: 9,
+    borderRadius: 9999,
     backgroundColor: '#000000',
   },
   topEditProfileText: {
@@ -1326,7 +1538,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     height: 48,
-    borderRadius: 16,
+    borderRadius: 9999,
     gap: 8,
     backgroundColor: '#EF4444',
   },
@@ -1651,6 +1863,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   sheetScroll: {
+    flex: 1,
     paddingHorizontal: 20,
     paddingTop: 16,
   },
@@ -1696,7 +1909,7 @@ const styles = StyleSheet.create({
   },
   solidCTA: {
     height: 48,
-    borderRadius: 14,
+    borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
   },

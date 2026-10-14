@@ -83,6 +83,9 @@ export default function SettingsDataBackupScreen() {
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
 
+  const settingIconColor = isDark ? '#FFFFFF' : '#111827';
+  const settingIconBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)';
+
   const { users, ipos, applications, exportJSON, exportCSV, importJSON, importCSV, clearAllData } = useDB();
   const { showConfirm, showSuccess, showError } = useDialog();
   const { user: authUser } = useAuth();
@@ -304,8 +307,8 @@ export default function SettingsDataBackupScreen() {
         <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>LOCAL STORAGE</Text>
         <View style={[styles.overviewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.overviewHeader}>
-            <View style={[styles.overviewIconWrap, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5' }]}>
-              <Feather name="hard-drive" size={18} color="#10B981" />
+            <View style={[styles.overviewIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="hard-drive" size={18} color={settingIconColor} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.overviewTitle, { color: colors.foreground }]}>Stored on this Device</Text>
@@ -317,20 +320,20 @@ export default function SettingsDataBackupScreen() {
 
           {/* Stats Chips Row */}
           <View style={styles.statChipsRow}>
-            <View style={[styles.statChip, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.1)' : '#EFF6FF', borderColor: isDark ? 'rgba(59, 130, 246, 0.25)' : '#DBEAFE' }]}>
-              <Feather name="users" size={13} color="#3B82F6" />
+            <View style={[styles.statChip, { backgroundColor: settingIconBg, borderColor: colors.border }]}>
+              <Feather name="users" size={13} color={settingIconColor} />
               <Text style={[styles.statChipVal, { color: colors.foreground }]}>{users.length}</Text>
               <Text style={[styles.statChipLabel, { color: colors.mutedForeground }]}>Users</Text>
             </View>
 
-            <View style={[styles.statChip, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.1)' : '#FEF3C7', borderColor: isDark ? 'rgba(245, 158, 11, 0.25)' : '#FDE68A' }]}>
-              <Feather name="trending-up" size={13} color="#F59E0B" />
+            <View style={[styles.statChip, { backgroundColor: settingIconBg, borderColor: colors.border }]}>
+              <Feather name="trending-up" size={13} color={settingIconColor} />
               <Text style={[styles.statChipVal, { color: colors.foreground }]}>{ipos.length}</Text>
               <Text style={[styles.statChipLabel, { color: colors.mutedForeground }]}>IPOs</Text>
             </View>
 
-            <View style={[styles.statChip, { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.1)' : '#F5F3FF', borderColor: isDark ? 'rgba(139, 92, 246, 0.25)' : '#DDD6FE' }]}>
-              <Feather name="file-text" size={13} color="#8B5CF6" />
+            <View style={[styles.statChip, { backgroundColor: settingIconBg, borderColor: colors.border }]}>
+              <Feather name="file-text" size={13} color={settingIconColor} />
               <Text style={[styles.statChipVal, { color: colors.foreground }]}>{applications.length}</Text>
               <Text style={[styles.statChipLabel, { color: colors.mutedForeground }]}>Bids</Text>
             </View>
@@ -342,8 +345,8 @@ export default function SettingsDataBackupScreen() {
         <View style={[styles.slickGroupCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           {/* Row 1: Local Device Backup */}
           <View style={styles.slickActionRow}>
-            <View style={[styles.actionIconWrap, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.14)' : '#EFF6FF' }]}>
-              <Feather name="download" size={17} color="#3B82F6" />
+            <View style={[styles.actionIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="download" size={17} color={settingIconColor} />
             </View>
             <View style={styles.actionTextWrap}>
               <View style={styles.actionTitleRow}>
@@ -381,8 +384,8 @@ export default function SettingsDataBackupScreen() {
 
           {/* Row 2: Cloud Firestore Sync */}
           <View style={styles.slickActionRow}>
-            <View style={[styles.actionIconWrap, { backgroundColor: isDark ? 'rgba(99, 102, 241, 0.14)' : '#EEF2FF' }]}>
-              <Feather name="cloud" size={17} color="#6366F1" />
+            <View style={[styles.actionIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="cloud" size={17} color={settingIconColor} />
             </View>
             <View style={styles.actionTextWrap}>
               <View style={styles.actionTitleRow}>
@@ -454,8 +457,8 @@ export default function SettingsDataBackupScreen() {
         <View style={[styles.slickGroupCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           {/* Row 1: Import Local Backup */}
           <View style={styles.slickActionRow}>
-            <View style={[styles.actionIconWrap, { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.14)' : '#F5F3FF' }]}>
-              <Feather name="upload" size={17} color="#8B5CF6" />
+            <View style={[styles.actionIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="upload" size={17} color={settingIconColor} />
             </View>
             <View style={styles.actionTextWrap}>
               <View style={styles.actionTitleRow}>
@@ -493,8 +496,8 @@ export default function SettingsDataBackupScreen() {
 
           {/* Row 2: Restore from Cloud */}
           <View style={styles.slickActionRow}>
-            <View style={[styles.actionIconWrap, { backgroundColor: isDark ? 'rgba(14, 165, 233, 0.14)' : '#E0F2FE' }]}>
-              <Feather name="refresh-cw" size={17} color="#0EA5E9" />
+            <View style={[styles.actionIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="refresh-cw" size={17} color={settingIconColor} />
             </View>
             <View style={styles.actionTextWrap}>
               <View style={styles.actionTitleRow}>
@@ -820,7 +823,7 @@ const styles = StyleSheet.create({
   pillPrimaryBtn: {
     height: 34,
     width: 86,
-    borderRadius: 10,
+    borderRadius: 9999,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -834,7 +837,7 @@ const styles = StyleSheet.create({
   pillSecondaryBtn: {
     height: 34,
     width: 86,
-    borderRadius: 10,
+    borderRadius: 9999,
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -849,7 +852,7 @@ const styles = StyleSheet.create({
   pillDangerBtn: {
     height: 34,
     width: 86,
-    borderRadius: 10,
+    borderRadius: 9999,
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -973,14 +976,14 @@ const styles = StyleSheet.create({
   dangerWarningText: { fontSize: 12, fontFamily: 'GoogleSansFlex_700Bold' },
   deleteActionBtn: {
     height: 44,
-    borderRadius: 12,
+    borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
   },
   deleteActionBtnText: { color: '#FFFFFF', fontSize: 13.5, fontFamily: 'GoogleSansFlex_700Bold' },
   modalCancelBtn: {
     height: 44,
-    borderRadius: 12,
+    borderRadius: 9999,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',

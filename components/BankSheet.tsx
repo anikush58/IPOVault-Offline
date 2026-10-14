@@ -96,8 +96,9 @@ export function BankSheet({
         </View>
       </View>
 
-      <View style={{ flexShrink: 1 }}>
+      <View style={{ flex: 1, minHeight: 0 }}>
         <ScrollView
+          style={{ flex: 1 }}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -346,7 +347,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 14,
+    borderRadius: 9999,
     minHeight: 48,
   },
   saveBtnText: {

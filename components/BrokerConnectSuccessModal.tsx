@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
     gap: 8,
     height: 46,
     paddingHorizontal: 24,
-    borderRadius: 14,
+    borderRadius: 9999,
     width: '100%',
   },
   actionButtonText: {

@@ -12,7 +12,11 @@ let FileSystemMod: any = null;
 try {
   FileSystemMod = require('expo-file-system/legacy');
 } catch {
-  FileSystemMod = null;
+  try {
+    FileSystemMod = require('expo-file-system');
+  } catch {
+    FileSystemMod = null;
+  }
 }
 
 /**
@@ -158,11 +162,21 @@ export async function ensureBase64DataUrl(uri?: string | null): Promise<string> 
     const ext = trimmed.split('?')[0].split('.').pop()?.toLowerCase() || '';
 
     if (FileSystemMod) {
-      const fileInfo = await FileSystemMod.getInfoAsync(trimmed);
-      if (!fileInfo.exists) return trimmed;
-      base64Data = await FileSystemMod.readAsStringAsync(trimmed, {
-        encoding: FileSystemMod.EncodingType.Base64,
-      });
+      const fs = FileSystemMod.readAsStringAsync ? FileSystemMod : (FileSystemMod.default || FileSystemMod);
+      try {
+        base64Data = await fs.readAsStringAsync(trimmed, {
+          encoding: fs.EncodingType?.Base64 || 'base64',
+        });
+      } catch {
+        try {
+          const fileInfo = await fs.getInfoAsync(trimmed);
+          if (fileInfo?.exists) {
+            base64Data = await fs.readAsStringAsync(trimmed, {
+              encoding: fs.EncodingType?.Base64 || 'base64',
+            });
+          }
+        } catch {}
+      }
     } else {
       const nodeFs = getNodeFs();
       const fsPath = trimmed.replace(/^file:\/\//, '');

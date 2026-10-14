@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -31,29 +32,55 @@ export default function SettingsAccountScreen() {
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
 
-  const { user: authUser, signOut, resetPassword } = useAuth();
+  const settingIconColor = isDark ? '#FFFFFF' : '#111827';
+  const settingIconBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)';
+
+  const { user: authUser, signOut, resetPassword, updateProfile } = useAuth();
   const { clearAllData } = useDB();
   const { showConfirm, showSuccess, showError, showInfo } = useDialog();
 
   const [busy, setBusy] = useState(false);
   const [showManageGoogleModal, setShowManageGoogleModal] = useState(false);
   const [showUidModal, setShowUidModal] = useState(false);
-  const [avatarUri, setAvatarUri] = useState<string | null>(null);
-  const [customUsername, setCustomUsername] = useState<string | null>(null);
+  const [showEditNameModal, setShowEditNameModal] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const [avatarUri, setAvatarUri] = useState<string | null>(authUser?.photoURL || null);
+  const [customUsername, setCustomUsername] = useState<string | null>(authUser?.displayName || null);
+
+  // Reactively synchronize local screen state whenever authUser profile updates (e.g. from cloud sync)
+  useEffect(() => {
+    if (authUser?.displayName && authUser.displayName.trim()) {
+      setCustomUsername(authUser.displayName.trim());
+    }
+    if (authUser?.photoURL && authUser.photoURL.trim()) {
+      setAvatarUri(authUser.photoURL.trim());
+    }
+  }, [authUser?.displayName, authUser?.photoURL]);
 
   useFocusEffect(
     useCallback(() => {
       let isMounted = true;
       safeAsyncStorage.getItem('@ipovault_avatar_uri').then((stored) => {
-        if (isMounted) setAvatarUri(stored || null);
+        if (isMounted) {
+          if (stored && stored.trim()) {
+            setAvatarUri(stored.trim());
+          } else if (authUser?.photoURL && authUser.photoURL.trim()) {
+            setAvatarUri(authUser.photoURL.trim());
+          } else {
+            setAvatarUri(null);
+          }
+        }
       });
       safeAsyncStorage.getItem('@ipovault_username').then((stored) => {
-        if (isMounted) setCustomUsername(stored && stored.trim() ? stored.trim() : null);
+        if (isMounted) {
+          const val = stored && stored.trim() ? stored.trim() : (authUser?.displayName ? authUser.displayName.trim() : null);
+          setCustomUsername(val);
+        }
       });
       return () => {
         isMounted = false;
       };
-    }, [])
+    }, [authUser?.displayName, authUser?.photoURL])
   );
 
   const handlePickAvatar = async () => {
@@ -71,9 +98,17 @@ export default function SettingsAccountScreen() {
           await pickImage();
         },
         onCancel: async () => {
-          setAvatarUri(null);
-          await safeAsyncStorage.removeItem('@ipovault_avatar_uri');
-          showSuccess('Photo Removed', 'Profile photo has been reset.');
+          setBusy(true);
+          try {
+            setAvatarUri(null);
+            await updateProfile(customUsername || authUser?.displayName || undefined, null);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            showSuccess('Photo Removed', 'Profile photo has been removed and cloud updated.');
+          } catch (e: any) {
+            showError('Error', e?.message || 'Failed to remove photo.');
+          } finally {
+            setBusy(false);
+          }
         },
       });
     } else {
@@ -91,12 +126,48 @@ export default function SettingsAccountScreen() {
       if (!result.canceled && result.assets?.[0]?.uri) {
         const uri = result.assets[0].uri;
         setAvatarUri(uri);
-        await safeAsyncStorage.setItem('@ipovault_avatar_uri', uri);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        showSuccess('Photo Updated', 'Your profile picture has been updated.');
+        setBusy(true);
+        try {
+          const res = await updateProfile(customUsername || authUser?.displayName || undefined, uri);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          if (res.error) {
+            showSuccess('Photo Updated', 'Saved locally. Cloud sync will update once connected.');
+          } else {
+            showSuccess('Photo Updated', 'Profile photo saved and synced to your cloud account.');
+          }
+        } catch (saveErr: any) {
+          showError('Error', saveErr?.message || 'Failed to update photo.');
+        } finally {
+          setBusy(false);
+        }
       }
     } catch (e: any) {
       showError('Error', e?.message || 'Could not select photo.');
+    }
+  };
+
+  const handleSaveUsername = async () => {
+    const trimmed = nameInput.trim();
+    if (!trimmed) {
+      showError('Invalid Name', 'Username cannot be blank.');
+      return;
+    }
+    setBusy(true);
+    try {
+      setCustomUsername(trimmed);
+      const effectiveAvatar = avatarUri || authUser?.photoURL || undefined;
+      const res = await updateProfile(trimmed, effectiveAvatar);
+      setShowEditNameModal(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (res.error) {
+        showSuccess('Username Saved', 'Saved locally. Cloud sync will update once connected.');
+      } else {
+        showSuccess('Username Saved', 'Your username has been saved to your cloud profile.');
+      }
+    } catch (e: any) {
+      showError('Error', e?.message || 'Failed to save username.');
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -228,25 +299,41 @@ export default function SettingsAccountScreen() {
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={handlePickAvatar}
+            disabled={busy}
             style={[
               styles.avatarWrap,
               {
-                backgroundColor: isDark ? 'rgba(59, 130, 246, 0.18)' : '#EFF6FF',
-                borderColor: isDark ? 'rgba(59, 130, 246, 0.35)' : '#BFDBFE',
+                backgroundColor: settingIconBg,
+                borderColor: colors.border,
               },
             ]}
           >
             {avatarUri || authUser?.photoURL ? (
               <Image source={{ uri: (avatarUri || authUser?.photoURL)! }} style={styles.avatarImg} />
             ) : (
-              <Text style={[styles.avatarText, { color: '#3B82F6' }]}>{initial}</Text>
+              <Text style={[styles.avatarText, { color: settingIconColor }]}>{initial}</Text>
             )}
+            <View style={[styles.avatarEditOverlay, { backgroundColor: colors.primary }]}>
+              <Feather name="camera" size={10} color={colors.primaryForeground} />
+            </View>
           </TouchableOpacity>
 
           <View style={styles.profileInfoWrap}>
-            <Text style={[styles.profileName, { color: colors.foreground }]} numberOfLines={1}>
-              {nameStr}
-            </Text>
+            <View style={styles.profileNameRow}>
+              <Text style={[styles.profileName, { color: colors.foreground }]} numberOfLines={1}>
+                {nameStr}
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setNameInput(nameStr);
+                  setShowEditNameModal(true);
+                }}
+                hitSlop={8}
+                style={[styles.editPencilBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9' }]}
+              >
+                <Feather name="edit-2" size={13} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
             <Text style={[styles.profileEmail, { color: colors.mutedForeground }]} numberOfLines={1}>
               {emailStr}
             </Text>
@@ -255,14 +342,37 @@ export default function SettingsAccountScreen() {
 
         {/* Options Card */}
         <View style={[styles.menuCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          {/* Username */}
+          <TouchableOpacity
+            style={[styles.menuRow, { borderBottomColor: colors.border }]}
+            activeOpacity={0.7}
+            onPress={() => {
+              setNameInput(nameStr);
+              setShowEditNameModal(true);
+            }}
+          >
+            <View style={[styles.menuIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="user" size={17} color={settingIconColor} />
+            </View>
+            <View style={styles.menuTextWrap}>
+              <Text style={[styles.menuTitle, { color: colors.foreground }]}>Username</Text>
+              <Text style={[styles.menuSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+                {nameStr}
+              </Text>
+            </View>
+            <View style={styles.rowRightPill}>
+              <Text style={[styles.rowRightPillText, { color: colors.primary }]}>Edit</Text>
+              <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+            </View>
+          </TouchableOpacity>
           {/* Account ID (UID) */}
           <TouchableOpacity
             style={[styles.menuRow, { borderBottomColor: colors.border }]}
             activeOpacity={0.7}
             onPress={() => setShowUidModal(true)}
           >
-            <View style={[styles.menuIconWrap, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' }]}>
-              <Feather name="link-2" size={17} color="#3B82F6" />
+            <View style={[styles.menuIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="link-2" size={17} color={settingIconColor} />
             </View>
             <View style={styles.menuTextWrap}>
               <Text style={[styles.menuTitle, { color: colors.foreground }]}>Account ID (UID)</Text>
@@ -278,8 +388,8 @@ export default function SettingsAccountScreen() {
             onPress={handleResetPassword}
             disabled={busy}
           >
-            <View style={[styles.menuIconWrap, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7' }]}>
-              <Feather name="lock" size={17} color="#F59E0B" />
+            <View style={[styles.menuIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="lock" size={17} color={settingIconColor} />
             </View>
             <View style={styles.menuTextWrap}>
               <Text style={[styles.menuTitle, { color: colors.foreground }]}>Change Password</Text>
@@ -294,8 +404,8 @@ export default function SettingsAccountScreen() {
             activeOpacity={0.7}
             onPress={() => setShowManageGoogleModal(true)}
           >
-            <View style={[styles.menuIconWrap, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5' }]}>
-              <Feather name="globe" size={17} color="#10B981" />
+            <View style={[styles.menuIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="globe" size={17} color={settingIconColor} />
             </View>
             <View style={styles.menuTextWrap}>
               <Text style={[styles.menuTitle, { color: colors.foreground }]}>Manage Google Account</Text>
@@ -355,6 +465,62 @@ export default function SettingsAccountScreen() {
               <Feather name="copy" size={16} color={colors.primaryForeground} />
               <Text style={[styles.primaryModalBtnText, { color: colors.primaryForeground }]}>Copy Account ID</Text>
             </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Edit Username Modal */}
+      <Modal visible={showEditNameModal} transparent animationType="fade" onRequestClose={() => setShowEditNameModal(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setShowEditNameModal(false)}>
+          <Pressable style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => {}}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Edit Username</Text>
+              <TouchableOpacity onPress={() => setShowEditNameModal(false)} hitSlop={8}>
+                <Feather name="x" size={18} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.modalSub, { color: colors.mutedForeground }]}>
+              Enter your display name. This will be displayed across IPOVault and synced to your cloud account.
+            </Text>
+
+            <View style={[styles.editInputBox, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F8FAFC', borderColor: colors.border }]}>
+              <Feather name="user" size={16} color={colors.primary} style={{ marginRight: 10 }} />
+              <TextInput
+                style={[styles.modalTextInput, { color: colors.foreground }]}
+                value={nameInput}
+                onChangeText={setNameInput}
+                placeholder="Enter username"
+                placeholderTextColor={colors.mutedForeground}
+                autoCapitalize="words"
+              />
+              {nameInput.length > 0 ? (
+                <TouchableOpacity onPress={() => setNameInput('')} hitSlop={8}>
+                  <Feather name="x-circle" size={16} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
+              <TouchableOpacity
+                style={[styles.secondaryModalBtn, { borderColor: colors.border }]}
+                activeOpacity={0.8}
+                onPress={() => setShowEditNameModal(false)}
+              >
+                <Text style={[styles.secondaryModalBtnText, { color: colors.foreground }]}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.primaryModalBtnFlex, { backgroundColor: colors.primary }]}
+                activeOpacity={0.8}
+                onPress={handleSaveUsername}
+                disabled={busy}
+              >
+                <Text style={[styles.primaryModalBtnText, { color: colors.primaryForeground }]}>
+                  {busy ? 'Saving...' : 'Save Changes'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </Pressable>
         </Pressable>
       </Modal>
@@ -542,7 +708,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     height: 44,
-    borderRadius: 12,
+    borderRadius: 9999,
   },
   primaryModalBtnText: { fontSize: 13.5, fontFamily: 'GoogleSansFlex_700Bold' },
 
@@ -567,7 +733,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     height: 44,
-    borderRadius: 12,
+    borderRadius: 9999,
     borderWidth: 1,
   },
   switchBtnText: { fontSize: 13.5, fontFamily: 'GoogleSansFlex_700Bold' },
@@ -577,7 +743,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     height: 44,
-    borderRadius: 12,
+    borderRadius: 9999,
     borderWidth: 1,
   },
   disconnectBtnText: { fontSize: 13.5, fontFamily: 'GoogleSansFlex_700Bold' },
@@ -586,5 +752,71 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_400Regular',
     textAlign: 'center',
     marginTop: 14,
+  },
+  avatarEditOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  profileNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  editPencilBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowRightPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  rowRightPillText: {
+    fontSize: 12.5,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  editInputBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  modalTextInput: {
+    flex: 1,
+    fontSize: 14.5,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  secondaryModalBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 9999,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryModalBtnText: {
+    fontSize: 13.5,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  primaryModalBtnFlex: {
+    flex: 1,
+    height: 44,
+    borderRadius: 9999,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

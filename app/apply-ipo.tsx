@@ -31,6 +31,7 @@ import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { BackendIpo } from '@/types/backend-ipo';
 import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 import { getEffectiveAvatarUrl } from '@/utils/avatarUtils';
+import { safeRunAsync } from '@/utils/sqliteDebug';
 
 const AVATAR_PALETTES: [string, string][] = [
   ['#8B5CF6', '#6D28D9'], // Purple
@@ -451,14 +452,17 @@ export default function ApplyIPOScreen() {
       const sym = bIpo?.symbol || params.symbol || '';
       const logo = bIpo?.company?.logoUrl || bIpo?.logoUrl || params.logoUrl || '';
 
-      await db.runAsync(
+      await safeRunAsync(
+        db,
         `INSERT OR IGNORE INTO ipo_listings (
           id, ipo_name, company_name, symbol, buy_price, quantity, open_date, close_date, listing_date, allotment_date,
           registrar, exchange, issue_type, archived, is_favorite, logo_url, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', '', 'NSE, BSE', 'Mainboard', 0, 0, ?, ?, ?)`,
-        [selectedIpoId, targetIpoName, targetIpoName, sym, unitPrice, lotQty, oDate, cDate, logo, now, now]
+        [selectedIpoId, targetIpoName, targetIpoName, sym, unitPrice, lotQty, oDate, cDate, logo, now, now],
+        'applyIpo.insertListing'
       );
-      await db.runAsync(
+      await safeRunAsync(
+        db,
         `UPDATE ipo_listings SET
           ipo_name = COALESCE(NULLIF(?, ''), ipo_name),
           company_name = COALESCE(NULLIF(?, ''), company_name),
@@ -470,11 +474,12 @@ export default function ApplyIPOScreen() {
           logo_url = COALESCE(NULLIF(?, ''), logo_url),
           updated_at = ?
         WHERE id = ?`,
-        [targetIpoName, targetIpoName, sym, unitPrice, unitPrice, lotQty, lotQty, oDate, cDate, logo, now, selectedIpoId]
+        [targetIpoName, targetIpoName, sym, unitPrice, unitPrice, lotQty, lotQty, oDate, cDate, logo, now, selectedIpoId],
+        'applyIpo.updateListing'
       );
 
       await addBulkApplications(selectedIpoId, Array.from(selectedUserIds), bankNameMap, upiAppMap, userLotQuantities);
-      backendSyncEmitter.notifyChange();
+      backendSyncEmitter.notifyChange('applications');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
       setSubmittedCount(count);
@@ -1539,7 +1544,7 @@ const styles = StyleSheet.create({
 
   submitGoldBtn: {
     height: 48,
-    borderRadius: 14,
+    borderRadius: 9999,
     paddingHorizontal: 22,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1683,7 +1688,7 @@ const styles = StyleSheet.create({
   successDoneBtn: {
     width: '100%',
     height: 48,
-    borderRadius: 14,
+    borderRadius: 9999,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

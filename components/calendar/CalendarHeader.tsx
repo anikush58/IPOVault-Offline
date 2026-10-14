@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
   todayBtn: {
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 9999,
     borderWidth: 1,
     marginRight: 6,
   },

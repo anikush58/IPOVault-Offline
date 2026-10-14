@@ -1,6 +1,7 @@
 import { ApiClientConfig, MobileApiResponse } from '../../types/api';
 import { ApiError } from './ApiError';
 import { getFirebaseAuthToken } from '../auth/firebaseAuthService';
+import { concurrencyTelemetry } from '@/utils/concurrencyTelemetry';
 
 export interface ApiRequestTrace {
   id: string;
@@ -85,6 +86,7 @@ export class ApiClient {
     let errMsg = 'HTTP Request Failed';
     let errCode: string | undefined;
 
+    const probe = concurrencyTelemetry.startExecuting('HTTP_REQUEST', `GET ${path}`);
     try {
       const response = await fetch(url, {
         method: 'GET',
@@ -100,6 +102,7 @@ export class ApiClient {
         try {
           const freshToken = await getFirebaseAuthToken(true);
           if (freshToken) {
+            probe.finish();
             return await this.get<T>(
               path,
               params,
@@ -133,8 +136,10 @@ export class ApiClient {
         );
       }
 
+      probe.finish();
       return body as MobileApiResponse<T>;
     } catch (err: unknown) {
+      probe.finish(err);
       isAborted = controller.signal.aborted || (err as Error)?.name === 'AbortError';
       errName = (err as Error)?.name || 'Error';
       errMsg = (err as Error)?.message || String(err);
@@ -151,6 +156,7 @@ export class ApiClient {
         err,
       );
     } finally {
+      probe.finish();
       clearTimeout(timer);
       ApiClient.notifyListeners({
         id: requestId,
@@ -189,6 +195,7 @@ export class ApiClient {
     let errMsg = 'HTTP Request Failed';
     let errCode: string | undefined;
 
+    const probe = concurrencyTelemetry.startExecuting('HTTP_REQUEST', `POST ${path}`);
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -205,6 +212,7 @@ export class ApiClient {
         try {
           const freshToken = await getFirebaseAuthToken(true);
           if (freshToken) {
+            probe.finish();
             return await this.post<T>(
               path,
               bodyData,
@@ -238,8 +246,10 @@ export class ApiClient {
         );
       }
 
+      probe.finish();
       return body as MobileApiResponse<T>;
     } catch (err: unknown) {
+      probe.finish(err);
       isAborted = controller.signal.aborted || (err as Error)?.name === 'AbortError';
       errName = (err as Error)?.name || 'Error';
       errMsg = (err as Error)?.message || String(err);
@@ -256,6 +266,7 @@ export class ApiClient {
         err,
       );
     } finally {
+      probe.finish();
       clearTimeout(timer);
       ApiClient.notifyListeners({
         id: requestId,
@@ -307,6 +318,7 @@ export class ApiClient {
     let errMsg = 'HTTP Request Failed';
     let errCode: string | undefined;
 
+    const probe = concurrencyTelemetry.startExecuting('HTTP_REQUEST', `DELETE ${path}`);
     try {
       const response = await fetch(url, {
         method: 'DELETE',
@@ -321,6 +333,7 @@ export class ApiClient {
         try {
           const freshToken = await getFirebaseAuthToken(true);
           if (freshToken) {
+            probe.finish();
             return await this.delete<T>(
               path,
               params,
@@ -354,8 +367,10 @@ export class ApiClient {
         );
       }
 
+      probe.finish();
       return body as MobileApiResponse<T>;
     } catch (err: unknown) {
+      probe.finish(err);
       isAborted = controller.signal.aborted || (err as Error)?.name === 'AbortError';
       errName = (err as Error)?.name || 'Error';
       errMsg = (err as Error)?.message || String(err);
@@ -372,6 +387,7 @@ export class ApiClient {
         err,
       );
     } finally {
+      probe.finish();
       clearTimeout(timer);
       ApiClient.notifyListeners({
         id: requestId,
@@ -410,6 +426,7 @@ export class ApiClient {
     let errMsg = 'HTTP Request Failed';
     let errCode: string | undefined;
 
+    const probe = concurrencyTelemetry.startExecuting('HTTP_REQUEST', `PUT ${path}`);
     try {
       const response = await fetch(url, {
         method: 'PUT',
@@ -425,6 +442,7 @@ export class ApiClient {
         try {
           const freshToken = await getFirebaseAuthToken(true);
           if (freshToken) {
+            probe.finish();
             return await this.put<T>(
               path,
               bodyData,
@@ -458,8 +476,10 @@ export class ApiClient {
         );
       }
 
+      probe.finish();
       return body as MobileApiResponse<T>;
     } catch (err: unknown) {
+      probe.finish(err);
       isAborted = controller.signal.aborted || (err as Error)?.name === 'AbortError';
       errName = (err as Error)?.name || 'Error';
       errMsg = (err as Error)?.message || String(err);
@@ -476,6 +496,7 @@ export class ApiClient {
         err,
       );
     } finally {
+      probe.finish();
       clearTimeout(timer);
       ApiClient.notifyListeners({
         id: requestId,

@@ -25,9 +25,10 @@ import { DialogProvider } from '@/context/DialogContext';
 import { AppStoreProvider } from '@/store/useAppStore';
 import { CompareProvider } from '@/context/CompareContext';
 import { NotificationProvider } from '@/context/NotificationContext';
+import { AdProvider } from '@/context/AdContext';
 import {
-  registerDevicePushTokenAsync,
   setupNotificationPresentation,
+  setupNotificationChannels,
   setupNotificationResponseListener,
 } from '@/services/notifications/notificationEngine';
 
@@ -51,6 +52,7 @@ function RootLayoutNav() {
 
   useEffect(() => {
     setupNotificationPresentation();
+    setupNotificationChannels();
     const subscription = setupNotificationResponseListener(router);
     return () => {
       if (subscription && subscription.remove) {
@@ -58,12 +60,6 @@ function RootLayoutNav() {
       }
     };
   }, [router]);
-
-  useEffect(() => {
-    if (user?.id) {
-      registerDevicePushTokenAsync(user.id).catch(() => {});
-    }
-  }, [user?.id]);
 
   const bgColor = resolvedScheme === 'dark' ? '#121212' : '#F8F9FA';
 
@@ -136,7 +132,9 @@ export default function RootLayout() {
                     <NotificationProvider>
                       <CompareProvider>
                         <AppStoreProvider>
-                          <RootLayoutNav />
+                          <AdProvider>
+                            <RootLayoutNav />
+                          </AdProvider>
                         </AppStoreProvider>
                       </CompareProvider>
                     </NotificationProvider>

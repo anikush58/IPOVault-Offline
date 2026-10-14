@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { formatCurrency, todayISO } from '@/utils/formatters';
 import { useSQLiteContext } from 'expo-sqlite';
+import { safeRunAsync } from '@/utils/sqliteDebug';
 import {
   CONTROLLED_EXCHANGES,
   CONTROLLED_ISSUE_TYPES,
@@ -201,7 +202,8 @@ export function AddIPOModal({ visible, onClose }: Props) {
       const newId = `ipo_${Date.now()}`;
       const now = new Date().toISOString();
 
-      await db.runAsync(
+      await safeRunAsync(
+        db,
         `INSERT INTO ipo_listings (
           id, backend_ipo_id, company_name, ipo_name, symbol, buy_price, quantity,
           registrar, exchange, issue_type, open_date, close_date, allotment_date, listing_date,
@@ -520,7 +522,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderRadius: 12,
+    borderRadius: 9999,
     paddingVertical: 12,
     gap: 8,
     marginBottom: 20,

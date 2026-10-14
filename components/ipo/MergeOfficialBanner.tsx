@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#D97706',
     paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: 10,
+    borderRadius: 9999,
     alignSelf: 'flex-start',
   },
   mergeBtnText: {

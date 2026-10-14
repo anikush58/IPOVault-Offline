@@ -67,7 +67,8 @@ export default function IPODetailsScreen() {
   );
 
   useEffect(() => {
-    const unsub = backendSyncEmitter.subscribe(() => {
+    const unsub = backendSyncEmitter.subscribe((event) => {
+      if (event === 'applications') return;
       loadData();
     });
     return unsub;

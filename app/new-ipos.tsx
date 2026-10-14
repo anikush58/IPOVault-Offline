@@ -32,6 +32,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconButton } from '@/components/ui/IconButton';
 import { ScoopedBottomSheet } from '@/components/ui/ScoopedBottomSheet';
 import { Tabs } from '@/components/ui/Tabs';
+import { NativeAdCard } from '@/components/ads/NativeAdCard';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { BackendIpo } from '@/types/backend-ipo';
 import { useDB } from '@/context/DBContext';
@@ -41,8 +42,12 @@ import { triggerCentralizedIPOSync } from '@/services/ipo/centralizedSync';
 import { getISTDateTime } from '@/services/ipo/statusNormalizer';
 import { getCachedBackendIpos, saveBackendIposToCache } from '@/services/ipo/ipoHubCacheService';
 
-type NewIpoTab = 'live' | 'upcoming' | 'closed' | 'listed';
-type SortOption = 'DEFAULT' | 'GMP';
+import {
+  NewIpoTab,
+  getFirstAvailableIpoHubTab,
+} from '@/utils/ipoHubTabUtils';
+export { NewIpoTab, getFirstAvailableIpoHubTab };
+export type SortOption = 'DEFAULT' | 'GMP';
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList as any);
 
@@ -749,6 +754,8 @@ export default function NewIposScreen() {
 
   const { width: screenWidth } = useWindowDimensions();
   const horizontalScrollViewRef = useRef<ScrollView>(null);
+  const userSelectedTabRef = useRef<boolean>(false);
+  const hasAutoSelectedTabRef = useRef<boolean>(false);
 
   const [activeTab, setActiveTab] = useState<NewIpoTab>('live');
   const [includeSme, setIncludeSme] = useState(true);
@@ -794,6 +801,7 @@ export default function NewIposScreen() {
   }, [includeSme, onlyActiveGmp, onlyClosingToday, sortBy]);
 
   const handleTabPress = useCallback((tab: NewIpoTab) => {
+    userSelectedTabRef.current = true;
     setActiveTab(tab);
     try { Haptics.selectionAsync(); } catch {}
     const index = TABS.indexOf(tab);
@@ -806,6 +814,7 @@ export default function NewIposScreen() {
     const contentOffsetX = event.nativeEvent.contentOffset.x;
     const index = Math.round(contentOffsetX / screenWidth);
     if (TABS[index] && TABS[index] !== activeTab) {
+      userSelectedTabRef.current = true;
       setActiveTab(TABS[index]);
     }
   }, [screenWidth, activeTab]);
@@ -948,7 +957,11 @@ export default function NewIposScreen() {
       }
     }, 15000);
 
-    const unsubscribe = backendSyncEmitter.subscribe(async () => {
+    const unsubscribe = backendSyncEmitter.subscribe(async (event) => {
+      if (event === 'applications') {
+        // Application mutations don't alter IPO listings catalog; skip network fetch
+        return;
+      }
       // 1. Re-hydrate immediately from local SQLite cache so newly synced IPOs are visible instantly
       await hydrateFromCache();
       // 2. Trigger background reconciliation fetch
@@ -1074,6 +1087,31 @@ export default function NewIposScreen() {
     };
   }, [liveList, upcomingList, closedList, listedList, sortBy]);
 
+  // Automatically select the first non-empty category (live -> upcoming -> closed -> listed)
+  // when IPO data is loaded, without repeatedly overriding user's manual selection
+  useEffect(() => {
+    if (userSelectedTabRef.current || hasAutoSelectedTabRef.current) return;
+    if (loading && rawIpos.length === 0) return;
+
+    const targetTab = getFirstAvailableIpoHubTab({
+      live: liveList.length,
+      upcoming: upcomingList.length,
+      closed: closedList.length,
+      listed: listedList.length,
+    });
+
+    hasAutoSelectedTabRef.current = true;
+    if (targetTab !== activeTab) {
+      setActiveTab(targetTab);
+      const index = TABS.indexOf(targetTab);
+      if (index !== -1) {
+        requestAnimationFrame(() => {
+          horizontalScrollViewRef.current?.scrollTo({ x: index * screenWidth, animated: false });
+        });
+      }
+    }
+  }, [loading, rawIpos.length, liveList.length, upcomingList.length, closedList.length, listedList.length, activeTab, screenWidth]);
+
   const handleCardPress = useCallback(
     (item: BackendIpo) => {
       router.push({
@@ -1110,21 +1148,24 @@ export default function NewIposScreen() {
 
   const renderItemForTab = useCallback(
     (tab: NewIpoTab) => {
-      return ({ item }: { item: BackendIpo }) => {
+      return ({ item, index }: { item: BackendIpo; index: number }) => {
         const stats = appStatsMap.get(item.id) || { total: 0, applied: 0, allotted: 0 };
+        const showNativeAd = index === 2;
         return (
-          <NewIpoCardItem
-            key={item.id}
-            item={item}
-            tab={tab}
-            colors={colors}
-            isDark={isDark}
-            totalAppsCount={stats.total}
-            appliedCount={stats.applied}
-            allottedCount={stats.allotted}
-            onPress={handleCardPress}
-            onApplyPress={handleApplyPress}
-          />
+          <View key={item.id}>
+            <NewIpoCardItem
+              item={item}
+              tab={tab}
+              colors={colors}
+              isDark={isDark}
+              totalAppsCount={stats.total}
+              appliedCount={stats.applied}
+              allottedCount={stats.allotted}
+              onPress={handleCardPress}
+              onApplyPress={handleApplyPress}
+            />
+            {showNativeAd && <NativeAdCard />}
+          </View>
         );
       };
     },
@@ -1425,6 +1466,7 @@ export default function NewIposScreen() {
         </View>
 
         <ScrollView
+          style={{ flex: 1 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16, gap: 18 }}
@@ -1774,15 +1816,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   headerEyebrow: {
-    fontSize: 10,
+    fontSize: 11,
     fontFamily: 'GoogleSansFlex_600SemiBold',
     letterSpacing: 1.2,
     textTransform: 'uppercase',
+    marginBottom: 2,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 30,
     fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.5,
+    letterSpacing: -0.8,
+    lineHeight: 34,
   },
   searchWrap: {
     paddingHorizontal: 16,
@@ -2002,7 +2046,7 @@ const styles = StyleSheet.create({
   },
   innerApplyBtn: {
     width: 94,
-    borderRadius: 20,
+    borderRadius: 9999,
     paddingVertical: 7.5,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2023,7 +2067,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 6.5,
-    borderRadius: 10,
+    borderRadius: 9999,
     backgroundColor: '#000000',
   },
   checkAllotmentCtaText: {
@@ -2116,7 +2160,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderRadius: 14,
+    borderRadius: 9999,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
@@ -2256,7 +2300,7 @@ const styles = StyleSheet.create({
   modalFooterResetBtn: {
     flex: 1,
     height: 48,
-    borderRadius: 14,
+    borderRadius: 9999,
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -2269,7 +2313,7 @@ const styles = StyleSheet.create({
   modalFooterApplyBtn: {
     flex: 1.6,
     height: 48,
-    borderRadius: 14,
+    borderRadius: 9999,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

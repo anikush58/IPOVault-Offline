@@ -24,43 +24,46 @@ export default function PrivacySecurityScreen() {
   const { showInfo } = useDialog();
   const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
+  const settingIconColor = isDark ? '#FFFFFF' : '#111827';
+  const settingIconBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)';
+
   const securityFeatures = [
     {
       icon: 'hard-drive',
-      iconBg: '#10B98118',
-      iconColor: '#10B981',
+      iconBg: settingIconBg,
+      iconColor: settingIconColor,
       title: 'Local-First Database',
       description:
         'All sensitive records including PAN numbers, Demat accounts, and IPO applications remain strictly on your device inside an isolated SQLite database.',
     },
     {
       icon: 'shield',
-      iconBg: '#3B82F618',
-      iconColor: '#3B82F6',
+      iconBg: settingIconBg,
+      iconColor: settingIconColor,
       title: 'Zero Third-Party Trackers',
       description:
         'IPOVault contains no advertising SDKs, behavioral analytics, or third-party data brokers. Your financial tracking activity is 100% private.',
     },
     {
       icon: 'lock',
-      iconBg: '#8B5CF618',
-      iconColor: '#8B5CF6',
+      iconBg: settingIconBg,
+      iconColor: settingIconColor,
       title: 'Encrypted Cloud Transport',
       description:
         'When optional Cloud Backup is used, data is transmitted exclusively over TLS 1.3 encryption and stored in Firebase Firestore with user-scoped security rules.',
     },
     {
       icon: 'key',
-      iconBg: '#F59E0B18',
-      iconColor: '#F59E0B',
+      iconBg: settingIconBg,
+      iconColor: settingIconColor,
       title: 'No Banking Credentials Required',
       description:
         'We never ask for or store your net banking passwords, UPI PINs, trading passwords, or OTPs. All ASBA and UPI bids are authorized through your official bank/broker app.',
     },
     {
       icon: 'trash-2',
-      iconBg: '#EF444418',
-      iconColor: '#EF4444',
+      iconBg: settingIconBg,
+      iconColor: settingIconColor,
       title: 'Instant Data Wipe & Portability',
       description:
         'You have absolute ownership of your data. Export your entire history to JSON/CSV or permanently wipe everything with one tap.',
@@ -86,8 +89,8 @@ export default function PrivacySecurityScreen() {
       >
         {/* Hero Badge Card */}
         <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={[styles.heroIconBadge, { backgroundColor: '#10B98118' }]}>
-            <Feather name="shield" size={28} color="#10B981" />
+          <View style={[styles.heroIconBadge, { backgroundColor: settingIconBg }]}>
+            <Feather name="shield" size={28} color={settingIconColor} />
           </View>
           <Text style={[styles.heroTitle, { color: colors.foreground }]}>Your Privacy is Built-in</Text>
           <Text style={[styles.heroSub, { color: colors.mutedForeground }]}>

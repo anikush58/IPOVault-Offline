@@ -118,15 +118,7 @@ export default function ApplicationsScreen() {
     }
   }, [activeUserId, applications, db, ipos, refresh]);
 
-  useEffect(() => {
-    loadBrokerPortfolio();
-  }, [loadBrokerPortfolio]);
-
-  useFocusEffect(
-    React.useCallback(() => {
-      loadBrokerPortfolio();
-    }, [loadBrokerPortfolio])
-  );
+  // Broker portfolio and LTP are strictly manual triggers via Pull-to-Refresh on the Applications tab
 
   const [activeTab, setActiveTab] = useState<TabKey>('Allotted');
   const [selectedApp, setSelectedApp] = useState<ApplicationWithDetails | null>(null);

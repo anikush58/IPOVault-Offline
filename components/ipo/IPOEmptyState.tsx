@@ -90,7 +90,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     paddingHorizontal: 20,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 9999,
     borderWidth: 1,
   },
   btnText: {

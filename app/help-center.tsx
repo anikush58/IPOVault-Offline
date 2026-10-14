@@ -25,8 +25,8 @@ interface GuideArticle {
   title: string;
   subtitle: string;
   icon: string;
-  iconColor: string;
-  iconBg: string;
+  iconColor?: string;
+  iconBg?: string;
   steps?: { step: number; title: string; desc: string }[];
   infoNote?: string;
   tipNote?: string;
@@ -229,6 +229,9 @@ export default function HelpCenterScreen() {
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 24 : insets.top;
 
+  const settingIconColor = isDark ? '#FFFFFF' : '#111827';
+  const settingIconBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)';
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedArticle, setSelectedArticle] = useState<GuideArticle | null>(null);
   const [expandedFaqId, setExpandedFaqId] = useState<string | null>(null);
@@ -313,8 +316,8 @@ export default function HelpCenterScreen() {
                   !isLast && { borderBottomWidth: 1, borderBottomColor: isDark ? '#1F2937' : '#F3F4F6' },
                 ]}
               >
-                <View style={[styles.articleIconWrap, { backgroundColor: article.iconBg }]}>
-                  <Feather name={article.icon as any} size={18} color={article.iconColor} />
+                <View style={[styles.articleIconWrap, { backgroundColor: settingIconBg }]}>
+                  <Feather name={article.icon as any} size={18} color={settingIconColor} />
                 </View>
 
                 <View style={{ flex: 1, gap: 2 }}>
@@ -381,35 +384,35 @@ export default function HelpCenterScreen() {
               key={idx}
               style={[styles.registrarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={styles.regHeader}>
-                <View style={[styles.regIconBadge, { backgroundColor: '#3B82F618' }]}>
-                  <Feather name="external-link" size={14} color="#3B82F6" />
+                <View style={[styles.regIconBadge, { backgroundColor: settingIconBg }]}>
+                  <Feather name="external-link" size={14} color={settingIconColor} />
                 </View>
                 <Text style={[styles.regTitle, { color: colors.foreground }]}>{reg.name}</Text>
               </View>
 
               <View style={styles.regActionRow}>
                 <TouchableOpacity
-                  style={[styles.regBtn, { backgroundColor: isDark ? '#262C36' : '#F3F4F6' }]}
+                  style={[styles.regBtn, { backgroundColor: settingIconBg }]}
                   onPress={() => handleOpenUrl(`tel:${reg.phone.replace(/[^0-9+]/g, '')}`)}
                 >
-                  <Feather name="phone" size={12} color={colors.foreground} />
+                  <Feather name="phone" size={12} color={settingIconColor} />
                   <Text style={[styles.regBtnText, { color: colors.foreground }]}>{reg.phone}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.regBtn, { backgroundColor: isDark ? '#262C36' : '#F3F4F6' }]}
+                  style={[styles.regBtn, { backgroundColor: settingIconBg }]}
                   onPress={() => handleOpenUrl(`mailto:${reg.email}`)}
                 >
-                  <Feather name="mail" size={12} color={colors.foreground} />
+                  <Feather name="mail" size={12} color={settingIconColor} />
                   <Text style={[styles.regBtnText, { color: colors.foreground }]}>Email</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.regBtn, { backgroundColor: '#2563EB18' }]}
+                  style={[styles.regBtn, { backgroundColor: settingIconBg }]}
                   onPress={() => handleOpenUrl(reg.website)}
                 >
-                  <Feather name="globe" size={12} color="#2563EB" />
-                  <Text style={[styles.regBtnText, { color: '#2563EB' }]}>Portal</Text>
+                  <Feather name="globe" size={12} color={settingIconColor} />
+                  <Text style={[styles.regBtnText, { color: colors.foreground }]}>Portal</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -461,13 +464,15 @@ export default function HelpCenterScreen() {
                   style={[
                     styles.infoBanner,
                     {
-                      backgroundColor: isDark ? 'rgba(59, 130, 246, 0.12)' : '#EFF6FF',
-                      borderColor: isDark ? '#1D4ED8' : '#DBEAFE',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(17, 24, 39, 0.04)',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(17, 24, 39, 0.08)',
                     },
                   ]}
                 >
-                  <Feather name="info" size={16} color="#3B82F6" />
-                  <Text style={[styles.infoBannerText, { color: isDark ? '#93C5FD' : '#1E40AF' }]}>
+                  <View style={[styles.bannerIconBadge, { backgroundColor: settingIconBg }]}>
+                    <Feather name="info" size={14} color={settingIconColor} />
+                  </View>
+                  <Text style={[styles.infoBannerText, { color: colors.foreground }]}>
                     {selectedArticle.infoNote}
                   </Text>
                 </View>
@@ -477,8 +482,8 @@ export default function HelpCenterScreen() {
                 <View style={{ gap: 12, marginTop: 4 }}>
                   {selectedArticle.steps.map((st) => (
                     <View key={st.step} style={styles.stepItemRow}>
-                      <View style={[styles.stepNumberBadge, { backgroundColor: colors.primary }]}>
-                        <Text style={[styles.stepNumberText, { color: colors.primaryForeground }]}>
+                      <View style={[styles.stepNumberBadge, { backgroundColor: settingIconBg }]}>
+                        <Text style={[styles.stepNumberText, { color: settingIconColor }]}>
                           {st.step}
                         </Text>
                       </View>
@@ -500,17 +505,19 @@ export default function HelpCenterScreen() {
                   style={[
                     styles.tipBanner,
                     {
-                      backgroundColor: isDark ? 'rgba(245, 158, 11, 0.12)' : '#FEF3C7',
-                      borderColor: isDark ? '#B45309' : '#FDE68A',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(17, 24, 39, 0.04)',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(17, 24, 39, 0.08)',
                     },
                   ]}
                 >
-                  <Feather name="zap" size={16} color="#F59E0B" />
+                  <View style={[styles.bannerIconBadge, { backgroundColor: settingIconBg }]}>
+                    <Feather name="zap" size={14} color={settingIconColor} />
+                  </View>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={[styles.tipBannerTitle, { color: isDark ? '#FCD34D' : '#92400E' }]}>
+                    <Text style={[styles.tipBannerTitle, { color: colors.foreground }]}>
                       Tip
                     </Text>
-                    <Text style={[styles.tipBannerText, { color: isDark ? '#FDE68A' : '#78350F' }]}>
+                    <Text style={[styles.tipBannerText, { color: colors.mutedForeground }]}>
                       {selectedArticle.tipNote}
                     </Text>
                   </View>
@@ -658,6 +665,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  bannerIconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   regTitle: {
     fontSize: 14,
     fontFamily: 'GoogleSansFlex_700Bold',
@@ -674,7 +688,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: 9999,
   },
   regBtnText: {
     fontSize: 11.5,
@@ -782,7 +796,7 @@ const styles = StyleSheet.create({
   },
   modalPrimaryBtn: {
     height: 46,
-    borderRadius: 14,
+    borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
   },

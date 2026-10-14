@@ -1,4 +1,7 @@
-import { SQLiteDatabase } from 'expo-sqlite';
+import type { SQLiteDatabase } from 'expo-sqlite';
+import { concurrencyTelemetry } from './concurrencyTelemetry';
+
+const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
 
 /**
  * Parses top-level comma-separated expressions inside a VALUES (...) clause.
@@ -48,7 +51,7 @@ export function parseSqlValues(valuesString: string): string[] {
  * - Placeholder '?' count must equal bound parameter array length.
  */
 export function validateSqlInsertCounts(sql: string, params: any[], callerInfo: string): boolean {
-  if (!__DEV__) return true;
+  if (!isDev) return true;
   const insertMatch = sql.match(/INSERT\s+INTO\s+[^\(]+\(([^\)]+)\)\s+VALUES\s*\(([^\)]+)\)/i);
   if (!insertMatch) return true;
 
@@ -88,7 +91,7 @@ export function validateSqlInsertCounts(sql: string, params: any[], callerInfo: 
 /**
  * Helper to retry SQLite operations if the database is locked.
  */
-export async function retryOnLock<T>(fn: () => Promise<T>, retries = 10, baseDelayMs = 100): Promise<T> {
+export async function retryOnLock<T>(fn: () => Promise<T>, retries = 10, baseDelayMs = 100, callerInfo = 'Unknown'): Promise<T> {
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       return await fn();
@@ -99,9 +102,10 @@ export async function retryOnLock<T>(fn: () => Promise<T>, retries = 10, baseDel
       }
       const isLocked = errMsg.includes('locked') || errMsg.includes('busy') || errMsg.includes('cannot start a transaction') || errMsg.includes('database is locked');
       if (isLocked && attempt < retries - 1) {
+        concurrencyTelemetry.recordSqliteBusyRetry(callerInfo);
         const delay = Math.min(2500, baseDelayMs * Math.pow(1.5, attempt)) + Math.floor(Math.random() * 75);
-        if (__DEV__) {
-          console.warn(`[SQL LOCK RETRY] Database locked. Retrying attempt ${attempt + 1}/${retries} in ${Math.round(delay)}ms...`);
+        if (isDev) {
+          console.warn(`[SQL LOCK RETRY: ${callerInfo}] Database locked. Retrying attempt ${attempt + 1}/${retries} in ${Math.round(delay)}ms...`);
         }
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
@@ -115,17 +119,47 @@ export async function retryOnLock<T>(fn: () => Promise<T>, retries = 10, baseDel
 let writeMutex: Promise<any> = Promise.resolve();
 let isInsideTransaction = false;
 
-function queueWrite<T>(op: () => Promise<T>): Promise<T> {
+function queueWrite<T>(op: () => Promise<T>, callerInfo = 'Unknown'): Promise<T> {
   if (isInsideTransaction) {
     return op();
   }
-  const next = writeMutex.then(op, op);
+
+  const queuedProbe = concurrencyTelemetry.startQueued('SQLITE_WRITE', callerInfo);
+
+  const next = writeMutex.then(
+    async () => {
+      const executingProbe = queuedProbe.onExecuting();
+      try {
+        const res = await op();
+        executingProbe.finish();
+        return res;
+      } catch (err) {
+        executingProbe.finish(err);
+        throw err;
+      } finally {
+        executingProbe.finish();
+      }
+    },
+    async () => {
+      const executingProbe = queuedProbe.onExecuting();
+      try {
+        const res = await op();
+        executingProbe.finish();
+        return res;
+      } catch (err) {
+        executingProbe.finish(err);
+        throw err;
+      } finally {
+        executingProbe.finish();
+      }
+    }
+  );
   writeMutex = next.catch(() => {});
   return next;
 }
 
 export async function safeRunAsync(
-  db: SQLiteDatabase,
+  db: SQLiteDatabase | { runAsync: (sql: string, params: any[]) => Promise<any> },
   sql: string,
   params: any[] = [],
   callerInfo: string = 'Unknown'
@@ -133,7 +167,7 @@ export async function safeRunAsync(
   validateSqlInsertCounts(sql, params, callerInfo);
   const sanitizedParams = params.map((p, idx) => {
     if (p === undefined) {
-      if (__DEV__) {
+      if (isDev) {
         console.warn(`[SQL BIND WARNING] ${callerInfo} -> Parameter at index ${idx + 1} is UNDEFINED. Converting to null. SQL:`, sql);
       }
       return null;
@@ -141,7 +175,7 @@ export async function safeRunAsync(
     return p;
   });
 
-  return queueWrite(() => retryOnLock(() => db.runAsync(sql, sanitizedParams)));
+  return queueWrite(() => retryOnLock(() => db.runAsync(sql, sanitizedParams), 10, 100, callerInfo), callerInfo);
 }
 
 export async function safeGetFirstAsync<T>(
@@ -160,7 +194,17 @@ export async function safeGetFirstAsync<T>(
     return p;
   });
 
-  return retryOnLock(() => db.getFirstAsync<T>(sql, sanitizedParams));
+  const probe = concurrencyTelemetry.startExecuting('SQLITE_READ', callerInfo);
+  try {
+    const res = await retryOnLock(() => db.getFirstAsync<T>(sql, sanitizedParams), 10, 100, callerInfo);
+    probe.finish();
+    return res;
+  } catch (err) {
+    probe.finish(err);
+    throw err;
+  } finally {
+    probe.finish();
+  }
 }
 
 export async function safeGetAllAsync<T>(
@@ -179,7 +223,17 @@ export async function safeGetAllAsync<T>(
     return p;
   });
 
-  return retryOnLock(() => db.getAllAsync<T>(sql, sanitizedParams));
+  const probe = concurrencyTelemetry.startExecuting('SQLITE_READ', callerInfo);
+  try {
+    const res = await retryOnLock(() => db.getAllAsync<T>(sql, sanitizedParams), 10, 100, callerInfo);
+    probe.finish();
+    return res;
+  } catch (err) {
+    probe.finish(err);
+    throw err;
+  } finally {
+    probe.finish();
+  }
 }
 
 export async function safeExecAsync(
@@ -187,7 +241,7 @@ export async function safeExecAsync(
   sql: string,
   callerInfo: string = 'Unknown'
 ): Promise<void> {
-  return queueWrite(() => retryOnLock(() => db.execAsync(sql)));
+  return queueWrite(() => retryOnLock(() => db.execAsync(sql), 10, 100, callerInfo), callerInfo);
 }
 
 /**
@@ -207,18 +261,24 @@ export async function runWithTransaction<T>(
     return action();
   }
 
+  const queuedProbe = concurrencyTelemetry.startQueued('SQLITE_TX', callerInfo);
+
   const execute = async (): Promise<T> => {
     if (isInsideTransaction) {
+      queuedProbe.cancel('already_inside_transaction');
       return action();
     }
 
+    const executingProbe = queuedProbe.onExecuting();
     isInsideTransaction = true;
     try {
       if (typeof (db as any).withTransactionAsync === 'function') {
-        return await retryOnLock(() => (db as any).withTransactionAsync(action));
+        const res = (await retryOnLock<T>(() => (db as any).withTransactionAsync(action), 10, 100, `${callerInfo}.withTx`)) as T;
+        executingProbe.finish();
+        return res;
       }
 
-      return await retryOnLock(async () => {
+      return await retryOnLock<T>(async () => {
         let inTransaction = false;
         try {
           await db.execAsync('BEGIN IMMEDIATE TRANSACTION;');
@@ -226,24 +286,30 @@ export async function runWithTransaction<T>(
           const result = await action();
           await db.execAsync('COMMIT;');
           inTransaction = false;
+          executingProbe.finish();
           return result;
         } catch (originalError: any) {
-          if (__DEV__) {
+          executingProbe.finish(originalError);
+          if (isDev) {
             console.error(`[SQL TRANSACTION ERROR] ${callerInfo} -> Original failure:`, originalError);
           }
           if (inTransaction) {
             try {
               await db.execAsync('ROLLBACK;');
             } catch (rollbackError: any) {
-              if (__DEV__) {
+              if (isDev) {
                 console.warn(`[SQL TRANSACTION ERROR] ${callerInfo} -> Rollback ignored:`, rollbackError?.message || rollbackError);
               }
             }
           }
           throw originalError;
         }
-      });
+      }, 10, 100, `${callerInfo}.beginTx`);
+    } catch (err) {
+      executingProbe.finish(err);
+      throw err;
     } finally {
+      executingProbe.finish();
       isInsideTransaction = false;
     }
   };

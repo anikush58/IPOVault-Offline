@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   Platform,
@@ -18,6 +18,10 @@ import { useTheme } from '@/context/ThemeContext';
 import { IconButton } from '@/components/ui/IconButton';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { IOSToggle } from '@/components/ui/IOSToggle';
+import {
+  getNotificationPreferences,
+  setNotificationPreference,
+} from '@/services/notifications/notificationEngine';
 
 const DAYS_OF_WEEK = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
@@ -28,12 +32,25 @@ export default function SettingsNotificationsScreen() {
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
 
+  const settingIconColor = isDark ? '#FFFFFF' : '#111827';
+  const settingIconBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)';
+
   // Toggle states
   const [ipoUpdates, setIpoUpdates] = useState(true);
   const [allotmentResults, setAllotmentResults] = useState(true);
   const [priceAlerts, setPriceAlerts] = useState(true);
   const [appUpdates, setAppUpdates] = useState(true);
   const [notificationSound, setNotificationSound] = useState(true);
+
+  useEffect(() => {
+    getNotificationPreferences().then((prefs) => {
+      setIpoUpdates(prefs.ipoUpdates);
+      setAllotmentResults(prefs.allotmentResults);
+      setPriceAlerts(prefs.priceAlerts);
+      setAppUpdates(prefs.appUpdates);
+      setNotificationSound(prefs.sound);
+    });
+  }, []);
 
   // Quiet Hours Modal State
   const [showQuietHoursModal, setShowQuietHoursModal] = useState(false);
@@ -81,8 +98,8 @@ export default function SettingsNotificationsScreen() {
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           {/* IPO Updates */}
           <View style={[styles.row, { borderBottomColor: colors.border }]}>
-            <View style={[styles.iconWrap, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' }]}>
-              <Feather name="bar-chart-2" size={17} color="#3B82F6" />
+            <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="bar-chart-2" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>IPO Updates</Text>
@@ -92,14 +109,17 @@ export default function SettingsNotificationsScreen() {
             </View>
             <IOSToggle
               value={ipoUpdates}
-              onValueChange={setIpoUpdates}
+              onValueChange={(val) => {
+                setIpoUpdates(val);
+                setNotificationPreference('IPO_UPDATES', val);
+              }}
             />
           </View>
 
           {/* Allotment Results */}
           <View style={[styles.row, { borderBottomColor: colors.border }]}>
-            <View style={[styles.iconWrap, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7' }]}>
-              <Feather name="award" size={17} color="#F59E0B" />
+            <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="award" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>Allotment Results</Text>
@@ -109,14 +129,17 @@ export default function SettingsNotificationsScreen() {
             </View>
             <IOSToggle
               value={allotmentResults}
-              onValueChange={setAllotmentResults}
+              onValueChange={(val) => {
+                setAllotmentResults(val);
+                setNotificationPreference('ALLOTMENT_RESULTS', val);
+              }}
             />
           </View>
 
           {/* Price Alerts */}
           <View style={[styles.row, { borderBottomColor: colors.border }]}>
-            <View style={[styles.iconWrap, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2' }]}>
-              <Feather name="trending-up" size={17} color="#EF4444" />
+            <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="trending-up" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>Price Alerts</Text>
@@ -126,14 +149,17 @@ export default function SettingsNotificationsScreen() {
             </View>
             <IOSToggle
               value={priceAlerts}
-              onValueChange={setPriceAlerts}
+              onValueChange={(val) => {
+                setPriceAlerts(val);
+                setNotificationPreference('PRICE_ALERTS', val);
+              }}
             />
           </View>
 
           {/* App Updates */}
           <View style={[styles.row, { borderBottomWidth: 0 }]}>
-            <View style={[styles.iconWrap, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5' }]}>
-              <Feather name="bell" size={17} color="#10B981" />
+            <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="bell" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>App Updates</Text>
@@ -143,7 +169,10 @@ export default function SettingsNotificationsScreen() {
             </View>
             <IOSToggle
               value={appUpdates}
-              onValueChange={setAppUpdates}
+              onValueChange={(val) => {
+                setAppUpdates(val);
+                setNotificationPreference('APP_UPDATES', val);
+              }}
             />
           </View>
         </View>
@@ -155,8 +184,8 @@ export default function SettingsNotificationsScreen() {
             activeOpacity={0.7}
             onPress={() => setShowQuietHoursModal(true)}
           >
-            <View style={[styles.iconWrap, { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.15)' : '#F5F3FF' }]}>
-              <Feather name="moon" size={17} color="#8B5CF6" />
+            <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="moon" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>Quiet Hours</Text>
@@ -171,8 +200,8 @@ export default function SettingsNotificationsScreen() {
         {/* Notification Sound Card */}
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 14 }]}>
           <View style={styles.row}>
-            <View style={[styles.iconWrap, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' }]}>
-              <Feather name="volume-2" size={17} color="#3B82F6" />
+            <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="volume-2" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>Notification Sound</Text>
@@ -180,7 +209,10 @@ export default function SettingsNotificationsScreen() {
             </View>
             <IOSToggle
               value={notificationSound}
-              onValueChange={setNotificationSound}
+              onValueChange={(val) => {
+                setNotificationSound(val);
+                setNotificationPreference('SOUND', val);
+              }}
             />
           </View>
         </View>
@@ -426,7 +458,7 @@ const styles = StyleSheet.create({
   },
   saveBtn: {
     height: 48,
-    borderRadius: 14,
+    borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 6,

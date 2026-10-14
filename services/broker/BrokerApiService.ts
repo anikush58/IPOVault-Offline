@@ -203,6 +203,40 @@ function extractResponseData<T>(response: any): T {
   return response as T;
 }
 
+export type MarketQuoteFailureReason =
+  | 'AUTH_REQUIRED'
+  | 'NO_ELIGIBLE_BROKER'
+  | 'NO_VALID_INSTRUMENTS'
+  | 'PROVIDER_EMPTY'
+  | 'RATE_LIMITED'
+  | 'NETWORK_ERROR'
+  | 'SERVER_ERROR';
+
+export interface MarketQuotesDetailedResult {
+  quotes: MarketQuotesMap;
+  success: boolean;
+  failureReason?: MarketQuoteFailureReason;
+  errorMessage?: string;
+  statusCode?: number;
+  totalHoldingsCount?: number;
+  resolvedQuotesCount?: number;
+  unresolvedCount?: number;
+}
+
+export const QUOTE_CAPABLE_BROKERS = new Set(['UPSTOX', 'DHAN', 'FYERS', 'GROWW']);
+
+export function findQuoteEligibleAccount(accounts: BrokerAccountItem[]): BrokerAccountItem | null {
+  if (!Array.isArray(accounts) || accounts.length === 0) return null;
+  return (
+    accounts.find(
+      (acc) =>
+        acc.connection?.status === 'CONNECTED' &&
+        acc.isActive &&
+        QUOTE_CAPABLE_BROKERS.has((acc.broker || '').toUpperCase()),
+    ) || null
+  );
+}
+
 export class BrokerApiService {
   private apiClient: ApiClient;
 
@@ -230,6 +264,28 @@ export class BrokerApiService {
     } catch (err) {
       console.warn('[BrokerApiService] getAccounts failed:', err);
       return [];
+    }
+  }
+
+  /**
+   * Fetches a specific broker account by ID for the authenticated user.
+   */
+  public async getAccount(
+    _userId: string | null | undefined,
+    accountId: string,
+  ): Promise<BrokerAccountItem | null> {
+    try {
+      const authHeaders = await getAuthHeaders();
+      if (!authHeaders.Authorization || !accountId) return null;
+      const response = await this.apiClient.get<BrokerAccountItem>(
+        `/api/v1/broker-accounts/${encodeURIComponent(accountId.trim())}`,
+        undefined,
+        authHeaders,
+      );
+      return extractResponseData<BrokerAccountItem>(response);
+    } catch (err) {
+      console.warn(`[BrokerApiService] getAccount(${accountId}) failed:`, err);
+      return null;
     }
   }
 
@@ -479,27 +535,128 @@ export class BrokerApiService {
    * LTP is purely market data, separate from ownership holdings or trades.
    * Uses any available connected broker's market-quote capability.
    */
-  public async getMarketQuotes(
+  /**
+   * Retrieves real-time market quotes (LTP) with detailed error diagnostics.
+   * Distinguishes:
+   * - AUTH_REQUIRED (unauthenticated or expired session)
+   * - NO_ELIGIBLE_BROKER (broker does not support standalone quotes, e.g. Zerodha)
+   * - NO_VALID_INSTRUMENTS (missing ISIN or Symbol)
+   * - PROVIDER_EMPTY (provider returned no quotes, market closed)
+   * - RATE_LIMITED (429 HTTP status)
+   * - NETWORK_ERROR (fetch failed or aborted)
+   * - SERVER_ERROR (500 HTTP status)
+   */
+  public async getMarketQuotesDetailed(
     _userId: string | null | undefined,
     instruments: Array<{ symbol?: string | null; isin?: string | null; exchange?: string | null }>,
     brokerAccountId?: string | null,
-  ): Promise<MarketQuotesMap> {
-    if (!instruments || instruments.length === 0) return {};
+    connectedAccounts?: BrokerAccountItem[] | null,
+  ): Promise<MarketQuotesDetailedResult> {
+    if (!instruments || instruments.length === 0) {
+      return {
+        success: false,
+        quotes: {},
+        failureReason: 'NO_VALID_INSTRUMENTS',
+        errorMessage: 'No instruments provided to quote.',
+      };
+    }
+
+    const validInstruments = instruments.filter(
+      (i) => (i.symbol && i.symbol.trim().length > 0) || (i.isin && i.isin.trim().length > 0),
+    );
+    if (validInstruments.length === 0) {
+      return {
+        success: false,
+        quotes: {},
+        failureReason: 'NO_VALID_INSTRUMENTS',
+        errorMessage: 'No trading symbols or ISIN identifiers found for active holdings.',
+      };
+    }
+
+    if (connectedAccounts && connectedAccounts.length > 0) {
+      const specifiedAccount = brokerAccountId
+        ? connectedAccounts.find((a) => a.id === brokerAccountId)
+        : null;
+
+      if (specifiedAccount && !QUOTE_CAPABLE_BROKERS.has((specifiedAccount.broker || '').toUpperCase())) {
+        const eligibleFallback = findQuoteEligibleAccount(connectedAccounts);
+        if (eligibleFallback) {
+          brokerAccountId = eligibleFallback.id;
+        } else {
+          return {
+            success: false,
+            quotes: {},
+            failureReason: 'NO_ELIGIBLE_BROKER',
+            errorMessage: `Connected broker (${specifiedAccount.broker}) does not support live market quote feeds. Holding prices are updated via broker portfolio sync.`,
+          };
+        }
+      } else if (!brokerAccountId) {
+        const eligible = findQuoteEligibleAccount(connectedAccounts);
+        if (!eligible) {
+          const brokerNames = connectedAccounts.map((a) => a.broker).join(', ');
+          return {
+            success: false,
+            quotes: {},
+            failureReason: 'NO_ELIGIBLE_BROKER',
+            errorMessage: `Connected broker (${brokerNames}) does not support live market quote feeds. Holding prices are updated via broker portfolio sync.`,
+          };
+        } else {
+          brokerAccountId = eligible.id;
+        }
+      }
+    }
+
+    const activeAccount = brokerAccountId
+      ? (connectedAccounts || []).find((a) => a.id === brokerAccountId)
+      : findQuoteEligibleAccount(connectedAccounts || []);
+    const isUpstox = (activeAccount?.broker || '').toUpperCase() === 'UPSTOX';
+
+    // Upstox API v2 strictly requires instrument_key in the format EXCHANGE_SEGMENT|ISIN (e.g. NSE_EQ|INE848E01016).
+    // If raw trading symbols (without ISIN) are sent, Upstox API returns 400 Bad Request: Invalid instrument key for the entire batch.
+    // Exclude unresolved instruments from the batch quote request while proceeding with valid ones.
+    const isinRegex = /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/;
+    const quoteInstruments = isUpstox
+      ? validInstruments.filter((i) => Boolean(i.isin && isinRegex.test(i.isin.trim().toUpperCase())))
+      : validInstruments;
+
+    if (isUpstox && quoteInstruments.length === 0) {
+      return {
+        success: false,
+        quotes: {},
+        failureReason: 'NO_VALID_INSTRUMENTS',
+        errorMessage: 'Upstox requires valid ISIN identifiers (e.g. INE...) to fetch market quotes. Please ensure IPO holdings have recognized ISINs.',
+        totalHoldingsCount: validInstruments.length,
+        resolvedQuotesCount: 0,
+        unresolvedCount: validInstruments.length,
+      };
+    }
+
     try {
       const authHeaders = await getAuthHeaders();
-      if (!authHeaders.Authorization) return {};
+      if (!authHeaders.Authorization) {
+        return {
+          success: false,
+          quotes: {},
+          failureReason: 'AUTH_REQUIRED',
+          errorMessage: 'Authentication required. Please sign in to fetch market quotes.',
+          totalHoldingsCount: validInstruments.length,
+          resolvedQuotesCount: 0,
+          unresolvedCount: validInstruments.length,
+        };
+      }
 
-      const symbols = instruments
+      const symbols = quoteInstruments
         .map((i) => {
-          const sym = i.symbol?.trim();
+          let sym = i.symbol?.trim();
           if (!sym) return '';
+          if (sym.includes(':')) return sym.toUpperCase();
           const ex = (i.exchange || 'NSE').trim().toUpperCase();
-          return sym.includes(':') ? sym : `${ex}:${sym}`;
+          return `${ex}:${sym.toUpperCase()}`;
         })
         .filter(Boolean)
         .join(',');
 
-      const isins = instruments
+      const isins = quoteInstruments
         .map((i) => i.isin?.trim().toUpperCase())
         .filter(Boolean)
         .join(',');
@@ -519,84 +676,213 @@ export class BrokerApiService {
       );
 
       const data = extractResponseData<any>(response);
-      const quotesMap: MarketQuotesMap = {};
+      const quotesMap = parseMarketQuotesData(data);
+      const unresolvedCount = Math.max(0, validInstruments.length - quoteInstruments.length);
 
-      if (Array.isArray(data)) {
-        for (const item of data) {
-          const ltpVal = item.ltp ?? item.lastPrice ?? item.last_price ?? item.price;
-          if (typeof ltpVal === 'number' && ltpVal > 0) {
-            const quote: MarketQuoteItem = {
-              symbol: item.symbol,
-              isin: item.isin,
-              exchange: item.exchange,
-              ltp: ltpVal,
-              closePrice: item.closePrice ?? item.close,
-              change: item.change,
-              changePercent: item.changePercent ?? item.change_percent,
-              timestamp: item.timestamp ?? item.asOf,
-            };
-            if (item.isin) quotesMap[item.isin.toUpperCase()] = quote;
-            if (item.symbol) quotesMap[item.symbol.toUpperCase()] = quote;
-            if (item.symbol && item.exchange) {
-              const exUpper = item.exchange.toUpperCase();
-              const symUpper = item.symbol.toUpperCase();
-              quotesMap[`${exUpper}:${symUpper}`] = quote;
-              quotesMap[`${exUpper}_EQ|${symUpper}`] = quote;
-              quotesMap[`${exUpper}_SM|${symUpper}`] = quote;
-            }
-          }
-        }
-      } else if (data && typeof data === 'object') {
-        for (const [key, val] of Object.entries(data)) {
-          const v = val as any;
-          const ltpVal = typeof v === 'number' ? v : (v?.ltp ?? v?.lastPrice ?? v?.last_price ?? v?.price);
-          if (typeof ltpVal === 'number' && ltpVal > 0) {
-            const quote: MarketQuoteItem = {
-              symbol: v?.symbol || key,
-              isin: v?.isin,
-              exchange: v?.exchange,
-              ltp: ltpVal,
-              closePrice: v?.closePrice ?? v?.close,
-              change: v?.change,
-              changePercent: v?.changePercent ?? v?.change_percent,
-              timestamp: v?.timestamp ?? v?.asOf,
-            };
-            const upperKey = key.toUpperCase();
-            quotesMap[upperKey] = quote;
-            if (v?.isin) quotesMap[v.isin.toUpperCase()] = quote;
-            if (v?.symbol) quotesMap[v.symbol.toUpperCase()] = quote;
-            if (v?.exchange && v?.symbol) {
-              const exUpper = v.exchange.toUpperCase();
-              const symUpper = v.symbol.toUpperCase();
-              quotesMap[`${exUpper}:${symUpper}`] = quote;
-              quotesMap[`${exUpper}_EQ|${symUpper}`] = quote;
-              quotesMap[`${exUpper}_SM|${symUpper}`] = quote;
-            }
-            if (upperKey.includes('|') || upperKey.includes(':')) {
-              const symbolPart = upperKey.split(/[|:]/)[1];
-              if (symbolPart) quotesMap[symbolPart] = quote;
-            }
-          }
-        }
+      if (Object.keys(quotesMap).length === 0) {
+        return {
+          success: true,
+          quotes: {},
+          failureReason: 'PROVIDER_EMPTY',
+          errorMessage: 'Market quote provider returned no live prices for these symbols (market may be closed).',
+          totalHoldingsCount: validInstruments.length,
+          resolvedQuotesCount: 0,
+          unresolvedCount: validInstruments.length,
+        };
       }
-      return quotesMap;
+
+      return {
+        success: true,
+        quotes: quotesMap,
+        totalHoldingsCount: validInstruments.length,
+        resolvedQuotesCount: quoteInstruments.length,
+        unresolvedCount,
+      };
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const status = (err as any)?.status ?? (err as any)?.statusCode ?? 0;
+      const msg = (err as any)?.message || String(err);
+      const code = (err as any)?.code || '';
+      const lowerMsg = msg.toLowerCase();
+
       if (typeof __DEV__ !== 'undefined' && __DEV__) {
-        console.warn(`[BrokerApiService] getMarketQuotes failed (${msg}) -> preserving safe offline/stored LTP fallback`);
+        console.warn(`[BrokerApiService] getMarketQuotesDetailed failed (${msg}) status=${status} code=${code}`);
       }
-      return {};
+
+      // Check for auth / token expiration errors (including Upstox 401 rethrown by backend as 400 Bad Request)
+      if (
+        status === 401 ||
+        status === 403 ||
+        code === 'AUTH_REQUIRED' ||
+        code === 'UNAUTHORIZED' ||
+        lowerMsg.includes('401') ||
+        lowerMsg.includes('unauthorized') ||
+        lowerMsg.includes('token expired') ||
+        lowerMsg.includes('token has expired') ||
+        lowerMsg.includes('invalid token') ||
+        lowerMsg.includes('access token is required')
+      ) {
+        return {
+          success: false,
+          quotes: {},
+          failureReason: 'AUTH_REQUIRED',
+          statusCode: 401,
+          errorMessage: isUpstox
+            ? 'Your Upstox session has expired. Please reconnect your Upstox account in Profile.'
+            : 'Authentication expired. Please sign in again to fetch market quotes.',
+        };
+      }
+
+      if (status === 429 || lowerMsg.includes('rate limit') || lowerMsg.includes('too many requests')) {
+        return {
+          success: false,
+          quotes: {},
+          failureReason: 'RATE_LIMITED',
+          statusCode: 429,
+          errorMessage: 'Market quote request limit reached. Please wait a moment before trying again.',
+        };
+      }
+
+      if (status === 400 && lowerMsg.includes('does not support market quotes')) {
+        return {
+          success: false,
+          quotes: {},
+          failureReason: 'NO_ELIGIBLE_BROKER',
+          statusCode: 400,
+          errorMessage: msg || 'Connected broker does not support live market quote feeds.',
+        };
+      }
+
+      if (status === 400 && (lowerMsg.includes('invalid instrument key') || lowerMsg.includes('failed to find quote'))) {
+        return {
+          success: false,
+          quotes: {},
+          failureReason: 'NO_VALID_INSTRUMENTS',
+          statusCode: 400,
+          errorMessage: 'Upstox requires valid ISIN identifiers (e.g. INE...) to fetch live market quotes.',
+        };
+      }
+
+      if (status === 0 || code === 'NETWORK_ERROR' || lowerMsg.includes('abort') || lowerMsg.includes('network')) {
+        return {
+          success: false,
+          quotes: {},
+          failureReason: 'NETWORK_ERROR',
+          statusCode: 0,
+          errorMessage: 'Network connection issue. Unable to reach market quote service.',
+        };
+      }
+
+      if (status >= 500) {
+        return {
+          success: false,
+          quotes: {},
+          failureReason: 'SERVER_ERROR',
+          statusCode: status,
+          errorMessage: 'Market quote service temporarily unavailable. Please try again shortly.',
+        };
+      }
+
+      return {
+        success: false,
+        quotes: {},
+        failureReason: 'SERVER_ERROR',
+        statusCode: status,
+        errorMessage: msg || 'Failed to fetch market quotes.',
+      };
     }
+  }
+
+  /**
+   * Retrieves real-time market quotes (LTP) in bulk for arbitrary instruments.
+   * LTP is purely market data, separate from ownership holdings or trades.
+   * Uses any available connected broker's market-quote capability.
+   */
+  public async getMarketQuotes(
+    userId: string | null | undefined,
+    instruments: Array<{ symbol?: string | null; isin?: string | null; exchange?: string | null }>,
+    brokerAccountId?: string | null,
+  ): Promise<MarketQuotesMap> {
+    const res = await this.getMarketQuotesDetailed(userId, instruments, brokerAccountId);
+    return res.quotes || {};
   }
 }
 
 /**
+ * Parses raw quote response (array or object map) into a normalized MarketQuotesMap.
+ */
+export function parseMarketQuotesData(data: any): MarketQuotesMap {
+  const quotesMap: MarketQuotesMap = {};
+  if (!data) return quotesMap;
+
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const ltpVal = item.ltp ?? item.lastPrice ?? item.last_price ?? item.price;
+      if (typeof ltpVal === 'number' && ltpVal > 0) {
+        const quote: MarketQuoteItem = {
+          symbol: item.symbol,
+          isin: item.isin,
+          exchange: item.exchange,
+          ltp: ltpVal,
+          closePrice: item.closePrice ?? item.close,
+          change: item.change,
+          changePercent: item.changePercent ?? item.change_percent,
+          timestamp: item.timestamp ?? item.asOf,
+        };
+        if (item.isin) quotesMap[item.isin.toUpperCase()] = quote;
+        if (item.symbol) quotesMap[item.symbol.toUpperCase()] = quote;
+        if (item.symbol && item.exchange) {
+          const exUpper = item.exchange.toUpperCase();
+          const symUpper = item.symbol.toUpperCase();
+          quotesMap[`${exUpper}:${symUpper}`] = quote;
+          quotesMap[`${exUpper}_EQ|${symUpper}`] = quote;
+          quotesMap[`${exUpper}_SM|${symUpper}`] = quote;
+        }
+      }
+    }
+  } else if (typeof data === 'object') {
+    for (const [key, val] of Object.entries(data)) {
+      const v = val as any;
+      const ltpVal = typeof v === 'number' ? v : (v?.ltp ?? v?.lastPrice ?? v?.last_price ?? v?.price);
+      if (typeof ltpVal === 'number' && ltpVal > 0) {
+        const quote: MarketQuoteItem = {
+          symbol: v?.symbol || key,
+          isin: v?.isin,
+          exchange: v?.exchange,
+          ltp: ltpVal,
+          closePrice: v?.closePrice ?? v?.close,
+          change: v?.change,
+          changePercent: v?.changePercent ?? v?.change_percent,
+          timestamp: v?.timestamp ?? v?.asOf,
+        };
+        const upperKey = key.toUpperCase();
+        quotesMap[upperKey] = quote;
+        if (v?.isin) quotesMap[v.isin.toUpperCase()] = quote;
+        if (v?.symbol) quotesMap[v.symbol.toUpperCase()] = quote;
+        if (v?.exchange && v?.symbol) {
+          const exUpper = v.exchange.toUpperCase();
+          const symUpper = v.symbol.toUpperCase();
+          quotesMap[`${exUpper}:${symUpper}`] = quote;
+          quotesMap[`${exUpper}_EQ|${symUpper}`] = quote;
+          quotesMap[`${exUpper}_SM|${symUpper}`] = quote;
+        }
+        if (upperKey.includes('|') || upperKey.includes(':')) {
+          const symbolPart = upperKey.split(/[|:]/)[1];
+          if (symbolPart) quotesMap[symbolPart] = quote;
+        }
+      }
+    }
+  }
+  return quotesMap;
+}
+
+/**
  * Finds any available connected broker account that can provide market quotes.
- * LTP is market data, so ANY single connected broker account can provide quotes
- * for all family members' IPOVault holdings.
+ * Prioritizes quote-capable brokers (Upstox, Dhan, Fyers, Groww).
  */
 export function findAvailableQuoteProvider(accounts: BrokerAccountItem[]): BrokerAccountItem | null {
   if (!Array.isArray(accounts) || accounts.length === 0) return null;
+  const quoteCapable = findQuoteEligibleAccount(accounts);
+  if (quoteCapable) return quoteCapable;
   return (
     accounts.find((acc) => acc.connection?.status === 'CONNECTED' && acc.isActive) ||
     null

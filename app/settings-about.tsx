@@ -25,6 +25,9 @@ export default function SettingsAboutScreen() {
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
 
+  const settingIconColor = isDark ? '#FFFFFF' : '#111827';
+  const settingIconBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)';
+
   const [showWhatsNewModal, setShowWhatsNewModal] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [showLicensesModal, setShowLicensesModal] = useState(false);
@@ -54,8 +57,8 @@ export default function SettingsAboutScreen() {
 
         {/* App Version Card */}
         <View style={[styles.appHeaderCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={[styles.appLogoWrap, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF', borderColor: isDark ? '#334155' : '#DBEAFE' }]}>
-            <Feather name="trending-up" size={26} color="#3B82F6" />
+          <View style={[styles.appLogoWrap, { backgroundColor: settingIconBg, borderColor: colors.border }]}>
+            <Feather name="trending-up" size={26} color={settingIconColor} />
           </View>
 
           <View style={{ flex: 1, gap: 2 }}>
@@ -78,8 +81,8 @@ export default function SettingsAboutScreen() {
             activeOpacity={0.7}
             onPress={() => setShowWhatsNewModal(true)}
           >
-            <View style={[styles.menuIconWrap, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7' }]}>
-              <Feather name="star" size={17} color="#F59E0B" />
+            <View style={[styles.menuIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="star" size={17} color={settingIconColor} />
             </View>
             <View style={styles.menuTextWrap}>
               <Text style={[styles.menuTitle, { color: colors.foreground }]}>What's New</Text>
@@ -94,8 +97,8 @@ export default function SettingsAboutScreen() {
             activeOpacity={0.7}
             onPress={() => setShowTermsModal(true)}
           >
-            <View style={[styles.menuIconWrap, { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.15)' : '#F5F3FF' }]}>
-              <Feather name="file-text" size={17} color="#8B5CF6" />
+            <View style={[styles.menuIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="file-text" size={17} color={settingIconColor} />
             </View>
             <View style={styles.menuTextWrap}>
               <Text style={[styles.menuTitle, { color: colors.foreground }]}>Terms of Service</Text>
@@ -110,8 +113,8 @@ export default function SettingsAboutScreen() {
             activeOpacity={0.7}
             onPress={() => router.push('/privacy-policy')}
           >
-            <View style={[styles.menuIconWrap, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' }]}>
-              <Feather name="shield" size={17} color="#3B82F6" />
+            <View style={[styles.menuIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="shield" size={17} color={settingIconColor} />
             </View>
             <View style={styles.menuTextWrap}>
               <Text style={[styles.menuTitle, { color: colors.foreground }]}>Privacy Policy</Text>
@@ -126,8 +129,8 @@ export default function SettingsAboutScreen() {
             activeOpacity={0.7}
             onPress={() => setShowLicensesModal(true)}
           >
-            <View style={[styles.menuIconWrap, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5' }]}>
-              <Feather name="code" size={17} color="#10B981" />
+            <View style={[styles.menuIconWrap, { backgroundColor: settingIconBg }]}>
+              <Feather name="code" size={17} color={settingIconColor} />
             </View>
             <View style={styles.menuTextWrap}>
               <Text style={[styles.menuTitle, { color: colors.foreground }]}>Open Source Licenses</Text>
@@ -157,8 +160,8 @@ export default function SettingsAboutScreen() {
             <ScrollView style={{ maxHeight: 340 }}>
               <View style={{ gap: 14, paddingVertical: 6 }}>
                 <View style={styles.whatsNewItem}>
-                  <View style={[styles.whatsNewIconWrap, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.15)' : '#EFF6FF' }]}>
-                    <Feather name="zap" size={16} color="#3B82F6" />
+                  <View style={[styles.whatsNewIconWrap, { backgroundColor: settingIconBg }]}>
+                    <Feather name="zap" size={16} color={settingIconColor} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.whatsNewItemTitle, { color: colors.foreground }]}>Faster Dashboard Loading</Text>
@@ -169,8 +172,8 @@ export default function SettingsAboutScreen() {
                 </View>
 
                 <View style={styles.whatsNewItem}>
-                  <View style={[styles.whatsNewIconWrap, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5' }]}>
-                    <Feather name="link-2" size={16} color="#10B981" />
+                  <View style={[styles.whatsNewIconWrap, { backgroundColor: settingIconBg }]}>
+                    <Feather name="link-2" size={16} color={settingIconColor} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.whatsNewItemTitle, { color: colors.foreground }]}>Improved Broker Integration</Text>
@@ -181,8 +184,8 @@ export default function SettingsAboutScreen() {
                 </View>
 
                 <View style={styles.whatsNewItem}>
-                  <View style={[styles.whatsNewIconWrap, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FEF3C7' }]}>
-                    <Feather name="bar-chart" size={16} color="#F59E0B" />
+                  <View style={[styles.whatsNewIconWrap, { backgroundColor: settingIconBg }]}>
+                    <Feather name="bar-chart" size={16} color={settingIconColor} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.whatsNewItemTitle, { color: colors.foreground }]}>New Performance Bar Chart</Text>
