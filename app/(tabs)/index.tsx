@@ -38,22 +38,6 @@ import { triggerCentralizedIPOSync } from '@/services/ipo/centralizedSync';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 import { useAuth } from '@/context/AuthContext';
-import {
-  BrokerAccountItem,
-  brokerApiService,
-  DashboardIpoHoldingItem,
-  UserPortfolioSummaryResponse,
-  MarketQuotesMap,
-  findQuoteEligibleAccount,
-} from '@/services/broker/BrokerApiService';
-import {
-  enrichApplicationsWithBrokerData,
-  findMatchingBrokerInvestment,
-  getBrokerLtpForApplication,
-  resolveCanonicalBrokerUserId,
-  syncBrokerHoldingPricesToLocalDb,
-  extractHoldingInstrumentsForQuotes,
-} from '@/utils/brokerMatching';
 import { AllotmentSuccessModal } from '@/components/allotment/AllotmentSuccessModal';
 import { useAllotmentResultModal } from '@/hooks/useAllotmentResultModal';
 import { useNotifications } from '@/context/NotificationContext';
@@ -142,26 +126,7 @@ export default function DashboardScreen() {
     }, [recheckAllotmentModal])
   );
 
-  const [brokerAccounts, setBrokerAccounts] = useState<BrokerAccountItem[]>([]);
-  const [brokerPortfolio, setBrokerPortfolio] =
-    useState<UserPortfolioSummaryResponse | null>(null);
-  const [marketQuotes, setMarketQuotes] = useState<MarketQuotesMap>({});
-  const [brokerHoldings, setBrokerHoldings] = useState<
-    DashboardIpoHoldingItem[]
-  >([]);
-  const [loadingHoldings, setLoadingHoldings] = useState<boolean>(false);
   const [isHoldingsExpanded, setIsHoldingsExpanded] = useState<boolean>(true);
-  const [isRefreshingQuotes, setIsRefreshingQuotes] = useState<boolean>(false);
-
-  const activeUserId = useMemo(() => {
-    return resolveCanonicalBrokerUserId(authUser, users);
-  }, [authUser, users]);
-
-  const isBrokerConnected = useMemo(() => {
-    return brokerAccounts.some(
-      (acc) => acc.connection?.status === 'CONNECTED' && acc.isActive,
-    );
-  }, [brokerAccounts]);
 
   const db = useSQLiteContext();
   const [ipoHubItems, setIpoHubItems] = useState<any[]>([]);
@@ -184,270 +149,7 @@ export default function DashboardScreen() {
   }, [ipos, ipoHubItems]);
 
   const inFlightIpoHubRef = useRef<Promise<void> | null>(null);
-  const inFlightHoldingsRef = useRef<Promise<void> | null>(null);
 
-  const loadBrokerHoldingsData = useCallback(async () => {
-    if (!activeUserId) return;
-    if (inFlightHoldingsRef.current) {
-      return inFlightHoldingsRef.current;
-    }
-
-    const promise = (async () => {
-      try {
-        setLoadingHoldings(true);
-        const accounts = await brokerApiService.getAccounts(activeUserId);
-      setBrokerAccounts(accounts);
-
-      const connectedAccounts = accounts.filter(
-        (acc) => acc.connection?.status === 'CONNECTED' && acc.isActive,
-      );
-
-      if (connectedAccounts.length === 0) {
-        setBrokerPortfolio(null);
-        return;
-      }
-
-      // 1. Fetch user portfolio (holdings & sell trades for linked accounts)
-      const portfolioData = await brokerApiService.getUserPortfolio(activeUserId);
-      setBrokerPortfolio(portfolioData);
-
-      // 2. Fetch market quotes (LTP) for ALL holding applications via any connected broker quote capability
-      const holdingInstruments = extractHoldingInstrumentsForQuotes(
-        applications,
-        allIpos,
-        portfolioData?.investments,
-      );
-      const quoteCapableAccount = findQuoteEligibleAccount(connectedAccounts);
-      if (holdingInstruments.length > 0 && quoteCapableAccount) {
-        const quotes = await brokerApiService.getMarketQuotes(
-          activeUserId,
-          holdingInstruments,
-          quoteCapableAccount.id,
-        );
-        if (quotes && Object.keys(quotes).length > 0) {
-          setMarketQuotes((prev) => ({ ...prev, ...quotes }));
-        }
-      }
-
-      // 3. Persist auto-detected sales into SQLite for linked Holding applications
-      if (portfolioData?.investments && db) {
-        syncBrokerHoldingPricesToLocalDb(
-          applications,
-          allIpos,
-          portfolioData.investments,
-          db,
-          refresh,
-        ).catch(() => {});
-      }
-    } catch (err) {
-      console.warn('[Dashboard] Failed to load broker holdings data:', err);
-    } finally {
-      setLoadingHoldings(false);
-      inFlightHoldingsRef.current = null;
-    }
-  })();
-
-  inFlightHoldingsRef.current = promise;
-  return promise;
-  }, [activeUserId, applications, allIpos, db, refresh]);
-
-  const handleRefreshHoldingsQuotes = useCallback(async () => {
-    if (isRefreshingQuotes) return;
-
-    try {
-      setIsRefreshingQuotes(true);
-      if (Platform.OS !== 'web') {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-      }
-
-      // 1. Refresh local database applications and state
-      if (refresh) {
-        try {
-          await refresh();
-        } catch {}
-      }
-
-      // If no authenticated or linked user profile exists
-      if (!activeUserId) {
-        if (Platform.OS !== 'web') {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-        }
-        showInfo('No Profile Selected', 'Connect a broker account in Profile to retrieve live market quotes.');
-        return;
-      }
-
-      // 2. Fetch fresh broker accounts if active user is resolved
-      let currentAccounts = brokerAccounts;
-      try {
-        currentAccounts = await brokerApiService.getAccounts(activeUserId);
-        setBrokerAccounts(currentAccounts);
-      } catch (err) {
-        if (__DEV__) console.warn('[Dashboard] Failed to refresh broker accounts:', err);
-      }
-
-      const connectedAccounts = currentAccounts.filter(
-        (acc) => acc.connection?.status === 'CONNECTED' && acc.isActive,
-      );
-
-      if (connectedAccounts.length === 0) {
-        if (Platform.OS !== 'web') {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-        }
-        showInfo('No Broker Connected', 'Please connect a broker account to fetch real-time market prices.');
-        return;
-      }
-
-      const holdingInstruments = extractHoldingInstrumentsForQuotes(
-        applications,
-        allIpos,
-        brokerPortfolio?.investments,
-      );
-      if (holdingInstruments.length === 0) {
-        if (Platform.OS !== 'web') {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-        }
-        showInfo('No Holdings Found', 'No active IPO holding instruments found to quote.');
-        return;
-      }
-
-      const quoteCapableAccount = findQuoteEligibleAccount(connectedAccounts);
-
-      // 3. Concurrently fetch fresh portfolio and detailed live quotes
-      try {
-        const portfolioPromise = brokerApiService.getUserPortfolio(activeUserId);
-        const quotesPromise = brokerApiService.getMarketQuotesDetailed(
-          activeUserId,
-          holdingInstruments,
-          quoteCapableAccount?.id || null,
-          connectedAccounts,
-        );
-
-        const [portfolioData, quotesResult] = await Promise.all([
-          portfolioPromise,
-          quotesPromise,
-        ]);
-
-        let portfolioUpdated = false;
-        if (portfolioData) {
-          setBrokerPortfolio(portfolioData);
-          if (portfolioData.investments && portfolioData.investments.length > 0) {
-            portfolioUpdated = true;
-            if (db) {
-              syncBrokerHoldingPricesToLocalDb(
-                applications,
-                allIpos,
-                portfolioData.investments,
-                db,
-                refresh,
-              ).catch(() => {});
-            }
-          }
-        }
-
-        const freshQuotes = quotesResult.quotes || {};
-        const quoteCount = Object.keys(freshQuotes).length;
-
-        if (quoteCount > 0) {
-          setMarketQuotes((prev) => ({ ...prev, ...freshQuotes }));
-          if (Platform.OS !== 'web') {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-          }
-          const totalHoldings = quotesResult.totalHoldingsCount ?? holdingInstruments.length;
-          const unresolved = quotesResult.unresolvedCount ?? Math.max(0, totalHoldings - quoteCount);
-          if (unresolved > 0) {
-            showInfo(
-              'Holdings Refreshed (Partial)',
-              `Updated market quotes for ${quoteCount} of ${totalHoldings} holdings. ${unresolved} holding(s) pending exchange ISIN mapping.`,
-            );
-          }
-        } else if (portfolioUpdated) {
-          // Broker portfolio successfully provided latest holding prices (e.g. Zerodha or closed market)
-          if (Platform.OS !== 'web') {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-          }
-        } else {
-          if (Platform.OS !== 'web') {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-          }
-
-          switch (quotesResult.failureReason) {
-            case 'AUTH_REQUIRED':
-              showInfo(
-                'Authentication Required',
-                quotesResult.errorMessage || 'Please sign in again to fetch market quotes.',
-              );
-              break;
-            case 'NO_ELIGIBLE_BROKER':
-              showInfo(
-                'Live Quotes Unavailable',
-                quotesResult.errorMessage || 'Connected broker does not support live market quote feeds.',
-              );
-              break;
-            case 'NO_VALID_INSTRUMENTS':
-              showInfo(
-                'Instruments Missing',
-                quotesResult.errorMessage || 'No valid trading symbols or ISINs found for these holdings.',
-              );
-              break;
-            case 'RATE_LIMITED':
-              showInfo(
-                'Rate Limit Reached',
-                quotesResult.errorMessage || 'Quote request limit reached. Please wait a moment before trying again.',
-              );
-              break;
-            case 'NETWORK_ERROR':
-              showInfo(
-                'Network Error',
-                quotesResult.errorMessage || 'Network connection issue. Unable to reach market quote service.',
-              );
-              break;
-            case 'SERVER_ERROR':
-              showInfo(
-                'Service Unavailable',
-                quotesResult.errorMessage || 'Quote service is temporarily unavailable. Please try again later.',
-              );
-              break;
-            case 'PROVIDER_EMPTY':
-              showInfo(
-                'Quotes Unavailable',
-                quotesResult.errorMessage || 'Market quote provider returned no live prices for these symbols (market may be closed).',
-              );
-              break;
-            default:
-              showInfo(
-                'Quotes Unavailable',
-                quotesResult.errorMessage || 'Live market quotes are currently unavailable for these holdings.',
-              );
-              break;
-          }
-        }
-      } catch (quoteErr) {
-        if (__DEV__) console.warn('[Dashboard] Failed to fetch quotes during refresh:', quoteErr);
-        if (Platform.OS !== 'web') {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-        }
-        showInfo('Quote Error', 'Failed to retrieve live quotes from the broker service.');
-      }
-    } catch (err) {
-      if (__DEV__) console.warn('[Dashboard] Failed to refresh quotes manually:', err);
-      if (Platform.OS !== 'web') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-      }
-      showInfo('Refresh Error', 'An unexpected error occurred while refreshing holdings.');
-    } finally {
-      setIsRefreshingQuotes(false);
-    }
-  }, [
-    isRefreshingQuotes,
-    activeUserId,
-    brokerAccounts,
-    applications,
-    allIpos,
-    brokerPortfolio,
-    db,
-    refresh,
-    showInfo,
-  ]);
 
   const loadIpoHubData = useCallback(async () => {
     if (inFlightIpoHubRef.current) {
@@ -563,7 +265,6 @@ export default function DashboardScreen() {
       await Promise.all([
         refresh(),
         loadIpoHubData(),
-        loadBrokerHoldingsData(),
         db ? triggerCentralizedIPOSync(db, { force: true, source: 'Dashboard Pull-to-Refresh' }) : Promise.resolve(),
       ]);
     } catch (err) {
@@ -738,15 +439,8 @@ export default function DashboardScreen() {
     }
   };
 
-  // ── Merge broker-backed live portfolio with local applications ──────────
-  const effectiveApplications = useMemo(() => {
-    return enrichApplicationsWithBrokerData(
-      applications,
-      allIpos,
-      brokerPortfolio?.investments,
-      marketQuotes,
-    );
-  }, [applications, brokerPortfolio, allIpos, marketQuotes]);
+  // ── Applications list ──────────
+  const effectiveApplications = applications;
 
   // ── base filter (user / year / IPO) ──────────────────────────────
   const baseFilteredApps = effectiveApplications.filter((a) => {
@@ -1206,9 +900,9 @@ export default function DashboardScreen() {
             </View>
 
             {/* ── IPO Holdings Section ── */}
-            {(isBrokerConnected || holdingApplications.length > 0) && (
+            {holdingApplications.length > 0 && (
               <View style={[styles.dashboardHoldingsSection, { borderTopColor: colors.border }]}>
-                {/* Holdings Header with Expand/Collapse Toggle & Manual LTP Refresh */}
+                {/* Holdings Header with Expand/Collapse Toggle */}
                 <View style={styles.dashboardHoldingsHeader}>
                   <TouchableOpacity
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}
@@ -1219,25 +913,6 @@ export default function DashboardScreen() {
                     <Text style={[styles.dashboardHoldingsTitle, { color: colors.mutedForeground }]}>
                       IPO HOLDINGS ({holdingApplications.length})
                     </Text>
-                    {/* Manual LTP Refresh Icon */}
-                    <TouchableOpacity
-                      onPress={handleRefreshHoldingsQuotes}
-                      disabled={isRefreshingQuotes}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      style={styles.dashboardHoldingsRefreshBtn}
-                      testID="holdings-ltp-refresh-btn"
-                      accessibilityLabel="Refresh Holdings Market Quotes"
-                    >
-                      {isRefreshingQuotes ? (
-                        <ActivityIndicator
-                          size="small"
-                          color={colors.primary}
-                          style={{ transform: [{ scale: 0.65 }] }}
-                        />
-                      ) : (
-                        <Feather name="refresh-cw" size={11.5} color={colors.primary} />
-                      )}
-                    </TouchableOpacity>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -1260,13 +935,7 @@ export default function DashboardScreen() {
 
                 {/* Holdings Compact Cards (Expandable) */}
                 {isHoldingsExpanded && (
-                  loadingHoldings && holdingApplications.length === 0 ? (
-                    <View style={{ paddingVertical: 12, alignItems: 'center' }}>
-                      <Text style={[styles.dashboardHoldingsEmptyText, { color: colors.mutedForeground }]}>
-                        Updating live broker holdings…
-                      </Text>
-                    </View>
-                  ) : holdingApplications.length === 0 ? (
+                  holdingApplications.length === 0 ? (
                     <View style={{ paddingVertical: 8, alignItems: 'center' }}>
                       <Text style={[styles.dashboardHoldingsEmptyText, { color: colors.mutedForeground }]}>
                         No active IPO shares currently held.
@@ -1347,7 +1016,7 @@ export default function DashboardScreen() {
                                     { color: colors.mutedForeground },
                                   ]}
                                 >
-                                  LTP:{' '}
+                                  Price:{' '}
                                   <Text
                                     style={[
                                       styles.dashboardHoldingCardMetaValue,

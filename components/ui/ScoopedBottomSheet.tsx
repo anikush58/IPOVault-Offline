@@ -23,6 +23,8 @@ interface ScoopedBottomSheetProps {
   onClose: () => void;
   children: React.ReactNode;
   maxHeight?: string | number;
+  height?: string | number;
+  autoHeight?: boolean;
   style?: ViewStyle;
   showCloseButton?: boolean;
   overlay?: React.ReactNode;
@@ -33,6 +35,8 @@ export function ScoopedBottomSheet({
   onClose,
   children,
   maxHeight = '90%',
+  height,
+  autoHeight = false,
   style,
   showCloseButton = true,
   overlay,
@@ -49,8 +53,25 @@ export function ScoopedBottomSheet({
 
   if (!visible) return null;
 
+  const resolvedTargetHeight = React.useMemo(() => {
+    const raw = height ?? maxHeight;
+    if (typeof raw === 'number') {
+      return raw;
+    }
+    if (typeof raw === 'string' && raw.endsWith('%')) {
+      const pct = parseFloat(raw) / 100;
+      if (!isNaN(pct) && pct > 0) {
+        return Math.round(windowHeight * pct);
+      }
+    }
+    return Math.round(windowHeight * 0.9);
+  }, [height, maxHeight, windowHeight]);
+
   const effectiveWidth = measuredWidth > 0 ? measuredWidth : windowWidth;
-  const effectiveHeight = measuredHeight > 0 ? measuredHeight : Math.round(windowHeight * 0.9);
+  const effectiveHeight =
+    autoHeight && measuredHeight > 0
+      ? measuredHeight
+      : resolvedTargetHeight;
 
   const R = 32; // Top corner radius
   const SCOOP_W = 60; // Scoop half-width
@@ -104,23 +125,22 @@ export function ScoopedBottomSheet({
         />
 
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.keyboardAvoid}
         >
           <Pressable
             onLayout={(e) => {
-              const { width, height } = e.nativeEvent.layout;
-              if (width > 0 && height > 0) {
+              const { width, height: h } = e.nativeEvent.layout;
+              if (width > 0 && h > 0) {
                 setMeasuredWidth(width);
-                setMeasuredHeight(height);
+                setMeasuredHeight(h);
               }
             }}
             style={[
               styles.sheetContainer,
-              {
-                maxHeight: maxHeight as any,
-                paddingBottom: bottomPad,
-              },
+              autoHeight
+                ? { maxHeight: resolvedTargetHeight, paddingBottom: bottomPad }
+                : { height: resolvedTargetHeight, maxHeight: resolvedTargetHeight, paddingBottom: bottomPad },
               style,
             ]}
             onPress={() => {}}
@@ -234,8 +254,8 @@ const styles = StyleSheet.create({
   contentContainer: {
     paddingTop: 38,
     width: '100%',
-    flexShrink: 1,
-    maxHeight: '100%',
+    flex: 1,
+    minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
   },

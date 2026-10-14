@@ -26,19 +26,10 @@ import { useDB, type User } from '@/context/DBContext';
 import { IconButton } from '@/components/ui/IconButton';
 import { UserCard } from '@/components/UserCard';
 import { AddUserModal } from '@/components/AddUserModal';
-import { BrokerConnectSuccessModal } from '@/components/BrokerConnectSuccessModal';
+
+
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { Tabs } from '@/components/ui/Tabs';
-import {
-  BrokerAccountItem,
-  brokerApiService,
-  DerivedInvestmentSummary,
-  getCanonicalBroker,
-  parseQueryParams,
-} from '@/services/broker/BrokerApiService';
-import { resolveCanonicalBrokerUserId } from '@/utils/brokerMatching';
-
-WebBrowser.maybeCompleteAuthSession();
 
 export default function UsersScreen() {
   const colors = useColors();
@@ -53,119 +44,15 @@ export default function UsersScreen() {
     archiveUser,
     unarchiveUser,
   } = useDB();
-  const { user: authUser } = useAuth();
   const { showConfirm, showError } = useDialog();
   const insets = useSafeAreaInsets();
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'active' | 'archived'>('active');
-  const [brokerAccounts, setBrokerAccounts] = useState<BrokerAccountItem[]>([]);
-  const [investmentsByProfile, setInvestmentsByProfile] = useState<
-    Record<string, DerivedInvestmentSummary[]>
-  >({});
-  const [brokerActionUserId, setBrokerActionUserId] = useState<string | null>(
-    null,
-  );
-  const [connectedBrokerSuccess, setConnectedBrokerSuccess] = useState<{
-    brokerName: string;
-    accountName?: string;
-  } | null>(null);
-
-  // Active user ID for backend scoping
-  const activeUserId = useMemo(() => {
-    return resolveCanonicalBrokerUserId(authUser, users);
-  }, [authUser, users]);
-
-  // Load broker accounts & investment summaries for connected user profiles
-  const loadBrokerAccounts = useCallback(async (): Promise<BrokerAccountItem[]> => {
-    if (!activeUserId) return [];
-    try {
-      const accounts = await brokerApiService.getAccounts(activeUserId);
-      setBrokerAccounts(accounts);
-
-      // Fetch investment summaries for all connected accounts
-      const connectedAccounts = accounts.filter(
-        (acc) => acc.connection?.status === 'CONNECTED' && acc.isActive,
-      );
-
-      const summariesMap: Record<string, DerivedInvestmentSummary[]> = {};
-      await Promise.all(
-        connectedAccounts.map(async (acc) => {
-          const userApps = applications.filter(
-            (a) => a.user_id === acc.profileId && a.ipo_id,
-          );
-          if (!userApps.length) return;
-
-          const summaries: DerivedInvestmentSummary[] = [];
-          for (const app of userApps) {
-            const summary = await brokerApiService.getInvestmentSummary(
-              activeUserId,
-              acc.id,
-              app.ipo_id,
-            );
-            if (summary) {
-              summaries.push({
-                ...summary,
-                ipoName: app.ipo_name,
-              });
-            }
-          }
-          if (summaries.length > 0) {
-            summariesMap[acc.profileId] = summaries;
-          }
-        }),
-      );
-
-      setInvestmentsByProfile((prev) => ({
-        ...prev,
-        ...summariesMap,
-      }));
-      return accounts;
-    } catch (err) {
-      console.warn('[UsersScreen] Failed to load broker accounts / investments:', err);
-      return [];
-    }
-  }, [activeUserId, applications]);
-
-  // Trigger fetch when activeUserId resolves/hydrates
-  useEffect(() => {
-    if (activeUserId) {
-      loadBrokerAccounts();
-    }
-  }, [activeUserId, loadBrokerAccounts]);
-
-  // Re-fetch fresh broker accounts every time screen is focused
-  useFocusEffect(
-    useCallback(() => {
-      loadBrokerAccounts();
-    }, [loadBrokerAccounts]),
-  );
-
-  // Listen for background/callback broker update events
-  useEffect(() => {
-    const sub = DeviceEventEmitter.addListener(
-      'BROKER_ACCOUNT_UPDATED',
-      (payload?: { account?: BrokerAccountItem }) => {
-        if (payload?.account) {
-          setBrokerAccounts((prev) => {
-            const exists = prev.some((a) => a.id === payload.account!.id);
-            if (exists) {
-              return prev.map((a) => (a.id === payload.account!.id ? payload.account! : a));
-            }
-            return [...prev, payload.account!];
-          });
-        }
-        loadBrokerAccounts();
-      },
-    );
-    return () => {
-      sub.remove();
-    };
-  }, [loadBrokerAccounts]);
 
   const handleRefresh = useCallback(async () => {
-    await Promise.all([refresh(), loadBrokerAccounts()]);
-  }, [refresh, loadBrokerAccounts]);
+    await refresh();
+  }, [refresh]);
 
   const { activeUsers, archivedUsers } = useMemo(() => {
     const active: User[] = [];
@@ -234,302 +121,7 @@ export default function UsersScreen() {
     });
   };
 
-  // Handle incoming deep link when returning from external browser or OAuth redirect
-  useEffect(() => {
-    Linking.getInitialURL().then((initialUrl) => {
-      console.log('[BrokerAuth Diagnostic] Linking.getInitialURL():', initialUrl ?? 'none');
-    });
 
-    const handleUrl = async (event: { url: string }) => {
-      console.log('[BrokerAuth Diagnostic] Linking.addEventListener received URL:', event?.url);
-      const url = event?.url;
-      if (!url) return;
-      const query = parseQueryParams(url);
-      const hasToken =
-        query.code ||
-        query.tokenId ||
-        query.token_id ||
-        query.auth_code ||
-        query.authCode ||
-        query.request_token ||
-        query.requestToken;
-
-      if (query.error || query.error_description || query.status === 'cancelled') {
-        const isCancel =
-          query.error === 'access_denied' ||
-          query.error === 'user_cancelled' ||
-          query.status === 'cancelled';
-        if (!isCancel) {
-          showError(
-            'Connection Failed',
-            query.error_description ||
-              query.error ||
-              'Broker authorization was rejected.',
-          );
-        }
-        await loadBrokerAccounts();
-        return;
-      }
-
-      if (hasToken || query.status === 'success') {
-        const latestAccounts = await loadBrokerAccounts();
-        const targetAccId = query.accountId || query.account_id;
-        const matchingAcc = targetAccId
-          ? latestAccounts.find((a) => a.id === targetAccId && a.connection?.status === 'CONNECTED' && a.isActive)
-          : latestAccounts.find((a) => a.connection?.status === 'CONNECTED' && a.isActive);
-        if (matchingAcc) {
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          setConnectedBrokerSuccess({
-            brokerName: matchingAcc.broker || 'Broker',
-            accountName: matchingAcc.accountName || undefined,
-          });
-        }
-      }
-    };
-
-    const subscription = Linking.addEventListener('url', handleUrl);
-    return () => {
-      subscription.remove();
-    };
-  }, [loadBrokerAccounts, showError]);
-
-  const handleConnectBroker = async (targetUser: User) => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    } catch {}
-
-    const canonical = getCanonicalBroker(targetUser.broker);
-    if (!canonical) {
-      showError(
-        'Unsupported Broker',
-        `Connecting to ${
-          targetUser.broker || 'this broker'
-        } is not supported yet. Supported brokers include Upstox, Dhan, Millions, FYERS, Zerodha Kite, and Groww.`,
-      );
-      return;
-    }
-
-    const resolvedUserId = activeUserId || resolveCanonicalBrokerUserId(authUser, users);
-    if (!resolvedUserId) {
-      showError(
-        'Sign-in Required',
-        'Please sign in with your account to connect a broker and sync your investments.',
-      );
-      return;
-    }
-
-    setBrokerActionUserId(targetUser.id);
-    try {
-      let Constants: any = {};
-      try {
-        Constants = require('expo-constants').default || require('expo-constants');
-      } catch {
-        Constants = {};
-      }
-
-      const runtimeInfo = {
-        platform: Platform.OS,
-        appOwnership: Constants?.appOwnership,
-        executionEnvironment: Constants?.executionEnvironment,
-        expoVersion: Constants?.expoVersion,
-        scheme: Constants?.expoConfig?.scheme,
-        hostUri: Constants?.expoConfig?.hostUri || Constants?.manifest?.debuggerHost,
-        linkingUri: Constants?.linkingUri,
-      };
-      console.log('[BrokerAuth Diagnostic 6] Expo Runtime Environment:', JSON.stringify(runtimeInfo, null, 2));
-
-      // 1. Create or retrieve existing backend BrokerAccount
-      const account = await brokerApiService.createAccount(resolvedUserId, {
-        profileId: targetUser.id,
-        broker: canonical.brokerType,
-        accountName: targetUser.name,
-        clientId: targetUser.client_id,
-      });
-
-      // 2. Fetch OAuth authorization URL
-      const redirectUri = Linking.createURL('broker-callback');
-      console.log('[BrokerAuth Diagnostic 1] Exact redirectUri passed:', redirectUri);
-
-      const { authorizationUrl } = await brokerApiService.getAuthorizationUrl(
-        resolvedUserId,
-        account.id,
-        canonical.slug,
-        redirectUri,
-      );
-
-      console.log('[BrokerAuth Diagnostic 2] Exact authorizationUrl:', authorizationUrl);
-
-      if (!authorizationUrl) {
-        throw new Error('No authorization URL returned by broker service');
-      }
-
-      // 3. Open authorization session
-      let authResult: WebBrowser.WebBrowserAuthSessionResult;
-
-      try {
-        console.log('[BrokerAuth Diagnostic] Calling WebBrowser.openAuthSessionAsync...');
-        authResult = await WebBrowser.openAuthSessionAsync(
-          authorizationUrl,
-          redirectUri,
-        );
-        console.log('[BrokerAuth Diagnostic 5] Exact result returned by WebBrowser.openAuthSessionAsync():', JSON.stringify(authResult, null, 2));
-      } catch (browserErr) {
-        console.warn(
-          '[BrokerAuth Diagnostic] openAuthSessionAsync failed, falling back to Linking.openURL:',
-          browserErr,
-        );
-        await Linking.openURL(authorizationUrl);
-        authResult = { type: WebBrowser.WebBrowserResultType.DISMISS };
-      }
-
-      // 4. Handle returned auth session result
-      if (authResult.type === 'success' && authResult.url) {
-        console.log('[BrokerAuth Diagnostic] Auth session success URL:', authResult.url);
-        const query = parseQueryParams(authResult.url);
-
-        // Check for error parameters
-        if (query.error || query.error_description || query.status === 'cancelled') {
-          const isCancel =
-            query.error === 'access_denied' ||
-            query.error === 'user_cancelled' ||
-            query.status === 'cancelled';
-          if (!isCancel) {
-            throw new Error(
-              query.error_description ||
-                query.error ||
-                'Broker authorization was rejected.',
-            );
-          }
-        } else {
-          // Extract auth code / tokens
-          const code = query.code;
-          const tokenId = query.tokenId || query.token_id;
-          const authCode = query.auth_code || query.authCode;
-          const requestToken = query.request_token || query.requestToken;
-          const state = query.state;
-
-          if (query.status === 'success' || code || tokenId || authCode || requestToken) {
-            if (code || tokenId || authCode || requestToken) {
-              await brokerApiService.completeOAuthCallback(
-                resolvedUserId,
-                account.id,
-                canonical.slug,
-                { code, tokenId, authCode, requestToken, state, redirectUri },
-              );
-            }
-
-            // Verify with backend before showing success dialog (Requirement 2 & 3)
-            let verifiedAccount: BrokerAccountItem | undefined;
-            for (let attempt = 1; attempt <= 3; attempt++) {
-              const freshAccounts = await loadBrokerAccounts();
-              verifiedAccount = freshAccounts.find(
-                (a) =>
-                  a.id === account.id &&
-                  a.isActive &&
-                  a.connection?.status === 'CONNECTED' &&
-                  a.profileId === targetUser.id,
-              );
-              if (verifiedAccount) break;
-              if (attempt < 3) {
-                await new Promise((r) => setTimeout(r, 400));
-              }
-            }
-
-            if (verifiedAccount) {
-              if (Platform.OS !== 'web') {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-              }
-              // Immediately refresh and show connected state directly on user card without modal interruption
-              await loadBrokerAccounts();
-            } else {
-              showError(
-                'Connection Incomplete',
-                'Broker authorization completed, but the linked account could not be verified with the server.',
-              );
-            }
-          }
-        }
-      }
-
-      // 5. Refresh broker accounts
-      await loadBrokerAccounts();
-    } catch (err: any) {
-      console.error('[UsersScreen] handleConnectBroker error:', err);
-      const errMsg = err?.message || '';
-      const lowerMsg = errMsg.toLowerCase();
-      if (
-        lowerMsg.includes('not configured') ||
-        lowerMsg.includes('api key') ||
-        lowerMsg.includes('partner id') ||
-        lowerMsg.includes('partner credentials') ||
-        lowerMsg.includes('app id')
-      ) {
-        showError(
-          'Broker Not Configured',
-          errMsg ||
-            `${canonical.displayName} API credentials are not configured on the server.`,
-        );
-      } else {
-        showError(
-          'Connection Failed',
-          errMsg || 'Failed to complete broker authentication flow.',
-        );
-      }
-    } finally {
-      setBrokerActionUserId(null);
-    }
-  };
-
-  const handleDisconnectBroker = (targetUser: User, accountId: string) => {
-    showConfirm({
-      title: 'Disconnect Broker',
-      message: `Disconnect ${targetUser.broker || 'broker'} account for ${
-        targetUser.name
-      }? Historical portfolio data will be preserved.`,
-      confirmText: 'Disconnect',
-      isDanger: true,
-      onConfirm: async () => {
-        setBrokerActionUserId(targetUser.id);
-        try {
-          await brokerApiService.disconnectAccount(activeUserId, accountId);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          await loadBrokerAccounts();
-        } catch (err: any) {
-          showError(
-            'Error',
-            err?.message || 'Failed to disconnect broker account.',
-          );
-        } finally {
-          setBrokerActionUserId(null);
-        }
-      },
-    });
-  };
-
-  const handleSyncBroker = async (targetUser: User, accountId: string) => {
-    setBrokerActionUserId(targetUser.id);
-    try {
-      const res = await brokerApiService.syncAccount(activeUserId, accountId);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      await loadBrokerAccounts();
-      showConfirm({
-        title: 'Sync Completed',
-        message: `Successfully synced ${
-          res?.syncedInvestmentsCount ?? 0
-        } post-listing investments for ${targetUser.name}.`,
-        confirmText: 'OK',
-        isDanger: false,
-        onConfirm: async () => {},
-      });
-    } catch (err: any) {
-      showError(
-        'Sync Failed',
-        err?.message || 'Failed to sync broker portfolio data.',
-      );
-    } finally {
-      setBrokerActionUserId(null);
-    }
-  };
 
   const swipeHandlers = useSwipeGesture({
     onSwipeLeft: () => setActiveTab('archived'),
@@ -649,30 +241,16 @@ export default function UsersScreen() {
         }
         renderItem={({ item }) => {
           const stats = statsForUser(item.id);
-          const canonical = getCanonicalBroker(item.broker);
-          const matchedAccount = brokerAccounts.find(
-            (acc) =>
-              acc.profileId === item.id &&
-              (!canonical || acc.broker === canonical.brokerType) &&
-              acc.isActive,
-          );
-
           return (
             <UserCard
               user={item}
               applied={stats.applied}
               allotted={stats.allotted}
               decided={stats.decided}
-              brokerAccount={matchedAccount}
-              investments={investmentsByProfile[item.id] || []}
               onEdit={() => openEditUser(item)}
               onArchive={activeTab === 'active' ? () => handleArchive(item) : undefined}
               onUnarchive={activeTab === 'archived' ? () => handleUnarchive(item) : undefined}
               onDelete={() => handleDelete(item)}
-              onConnectBroker={handleConnectBroker}
-              onDisconnectBroker={handleDisconnectBroker}
-              onSyncBroker={handleSyncBroker}
-              isBrokerActionLoading={brokerActionUserId === item.id}
             />
           );
         }}
@@ -715,11 +293,7 @@ export default function UsersScreen() {
         }}
       />
 
-      <BrokerConnectSuccessModal
-        visible={!!connectedBrokerSuccess}
-        brokerName={connectedBrokerSuccess?.brokerName || 'Broker'}
-        onClose={() => setConnectedBrokerSuccess(null)}
-      />
+
     </View>
   );
 }

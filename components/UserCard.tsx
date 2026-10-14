@@ -15,27 +15,17 @@ import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { User } from '@/context/DBContext';
 import { getEffectiveAvatarUrl } from '@/utils/avatarUtils';
-import {
-  BrokerAccountItem,
-  DerivedInvestmentSummary,
-  getCanonicalBroker,
-} from '@/services/broker/BrokerApiService';
+
 
 type Props = {
   user: User;
   applied: number;
   allotted: number;
   decided?: number;
-  brokerAccount?: BrokerAccountItem | null;
-  investments?: DerivedInvestmentSummary[];
   onEdit: (user: User) => void;
   onDelete: (user: User) => void;
   onArchive?: (user: User) => void;
   onUnarchive?: (user: User) => void;
-  onConnectBroker?: (user: User) => void;
-  onDisconnectBroker?: (user: User, accountId: string) => void;
-  onSyncBroker?: (user: User, accountId: string) => void;
-  isBrokerActionLoading?: boolean;
 };
 
 const AVATAR_PALETTES: [string, string][] = [
@@ -63,16 +53,10 @@ export function UserCard({
   applied,
   allotted,
   decided,
-  brokerAccount,
-  investments,
   onEdit,
   onDelete,
   onArchive,
   onUnarchive,
-  onConnectBroker,
-  onDisconnectBroker,
-  onSyncBroker,
-  isBrokerActionLoading,
 }: Props) {
   const colors = useColors();
   const colorScheme = useColorScheme();
@@ -114,14 +98,7 @@ export function UserCard({
   };
 
   const avatarGradient = getAvatarGradient(user.name || 'User');
-  const canonicalBroker = getCanonicalBroker(user.broker);
 
-  const connectionStatus =
-    brokerAccount?.connection?.status === 'CONNECTED'
-      ? 'CONNECTED'
-      : brokerAccount?.connection?.status === 'EXPIRED'
-      ? 'EXPIRED'
-      : 'NOT_CONNECTED';
 
   return (
     <View
@@ -296,179 +273,7 @@ export function UserCard({
         />
       </TouchableOpacity>
 
-      {/* ── Broker Connection & Sync Bar (When supported broker is assigned) ── */}
-      {canonicalBroker && (
-        <View
-          style={[
-            styles.brokerSection,
-            {
-              borderTopColor: colors.border,
-              backgroundColor: isDark
-                ? 'rgba(255, 255, 255, 0.02)'
-                : 'rgba(0, 0, 0, 0.015)',
-            },
-          ]}
-        >
-          <View style={styles.brokerStatusLeft}>
-            <View
-              style={[
-                styles.statusDot,
-                {
-                  backgroundColor:
-                    connectionStatus === 'CONNECTED'
-                      ? colors.positive
-                      : connectionStatus === 'EXPIRED'
-                      ? '#F59E0B'
-                      : colors.mutedForeground,
-                },
-              ]}
-            />
-            <View
-              style={[
-                styles.statusBadge,
-                {
-                  backgroundColor:
-                    connectionStatus === 'CONNECTED'
-                      ? isDark
-                        ? 'rgba(52, 211, 153, 0.15)'
-                        : 'rgba(5, 150, 105, 0.1)'
-                      : connectionStatus === 'EXPIRED'
-                      ? isDark
-                        ? 'rgba(245, 158, 11, 0.15)'
-                        : 'rgba(217, 119, 6, 0.1)'
-                      : colors.badgeBg,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.statusBadgeText,
-                  {
-                    color:
-                      connectionStatus === 'CONNECTED'
-                        ? colors.positive
-                        : connectionStatus === 'EXPIRED'
-                        ? '#F59E0B'
-                        : colors.mutedForeground,
-                  },
-                ]}
-              >
-                {connectionStatus === 'CONNECTED'
-                  ? 'Connected'
-                  : connectionStatus === 'EXPIRED'
-                  ? 'Expired'
-                  : 'Not Connected'}
-              </Text>
-            </View>
-          </View>
 
-          <View style={styles.brokerActionsRight}>
-            {isBrokerActionLoading ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : connectionStatus === 'CONNECTED' ? (
-              <>
-                <TouchableOpacity
-                  onPress={() =>
-                    onSyncBroker &&
-                    brokerAccount &&
-                    onSyncBroker(user, brokerAccount.id)
-                  }
-                  style={[
-                    styles.brokerActionBtn,
-                    { backgroundColor: colors.softBtnBg },
-                  ]}
-                  activeOpacity={0.7}
-                >
-                  <Feather name="refresh-cw" size={11} color={colors.primary} />
-                  <Text
-                    style={[
-                      styles.brokerActionBtnText,
-                      { color: colors.primary },
-                    ]}
-                  >
-                    Sync Now
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() =>
-                    onDisconnectBroker &&
-                    brokerAccount &&
-                    onDisconnectBroker(user, brokerAccount.id)
-                  }
-                  style={[
-                    styles.brokerActionBtn,
-                    { backgroundColor: colors.negativeBg },
-                  ]}
-                  activeOpacity={0.7}
-                >
-                  <Feather name="power" size={11} color={colors.negative} />
-                  <Text
-                    style={[
-                      styles.brokerActionBtnText,
-                      { color: colors.negative },
-                    ]}
-                  >
-                    Disconnect
-                  </Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <TouchableOpacity
-                onPress={() => {
-                  try {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  } catch {}
-                  if (onConnectBroker) onConnectBroker(user);
-                }}
-                style={[
-                  styles.brokerActionBtn,
-                  connectionStatus === 'EXPIRED'
-                    ? {
-                        backgroundColor: isDark
-                          ? 'rgba(245, 158, 11, 0.2)'
-                          : '#FEF3C7',
-                        borderColor: isDark
-                          ? 'rgba(245, 158, 11, 0.4)'
-                          : '#FDE68A',
-                        borderWidth: 1,
-                      }
-                    : { backgroundColor: colors.primary },
-                ]}
-                activeOpacity={0.7}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Feather
-                  name={connectionStatus === 'EXPIRED' ? 'rotate-cw' : 'link-2'}
-                  size={11}
-                  color={
-                    connectionStatus === 'EXPIRED'
-                      ? isDark
-                        ? '#FBBF24'
-                        : '#D97706'
-                      : colors.primaryForeground
-                  }
-                />
-                <Text
-                  style={[
-                    styles.brokerActionBtnText,
-                    {
-                      color:
-                        connectionStatus === 'EXPIRED'
-                          ? isDark
-                            ? '#FBBF24'
-                            : '#D97706'
-                          : colors.primaryForeground,
-                    },
-                  ]}
-                >
-                  {connectionStatus === 'EXPIRED' ? 'Re-authenticate' : 'Connect'}
-                </Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      )}
 
       {/* ── Stats (collapsible) ── */}
       {expanded && (
@@ -501,238 +306,6 @@ export function UserCard({
               </Text>
             </View>
           </View>
-
-          {/* ── IPO Investment Status (Broker Synced) ── */}
-          {investments && investments.length > 0 && (
-            <View
-              style={[
-                styles.investmentsSection,
-                {
-                  borderTopColor: colors.border,
-                  backgroundColor: isDark
-                    ? 'rgba(255, 255, 255, 0.015)'
-                    : 'rgba(0, 0, 0, 0.01)',
-                },
-              ]}
-            >
-              <View style={styles.investmentsHeaderRow}>
-                <Feather
-                  name="trending-up"
-                  size={12}
-                  color={colors.mutedForeground}
-                />
-                <Text
-                  style={[
-                    styles.investmentsTitle,
-                    { color: colors.mutedForeground },
-                  ]}
-                >
-                  IPO INVESTMENTS ({investments.length})
-                </Text>
-              </View>
-
-              {investments.map((inv, idx) => {
-                const isHolding = inv.status === 'HOLDING';
-                const isPartiallySold = inv.status === 'PARTIALLY_SOLD';
-                const statusLabel = isHolding
-                  ? 'Holding'
-                  : isPartiallySold
-                  ? 'Partially Sold'
-                  : 'Fully Sold';
-                const statusColor = isHolding
-                  ? colors.positive
-                  : isPartiallySold
-                  ? '#F59E0B'
-                  : colors.mutedForeground;
-
-                return (
-                  <View
-                    key={`${inv.ipoId}-${idx}`}
-                    style={[
-                      styles.investmentCard,
-                      {
-                        backgroundColor: isDark
-                          ? 'rgba(255, 255, 255, 0.03)'
-                          : 'rgba(0, 0, 0, 0.02)',
-                        borderColor: colors.border,
-                      },
-                    ]}
-                  >
-                    {/* Header: IPO Name & Status Badge */}
-                    <View style={styles.invCardHeader}>
-                      <Text
-                        style={[
-                          styles.invCardName,
-                          { color: colors.foreground },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {inv.ipoName || inv.symbol || 'IPO Investment'}
-                      </Text>
-                      <View
-                        style={[
-                          styles.invStatusBadge,
-                          {
-                            backgroundColor: isHolding
-                              ? isDark
-                                ? 'rgba(52, 211, 153, 0.15)'
-                                : 'rgba(5, 150, 105, 0.1)'
-                              : isPartiallySold
-                              ? isDark
-                                ? 'rgba(245, 158, 11, 0.15)'
-                                : 'rgba(217, 119, 6, 0.1)'
-                              : colors.badgeBg,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.invStatusBadgeText,
-                            { color: statusColor },
-                          ]}
-                        >
-                          {statusLabel}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Quantities Row: Allotted | Sold | Remaining */}
-                    <View style={styles.invQuantitiesRow}>
-                      <View style={styles.invQtyItem}>
-                        <Text
-                          style={[
-                            styles.invQtyLabel,
-                            { color: colors.mutedForeground },
-                          ]}
-                        >
-                          Allotted
-                        </Text>
-                        <Text
-                          style={[
-                            styles.invQtyVal,
-                            { color: colors.foreground },
-                          ]}
-                        >
-                          {inv.allottedQuantity}
-                        </Text>
-                      </View>
-                      <View style={styles.invQtyItem}>
-                        <Text
-                          style={[
-                            styles.invQtyLabel,
-                            { color: colors.mutedForeground },
-                          ]}
-                        >
-                          Sold
-                        </Text>
-                        <Text
-                          style={[
-                            styles.invQtyVal,
-                            { color: colors.foreground },
-                          ]}
-                        >
-                          {inv.totalSoldQuantity}
-                        </Text>
-                      </View>
-                      <View style={styles.invQtyItem}>
-                        <Text
-                          style={[
-                            styles.invQtyLabel,
-                            { color: colors.mutedForeground },
-                          ]}
-                        >
-                          Remaining
-                        </Text>
-                        <Text
-                          style={[
-                            styles.invQtyVal,
-                            {
-                              color:
-                                inv.remainingQuantity > 0
-                                  ? colors.positive
-                                  : colors.mutedForeground,
-                            },
-                          ]}
-                        >
-                          {inv.remainingQuantity}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Live Holding Price & Value (when still held) */}
-                    {inv.remainingQuantity > 0 && inv.holding && (
-                      <View
-                        style={[
-                          styles.invHoldingRow,
-                          {
-                            borderTopColor: colors.border,
-                            backgroundColor: isDark
-                              ? 'rgba(255, 255, 255, 0.02)'
-                              : 'rgba(0, 0, 0, 0.015)',
-                          },
-                        ]}
-                      >
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            gap: 4,
-                          }}
-                        >
-                          <Text
-                            style={[
-                              styles.invPriceLabel,
-                              { color: colors.mutedForeground },
-                            ]}
-                          >
-                            Price:
-                          </Text>
-                          <Text
-                            style={[
-                              styles.invPriceVal,
-                              { color: colors.foreground },
-                            ]}
-                          >
-                            {inv.holding.lastPrice != null
-                              ? `₹${inv.holding.lastPrice.toFixed(2)}`
-                              : '—'}
-                          </Text>
-                        </View>
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            gap: 4,
-                          }}
-                        >
-                          <Text
-                            style={[
-                              styles.invPriceLabel,
-                              { color: colors.mutedForeground },
-                            ]}
-                          >
-                            Value:
-                          </Text>
-                          <Text
-                            style={[
-                              styles.invPriceVal,
-                              { color: colors.foreground },
-                            ]}
-                          >
-                            {inv.holding.currentValue != null
-                              ? `₹${Math.round(
-                                  inv.holding.currentValue,
-                                ).toLocaleString('en-IN')}`
-                              : '—'}
-                          </Text>
-                        </View>
-                      </View>
-                    )}
-                  </View>
-                );
-              })}
-            </View>
-          )}
         </>
       )}
     </View>

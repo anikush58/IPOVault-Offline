@@ -38,18 +38,6 @@ import { ApplicationsOverviewCard } from '@/components/ApplicationsOverviewCard'
 import { FeatureFlags } from '@/constants/FeatureFlags';
 import { calcBuyValue, calcNetProfit, calcProfitLoss, calcSaleValue } from '@/utils/calculations';
 import { formatCurrency } from '@/utils/formatters';
-import {
-  brokerApiService,
-  UserPortfolioSummaryResponse,
-  MarketQuotesMap,
-} from '@/services/broker/BrokerApiService';
-import {
-  enrichApplicationsWithBrokerData,
-  resolveCanonicalBrokerUserId,
-  syncBrokerHoldingPricesToLocalDb,
-  extractHoldingInstrumentsForQuotes,
-} from '@/utils/brokerMatching';
-
 type TabKey = 'Allotted' | 'Holding' | 'Sold' | 'Applied' | 'Not Allotted';
 
 const TABS: { key: TabKey; label: string; flex: number }[] = [
@@ -79,46 +67,6 @@ export default function ApplicationsScreen() {
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
-
-  const [brokerPortfolio, setBrokerPortfolio] =
-    useState<UserPortfolioSummaryResponse | null>(null);
-  const [marketQuotes, setMarketQuotes] = useState<MarketQuotesMap>({});
-
-  const activeUserId = React.useMemo(() => {
-    return resolveCanonicalBrokerUserId(authUser, users);
-  }, [authUser, users]);
-
-  const loadBrokerPortfolio = React.useCallback(async () => {
-    if (!activeUserId) return;
-    try {
-      const portfolio = await brokerApiService.getUserPortfolio(activeUserId);
-      if (portfolio) {
-        setBrokerPortfolio(portfolio);
-        if (portfolio.investments && db) {
-          syncBrokerHoldingPricesToLocalDb(
-            applications,
-            ipos,
-            portfolio.investments,
-            db,
-            refresh,
-          ).catch(() => {});
-        }
-      }
-
-      // Fetch market quotes for all holding applications via any connected broker quote capability
-      const holdingInstruments = extractHoldingInstrumentsForQuotes(applications, ipos);
-      if (holdingInstruments.length > 0) {
-        const quotes = await brokerApiService.getMarketQuotes(activeUserId, holdingInstruments);
-        if (quotes && Object.keys(quotes).length > 0) {
-          setMarketQuotes(quotes);
-        }
-      }
-    } catch {
-      // Non-critical fallback
-    }
-  }, [activeUserId, applications, db, ipos, refresh]);
-
-  // Broker portfolio and LTP are strictly manual triggers via Pull-to-Refresh on the Applications tab
 
   const [activeTab, setActiveTab] = useState<TabKey>('Allotted');
   const [selectedApp, setSelectedApp] = useState<ApplicationWithDetails | null>(null);
@@ -230,14 +178,7 @@ export default function ApplicationsScreen() {
 
   const hasFilter = filterUserIds.length > 0 || filterBrokers.length > 0 || filterIpoNames.length > 0 || filterBankNames.length > 0;
 
-  const effectiveApplications = React.useMemo(() => {
-    return enrichApplicationsWithBrokerData(
-      applications,
-      ipos,
-      brokerPortfolio?.investments,
-      marketQuotes,
-    );
-  }, [applications, ipos, brokerPortfolio, marketQuotes]);
+  const effectiveApplications = applications;
 
   // Base list of applications
   const sortedApplications = [...effectiveApplications];
@@ -622,9 +563,7 @@ export default function ApplicationsScreen() {
         refreshControl={
           <RefreshControl
             refreshing={isLoading}
-            onRefresh={async () => {
-              await Promise.all([refresh(), loadBrokerPortfolio()]);
-            }}
+            onRefresh={refresh}
             tintColor={colors.primary}
             progressViewOffset={topPad + (showSearch ? 110 : 56)}
           />

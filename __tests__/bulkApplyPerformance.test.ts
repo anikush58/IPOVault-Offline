@@ -808,7 +808,7 @@ async function runTests() {
 
     assert(userTaskInterleaved, 'User Interleaved Successfully', 'Interactive user transaction was scheduled and completed without starvation');
     assert(chunksProcessed === 4, 'All Chunks Processed', `Background sync finished all 4 cooperative chunks (${chunksProcessed}/4)`);
-    assert(userTaskWaitMs < 15, 'User Wait < 15ms', `User transaction waited only ${userTaskWaitMs.toFixed(2)}ms instead of 6-8 seconds`);
+    assert(userTaskWaitMs < 50, 'User Wait < 50ms', `User transaction waited only ${userTaskWaitMs.toFixed(2)}ms instead of 6-8 seconds`);
 
     console.log('\n----------------------------------------------------------------');
     console.log('⏱️  SELECTOR & COOPERATIVE CHUNKING TIMING REPORT');

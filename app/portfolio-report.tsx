@@ -20,24 +20,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
-import { useAuth } from '@/context/AuthContext';
-import { useDB } from '@/context/DBContext';
-import {
-  brokerApiService,
-  UserPortfolioSummaryResponse,
-} from '@/services/broker/BrokerApiService';
+
 import { IconButton } from '@/components/ui/IconButton';
 import { ProfitSummaryDonutCard } from '@/components/ProfitSummaryDonutCard';
 import { FilterSheet } from '@/components/FilterSheet';
 import { Tabs } from '@/components/ui/Tabs';
 import { calculateAppTaxAndNet, calcBuyValue } from '@/utils/calculations';
 import { formatCurrency, getResolvedLogoUrl } from '@/utils/formatters';
-import {
-  enrichApplicationsWithBrokerData,
-  resolveCanonicalBrokerUserId,
-  extractHoldingInstrumentsForQuotes,
-} from '@/utils/brokerMatching';
-import { MarketQuotesMap } from '@/services/broker/BrokerApiService';
+import { useDB } from '@/context/DBContext';
 
 type TabType = 'profits' | 'holding' | 'charges';
 
@@ -137,7 +127,6 @@ export default function PortfolioReportScreen() {
   const insets = useSafeAreaInsets();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
-  const { user: authUser } = useAuth();
   const { applications, users, ipos, isLoading, refresh } = useDB();
 
   const [activeTab, setActiveTab] = useState<TabType>('profits');
@@ -151,46 +140,7 @@ export default function PortfolioReportScreen() {
   const [filterYear, setFilterYear] = useState<string | null>(null);
   const [showFilter, setShowFilter] = useState(false);
 
-  const activeUserId = useMemo(() => {
-    return resolveCanonicalBrokerUserId(authUser, users);
-  }, [authUser, users]);
-
-  const [brokerPortfolio, setBrokerPortfolio] =
-    useState<UserPortfolioSummaryResponse | null>(null);
-  const [marketQuotes, setMarketQuotes] = useState<MarketQuotesMap>({});
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const loadBrokerPortfolio = useCallback(async () => {
-    if (!activeUserId) return;
-    try {
-      const data = await brokerApiService.getUserPortfolio(activeUserId);
-      setBrokerPortfolio(data);
-
-      const holdingInstruments = extractHoldingInstrumentsForQuotes(applications, ipos);
-      if (holdingInstruments.length > 0) {
-        const quotes = await brokerApiService.getMarketQuotes(activeUserId, holdingInstruments);
-        if (quotes && Object.keys(quotes).length > 0) {
-          setMarketQuotes(quotes);
-        }
-      }
-    } catch (err) {
-      console.warn('[PortfolioReport] Failed to fetch broker portfolio:', err);
-    }
-  }, [activeUserId]);
-
-  useEffect(() => {
-    loadBrokerPortfolio();
-  }, [loadBrokerPortfolio]);
-
-  // Merge broker-backed data with local applications
-  const effectiveApplications = useMemo(() => {
-    return enrichApplicationsWithBrokerData(
-      applications,
-      ipos,
-      brokerPortfolio?.investments,
-      marketQuotes,
-    );
-  }, [applications, brokerPortfolio, ipos, marketQuotes]);
+  const effectiveApplications = applications;
 
   // List of unique IPO names available in user portfolio
   const reportIpoNames = useMemo(() => {
@@ -527,9 +477,7 @@ export default function PortfolioReportScreen() {
         refreshControl={
           <RefreshControl
             refreshing={isLoading}
-            onRefresh={async () => {
-              await Promise.all([refresh(), loadBrokerPortfolio()]);
-            }}
+            onRefresh={refresh}
             tintColor={colors.primary}
           />
         }

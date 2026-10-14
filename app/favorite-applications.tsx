@@ -15,62 +15,23 @@ import { useColors } from '@/hooks/useColors';
 import { IconButton } from '@/components/ui/IconButton';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { useDB, type ApplicationWithDetails } from '@/context/DBContext';
-import { useAuth } from '@/context/AuthContext';
+
+
 import { ApplicationCard } from '@/components/ApplicationCard';
 import { UpdateApplicationModal } from '@/components/UpdateApplicationModal';
-import {
-  enrichApplicationsWithBrokerData,
-  resolveCanonicalBrokerUserId,
-  extractHoldingInstrumentsForQuotes,
-} from '@/utils/brokerMatching';
-import {
-  brokerApiService,
-  type UserPortfolioSummaryResponse,
-  type MarketQuotesMap,
-} from '@/services/broker/BrokerApiService';
 
 export default function FavoriteApplicationsScreen() {
   const colors = useColors();
   const router = useRouter();
-  const { user: authUser } = useAuth();
-  const { applications, ipos, users, isLoading, refresh } = useDB();
+  const { applications, isLoading, refresh } = useDB();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
   const [selectedApp, setSelectedApp] = useState<ApplicationWithDetails | null>(null);
-  const [brokerPortfolio, setBrokerPortfolio] = useState<UserPortfolioSummaryResponse | null>(null);
-  const [marketQuotes, setMarketQuotes] = useState<MarketQuotesMap>({});
-
-  const activeUserId = React.useMemo(() => {
-    return resolveCanonicalBrokerUserId(authUser, users);
-  }, [authUser, users]);
-
-  React.useEffect(() => {
-    if (!activeUserId) return;
-    brokerApiService.getUserPortfolio(activeUserId).then((p) => {
-      if (p) setBrokerPortfolio(p);
-    }).catch(() => {});
-
-    const holdingInstruments = extractHoldingInstrumentsForQuotes(applications, ipos);
-    if (holdingInstruments.length > 0) {
-      brokerApiService.getMarketQuotes(activeUserId, holdingInstruments).then((q) => {
-        if (q && Object.keys(q).length > 0) setMarketQuotes(q);
-      }).catch(() => {});
-    }
-  }, [activeUserId, applications, ipos]);
-
-  const effectiveApplications = React.useMemo(() => {
-    return enrichApplicationsWithBrokerData(
-      applications,
-      ipos,
-      brokerPortfolio?.investments,
-      marketQuotes,
-    );
-  }, [applications, ipos, brokerPortfolio, marketQuotes]);
 
   const favoriteApps = React.useMemo(() => {
-    return effectiveApplications.filter((a) => a.is_favorite === 1);
-  }, [effectiveApplications]);
+    return applications.filter((a) => a.is_favorite === 1);
+  }, [applications]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>

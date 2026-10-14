@@ -784,7 +784,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
             styles.footer,
             {
               borderTopColor: colors.border,
-              paddingBottom: Math.max(insets.bottom, 16) + 8,
+              paddingBottom: 10,
             },
           ]}
         >

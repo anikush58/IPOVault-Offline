@@ -22,24 +22,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { useDB, type ApplicationStatus, type ApplicationWithDetails } from '@/context/DBContext';
-import { useAuth } from '@/context/AuthContext';
-import { useSQLiteContext } from 'expo-sqlite';
+
 import { IconButton } from '@/components/ui/IconButton';
 import { ApplicationCard } from '@/components/ApplicationCard';
 import { FilterSheet } from '@/components/FilterSheet';
 import { UpdateApplicationModal } from '@/components/UpdateApplicationModal';
 import { ApplicationsOverviewCard } from '@/components/ApplicationsOverviewCard';
-import {
-  brokerApiService,
-  UserPortfolioSummaryResponse,
-  MarketQuotesMap,
-} from '@/services/broker/BrokerApiService';
-import {
-  enrichApplicationsWithBrokerData,
-  resolveCanonicalBrokerUserId,
-  syncBrokerHoldingPricesToLocalDb,
-  extractHoldingInstrumentsForQuotes,
-} from '@/utils/brokerMatching';
+
 
 type TabKey = 'Allotted' | 'Holding' | 'Sold' | 'Applied' | 'Not Allotted';
 
@@ -57,47 +46,8 @@ export default function ApplicationsScreen() {
   const isDark = resolvedScheme === 'dark';
   const router = useRouter();
   const { applications, ipos, users, isLoading, refresh, updateBulkApplications } = useDB();
-  const { user: authUser } = useAuth();
-  const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
-
-  const [brokerPortfolio, setBrokerPortfolio] =
-    useState<UserPortfolioSummaryResponse | null>(null);
-  const [marketQuotes, setMarketQuotes] = useState<MarketQuotesMap>({});
-
-  const activeUserId = React.useMemo(() => {
-    return resolveCanonicalBrokerUserId(authUser, users);
-  }, [authUser, users]);
-
-  const loadPortfolio = React.useCallback(async () => {
-    if (!activeUserId) return;
-    try {
-      const portfolio = await brokerApiService.getUserPortfolio(activeUserId);
-      if (portfolio) {
-        setBrokerPortfolio(portfolio);
-        if (portfolio.investments && db) {
-          syncBrokerHoldingPricesToLocalDb(
-            applications,
-            ipos,
-            portfolio.investments,
-            db,
-          ).catch(() => {});
-        }
-      }
-
-      // Fetch market quotes for all holding applications via any connected broker quote capability
-      const holdingInstruments = extractHoldingInstrumentsForQuotes(applications, ipos);
-      if (holdingInstruments.length > 0) {
-        const quotes = await brokerApiService.getMarketQuotes(activeUserId, holdingInstruments);
-        if (quotes && Object.keys(quotes).length > 0) {
-          setMarketQuotes(quotes);
-        }
-      }
-    } catch {
-      // Non-critical fallback
-    }
-  }, [activeUserId, applications, db, ipos]);
 
   const [activeTab, setActiveTab] = useState<TabKey>('Allotted');
   const [selectedApp, setSelectedApp] = useState<ApplicationWithDetails | null>(null);
@@ -174,14 +124,7 @@ export default function ApplicationsScreen() {
 
   const hasFilter = filterUserIds.length > 0 || filterBrokers.length > 0 || filterIpoNames.length > 0 || filterBankNames.length > 0;
 
-  const effectiveApplications = React.useMemo(() => {
-    return enrichApplicationsWithBrokerData(
-      applications,
-      ipos,
-      brokerPortfolio?.investments,
-      marketQuotes,
-    );
-  }, [applications, ipos, brokerPortfolio, marketQuotes]);
+  const effectiveApplications = applications;
 
   // Base list of applications
   const sortedApplications = [...effectiveApplications];
@@ -381,9 +324,7 @@ export default function ApplicationsScreen() {
         refreshControl={
           <RefreshControl
             refreshing={isLoading}
-            onRefresh={async () => {
-              await Promise.all([refresh(), loadPortfolio()]);
-            }}
+            onRefresh={refresh}
             tintColor={colors.primary}
             progressViewOffset={showSearch ? 52 : 0}
           />
