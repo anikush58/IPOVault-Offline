@@ -1,8 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import React, { useCallback, useMemo, useState, useRef } from 'react';
 import {
   Animated,
-  DeviceEventEmitter,
-  FlatList,
   Platform,
   RefreshControl,
   StyleSheet,
@@ -10,18 +8,15 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import * as Linking from 'expo-linking';
 import { Feather } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import * as WebBrowser from 'expo-web-browser';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { useDialog } from '@/context/DialogContext';
-import { useAuth } from '@/context/AuthContext';
 import { useDB, type User } from '@/context/DBContext';
 import { IconButton } from '@/components/ui/IconButton';
 import { UserCard } from '@/components/UserCard';
@@ -30,10 +25,12 @@ import { AddUserModal } from '@/components/AddUserModal';
 
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { Tabs } from '@/components/ui/Tabs';
+import { useAppExperience } from '@/context/AppExperienceContext';
 
 export default function UsersScreen() {
   const colors = useColors();
   const router = useRouter();
+  const { isNonPro } = useAppExperience();
   const { from } = useLocalSearchParams<{ from?: string }>();
   const {
     users,
@@ -50,8 +47,15 @@ export default function UsersScreen() {
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'active' | 'archived'>('active');
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   const handleRefresh = useCallback(async () => {
-    await refresh();
+    setIsRefreshing(true);
+    try {
+      await refresh();
+    } finally {
+      setIsRefreshing(false);
+    }
   }, [refresh]);
 
   const { activeUsers, archivedUsers } = useMemo(() => {
@@ -178,21 +182,32 @@ export default function UsersScreen() {
         </Animated.View>
 
         <View style={styles.header}>
-          <IconButton
-            name="arrow-left"
-            variant="surface"
-            size="md"
-            onPress={() => {
-              if (from === 'bids') router.replace('/(tabs)/bids');
-              else if (from === 'dashboard') router.replace('/(tabs)');
-              else if (router.canGoBack()) router.back();
-              else router.replace('/(tabs)');
-            }}
-          />
+          {!isNonPro ? (
+            <View style={{ marginRight: 12 }}>
+              <IconButton
+                name="arrow-left"
+                variant="surface"
+                size="md"
+                onPress={() => {
+                  if (from === 'bids') router.replace('/(tabs)/bids');
+                  else if (from === 'dashboard') router.replace('/(tabs)');
+                  else if (router.canGoBack()) router.back();
+                  else router.replace('/(tabs)');
+                }}
+              />
+            </View>
+          ) : null}
 
-          <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={[styles.headerEyebrow, { color: colors.primary }]}>Manage</Text>
-            <Text style={[styles.headerTitle, { color: colors.foreground }]}>Users</Text>
+          <View
+            style={!isNonPro ? styles.headerCenterPro : { flex: 1, justifyContent: 'center' }}
+            pointerEvents={!isNonPro ? 'none' : undefined}
+          >
+            <Text style={[styles.headerEyebrow, { color: colors.primary }, !isNonPro && styles.headerEyebrowPro]}>
+              INVESTOR PROFILES
+            </Text>
+            <Text style={[styles.headerTitle, { color: colors.foreground }, !isNonPro && styles.headerTitlePro]}>
+              Users
+            </Text>
           </View>
 
           <IconButton
@@ -204,7 +219,7 @@ export default function UsersScreen() {
         </View>
 
         {/* Pill Style Tab Control Bar */}
-        <View style={{ paddingHorizontal: 10, marginTop: 17, marginBottom: 8 }}>
+        <View style={{ paddingHorizontal: 16, marginTop: 4, marginBottom: 12 }}>
           <Tabs
             variant="pills"
             height={36}
@@ -228,12 +243,12 @@ export default function UsersScreen() {
         )}
         scrollEventThrottle={16}
         contentContainerStyle={{
-          paddingTop: topPad + 127,
-          paddingBottom: insets.bottom + 90,
+          paddingTop: topPad + 120,
+          paddingBottom: insets.bottom + (isNonPro ? 90 : 20),
         }}
         refreshControl={
           <RefreshControl
-            refreshing={isLoading}
+            refreshing={isRefreshing}
             onRefresh={handleRefresh}
             tintColor={colors.primary}
             progressViewOffset={topPad + 123}
@@ -311,13 +326,47 @@ const styles = StyleSheet.create({
   header: {
     height: 56,
     paddingHorizontal: 16,
-    overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    position: 'relative',
   },
-  headerEyebrow: { fontSize: 11, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 2, textAlign: 'center' },
-  headerTitle: { fontSize: 28, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.6, lineHeight: 32, textAlign: 'center' },
+  headerCenterPro: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    paddingHorizontal: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerEyebrow: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+    textAlign: 'left',
+  },
+  headerEyebrowPro: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 1.1,
+    textAlign: 'center',
+  },
+  headerTitle: {
+    fontSize: 30,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.8,
+    lineHeight: 34,
+    textAlign: 'left',
+  },
+  headerTitlePro: {
+    fontSize: 18,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
+    lineHeight: 24,
+    textAlign: 'center',
+  },
   emptyContainer: {
     alignItems: 'center',
     paddingVertical: 56,

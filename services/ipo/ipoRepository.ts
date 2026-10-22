@@ -1,8 +1,8 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { IPOMasterRecord } from './types';
 import { IPOParser } from './ipoParser';
-import { API_BASE_URL } from '@/constants/apiConfig';
-import { safeRunAsync, safeGetFirstAsync, safeGetAllAsync } from '@/utils/sqliteDebug';
+import { API_BASE_URL } from '../../constants/apiConfig';
+import { safeRunAsync, safeGetFirstAsync, safeGetAllAsync, isDatabaseOpen, isClosedResourceError, markDatabaseClosed, runWithTransaction } from '../../utils/sqliteDebug';
 
 export class IPORepository {
   constructor(private db: SQLiteDatabase) {}
@@ -42,11 +42,18 @@ export class IPORepository {
 
   async upsertBatch(records: Partial<IPOMasterRecord>[], isAuthoritative: boolean = true): Promise<number> {
     if (!records || records.length === 0) return 0;
+    if (!isDatabaseOpen(this.db)) {
+      throw new Error('Access to closed resource: IPORepository.upsertBatch');
+    }
     
-    let updatedCount = 0;
-    
-    for (const raw of records) {
-      if (!raw) continue;
+    return await runWithTransaction(this.db, async () => {
+      let updatedCount = 0;
+      
+      for (const raw of records) {
+        if (!raw) continue;
+        if (!isDatabaseOpen(this.db)) {
+          throw new Error('Access to closed resource: IPORepository.upsertBatch aborted mid-batch');
+        }
       const record = IPOParser.parse(raw);
       if (!record || !record.id) continue;
       
@@ -250,6 +257,7 @@ export class IPORepository {
     }
 
     return updatedCount;
+  }, 'IPORepository.upsertBatch');
   }
 
   async upsert(record: Partial<IPOMasterRecord>): Promise<boolean> {

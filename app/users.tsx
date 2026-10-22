@@ -33,12 +33,14 @@ import { AddUserModal } from '@/components/AddUserModal';
 
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { Tabs } from '@/components/ui/Tabs';
+import { useAppExperience } from '@/context/AppExperienceContext';
 
 export default function UsersScreen() {
   const colors = useColors();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
   const router = useRouter();
+  const { isNonPro } = useAppExperience();
   const { from } = useLocalSearchParams<{ from?: string }>();
   const {
     users,
@@ -55,8 +57,15 @@ export default function UsersScreen() {
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'active' | 'archived'>('active');
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   const handleRefresh = useCallback(async () => {
-    await refresh();
+    setIsRefreshing(true);
+    try {
+      await refresh();
+    } finally {
+      setIsRefreshing(false);
+    }
   }, [refresh]);
 
   const { activeUsers, archivedUsers } = useMemo(() => {
@@ -183,23 +192,42 @@ export default function UsersScreen() {
         </Animated.View>
 
         <View style={styles.header}>
-          <IconButton
-            name="arrow-left"
-            variant="surface"
-            size="md"
-            onPress={() => {
-              if (from === 'bids') router.replace('/(tabs)/bids');
-              else if (from === 'dashboard') router.replace('/(tabs)');
-              else if (router.canGoBack()) router.back();
-              else router.replace('/(tabs)');
-            }}
-          />
+          {!isNonPro || from ? (
+            <View style={{ marginRight: 12 }}>
+              <IconButton
+                name="arrow-left"
+                variant="surface"
+                size="md"
+                onPress={() => {
+                  if (from === 'bids') router.replace('/(tabs)/bids');
+                  else if (from === 'dashboard') router.replace('/(tabs)');
+                  else if (router.canGoBack()) router.back();
+                  else router.replace('/(tabs)');
+                }}
+              />
+            </View>
+          ) : null}
 
-          <View style={{ flex: 1, justifyContent: 'center', marginLeft: 8 }}>
-            <Text style={[styles.headerEyebrow, { color: colors.primary }]}>
-              Manage
+          <View
+            style={(!isNonPro || from) ? styles.headerCenterPro : { flex: 1, justifyContent: 'center' }}
+            pointerEvents={(!isNonPro || from) ? 'none' : undefined}
+          >
+            <Text
+              style={[
+                styles.headerEyebrow,
+                { color: colors.primary },
+                (!isNonPro || from) && styles.headerEyebrowPro,
+              ]}
+            >
+              INVESTOR PROFILES
             </Text>
-            <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+            <Text
+              style={[
+                styles.headerTitle,
+                { color: colors.foreground },
+                (!isNonPro || from) && styles.headerTitlePro,
+              ]}
+            >
               Users
             </Text>
           </View>
@@ -213,7 +241,7 @@ export default function UsersScreen() {
         </View>
 
         {/* Pill Style Tab Control Bar */}
-        <View style={{ paddingHorizontal: 10, marginTop: 17, marginBottom: 8 }}>
+        <View style={{ paddingHorizontal: 16, marginTop: 4, marginBottom: 12 }}>
           <Tabs
             variant="pills"
             height={36}
@@ -232,8 +260,8 @@ export default function UsersScreen() {
         data={displayedUsers}
         keyExtractor={(item: any) => item.id}
         contentContainerStyle={{
-          paddingTop: topPad + 127,
-          paddingBottom: insets.bottom + 90,
+          paddingTop: topPad + 120,
+          paddingBottom: insets.bottom + (isNonPro ? 90 : 20),
         }}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
@@ -242,7 +270,7 @@ export default function UsersScreen() {
         scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
-            refreshing={isLoading}
+            refreshing={isRefreshing}
             onRefresh={handleRefresh}
             tintColor={colors.primary}
             progressViewOffset={topPad + 123}
@@ -348,6 +376,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    position: 'relative',
+  },
+  headerCenterPro: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    paddingHorizontal: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerEyebrow: {
     fontSize: 11,
@@ -355,13 +392,26 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     textTransform: 'uppercase',
     marginBottom: 2,
+    textAlign: 'left',
+  },
+  headerEyebrowPro: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 1.1,
     textAlign: 'center',
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 30,
     fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.6,
-    lineHeight: 32,
+    letterSpacing: -0.8,
+    lineHeight: 34,
+    textAlign: 'left',
+  },
+  headerTitlePro: {
+    fontSize: 18,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
+    lineHeight: 24,
     textAlign: 'center',
   },
   emptyContainer: {

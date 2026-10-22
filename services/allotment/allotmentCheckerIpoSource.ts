@@ -1,5 +1,5 @@
-import { BackendIpo } from '@/types/backend-ipo';
-import { normalizeLifecycleStatus } from '@/services/ipo/statusNormalizer';
+import { BackendIpo } from '../../types/backend-ipo';
+import { normalizeLifecycleStatus } from '../ipo/statusNormalizer';
 
 export interface AllotmentCheckerIpoItem {
   id: string; // Canonical Backend UUID

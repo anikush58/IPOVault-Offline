@@ -9,7 +9,11 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IPOMasterRecord } from '@/services/ipo/types';
 import { formatIssueSize, getResolvedLogoUrl } from '@/utils/formatters';
 import { useCompare } from '@/context/CompareContext';
+import { useAppExperience } from '@/context/AppExperienceContext';
+import { useDB } from '@/context/DBContext';
+import * as WebBrowser from 'expo-web-browser';
 import { calculateNormalizedIPOStatus, getLifecycleStatusLabel } from '@/services/ipo/statusNormalizer';
+import { getRegistrarConfig } from '@/services/allotment/registrarConfig';
 
 const AVATAR_PALETTES: [string, string][] = [
   ['#8B5CF6', '#6D28D9'], // Purple
@@ -107,6 +111,8 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
   const isDark = colorScheme === 'dark';
   const router = useRouter();
   const { isInCompare, toggleCompare } = useCompare();
+  const { isNonPro, isPro } = useAppExperience();
+  const { applications } = useDB();
   const [logoError, setLogoError] = React.useState(false);
 
   React.useEffect(() => {
@@ -119,6 +125,33 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
   const companyNameStr = ipo.company_name || ipo.ipo_name || 'IPO';
   const avatarGradient = getAvatarGradient(companyNameStr);
   const resolvedLogo = getResolvedLogoUrl(ipo.logo_url, ipo.website, companyNameStr);
+
+  const ipoSymbol = (ipo.symbol || '').trim().toUpperCase();
+  const ipoCompName = (companyNameStr || '').trim().toLowerCase();
+  const ipoId = ipo.id;
+
+  const ipoApps = React.useMemo(() => {
+    if (!isPro) return [];
+    return (applications || []).filter((a) => {
+      if (a.status === 'Cancelled') return false;
+      if (ipoId && a.ipo_id === ipoId) return true;
+      if (ipoSymbol && (a as any).symbol && String((a as any).symbol).trim().toUpperCase() === ipoSymbol) return true;
+      if (ipoCompName && a.ipo_name && a.ipo_name.trim().toLowerCase() === ipoCompName) return true;
+      return false;
+    });
+  }, [isPro, applications, ipoId, ipoSymbol, ipoCompName]);
+
+  const appliedCount = isPro ? ipoApps.length : 0;
+  const allottedCount = React.useMemo(() => {
+    if (!isPro) return 0;
+    return ipoApps.filter(
+      (a) =>
+        a.status === 'Allotted' ||
+        a.status === 'Partially Allotted' ||
+        a.status === 'Holding' ||
+        a.status === 'Sold'
+    ).length;
+  }, [isPro, ipoApps]);
 
   // Format Price Band
   const priceBandText = React.useMemo(() => {
@@ -254,23 +287,28 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
   // Dynamic Dates and Labels
   let dateColLabel = 'Apply Dates';
   let dateColValue = formatApplyDates(ipo.open_date, ipo.close_date);
+  let dateColColor = colors.foreground;
 
   if (isListed) {
-    dateColLabel = 'Listing Date';
-    dateColValue = formatSingleDate(ipo.listing_date);
+    dateColLabel = isPro ? 'Allotted' : 'Listing Date';
+    dateColValue = isPro ? `${allottedCount}` : formatSingleDate(ipo.listing_date);
+    if (isPro && allottedCount > 0) {
+      dateColColor = '#10B981';
+    }
   } else if (isClosed) {
-    dateColLabel = 'Allotment Date';
-    dateColValue = formatSingleDate(ipo.allotment_date);
+    dateColLabel = isPro ? 'Applied' : 'Allotment Date';
+    dateColValue = isPro ? `${appliedCount}` : formatSingleDate(ipo.allotment_date);
   }
 
   // Button Label & Action
   const buttonLabel = React.useMemo(() => {
     if (isAllotmentOut) return 'Check';
+    if (isAllotmentPending) return 'Registrar';
     if (isListed) return 'Details';
     if (isClosed) return 'Details';
     if (isUpcoming) return 'View';
-    return 'Apply Now';
-  }, [isAllotmentOut, isListed, isClosed, isUpcoming]);
+    return isNonPro ? 'Details' : 'Apply Now';
+  }, [isAllotmentOut, isAllotmentPending, isListed, isClosed, isUpcoming, isNonPro]);
 
   const handleButtonPress = (e: any) => {
     e.stopPropagation?.();
@@ -279,6 +317,12 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
         pathname: '/allotment-checker',
         params: { ipoId: ipo.id },
       } as any);
+    } else if (isAllotmentPending) {
+      const config = getRegistrarConfig(ipo.registrar || ipo.ipo_name);
+      void WebBrowser.openBrowserAsync(config.url, {
+        showTitle: true,
+        enableBarCollapsing: true,
+      });
     } else {
       onPress(ipo);
     }
@@ -355,21 +399,16 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
           <View
             style={[
               styles.issueTypePill,
-              isSme
-                ? {
-                    backgroundColor: isDark ? 'rgba(236,72,153,0.12)' : '#FDF2F8',
-                    borderColor: isDark ? 'rgba(244,114,182,0.4)' : '#FBCFE8',
-                  }
-                : {
-                    backgroundColor: isDark ? 'rgba(99,102,241,0.12)' : '#EEF2FF',
-                    borderColor: isDark ? 'rgba(199,210,254,0.4)' : '#C7D2FE',
-                  },
+              {
+                backgroundColor: isSme ? '#EC4899' : '#4F46E5',
+                borderColor: isSme ? '#EC4899' : '#4F46E5',
+              },
             ]}
           >
             <Text
               style={[
                 styles.issueTypeText,
-                { color: isSme ? (isDark ? '#F472B6' : '#BE185D') : (isDark ? '#818CF8' : '#4F46E5') },
+                { color: '#FFFFFF' },
               ]}
             >
               {issueTypeLabel}
@@ -382,37 +421,37 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
               styles.statusPill,
               isClosingToday
                 ? {
-                    backgroundColor: isDark ? 'rgba(245,158,11,0.12)' : '#FFFBEB',
-                    borderColor: isDark ? 'rgba(251,191,36,0.4)' : '#FDE68A',
+                    backgroundColor: '#F59E0B',
+                    borderColor: '#F59E0B',
                   }
                 : isOpen
                 ? {
-                    backgroundColor: isDark ? 'rgba(34,197,94,0.12)' : '#F0FDF4',
-                    borderColor: isDark ? 'rgba(134,239,172,0.4)' : '#86EFAC',
+                    backgroundColor: '#10B981',
+                    borderColor: '#10B981',
                   }
                 : isUpcoming
                 ? {
-                    backgroundColor: isDark ? 'rgba(59,130,246,0.12)' : '#EFF6FF',
-                    borderColor: isDark ? 'rgba(147,197,253,0.4)' : '#93C5FD',
+                    backgroundColor: '#3B82F6',
+                    borderColor: '#3B82F6',
                   }
                 : isAllotmentOut
                 ? {
-                    backgroundColor: isDark ? 'rgba(6,182,212,0.12)' : '#E0F2FE',
-                    borderColor: isDark ? 'rgba(34,211,238,0.4)' : '#BAE6FD',
+                    backgroundColor: '#06B6D4',
+                    borderColor: '#06B6D4',
                   }
                 : isListed
                 ? {
-                    backgroundColor: isDark ? 'rgba(139,92,246,0.12)' : '#F5F3FF',
-                    borderColor: isDark ? 'rgba(221,214,254,0.4)' : '#DDD6FE',
+                    backgroundColor: '#8B5CF6',
+                    borderColor: '#8B5CF6',
                   }
                 : isAllotmentPending
                 ? {
-                    backgroundColor: isDark ? 'rgba(249,115,22,0.12)' : '#FFEDD5',
-                    borderColor: isDark ? 'rgba(251,146,60,0.4)' : '#FED7AA',
+                    backgroundColor: '#F97316',
+                    borderColor: '#F97316',
                   }
                 : {
-                    backgroundColor: isDark ? 'rgba(148,163,184,0.12)' : '#F8FAFC',
-                    borderColor: isDark ? 'rgba(203,213,225,0.4)' : '#CBD5E1',
+                    backgroundColor: '#64748B',
+                    borderColor: '#64748B',
                   },
             ]}
           >
@@ -420,7 +459,7 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
               <Feather
                 name="clock"
                 size={11.5}
-                color={isDark ? '#FBBF24' : '#D97706'}
+                color="#FFFFFF"
                 style={{ marginRight: 2 }}
               />
             )}
@@ -428,7 +467,7 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
               <Feather
                 name="zap"
                 size={11.5}
-                color={isDark ? '#34D399' : '#059669'}
+                color="#FFFFFF"
                 style={{ marginRight: 2 }}
               />
             )}
@@ -436,7 +475,7 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
               <Feather
                 name="calendar"
                 size={11.5}
-                color={isDark ? '#60A5FA' : '#1D4ED8'}
+                color="#FFFFFF"
                 style={{ marginRight: 2 }}
               />
             )}
@@ -444,7 +483,7 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
               <Feather
                 name="check-circle"
                 size={11.5}
-                color={isDark ? '#22D3EE' : '#0891B2'}
+                color="#FFFFFF"
                 style={{ marginRight: 2 }}
               />
             )}
@@ -452,7 +491,7 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
               <Feather
                 name="award"
                 size={11.5}
-                color={isDark ? '#A78BFA' : '#7C3AED'}
+                color="#FFFFFF"
                 style={{ marginRight: 2 }}
               />
             )}
@@ -460,7 +499,7 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
               <Feather
                 name="clock"
                 size={11.5}
-                color={isDark ? '#FB923C' : '#EA580C'}
+                color="#FFFFFF"
                 style={{ marginRight: 2 }}
               />
             )}
@@ -468,19 +507,7 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
               style={[
                 styles.statusText,
                 {
-                  color: isClosingToday
-                    ? (isDark ? '#FBBF24' : '#D97706')
-                    : isOpen
-                    ? (isDark ? '#34D399' : '#059669')
-                    : isUpcoming
-                    ? (isDark ? '#60A5FA' : '#1D4ED8')
-                    : isAllotmentOut
-                    ? (isDark ? '#22D3EE' : '#0891B2')
-                    : isListed
-                    ? (isDark ? '#A78BFA' : '#7C3AED')
-                    : isAllotmentPending
-                    ? (isDark ? '#FB923C' : '#EA580C')
-                    : (isDark ? '#94A3B8' : '#64748B'),
+                  color: '#FFFFFF',
                 },
               ]}
             >
@@ -506,7 +533,7 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
             <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
               {dateColLabel}
             </Text>
-            <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+            <Text style={[styles.dataVal, { color: dateColColor }]} numberOfLines={1}>
               {dateColValue}
             </Text>
           </View>
@@ -675,28 +702,28 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   issueTypePill: {
-    borderRadius: 8,
+    borderRadius: 5,
     borderWidth: 1,
-    paddingHorizontal: 9,
-    paddingVertical: 4.5,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
   issueTypeText: {
-    fontSize: 11.5,
+    fontSize: 9.5,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: 5,
     borderWidth: 1,
-    paddingHorizontal: 9,
-    paddingVertical: 4.5,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
   },
   statusText: {
-    fontSize: 11.5,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
+    fontSize: 9.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   innerDataCard: {
     borderRadius: 16,

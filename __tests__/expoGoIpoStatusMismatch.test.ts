@@ -130,7 +130,7 @@ export async function runExpoGoIpoStatusTestSuite() {
       'Does not remain CLOSED once backend sends ALLOTMENT_AWAITING'
     );
 
-    // 6b: Post-close day progression (closeDate in past)
+    // 6b: Post-close day progression: remains CLOSED until configured allotment_date, then ALLOTTED_PENDING
     const recordPastClose = {
       status: 'CLOSED',
       open_date: '2026-10-01',
@@ -138,11 +138,40 @@ export async function runExpoGoIpoStatusTestSuite() {
       allotment_date: '2026-10-08',
       listing_date: '2026-10-10',
     };
-    const norm6b = calculateNormalizedIPOStatus(recordPastClose, '2026-10-06');
+    // Day after close date, before allotment date (2026-10-06): remains CLOSED
+    const normBeforeAllotment = calculateNormalizedIPOStatus(recordPastClose, '2026-10-06');
     assert(
-      norm6b === 'ALLOTTED_PENDING',
-      'Case 6b: Post-close date progression',
-      'Day after close date progresses from CLOSED to ALLOTTED_PENDING ("Allotment Awaited")'
+      normBeforeAllotment === 'CLOSED',
+      'Case 6b: Post-close date before allotment date',
+      'Remains CLOSED between close date and configured allotment date'
+    );
+
+    // On configured allotment date (2026-10-08): transitions to ALLOTTED_PENDING ("Allotment Awaited")
+    const normOnAllotmentDate = calculateNormalizedIPOStatus(recordPastClose, '2026-10-08');
+    assert(
+      normOnAllotmentDate === 'ALLOTTED_PENDING',
+      'Case 6c: On allotment date',
+      'Transitions to ALLOTTED_PENDING ("Allotment Awaited") on its configured allotment date'
+    );
+
+    // After allotment date (2026-10-09): remains ALLOTTED_PENDING (never auto-marked out solely by passage of time)
+    const normAfterAllotmentDate = calculateNormalizedIPOStatus(recordPastClose, '2026-10-09');
+    assert(
+      normAfterAllotmentDate === 'ALLOTTED_PENDING',
+      'Case 6d: After allotment date without backend declaration',
+      'Remains ALLOTTED_PENDING; date passage alone never marks allotment as out'
+    );
+
+    // Explicit declaration from backend -> ALLOTTED_AVAILABLE ("Allotment Out")
+    const recordAllotmentOut = {
+      ...recordPastClose,
+      status: 'ALLOTMENT_OUT',
+    };
+    const normAllotmentOut = calculateNormalizedIPOStatus(recordAllotmentOut, '2026-10-09');
+    assert(
+      normAllotmentOut === 'ALLOTTED_AVAILABLE',
+      'Case 6e: Authoritative Allotment Out',
+      'Transitions to ALLOTTED_AVAILABLE once backend declares allotment out'
     );
   }
 

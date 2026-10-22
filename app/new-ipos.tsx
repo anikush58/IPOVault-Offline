@@ -12,15 +12,14 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
   useWindowDimensions,
   View,
 } from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -29,25 +28,87 @@ import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
+import { IOSToggle } from '@/components/ui/IOSToggle';
 import { ScoopedBottomSheet } from '@/components/ui/ScoopedBottomSheet';
 import { Tabs } from '@/components/ui/Tabs';
 import { NativeAdCard } from '@/components/ads/NativeAdCard';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { BackendIpo } from '@/types/backend-ipo';
+import { useAppExperience } from '@/context/AppExperienceContext';
 import { useDB } from '@/context/DBContext';
 import { formatCurrency, formatIssueSize } from '@/utils/formatters';
 import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 import { triggerCentralizedIPOSync } from '@/services/ipo/centralizedSync';
 import { getISTDateTime } from '@/services/ipo/statusNormalizer';
-import { getCachedBackendIpos, saveBackendIposToCache } from '@/services/ipo/ipoHubCacheService';
+import { getCachedBackendIpos, reconcileBackendIposWithCache } from '@/services/ipo/ipoHubCacheService';
 
 import {
   NewIpoTab,
   getFirstAvailableIpoHubTab,
 } from '@/utils/ipoHubTabUtils';
 export { NewIpoTab, getFirstAvailableIpoHubTab };
-export type SortOption = 'DEFAULT' | 'GMP';
+export type SortOption = 'DEFAULT' | 'GMP' | 'CLOSING_SOON';
+export type MarketFilterOption = 'ALL' | 'MAINBOARD' | 'SME';
+
+export const MARKET_OPTIONS: {
+  key: MarketFilterOption;
+  label: string;
+}[] = [
+  { key: 'ALL', label: 'All Markets' },
+  { key: 'MAINBOARD', label: 'Mainboard' },
+  { key: 'SME', label: 'SME' },
+];
+
+function parseIpoDateToTimestamp(str?: string | null): number {
+  if (!str) return Infinity;
+  const clean = str.trim();
+  if (!clean || clean.toUpperCase() === 'TBA' || clean.toUpperCase() === 'N/A') return Infinity;
+  if (/^\d{1,2}[-/]\d{1,2}[-/]\d{4}$/.test(clean)) {
+    const parts = clean.split(/[-/]/);
+    const day = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const year = parseInt(parts[2], 10);
+    const d = new Date(year, month, day);
+    return isNaN(d.getTime()) ? Infinity : d.getTime();
+  }
+  const d = new Date(clean);
+  return isNaN(d.getTime()) ? Infinity : d.getTime();
+}
+
+const SORT_OPTIONS: {
+  key: SortOption;
+  label: string;
+  sub: string;
+}[] = [
+  {
+    key: 'DEFAULT',
+    label: 'Timeline',
+    sub: 'Upcoming, live, then closed',
+  },
+  {
+    key: 'GMP',
+    label: 'Highest expected GMP',
+    sub: 'Top profit potential first',
+  },
+  {
+    key: 'CLOSING_SOON',
+    label: 'Closing soon',
+    sub: 'Nearest closing date first',
+  },
+];
+
+function getSortOptionLabel(key: SortOption): string {
+  switch (key) {
+    case 'GMP':
+      return 'Highest expected GMP';
+    case 'CLOSING_SOON':
+      return 'Closing soon';
+    default:
+      return 'Timeline';
+  }
+}
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList as any);
 
@@ -220,11 +281,7 @@ interface NewIpoCardItemProps {
   tab: NewIpoTab;
   colors: any;
   isDark: boolean;
-  totalAppsCount: number;
-  appliedCount: number;
-  allottedCount: number;
   onPress: (item: BackendIpo) => void;
-  onApplyPress: (item: BackendIpo) => void;
 }
 
 const NewIpoCardItem = React.memo(
@@ -233,14 +290,40 @@ const NewIpoCardItem = React.memo(
     tab,
     colors,
     isDark,
-    totalAppsCount,
-    appliedCount,
-    allottedCount,
     onPress,
-    onApplyPress,
   }: NewIpoCardItemProps) {
     const router = useRouter();
+    const { isPro } = useAppExperience();
+    const { applications } = useDB();
     const companyName = item.company?.displayName || item.companyName || item.symbol || 'IPO';
+
+    const itemSymbol = (item.symbol || (item.company as any)?.symbol || '').trim().toUpperCase();
+    const itemCompName = (companyName || item.companyName || '').trim().toLowerCase();
+    const itemId = item.id;
+
+    const ipoApps = React.useMemo(() => {
+      if (!isPro) return [];
+      return (applications || []).filter((a) => {
+        if (a.status === 'Cancelled') return false;
+        if (itemId && a.ipo_id === itemId) return true;
+        if (itemSymbol && (a as any).symbol && String((a as any).symbol).trim().toUpperCase() === itemSymbol) return true;
+        if (itemCompName && a.ipo_name && a.ipo_name.trim().toLowerCase() === itemCompName) return true;
+        return false;
+      });
+    }, [isPro, applications, itemId, itemSymbol, itemCompName]);
+
+    const appliedCount = isPro ? ipoApps.length : 0;
+    const allottedCount = React.useMemo(() => {
+      if (!isPro) return 0;
+      return ipoApps.filter(
+        (a) =>
+          a.status === 'Allotted' ||
+          a.status === 'Partially Allotted' ||
+          a.status === 'Holding' ||
+          a.status === 'Sold'
+      ).length;
+    }, [isPro, ipoApps]);
+
     const formatIntPrice = (val: any) => {
       if (val == null || val === '') return null;
       const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^0-9.]/g, ''));
@@ -324,16 +407,13 @@ const NewIpoCardItem = React.memo(
       (item as any).listing_date;
     const listingDateStr = formatSingleDate(listingDateRaw);
 
-    let dateLabel = 'Apply Dates';
-    let dateValueStr = applyDateStr;
+    const dateLabel = isListed ? 'Listing Date' : 'Apply Dates';
+    const dateValueStr = isListed ? listingDateStr : applyDateStr;
 
-    if (isListed) {
-      dateLabel = 'Listing Date';
-      dateValueStr = listingDateStr;
-    } else if (tab === 'closed' || isClosedOrListed) {
-      dateLabel = 'Allotment Date';
-      dateValueStr = allotmentDateStr;
-    }
+    const minInvestmentLabel = isListed ? 'Issue Price' : 'Min Investment';
+    const minInvestmentValue = isListed
+      ? (upperPrice > 0 ? `₹${upperPrice}` : '—')
+      : (minInvestment ? `₹${minInvestment.toLocaleString('en-IN')}` : '—');
 
     const logoUrl = item.company?.logoUrl || (item as any).logoUrl || (item as any).logo_url;
     const initials = companyName
@@ -379,27 +459,43 @@ const NewIpoCardItem = React.memo(
       ? (exptProfitPerLot >= 0 ? '#10B981' : '#EF4444')
       : colors.mutedForeground;
 
-    const buttonLabel = isAllotmentOut
-      ? 'Check'
-      : isUpcoming || (tab as string) === 'upcoming'
-      ? 'View'
-      : isListed || isClosedOrListed
-      ? 'Details'
-      : 'Apply Now';
+    const row2Col1Label = isListed ? 'Listing Price' : 'Expt. GMP';
+    const row2Col1Val = isListed
+      ? (listingPrice != null ? `₹${listingPrice}` : gmpDisplay)
+      : gmpDisplay;
+    const row2Col1Color = isListed ? colors.foreground : gmpColor;
 
-    const handleButtonAction = (e: any) => {
-      e.stopPropagation?.();
-      if (isAllotmentOut) {
-        router.push({
-          pathname: '/allotment-checker',
-          params: { ipoId: item.id },
-        } as any);
-      } else if (isOpen) {
-        onApplyPress(item);
-      } else {
-        onPress(item);
-      }
-    };
+    const row2Col2Label = isListed ? 'Listing Gain' : 'Expt. Profit/Lot';
+    const row2Col2Val = isListed
+      ? (listingGainPct != null ? `${listingGainPct > 0 ? '+' : ''}${listingGainPct.toFixed(1)}%` : exptProfitDisplay)
+      : exptProfitDisplay;
+    const row2Col2Color = isListed
+      ? (listingGainPct != null ? (listingGainPct >= 0 ? '#10B981' : '#EF4444') : profitColor)
+      : profitColor;
+
+    const row2Col3Label = isPro ? 'Applied' : (isListed ? 'Profit/Lot' : 'Allotment');
+    const row2Col3Val = isPro
+      ? `${appliedCount}`
+      : (isListed
+          ? (profitAmt != null
+              ? (profitAmt >= 0 ? `₹${Math.round(profitAmt).toLocaleString('en-IN')}` : `-₹${Math.abs(Math.round(profitAmt)).toLocaleString('en-IN')}`)
+              : (exptProfitDisplay !== '—' ? exptProfitDisplay : '—'))
+          : (isAllotmentOut && allotmentDateStr === 'TBA' ? 'Out' : allotmentDateStr));
+    const row2Col3Color = isPro
+      ? colors.foreground
+      : (isListed
+          ? (profitAmt != null ? (profitAmt >= 0 ? '#10B981' : '#EF4444') : colors.foreground)
+          : (isAllotmentOut ? '#10B981' : colors.foreground));
+
+    const row2Col4Label = isPro ? 'Allotted' : (isListed ? 'Lot Size' : 'Listing');
+    const row2Col4Val = isPro
+      ? `${allottedCount}`
+      : (isListed
+          ? (lotQty > 0 ? `${lotQty} Shares` : '—')
+          : listingDateStr);
+    const row2Col4Color = isPro
+      ? (allottedCount > 0 ? '#10B981' : colors.foreground)
+      : colors.foreground;
 
     return (
       <TouchableOpacity
@@ -459,21 +555,16 @@ const NewIpoCardItem = React.memo(
             <View
               style={[
                 styles.segmentBadge,
-                isSme
-                  ? {
-                      backgroundColor: isDark ? 'rgba(236,72,153,0.12)' : '#FDF2F8',
-                      borderColor: isDark ? 'rgba(244,114,182,0.4)' : '#FBCFE8',
-                    }
-                  : {
-                      backgroundColor: isDark ? 'rgba(99,102,241,0.12)' : '#EEF2FF',
-                      borderColor: isDark ? 'rgba(199,210,254,0.4)' : '#C7D2FE',
-                    },
+                {
+                  backgroundColor: isSme ? '#EC4899' : '#4F46E5',
+                  borderColor: isSme ? '#EC4899' : '#4F46E5',
+                },
               ]}
             >
               <Text
                 style={[
                   styles.segmentBadgeText,
-                  { color: isSme ? (isDark ? '#F472B6' : '#BE185D') : (isDark ? '#818CF8' : '#4F46E5') },
+                  { color: '#FFFFFF' },
                 ]}
               >
                 {isSme ? 'SME' : 'Mainboard'}
@@ -486,72 +577,72 @@ const NewIpoCardItem = React.memo(
                 styles.statusPillNew,
                 isItemClosingToday
                   ? {
-                      backgroundColor: isDark ? 'rgba(245,158,11,0.12)' : '#FFFBEB',
-                      borderColor: isDark ? 'rgba(251,191,36,0.4)' : '#FDE68A',
+                      backgroundColor: '#F59E0B',
+                      borderColor: '#F59E0B',
                     }
                   : isOpen
                   ? {
-                      backgroundColor: isDark ? 'rgba(34,197,94,0.12)' : '#F0FDF4',
-                      borderColor: isDark ? 'rgba(134,239,172,0.4)' : '#86EFAC',
+                      backgroundColor: '#10B981',
+                      borderColor: '#10B981',
                     }
                   : isUpcoming
                   ? {
-                      backgroundColor: isDark ? 'rgba(59,130,246,0.12)' : '#EFF6FF',
-                      borderColor: isDark ? 'rgba(147,197,253,0.4)' : '#93C5FD',
+                      backgroundColor: '#3B82F6',
+                      borderColor: '#3B82F6',
                     }
                   : isAllotmentOut
                   ? {
-                      backgroundColor: isDark ? 'rgba(6,182,212,0.12)' : '#E0F2FE',
-                      borderColor: isDark ? 'rgba(34,211,238,0.4)' : '#BAE6FD',
+                      backgroundColor: '#06B6D4',
+                      borderColor: '#06B6D4',
                     }
                   : isListed
                   ? {
-                      backgroundColor: isDark ? 'rgba(139,92,246,0.12)' : '#F5F3FF',
-                      borderColor: isDark ? 'rgba(221,214,254,0.4)' : '#DDD6FE',
+                      backgroundColor: '#8B5CF6',
+                      borderColor: '#8B5CF6',
                     }
                   : {
-                      backgroundColor: isDark ? 'rgba(148,163,184,0.12)' : '#F8FAFC',
-                      borderColor: isDark ? 'rgba(203,213,225,0.4)' : '#CBD5E1',
+                      backgroundColor: '#64748B',
+                      borderColor: '#64748B',
                     },
               ]}
             >
               {isItemClosingToday && (
-                <Feather
+                <Icon
                   name="clock"
-                  size={11.5}
-                  color={isDark ? '#FBBF24' : '#D97706'}
+                  size={12}
+                  color="#FFFFFF"
                   style={{ marginRight: 2 }}
                 />
               )}
               {isOpen && (
-                <Feather
+                <Icon
                   name="zap"
-                  size={11.5}
-                  color={isDark ? '#34D399' : '#059669'}
+                  size={12}
+                  color="#FFFFFF"
                   style={{ marginRight: 2 }}
                 />
               )}
               {isUpcoming && (
-                <Feather
+                <Icon
                   name="calendar"
-                  size={11.5}
-                  color={isDark ? '#60A5FA' : '#1D4ED8'}
+                  size={12}
+                  color="#FFFFFF"
                   style={{ marginRight: 2 }}
                 />
               )}
               {isAllotmentOut && (
-                <Feather
+                <Icon
                   name="check-circle"
-                  size={11.5}
-                  color={isDark ? '#22D3EE' : '#0891B2'}
+                  size={12}
+                  color="#FFFFFF"
                   style={{ marginRight: 2 }}
                 />
               )}
               {isListed && (
-                <Feather
+                <Icon
                   name="award"
-                  size={11.5}
-                  color={isDark ? '#A78BFA' : '#7C3AED'}
+                  size={12}
+                  color="#FFFFFF"
                   style={{ marginRight: 2 }}
                 />
               )}
@@ -559,17 +650,7 @@ const NewIpoCardItem = React.memo(
                 style={[
                   styles.statusTextNew,
                   {
-                    color: isItemClosingToday
-                      ? (isDark ? '#FBBF24' : '#D97706')
-                      : isOpen
-                      ? (isDark ? '#34D399' : '#059669')
-                      : isUpcoming
-                      ? (isDark ? '#60A5FA' : '#1D4ED8')
-                      : isAllotmentOut
-                      ? (isDark ? '#22D3EE' : '#0891B2')
-                      : isListed
-                      ? (isDark ? '#A78BFA' : '#7C3AED')
-                      : (isDark ? '#94A3B8' : '#64748B'),
+                    color: '#FFFFFF',
                   },
                 ]}
               >
@@ -599,7 +680,7 @@ const NewIpoCardItem = React.memo(
             },
           ]}
         >
-          {/* Row 1: Apply Dates | Min Investment | Lot Size | Issue Size */}
+          {/* Row 1: Apply Dates | Min Investment | Issue Size | Subscription */}
           <View style={styles.innerDataRow}>
             <View style={{ flex: 1.2 }}>
               <Text style={[styles.innerDataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
@@ -612,83 +693,90 @@ const NewIpoCardItem = React.memo(
 
             <View style={{ flex: 1.2 }}>
               <Text style={[styles.innerDataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                Min Investment
+                {minInvestmentLabel}
               </Text>
               <Text style={[styles.innerDataVal, { color: colors.foreground }]} numberOfLines={1}>
-                {minInvestment ? `₹${minInvestment.toLocaleString('en-IN')}` : '—'}
+                {minInvestmentValue}
               </Text>
             </View>
 
-            <View style={{ flex: 0.85 }}>
+            <View style={{ flex: 0.95 }}>
               <Text style={[styles.innerDataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                Lot Size
+                Issue Size
               </Text>
               <Text style={[styles.innerDataVal, { color: colors.foreground }]} numberOfLines={1}>
-                {lotQty ? `${lotQty}` : '—'}
+                {formatIssueSize(item.issueSize ?? (item as any).issue_size ?? (item as any).totalIssueSize ?? (item as any).total_issue_size)}
               </Text>
             </View>
 
-            <View style={{ flex: 1.15, alignItems: 'flex-end' }}>
-              <View style={{ width: 94, alignItems: 'flex-start' }}>
+            <View style={{ flex: 1.05, alignItems: 'flex-end' }}>
+              <View style={{ width: 85, alignItems: 'flex-start' }}>
                 <Text style={[styles.innerDataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                  Issue Size
+                  Subscription
                 </Text>
                 <Text style={[styles.innerDataVal, { color: colors.foreground }]} numberOfLines={1}>
-                  {formatIssueSize(item.issueSize ?? (item as any).issue_size ?? (item as any).totalIssueSize ?? (item as any).total_issue_size)}
+                  {subDisplay}
                 </Text>
               </View>
             </View>
           </View>
 
-          {/* Row 2: Expt. GMP | Expt. Profit/Lot | Subscription | Action CTA Button */}
+          {/* Row 2: Expt. GMP | Expt. Profit/Lot | Allotment | Listing (or Listing Price | Listing Gain | Profit/Lot | Lot Size for Listed) */}
           <View style={[styles.innerDataRow, { marginTop: 14, alignItems: 'center' }]}>
             <View style={{ flex: 1.2 }}>
               <Text style={[styles.innerDataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                Expt. GMP
+                {row2Col1Label}
               </Text>
-              <Text style={[styles.innerDataVal, { color: gmpColor }]} numberOfLines={1}>
-                {gmpDisplay}
+              <Text style={[styles.innerDataVal, { color: row2Col1Color }]} numberOfLines={1}>
+                {row2Col1Val}
               </Text>
             </View>
 
             <View style={{ flex: 1.2 }}>
               <Text style={[styles.innerDataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                Expt. Profit/Lot
+                {row2Col2Label}
               </Text>
-              <Text style={[styles.innerDataVal, { color: profitColor }]} numberOfLines={1}>
-                {exptProfitDisplay}
+              <Text style={[styles.innerDataVal, { color: row2Col2Color }]} numberOfLines={1}>
+                {row2Col2Val}
               </Text>
             </View>
 
-            <View style={{ flex: 0.85 }}>
+            <View style={{ flex: 0.95 }}>
               <Text style={[styles.innerDataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                Subscription
+                {row2Col3Label}
               </Text>
-              <Text style={[styles.innerDataVal, { color: colors.foreground }]} numberOfLines={1}>
-                {subDisplay}
-              </Text>
-            </View>
-
-            <View style={{ flex: 1.15, alignItems: 'flex-end', justifyContent: 'center' }}>
-              <TouchableOpacity
-                activeOpacity={0.82}
-                onPress={handleButtonAction}
+              <Text
                 style={[
-                  styles.innerApplyBtn,
+                  styles.innerDataVal,
                   {
-                    backgroundColor: isDark ? '#38BDF8' : '#0F172A',
+                    color: row2Col3Color,
+                    fontFamily: isAllotmentOut && !isListed ? 'GoogleSansFlex_700Bold' : 'GoogleSansFlex_600SemiBold',
                   },
                 ]}
+                numberOfLines={1}
               >
+                {row2Col3Val}
+              </Text>
+            </View>
+
+            <View style={{ flex: 1.05, alignItems: 'flex-end' }}>
+              <View style={{ width: 85, alignItems: 'flex-start' }}>
+                <Text style={[styles.innerDataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                  {row2Col4Label}
+                </Text>
                 <Text
                   style={[
-                    styles.innerApplyBtnText,
-                    { color: isDark ? '#0F172A' : '#FFFFFF' },
+                    styles.innerDataVal,
+                    {
+                      color: row2Col4Color,
+                      fontFamily: isPro && allottedCount > 0 ? 'GoogleSansFlex_700Bold' : 'GoogleSansFlex_600SemiBold',
+                    },
                   ]}
+                  numberOfLines={1}
                 >
-                  {buttonLabel}
+                  {row2Col4Val}
                 </Text>
-              </TouchableOpacity>
+              </View>
             </View>
           </View>
         </View>
@@ -705,11 +793,19 @@ export default function NewIposScreen() {
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { isNonPro } = useAppExperience();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
-  const { applications } = useDB();
 
-  const [rawIpos, setRawIpos] = useState<BackendIpo[]>([]);
-  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
+
+  const [rawIpos, setRawIpos] = useState<BackendIpo[]>(() => {
+    return backendIpoApiService.getCachedIpos() || [];
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    return !(backendIpoApiService.getCachedIpos()?.length);
+  });
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -758,32 +854,44 @@ export default function NewIposScreen() {
   const hasAutoSelectedTabRef = useRef<boolean>(false);
 
   const [activeTab, setActiveTab] = useState<NewIpoTab>('live');
+  const [marketFilter, setMarketFilter] = useState<MarketFilterOption>('ALL');
   const [includeSme, setIncludeSme] = useState(true);
   const [onlyActiveGmp, setOnlyActiveGmp] = useState(false);
   const [onlyClosingToday, setOnlyClosingToday] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('DEFAULT');
+  const [tempMarketFilter, setTempMarketFilter] = useState<MarketFilterOption>('ALL');
   const [tempIncludeSme, setTempIncludeSme] = useState(true);
   const [tempOnlyActiveGmp, setTempOnlyActiveGmp] = useState(false);
   const [tempOnlyClosingToday, setTempOnlyClosingToday] = useState(false);
   const [tempSortBy, setTempSortBy] = useState<SortOption>('DEFAULT');
   const [showFilterModal, setShowFilterModal] = useState(false);
 
-  const hasActiveFilter = !includeSme || onlyActiveGmp || onlyClosingToday || sortBy !== 'DEFAULT';
+  const hasActiveFilter = marketFilter !== 'ALL' || onlyActiveGmp || onlyClosingToday || sortBy !== 'DEFAULT';
+
+  const activeFilterCount =
+    (tempMarketFilter !== 'ALL' ? 1 : 0) +
+    (tempOnlyActiveGmp ? 1 : 0) +
+    (tempOnlyClosingToday ? 1 : 0) +
+    (tempSortBy !== 'DEFAULT' ? 1 : 0);
 
   const filterChipLabel = useMemo(() => {
     const labels: string[] = [];
-    if (!includeSme) labels.push('Mainboard Only');
-    if (onlyActiveGmp) labels.push('Active GMP');
+    if (marketFilter === 'MAINBOARD') labels.push('Mainboard');
+    if (marketFilter === 'SME') labels.push('SME');
+    if (onlyActiveGmp) labels.push('Positive GMP');
     if (onlyClosingToday) labels.push('Closing Today');
     if (sortBy === 'GMP') labels.push('GMP: Highest');
+    if (sortBy === 'CLOSING_SOON') labels.push('Closing Soon');
     return labels.join(' · ');
-  }, [includeSme, onlyActiveGmp, onlyClosingToday, sortBy]);
+  }, [marketFilter, onlyActiveGmp, onlyClosingToday, sortBy]);
 
   const handleQuickClearFilters = useCallback(() => {
+    setMarketFilter('ALL');
     setIncludeSme(true);
     setOnlyActiveGmp(false);
     setOnlyClosingToday(false);
     setSortBy('DEFAULT');
+    setTempMarketFilter('ALL');
     setTempIncludeSme(true);
     setTempOnlyActiveGmp(false);
     setTempOnlyClosingToday(false);
@@ -792,13 +900,14 @@ export default function NewIposScreen() {
   }, []);
 
   const openFilterModal = useCallback(() => {
-    setTempIncludeSme(includeSme);
+    setTempMarketFilter(marketFilter);
+    setTempIncludeSme(marketFilter !== 'MAINBOARD');
     setTempOnlyActiveGmp(onlyActiveGmp);
     setTempOnlyClosingToday(onlyClosingToday);
     setTempSortBy(sortBy);
     setShowFilterModal(true);
     try { Haptics.selectionAsync(); } catch {}
-  }, [includeSme, onlyActiveGmp, onlyClosingToday, sortBy]);
+  }, [marketFilter, onlyActiveGmp, onlyClosingToday, sortBy]);
 
   const handleTabPress = useCallback((tab: NewIpoTab) => {
     userSelectedTabRef.current = true;
@@ -881,6 +990,7 @@ export default function NewIposScreen() {
     const thisRequestId = ++requestIdRef.current;
     inFlightQueryRef.current = isSearchMode ? trimmedQuery : null;
     isFetchingRef.current = true;
+    lastFetchedAtRef.current = Date.now();
     const fetchStart = Date.now();
 
     try {
@@ -895,8 +1005,36 @@ export default function NewIposScreen() {
       }
 
       if (Array.isArray(data)) {
-        setRawIpos(data);
         lastFetchedAtRef.current = Date.now();
+
+        if (db && data.length > 0) {
+          // Reconcile incoming data against SQLite cache to detect real changes
+          const syncResult = await reconcileBackendIposWithCache(db, data);
+
+          if (syncResult.hasChanges) {
+            // Fresh records were inserted or updated in SQLite!
+            // Refresh displayed data directly from SQLite
+            const freshCached = await getCachedBackendIpos(db, searchQuery);
+            setRawIpos(freshCached);
+          } else {
+            // Backend data is UNCHANGED!
+            // Do not rewrite records, do not update timestamps, do not replace rawIpos!
+            // If rawIpos is currently empty (e.g. cold start with empty cache), populate from SQLite
+            setRawIpos((prev) => {
+              if (prev.length === 0) {
+                getCachedBackendIpos(db, searchQuery).then((cached) => {
+                  if (cached.length > 0) {
+                    setRawIpos(cached);
+                  }
+                });
+              }
+              return prev;
+            });
+          }
+        } else if (!db) {
+          // Fallback if db handle is unavailable
+          setRawIpos(data);
+        }
 
         const elapsed = Date.now() - fetchStart;
         console.log(`[IPO Hub Timing] Background refresh completed in ${elapsed}ms (${data.length} items)`);
@@ -904,11 +1042,6 @@ export default function NewIposScreen() {
         if (!firstCardRenderLoggedRef.current && data.length > 0) {
           firstCardRenderLoggedRef.current = true;
           console.log(`[IPO Hub Timing] First visible IPO cards (${data.length} items) in ${Date.now() - mountTimeRef.current}ms (Source: Backend API)`);
-        }
-
-        // Asynchronously update local SQLite cache when not filtering by search query
-        if (db && data.length > 0 && !trimmedQuery) {
-          saveBackendIposToCache(db, data).catch(() => {});
         }
       }
     } catch (e: any) {
@@ -938,24 +1071,24 @@ export default function NewIposScreen() {
     fetchBackendIpos();
   }, [fetchBackendIpos]);
 
-  // Screen Focus Auto-Refresh with 15-second debounce / cooldown
+  // Screen Focus Auto-Refresh with 60-second debounce / cooldown
   useFocusEffect(
     useCallback(() => {
       const now = Date.now();
-      if (now - lastFetchedAtRef.current >= 15000 && !isFetchingRef.current) {
+      if (now - lastFetchedAtRef.current >= 60000 && !isFetchingRef.current) {
         fetchBackendIpos();
       }
     }, [fetchBackendIpos])
   );
 
-  // 15-Second Periodic Polling & Global Event Sync Auto-Refresh
+  // 60-Second Periodic Polling & Global Event Sync Auto-Refresh
   useEffect(() => {
     const timer = setInterval(() => {
       const now = Date.now();
-      if (now - lastFetchedAtRef.current >= 15000 && !isFetchingRef.current) {
+      if (now - lastFetchedAtRef.current >= 60000 && !isFetchingRef.current) {
         fetchBackendIpos();
       }
-    }, 15000);
+    }, 60000);
 
     const unsubscribe = backendSyncEmitter.subscribe(async (event) => {
       if (event === 'applications') {
@@ -983,41 +1116,12 @@ export default function NewIposScreen() {
     }
   }, [fetchBackendIpos, db]);
 
-  // Memoized application statistics map (O(N) calculation run only when rawIpos or applications change)
-  const appStatsMap = useMemo(() => {
-    const map = new Map<string, { total: number; applied: number; allotted: number }>();
-    if (!rawIpos.length) return map;
-
-    for (const item of rawIpos) {
-      const companyName = (item.company?.displayName || item.companyName || item.symbol || '').toLowerCase().trim();
-      let total = 0;
-      let applied = 0;
-      let allotted = 0;
-
-      for (let i = 0; i < applications.length; i++) {
-        const a = applications[i];
-        let matched = a.ipo_id === item.id;
-        if (!matched && companyName) {
-          const aName = (a.ipo_name || '').toLowerCase().trim();
-          if (aName && (aName === companyName || aName.includes(companyName) || companyName.includes(aName))) {
-            matched = true;
-          }
-        }
-        if (matched) {
-          total++;
-          if (a.status === 'Applied' || a.status === 'Mandate Approved') applied++;
-          if (a.status === 'Allotted' || a.status === 'Partially Allotted' || a.status === 'Holding' || a.status === 'Sold') allotted++;
-        }
-      }
-      map.set(item.id, { total, applied, allotted });
-    }
-    return map;
-  }, [rawIpos, applications]);
-
   const filteredRawIpos = useMemo(() => {
     let list = rawIpos;
-    if (!includeSme) {
+    if (marketFilter === 'MAINBOARD') {
       list = list.filter((i) => i.marketSegment !== 'SME');
+    } else if (marketFilter === 'SME') {
+      list = list.filter((i) => i.marketSegment === 'SME' || ((i as any).issue_type || '').toUpperCase().includes('SME'));
     }
     if (onlyActiveGmp) {
       list = list.filter(hasActiveGmp);
@@ -1033,7 +1137,7 @@ export default function NewIposScreen() {
       });
     }
     return list;
-  }, [rawIpos, includeSme, onlyActiveGmp, onlyClosingToday, searchQuery]);
+  }, [rawIpos, marketFilter, onlyActiveGmp, onlyClosingToday, searchQuery]);
 
   const liveList = useMemo(() => {
     return filteredRawIpos.filter((item) => {
@@ -1072,10 +1176,61 @@ export default function NewIposScreen() {
           return arr.sort((a, b) => {
             const gmpPctA = getIpoGmpPercentage(a);
             const gmpPctB = getIpoGmpPercentage(b);
-            return gmpPctB - gmpPctA;
+            if (gmpPctB !== gmpPctA) return gmpPctB - gmpPctA;
+            // Deterministic tie-breakers:
+            const tA = parseIpoDateToTimestamp(a.openDate || a.lifecycle?.openDate);
+            const tB = parseIpoDateToTimestamp(b.openDate || b.lifecycle?.openDate);
+            if (tA !== tB) {
+              if (tA === Infinity) return 1;
+              if (tB === Infinity) return -1;
+              return tB - tA;
+            }
+            const nameA = (a.company?.displayName || a.companyName || a.symbol || '').toLowerCase();
+            const nameB = (b.company?.displayName || b.companyName || b.symbol || '').toLowerCase();
+            const nameCmp = nameA.localeCompare(nameB);
+            if (nameCmp !== 0) return nameCmp;
+            return a.id.localeCompare(b.id);
+          });
+        case 'CLOSING_SOON':
+          return arr.sort((a, b) => {
+            const dateA = a.closeDate || a.lifecycle?.closeDate;
+            const dateB = b.closeDate || b.lifecycle?.closeDate;
+            const tA = parseIpoDateToTimestamp(dateA);
+            const tB = parseIpoDateToTimestamp(dateB);
+            if (tA !== tB) {
+              if (tA === Infinity) return 1;
+              if (tB === Infinity) return -1;
+              return tA - tB;
+            }
+            const nameA = (a.company?.displayName || a.companyName || a.symbol || '').toLowerCase();
+            const nameB = (b.company?.displayName || b.companyName || b.symbol || '').toLowerCase();
+            const nameCmp = nameA.localeCompare(nameB);
+            if (nameCmp !== 0) return nameCmp;
+            return a.id.localeCompare(b.id);
           });
         default:
-          return arr;
+          return arr.sort((a, b) => {
+            // Timeline default: open_date DESC, then created_at DESC, then company name ASC, then id ASC
+            const tA = parseIpoDateToTimestamp(a.openDate || a.lifecycle?.openDate);
+            const tB = parseIpoDateToTimestamp(b.openDate || b.lifecycle?.openDate);
+            if (tA !== tB) {
+              if (tA === Infinity) return 1;
+              if (tB === Infinity) return -1;
+              return tB - tA; // DESC: newest open dates first
+            }
+            const cA = parseIpoDateToTimestamp(a.createdAt);
+            const cB = parseIpoDateToTimestamp(b.createdAt);
+            if (cA !== cB) {
+              if (cA === Infinity) return 1;
+              if (cB === Infinity) return -1;
+              return cB - cA; // DESC
+            }
+            const nameA = (a.company?.displayName || a.companyName || a.symbol || '').toLowerCase();
+            const nameB = (b.company?.displayName || b.companyName || b.symbol || '').toLowerCase();
+            const nameCmp = nameA.localeCompare(nameB);
+            if (nameCmp !== 0) return nameCmp;
+            return a.id.localeCompare(b.id);
+          });
       }
     };
 
@@ -1122,34 +1277,9 @@ export default function NewIposScreen() {
     [router]
   );
 
-  const handleApplyPress = useCallback(
-    (item: BackendIpo) => {
-      router.push({
-        pathname: '/apply-ipo',
-        params: {
-          ipoId: item.id,
-          item: JSON.stringify(item),
-          name: item.company?.displayName || item.companyName || item.symbol,
-          company_name: item.company?.displayName || item.companyName || item.symbol,
-          symbol: item.symbol,
-          priceBandLow: item.priceBandLow != null ? String(item.priceBandLow) : undefined,
-          priceBandHigh: item.priceBandHigh != null ? String(item.priceBandHigh) : undefined,
-          buy_price: String(item.priceBandHigh || item.priceBandLow || item.issuePriceInr || 0),
-          lotSize: item.lotSize != null ? String(item.lotSize) : undefined,
-          closeDate: item.closeDate || undefined,
-          openDate: item.openDate || undefined,
-          logoUrl: item.company?.logoUrl || item.logoUrl || undefined,
-          issueType: item.marketSegment === 'SME' ? 'SME' : 'Mainboard',
-        },
-      } as any);
-    },
-    [router]
-  );
-
   const renderItemForTab = useCallback(
     (tab: NewIpoTab) => {
-      return ({ item, index }: { item: BackendIpo; index: number }) => {
-        const stats = appStatsMap.get(item.id) || { total: 0, applied: 0, allotted: 0 };
+      const TabIpoCard = ({ item, index }: { item: BackendIpo; index: number }) => {
         const showNativeAd = index === 2;
         return (
           <View key={item.id}>
@@ -1158,18 +1288,15 @@ export default function NewIposScreen() {
               tab={tab}
               colors={colors}
               isDark={isDark}
-              totalAppsCount={stats.total}
-              appliedCount={stats.applied}
-              allottedCount={stats.allotted}
               onPress={handleCardPress}
-              onApplyPress={handleApplyPress}
             />
             {showNativeAd && <NativeAdCard />}
           </View>
         );
       };
+      return TabIpoCard;
     },
-    [appStatsMap, colors, isDark, handleCardPress, handleApplyPress]
+    [colors, isDark, handleCardPress]
   );
 
   const renderLiveItem = useMemo(() => renderItemForTab('live'), [renderItemForTab]);
@@ -1266,7 +1393,7 @@ export default function NewIposScreen() {
               { backgroundColor: colors.surface, borderColor: colors.border },
             ]}
           >
-            <Feather name="search" size={16} color={colors.mutedForeground} />
+            <Icon name="search" size={16} color={colors.mutedForeground} />
             <TextInput
               ref={searchRef}
               value={searchQuery}
@@ -1278,7 +1405,7 @@ export default function NewIposScreen() {
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10}>
-                <Feather name="x-circle" size={18} color={colors.mutedForeground} />
+                <Icon name="x-circle" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             )}
           </View>
@@ -1306,12 +1433,12 @@ export default function NewIposScreen() {
               },
             ]}
           >
-            <Feather name="filter" size={12} color={colors.primary} />
+            <Icon name="filter" size={12} color={colors.primary} />
             <Text style={[styles.filterBarText, { color: colors.primary }]} numberOfLines={1}>
               {filterChipLabel}
             </Text>
             <TouchableOpacity onPress={handleQuickClearFilters} hitSlop={8}>
-              <Feather name="x" size={14} color={colors.primary} />
+              <Icon name="x" size={14} color={colors.primary} />
             </TouchableOpacity>
           </View>
         )}
@@ -1335,7 +1462,7 @@ export default function NewIposScreen() {
             />
           }
         >
-          <Feather name="alert-circle" size={40} color={colors.destructive} />
+          <Icon name="alert-circle" size={40} color={colors.destructive} />
           <Text style={[styles.errorTitle, { color: colors.foreground }]}>Connection Error</Text>
           <Text style={[styles.errorSub, { color: colors.mutedForeground }]}>{error}</Text>
           <TouchableOpacity onPress={onRefresh} style={[styles.retryBtn, { backgroundColor: colors.primary }]}>
@@ -1375,7 +1502,7 @@ export default function NewIposScreen() {
                       />
                     }
                   >
-                    <Feather name="inbox" size={48} color={colors.mutedForeground} style={{ opacity: 0.5 }} />
+                    <Icon name="inbox" size={48} color={colors.mutedForeground} style={{ opacity: 0.5 }} />
                     <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No {tab} IPOs found</Text>
                     <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
                       {searchQuery
@@ -1420,374 +1547,248 @@ export default function NewIposScreen() {
         </ScrollView>
       )}
 
-      {/* Filter & Sort Scooped Bottom Sheet */}
-      <ScoopedBottomSheet
+      {/* Filter & Sort Modal Dialog */}
+      {/* Filter & Sort Modal Dialog */}
+      <Modal
         visible={showFilterModal}
-        onClose={() => setShowFilterModal(false)}
-        maxHeight="90%"
+        animationType="fade"
+        transparent
+        onRequestClose={() => {
+          setShowFilterModal(false);
+        }}
       >
-        {/* Modal Header */}
-        <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-          <View style={styles.headerTitleGroup}>
-            <View style={[styles.headerIconWrap, { backgroundColor: colors.primary + '18' }]}>
-              <Feather name="sliders" size={16} color={colors.primary} />
-            </View>
-            <View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={[styles.modalTitle, { color: colors.foreground }]}>Filter & Sort</Text>
-                {hasActiveFilter && (
-                  <View style={[styles.activeBadge, { backgroundColor: colors.primary }]}>
-                    <Text style={[styles.activeBadgeText, { color: colors.primaryForeground }]}>Active</Text>
+        <View style={styles.centerModalOverlay}>
+          <Pressable
+            style={styles.backdropDismiss}
+            onPress={() => {
+              setShowFilterModal(false);
+            }}
+          />
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            {/* Modal Header */}
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <View style={styles.modalHeaderTitleGroup}>
+                <View style={[styles.modalHeaderIconWrap, { backgroundColor: colors.primary + '18' }]}>
+                  <Icon name="filter" size={16} color={colors.primary} />
+                </View>
+                <View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={[styles.modalTitle, { color: colors.foreground }]}>Filter & Sort</Text>
+                    {activeFilterCount > 0 && (
+                      <View style={[styles.modalActiveBadge, { backgroundColor: colors.primary }]}>
+                        <Text style={[styles.modalActiveBadgeText, { color: colors.primaryForeground }]}>
+                          {activeFilterCount}
+                        </Text>
+                      </View>
+                    )}
                   </View>
-                )}
+                  <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
+                    Refine IPO listings & display order
+                  </Text>
+                </View>
               </View>
-              <Text style={[styles.modalSubtitle, { color: colors.mutedForeground }]}>
-                Customize IPO catalog view & priority
-              </Text>
-            </View>
-          </View>
 
-          {hasActiveFilter && (
-            <TouchableOpacity
-              onPress={() => {
-                setTempIncludeSme(true);
-                setTempOnlyActiveGmp(false);
-                setTempOnlyClosingToday(false);
-                setTempSortBy('DEFAULT');
-                try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
-              }}
-              style={[styles.clearBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}
-              activeOpacity={0.7}
+              <TouchableOpacity
+                onPress={() => {
+                  setShowFilterModal(false);
+                }}
+                style={[
+                  styles.modalCloseBtn,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}
+                hitSlop={8}
+                activeOpacity={0.7}
+              >
+                <Icon name="x" size={16} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={{ flexShrink: 1, flexGrow: 0 }}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.modalScrollContent}
             >
-              <Feather name="rotate-ccw" size={12} color={colors.primary} style={{ marginRight: 4 }} />
-              <Text style={[styles.clearText, { color: colors.primary }]}>Reset</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <ScrollView
-          style={{ flex: 1 }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16, gap: 18 }}
-        >
-          {/* SECTION 1: MARKET SEGMENT (Interactive segmented card tiles) */}
-          <View>
-            <View style={styles.sectionHeaderRow}>
-              <Feather name="grid" size={12} color={colors.primary} />
-              <Text style={[styles.sectionHeaderTitle, { color: colors.mutedForeground }]}>
-                MARKET SEGMENT
-              </Text>
-            </View>
-
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              {/* Option 1: All IPOs (Mainboard + SME) */}
-              <TouchableOpacity
-                activeOpacity={0.75}
-                onPress={() => {
-                  setTempIncludeSme(true);
-                  try { Haptics.selectionAsync(); } catch {}
-                }}
-                style={[
-                  styles.segmentCard,
-                  {
-                    borderColor: tempIncludeSme ? colors.primary : colors.border,
-                    backgroundColor: tempIncludeSme
-                      ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF')
-                      : colors.surface,
-                  },
-                ]}
-              >
-                <View style={[styles.segmentIconWrap, { backgroundColor: tempIncludeSme ? colors.primary + '22' : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}>
-                  <Feather name="layers" size={16} color={tempIncludeSme ? colors.primary : colors.mutedForeground} />
-                </View>
-                <Text style={[styles.segmentTitle, { color: tempIncludeSme ? colors.primary : colors.foreground }]}>
-                  All Markets
-                </Text>
-                <Text style={[styles.segmentSub, { color: colors.mutedForeground }]}>
-                  Mainboard & SME
-                </Text>
-                {tempIncludeSme && (
-                  <View style={[styles.segmentCheckBadge, { backgroundColor: colors.primary }]}>
-                    <Feather name="check" size={10} color="#FFFFFF" />
-                  </View>
-                )}
-              </TouchableOpacity>
-
-              {/* Option 2: Mainboard Only */}
-              <TouchableOpacity
-                activeOpacity={0.75}
-                onPress={() => {
-                  setTempIncludeSme(false);
-                  try { Haptics.selectionAsync(); } catch {}
-                }}
-                style={[
-                  styles.segmentCard,
-                  {
-                    borderColor: !tempIncludeSme ? colors.primary : colors.border,
-                    backgroundColor: !tempIncludeSme
-                      ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF')
-                      : colors.surface,
-                  },
-                ]}
-              >
-                <View style={[styles.segmentIconWrap, { backgroundColor: !tempIncludeSme ? colors.primary + '22' : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }]}>
-                  <Feather name="shield" size={16} color={!tempIncludeSme ? colors.primary : colors.mutedForeground} />
-                </View>
-                <Text style={[styles.segmentTitle, { color: !tempIncludeSme ? colors.primary : colors.foreground }]}>
-                  Mainboard Only
-                </Text>
-                <Text style={[styles.segmentSub, { color: colors.mutedForeground }]}>
-                  Excludes SME IPOs
-                </Text>
-                {!tempIncludeSme && (
-                  <View style={[styles.segmentCheckBadge, { backgroundColor: colors.primary }]}>
-                    <Feather name="check" size={10} color="#FFFFFF" />
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* SECTION 2: OPPORTUNITY FILTERS (Actionable modern filter tiles with toggle checkmarks) */}
-          <View>
-            <View style={styles.sectionHeaderRow}>
-              <Feather name="zap" size={12} color={colors.primary} />
-              <Text style={[styles.sectionHeaderTitle, { color: colors.mutedForeground }]}>
-                OPPORTUNITY FILTERS
-              </Text>
-            </View>
-
-            <View style={{ gap: 10 }}>
-              {/* Active GMP Filter Tile */}
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() => {
-                  setTempOnlyActiveGmp(!tempOnlyActiveGmp);
-                  try { Haptics.selectionAsync(); } catch {}
-                }}
-                style={[
-                  styles.opportunityCard,
-                  {
-                    borderColor: tempOnlyActiveGmp ? '#10B981' : colors.border,
-                    backgroundColor: tempOnlyActiveGmp
-                      ? (isDark ? 'rgba(16, 185, 129, 0.12)' : '#ECFDF5')
-                      : colors.surface,
-                  },
-                ]}
-              >
-                <View style={[styles.oppIconWrap, { backgroundColor: tempOnlyActiveGmp ? 'rgba(16, 185, 129, 0.2)' : (isDark ? 'rgba(16, 185, 129, 0.12)' : '#DCFCE7') }]}>
-                  <Feather name="trending-up" size={16} color="#10B981" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={[styles.oppTitle, { color: tempOnlyActiveGmp ? (isDark ? '#34D399' : '#059669') : colors.foreground }]}>
-                      Active GMP Only
-                    </Text>
-                    <View style={[styles.miniBadge, { backgroundColor: tempOnlyActiveGmp ? '#10B981' : (isDark ? '#334155' : '#E2E8F0') }]}>
-                      <Text style={[styles.miniBadgeText, { color: tempOnlyActiveGmp ? '#FFFFFF' : colors.mutedForeground }]}>&gt; ₹0</Text>
-                    </View>
-                  </View>
-                  <Text style={[styles.oppSub, { color: colors.mutedForeground }]}>
-                    Show only issues with positive expected listing gain
-                  </Text>
-                </View>
-                <View
-                  style={[
-                    styles.toggleCheckbox,
-                    {
-                      borderColor: tempOnlyActiveGmp ? '#10B981' : colors.border,
-                      backgroundColor: tempOnlyActiveGmp ? '#10B981' : 'transparent',
-                    },
-                  ]}
-                >
-                  {tempOnlyActiveGmp && <Feather name="check" size={12} color="#FFFFFF" />}
-                </View>
-              </TouchableOpacity>
-
-              {/* Closing Today Filter Tile */}
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() => {
-                  setTempOnlyClosingToday(!tempOnlyClosingToday);
-                  try { Haptics.selectionAsync(); } catch {}
-                }}
-                style={[
-                  styles.opportunityCard,
-                  {
-                    borderColor: tempOnlyClosingToday ? '#F59E0B' : colors.border,
-                    backgroundColor: tempOnlyClosingToday
-                      ? (isDark ? 'rgba(245, 158, 11, 0.12)' : '#FFFBEB')
-                      : colors.surface,
-                  },
-                ]}
-              >
-                <View style={[styles.oppIconWrap, { backgroundColor: tempOnlyClosingToday ? 'rgba(245, 158, 11, 0.2)' : (isDark ? 'rgba(245, 158, 11, 0.12)' : '#FEF3C7') }]}>
-                  <Feather name="clock" size={16} color={isDark ? '#FBBF24' : '#D97706'} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={[styles.oppTitle, { color: tempOnlyClosingToday ? (isDark ? '#FBBF24' : '#D97706') : colors.foreground }]}>
-                      Closing Today
-                    </Text>
-                    <View style={[styles.miniBadge, { backgroundColor: tempOnlyClosingToday ? '#F59E0B' : (isDark ? '#334155' : '#E2E8F0') }]}>
-                      <Text style={[styles.miniBadgeText, { color: tempOnlyClosingToday ? '#FFFFFF' : colors.mutedForeground }]}>Urgent</Text>
-                    </View>
-                  </View>
-                  <Text style={[styles.oppSub, { color: colors.mutedForeground }]}>
-                    Ending subscription today before 5:00 PM cutoff
-                  </Text>
-                </View>
-                <View
-                  style={[
-                    styles.toggleCheckbox,
-                    {
-                      borderColor: tempOnlyClosingToday ? '#F59E0B' : colors.border,
-                      backgroundColor: tempOnlyClosingToday ? '#F59E0B' : 'transparent',
-                    },
-                  ]}
-                >
-                  {tempOnlyClosingToday && <Feather name="check" size={12} color="#FFFFFF" />}
-                </View>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* SECTION 3: SORT & RANKING */}
-          <View>
-            <View style={styles.sectionHeaderRow}>
-              <Feather name="bar-chart-2" size={12} color={colors.primary} />
-              <Text style={[styles.sectionHeaderTitle, { color: colors.mutedForeground }]}>
-                SORT & RANKING
-              </Text>
-            </View>
-
-            <View style={{ gap: 10 }}>
-              {[
-                {
-                  key: 'DEFAULT',
-                  label: 'Timeline Schedule',
-                  sub: 'Chronological catalog order by status & dates',
-                  icon: 'calendar',
-                  badge: 'Standard',
-                },
-                {
-                  key: 'GMP',
-                  label: 'Highest Expected GMP',
-                  sub: 'Rank top profit potential & highest premium first',
-                  icon: 'trending-up',
-                  badge: 'Top Gains',
-                },
-              ].map((opt) => {
-                const isSelected = tempSortBy === opt.key;
-                return (
-                  <TouchableOpacity
-                    key={opt.key}
-                    activeOpacity={0.75}
-                    onPress={() => {
-                      setTempSortBy(opt.key as SortOption);
-                      try { Haptics.selectionAsync(); } catch {}
-                    }}
-                    style={[
-                      styles.sortOptionCard,
-                      {
-                        borderColor: isSelected ? colors.primary : colors.border,
-                        backgroundColor: isSelected
-                          ? (isDark ? 'rgba(99, 102, 241, 0.12)' : '#EEF2FF')
-                          : colors.surface,
-                      },
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.sortIconWrap,
-                        {
-                          backgroundColor: isSelected
-                            ? colors.primary + '22'
-                            : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.04)'),
-                        },
-                      ]}
-                    >
-                      <Feather
-                        name={opt.icon as any}
-                        size={16}
-                        color={isSelected ? colors.primary : colors.mutedForeground}
-                      />
-                    </View>
-                    <View style={{ flex: 1, marginRight: 8 }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={[styles.sortCardTitle, { color: isSelected ? colors.primary : colors.foreground }]}>
+              {/* SECTION: Market as Single-Select Chips */}
+              <View style={styles.sectionContainer}>
+                <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>MARKET</Text>
+                <View style={styles.chipRow}>
+                  {MARKET_OPTIONS.map((opt) => {
+                    const isSelected = tempMarketFilter === opt.key;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        activeOpacity={0.75}
+                        onPress={() => {
+                          setTempMarketFilter(opt.key);
+                          try { Haptics.selectionAsync(); } catch {}
+                        }}
+                        style={[
+                          styles.chip,
+                          {
+                            backgroundColor: isSelected
+                              ? (isDark ? 'rgba(99, 102, 241, 0.14)' : '#EEF2FF')
+                              : colors.surface,
+                            borderColor: isSelected ? colors.primary : colors.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            { color: isSelected ? colors.primary : colors.foreground },
+                          ]}
+                        >
                           {opt.label}
                         </Text>
-                        <View style={[styles.miniBadge, { backgroundColor: isSelected ? colors.primary + '20' : (isDark ? '#334155' : '#E2E8F0') }]}>
-                          <Text style={[styles.miniBadgeText, { color: isSelected ? colors.primary : colors.mutedForeground }]}>{opt.badge}</Text>
-                        </View>
-                      </View>
-                      <Text style={[styles.sortCardSub, { color: colors.mutedForeground }]}>
-                        {opt.sub}
+                        {isSelected && (
+                          <Icon name="check" size={12} color={colors.primary} style={{ marginLeft: 4 }} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* SECTION: Conditions */}
+              <View style={styles.sectionContainer}>
+                <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>CONDITIONS</Text>
+                <View style={[styles.filterTogglesCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <View style={styles.filterSwitchRow}>
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                      <Text style={[styles.filterSwitchLabel, { color: colors.foreground }]}>
+                        Positive GMP Only
+                      </Text>
+                      <Text style={[styles.filterSwitchSub, { color: colors.mutedForeground }]}>
+                        Hide IPOs without positive grey market premium
                       </Text>
                     </View>
-                    <View
-                      style={[
-                        styles.radioCircle,
-                        {
-                          borderColor: isSelected ? colors.primary : colors.border,
-                          backgroundColor: isSelected ? colors.primary : 'transparent',
-                        },
-                      ]}
-                    >
-                      {isSelected && <Feather name="check" size={11} color="#FFFFFF" />}
+                    <IOSToggle
+                      value={tempOnlyActiveGmp}
+                      onValueChange={(val) => {
+                        setTempOnlyActiveGmp(val);
+                        try { Haptics.selectionAsync(); } catch {}
+                      }}
+                      activeColor={colors.primary}
+                    />
+                  </View>
+
+                  <View style={[styles.filterSwitchDivider, { backgroundColor: colors.border }]} />
+
+                  <View style={styles.filterSwitchRow}>
+                    <View style={{ flex: 1, paddingRight: 12 }}>
+                      <Text style={[styles.filterSwitchLabel, { color: colors.foreground }]}>
+                        Closing Today
+                      </Text>
+                      <Text style={[styles.filterSwitchSub, { color: colors.mutedForeground }]}>
+                        Show IPOs whose bidding window closes today
+                      </Text>
                     </View>
-                  </TouchableOpacity>
-                );
-              })}
+                    <IOSToggle
+                      value={tempOnlyClosingToday}
+                      onValueChange={(val) => {
+                        setTempOnlyClosingToday(val);
+                        try { Haptics.selectionAsync(); } catch {}
+                      }}
+                      activeColor={colors.primary}
+                    />
+                  </View>
+                </View>
+              </View>
+
+              {/* SECTION: Sort by as Single-Select Chips */}
+              <View style={styles.sectionContainer}>
+                <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>SORT BY</Text>
+                <View style={styles.chipRow}>
+                  {SORT_OPTIONS.map((opt) => {
+                    const isSelected = tempSortBy === opt.key;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        activeOpacity={0.75}
+                        onPress={() => {
+                          setTempSortBy(opt.key);
+                          try { Haptics.selectionAsync(); } catch {}
+                        }}
+                        style={[
+                          styles.chip,
+                          {
+                            backgroundColor: isSelected
+                              ? (isDark ? 'rgba(99, 102, 241, 0.14)' : '#EEF2FF')
+                              : colors.surface,
+                            borderColor: isSelected ? colors.primary : colors.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.chipText,
+                            { color: isSelected ? colors.primary : colors.foreground },
+                          ]}
+                        >
+                          {opt.label}
+                        </Text>
+                        {isSelected && (
+                          <Icon name="check" size={12} color={colors.primary} style={{ marginLeft: 4 }} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            </ScrollView>
+
+            {/* Modal Footer: Reset & Apply */}
+            <View style={[styles.modalFooter, { borderTopColor: colors.border }]}>
+              <TouchableOpacity
+                onPress={() => {
+                  setTempMarketFilter('ALL');
+                  setTempOnlyActiveGmp(false);
+                  setTempOnlyClosingToday(false);
+                  setTempSortBy('DEFAULT');
+                  try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+                }}
+                style={[
+                  styles.modalResetBtn,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}
+                activeOpacity={0.8}
+              >
+                <Icon name="rotate-ccw" size={13} color={colors.foreground} style={{ marginRight: 6 }} />
+                <Text style={[styles.modalResetBtnText, { color: colors.foreground }]}>Reset</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setMarketFilter(tempMarketFilter);
+                  setIncludeSme(tempMarketFilter !== 'MAINBOARD');
+                  setOnlyActiveGmp(tempOnlyActiveGmp);
+                  setOnlyClosingToday(tempOnlyClosingToday);
+                  setSortBy(tempSortBy);
+                  setShowFilterModal(false);
+                  try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
+                }}
+                style={[
+                  styles.modalApplyBtn,
+                  { backgroundColor: colors.primary },
+                ]}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.modalApplyBtnText, { color: colors.primaryForeground }]}>Apply</Text>
+              </TouchableOpacity>
             </View>
           </View>
-        </ScrollView>
-
-        {/* Modal Actions Footer */}
-        <View style={[styles.modalFooter, { borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 22) + 6 }]}>
-          <TouchableOpacity
-            onPress={() => {
-              setTempIncludeSme(true);
-              setTempOnlyActiveGmp(false);
-              setTempOnlyClosingToday(false);
-              setTempSortBy('DEFAULT');
-              setIncludeSme(true);
-              setOnlyActiveGmp(false);
-              setOnlyClosingToday(false);
-              setSortBy('DEFAULT');
-              setShowFilterModal(false);
-              try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); } catch {}
-            }}
-            style={[styles.modalFooterResetBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}
-            activeOpacity={0.8}
-          >
-            <Feather name="rotate-ccw" size={13} color={colors.mutedForeground} style={{ marginRight: 6 }} />
-            <Text style={[styles.resetBtnText, { color: colors.mutedForeground }]}>
-              Reset All
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => {
-              setIncludeSme(tempIncludeSme);
-              setOnlyActiveGmp(tempOnlyActiveGmp);
-              setOnlyClosingToday(tempOnlyClosingToday);
-              setSortBy(tempSortBy);
-              setShowFilterModal(false);
-              try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
-            }}
-            style={[styles.modalFooterApplyBtn, { backgroundColor: colors.primary }]}
-            activeOpacity={0.85}
-          >
-            <Feather name="check" size={15} color={colors.primaryForeground} style={{ marginRight: 6 }} />
-            <Text style={[styles.applyBtnText, { color: colors.primaryForeground }]}>
-              Apply Filters
-            </Text>
-          </TouchableOpacity>
         </View>
-      </ScoopedBottomSheet>
+      </Modal>
     </View>
   );
 }
@@ -2001,28 +2002,28 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   segmentBadge: {
-    borderRadius: 8,
+    borderRadius: 5,
     borderWidth: 1,
-    paddingHorizontal: 9,
-    paddingVertical: 4.5,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
   segmentBadgeText: {
-    fontSize: 11.5,
+    fontSize: 9.5,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
   statusPillNew: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: 5,
     borderWidth: 1,
-    paddingHorizontal: 9,
-    paddingVertical: 4.5,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
   },
   statusTextNew: {
-    fontSize: 11.5,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
+    fontSize: 9.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   innerDataCardBox: {
     borderRadius: 16,
@@ -2079,58 +2080,52 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3.5,
-    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
   },
   statusPillText: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
+    fontSize: 9.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
-  modalOverlay: {
+  centerModalOverlay: {
     flex: 1,
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  filterModalCard: {
+  backdropDismiss: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalCard: {
     width: '100%',
-    maxHeight: '85%',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    paddingHorizontal: 20,
-    paddingTop: 10,
+    maxWidth: 420,
+    maxHeight: '88%',
+    borderRadius: 24,
+    borderWidth: 1,
+    overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -8 },
+    shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.18,
     shadowRadius: 24,
-    elevation: 24,
-  },
-  modalHandleWrap: {
-    alignItems: 'center',
-    paddingVertical: 6,
-  },
-  modalHandle: {
-    width: 42,
-    height: 4.5,
-    borderRadius: 3,
+    elevation: 10,
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingBottom: 14,
+    paddingVertical: 16,
     borderBottomWidth: 1,
   },
-  headerTitleGroup: {
+  modalHeaderTitleGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     flex: 1,
   },
-  headerIconWrap: {
+  modalHeaderIconWrap: {
     width: 38,
     height: 38,
     borderRadius: 12,
@@ -2147,180 +2142,109 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_400Regular',
     marginTop: 1,
   },
-  activeBadge: {
+  modalActiveBadge: {
     paddingHorizontal: 7,
     paddingVertical: 1,
     borderRadius: 10,
   },
-  activeBadgeText: {
+  modalActiveBadgeText: {
     fontSize: 10,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
-  clearBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  modalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     borderWidth: 1,
-    borderRadius: 9999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  clearText: {
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 10,
+    justifyContent: 'center',
   },
-  sectionHeaderTitle: {
+  modalScrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 16,
+    gap: 16,
+  },
+  sectionContainer: {},
+  sectionTitle: {
     fontSize: 10.5,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: 0.8,
+    marginBottom: 10,
     textTransform: 'uppercase',
   },
-  segmentCard: {
-    flex: 1,
-    borderRadius: 16,
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chip: {
+    height: 38,
+    paddingHorizontal: 14,
+    borderRadius: 12,
     borderWidth: 1.5,
-    padding: 14,
-    position: 'relative',
-  },
-  segmentIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  segmentTitle: {
-    fontSize: 13.5,
-    fontFamily: 'GoogleSansFlex_700Bold',
-  },
-  segmentSub: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    marginTop: 2,
-  },
-  segmentCheckBadge: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  opportunityCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 16,
-    borderWidth: 1.5,
+    justifyContent: 'center',
+  },
+  chipText: {
+    fontSize: 12.5,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  filterTogglesCard: {
+    borderRadius: 14,
+    borderWidth: 1,
     paddingHorizontal: 14,
-    paddingVertical: 13,
+    paddingVertical: 4,
   },
-  oppIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  oppTitle: {
-    fontSize: 13.5,
-    fontFamily: 'GoogleSansFlex_700Bold',
-  },
-  oppSub: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    marginTop: 2,
-  },
-  miniBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 6,
-  },
-  miniBadgeText: {
-    fontSize: 9.5,
-    fontFamily: 'GoogleSansFlex_700Bold',
-  },
-  toggleCheckbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 7,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
-  },
-  sortOptionCard: {
+  filterSwitchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 16,
-    borderWidth: 1.5,
+    justifyContent: 'space-between',
+    paddingVertical: 11,
   },
-  sortIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  sortCardTitle: {
+  filterSwitchLabel: {
     fontSize: 13.5,
-    fontFamily: 'GoogleSansFlex_700Bold',
+    fontFamily: 'GoogleSansFlex_600SemiBold',
   },
-  sortCardSub: {
+  filterSwitchSub: {
     fontSize: 11,
     fontFamily: 'GoogleSansFlex_400Regular',
     marginTop: 2,
   },
-  radioCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
+  filterSwitchDivider: {
+    height: 1,
   },
   modalFooter: {
     flexDirection: 'row',
     gap: 12,
     paddingHorizontal: 20,
-    paddingTop: 14,
+    paddingVertical: 14,
     borderTopWidth: 1,
   },
-  modalFooterResetBtn: {
+  modalResetBtn: {
     flex: 1,
-    height: 48,
-    borderRadius: 9999,
+    height: 46,
+    borderRadius: 14,
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  resetBtnText: {
+  modalResetBtnText: {
     fontSize: 13.5,
     fontFamily: 'GoogleSansFlex_600SemiBold',
   },
-  modalFooterApplyBtn: {
-    flex: 1.6,
-    height: 48,
-    borderRadius: 9999,
+  modalApplyBtn: {
+    flex: 1.5,
+    height: 46,
+    borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  applyBtnText: {
+  modalApplyBtnText: {
     fontSize: 14,
     fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 0.2,
   },
 });

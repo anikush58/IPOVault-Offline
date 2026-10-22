@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Animated,
+  BackHandler,
+  DeviceEventEmitter,
   Easing,
   FlatList,
   Image,
@@ -21,12 +23,13 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 
 import { API_BASE_URL } from '@/constants/apiConfig';
 import { AllotmentStatusBadge } from '@/components/allotment/AllotmentStatusBadge';
+import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { UpdateApplicationModal } from '@/components/UpdateApplicationModal';
@@ -34,6 +37,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useDB, type ApplicationStatus, type ApplicationWithDetails } from '@/context/DBContext';
 import { useTheme } from '@/context/ThemeContext';
 import { useColors } from '@/hooks/useColors';
+import { useAppExperience } from '@/context/AppExperienceContext';
 import { resolveCanonicalBrokerUserId } from '@/utils/brokerMatching';
 import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 import {
@@ -47,6 +51,12 @@ import {
   getRegistrarConfig,
   isAutomatedCheckSupported,
 } from '@/services/allotment/registrarConfig';
+import {
+  AllotmentHistoryItem,
+  compareAllotmentHistory,
+  formatAllotmentTimestamp,
+} from '@/utils/allotmentHistoryUtils';
+export { AllotmentHistoryItem, compareAllotmentHistory, formatAllotmentTimestamp };
 import { ApiClient, ApiRequestTrace } from '@/services/api/ApiClient';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { BackendIpo } from '@/types/backend-ipo';
@@ -662,7 +672,7 @@ function DeveloperDiagnosticsPanel(props: {
           {/* CREATE JOB TIMING SECTION */}
           <View style={diagStyles.sectionBox}>
             <Text style={diagStyles.sectionTitle}>CREATE JOB TIMING</Text>
-            <Text style={{ color: '#38BDF8', fontSize: 11, fontWeight: 'bold', fontFamily: 'SpaceMono', marginBottom: 2 }}>
+            <Text style={{ color: '#38BDF8', fontSize: 11, fontFamily: 'GoogleSansFlex_700Bold', marginBottom: 2 }}>
               Frontend Trace:
             </Text>
             <Text style={diagStyles.diagCodeLine}>
@@ -678,7 +688,7 @@ function DeveloperDiagnosticsPanel(props: {
               Aborted: <Text style={{ color: props.jobTiming?.aborted ? '#EF4444' : '#4ADE80' }}>{props.jobTiming?.aborted ? 'YES' : 'NO'}</Text>
             </Text>
 
-            <Text style={{ color: '#38BDF8', fontSize: 11, fontWeight: 'bold', fontFamily: 'SpaceMono', marginTop: 6, marginBottom: 2 }}>
+            <Text style={{ color: '#38BDF8', fontSize: 11, fontFamily: 'GoogleSansFlex_700Bold', marginTop: 6, marginBottom: 2 }}>
               Backend Trace:
             </Text>
             <Text style={diagStyles.diagCodeLine}>
@@ -986,17 +996,19 @@ const ConfettiContainer = () => {
 const ALLOTMENT_IPOS_CACHE_STORAGE_KEY = '@ipovault_cached_allotment_backend_ipos_v1';
 let _sharedAllotmentIposCache: BackendIpo[] = [];
 
-export default function AllotmentCheckerScreen() {
+export default function AllotmentCheckerScreen({ isTabScreen }: { isTabScreen?: boolean } = {}) {
   const colors = useColors();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
+  const { isNonPro } = useAppExperience();
+  const isPrimaryTab = isNonPro;
   const router = useRouter();
   const params = useLocalSearchParams<{ ipoId?: string; id?: string }>();
   const routeIpoId = params.ipoId || params.id;
   const autoCheckedRouteRef = useRef<string | null>(null);
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
-  const { ipos, applications, users, updateApplication } = useDB();
+  const { ipos, applications, users, allotments, updateApplication, saveAllotmentResult } = useDB();
   const { user } = useAuth();
   const [selectedAppForUpdate, setSelectedAppForUpdate] = useState<ApplicationWithDetails | null>(null);
 
@@ -1119,50 +1131,6 @@ export default function AllotmentCheckerScreen() {
   useEffect(() => {
     setLogoLoadFailed(false);
   }, [selectedIpoId]);
-
-  // Allotment history computed from local applications & backend published IPOs (Only successful allotments)
-  const allotmentHistoryItems = useMemo(() => {
-    const items: Array<{
-      id: string;
-      ipoId?: string;
-      ipoName: string;
-      userName: string;
-      pan: string;
-      status: string;
-      sharesAllotted?: number;
-    }> = [];
-
-    for (const app of applications) {
-      const isSuccessful =
-        app.status === 'Allotted' ||
-        app.status === 'Holding' ||
-        app.status === 'Sold' ||
-        (typeof app.quantity === 'number' && app.quantity > 0 && app.status !== 'Not Allotted');
-
-      if (!isSuccessful) continue; // Only show successful allotments in history
-
-      const usr = users.find((u) => u.id === app.user_id);
-      const ipo = ipos.find((i) => i.id === app.ipo_id);
-      const matchedBackendIpo = backendIpos.find(
-        (b) =>
-          b.id === app.ipo_id ||
-          (ipo?.backend_ipo_id && b.id === ipo.backend_ipo_id) ||
-          b.company?.displayName?.toLowerCase().trim() === app.ipo_name?.toLowerCase().trim(),
-      );
-
-      items.push({
-        id: app.id,
-        ipoId: matchedBackendIpo?.id || app.ipo_id,
-        ipoName: app.ipo_name || ipo?.ipo_name || 'IPO',
-        userName: app.user_name || usr?.name || 'Applicant',
-        pan: usr?.pan_number || '',
-        status: 'ALLOTTED',
-        sharesAllotted: app.quantity || (app as any).shares_count || undefined,
-      });
-    }
-
-    return items;
-  }, [applications, ipos, users, backendIpos]);
 
   // Active Job state
   const [activeJob, setActiveJob] = useState<BackendJobResponse | null>(null);
@@ -1480,13 +1448,30 @@ export default function AllotmentCheckerScreen() {
                 currentIpo.symbol &&
                 appIpo.symbol.toLowerCase().trim() === currentIpo.symbol.toLowerCase().trim());
             const isSameUser = app.user_id === usr.id;
-            // Only update active/applied applications on first check (once marked Allotted/Not Allotted, leave intact)
-            return isSameIpo && isSameUser && (app.status === 'Applied' || app.status === 'Mandate Approved');
+            
+            if (!isSameIpo || !isSameUser) return false;
+            // Preserve user portfolio management states 'Holding' and 'Sold'
+            if (app.status === 'Holding' || app.status === 'Sold') return false;
+            // Update if status differs from verified registrar result or is in active state
+            return (
+              (app.status as string) !== targetAppStatus ||
+              (app.status as any) === 'Applied' ||
+              (app.status as any) === 'Mandate Approved'
+            );
           });
 
           for (const app of appsToUpdate) {
             try {
-              await updateApplication(app.id, targetAppStatus);
+              await saveAllotmentResult({
+                application_id: app.id,
+                user_id: usr.id,
+                ipo_id: app.ipo_id,
+                allotment_status: backendStatus,
+                allotted_lots: backendStatus === 'ALLOTTED' ? ((item as any).allottedLots || 1) : 0,
+                allotted_shares: backendStatus === 'ALLOTTED' ? (item.sharesAllotted || app.shares_count || app.quantity || 0) : 0,
+                registrar: currentIpo.registrar || '',
+                checked_at: item.checkedAt || new Date().toISOString(),
+              });
               hasChanges = true;
               addLog(
                 `Auto-updated application for ${usr.name} (${maskPan(usr.pan_number || '')}) ➔ ${targetAppStatus}`,
@@ -1503,7 +1488,7 @@ export default function AllotmentCheckerScreen() {
         backendSyncEmitter.notifyChange();
       }
     },
-    [selectedIpo, users, applications, ipos, updateApplication, addLog],
+    [selectedIpo, users, applications, ipos, saveAllotmentResult, addLog],
   );
 
   // Poll active backend job
@@ -1819,6 +1804,19 @@ export default function AllotmentCheckerScreen() {
         ? getRegistrarConfig(targetIpo.registrar || targetIpo.ipo_name).name
         : '';
 
+      // If allotment is not yet declared out by backend, fallback to official registrar portal immediately
+      if (targetIpo && !isBackendIpoAllotmentEligible(targetIpo as any)) {
+        const portalConfig = getRegistrarConfig(targetIpo.registrar || targetRegistrar || targetIpo.ipo_name);
+        addLog(`Allotment not declared yet for ${targetIpo.ipo_name || canonicalTargetId}. Opening official ${portalConfig.name} portal.`, 'info');
+        void WebBrowser.openBrowserAsync(portalConfig.url, {
+          showTitle: true,
+          enableBarCollapsing: true,
+        });
+        resetCheckState();
+        setSelectedIpoId(null);
+        return;
+      }
+
       addLog(`IPO selected: ${targetIpo?.ipo_name || canonicalTargetId} (Registrar: ${targetRegistrar})`, 'info');
 
       // Bigshare hybrid flow: Check CAPTCHA presence first
@@ -1911,6 +1909,79 @@ export default function AllotmentCheckerScreen() {
     setShowIpoPicker(true);
     addLog('Switched IPO selection', 'info');
   }, [resetCheckState, addLog]);
+
+  // Complete reset to default allotment page (used for non-pro tab transitions)
+  const resetToDefaultPage = useCallback(() => {
+    resetCheckState();
+    setSelectedIpoId(null);
+    setDirectSelectedIpo(null);
+    setIpoSearchQuery('');
+    setShowIpoPicker(false);
+    setShowCelebrationModal(false);
+    setSelectedAppForUpdate(null);
+    setShowHistoryModal(false);
+    autoCheckedRouteRef.current = null;
+    try {
+      router.setParams({ ipoId: undefined, id: undefined });
+    } catch {}
+    addLog('Reset allotment checker to default state', 'info');
+  }, [resetCheckState, router, addLog]);
+
+  // Tab transition & screen navigation lifecycle:
+  // When a user checks an IPO allotment, is on the result screen, and leaves the screen,
+  // returning to the allotment menu resets to the clean default initial page.
+  const hasLostFocusRef = useRef(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (hasLostFocusRef.current && !routeIpoId) {
+        resetToDefaultPage();
+      }
+      hasLostFocusRef.current = false;
+
+      return () => {
+        hasLostFocusRef.current = true;
+        resetToDefaultPage();
+      };
+    }, [routeIpoId, resetToDefaultPage])
+  );
+
+  // Also listen for bottom tab press on Allotment tab
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('ALLOTMENT_TAB_NAV_PRESS', () => {
+      resetToDefaultPage();
+    });
+    return () => {
+      sub.remove();
+    };
+  }, [resetToDefaultPage]);
+
+  // Android hardware/system Back button handler:
+  // - If IPO dropdown picker is open -> close picker without navigating away
+  // - If viewing an IPO result / check session -> return to initial checker screen without opening picker
+  // - Else -> allow normal pop or exit
+  useEffect(() => {
+    const onHardwareBack = () => {
+      if (showIpoPicker) {
+        setShowIpoPicker(false);
+        return true;
+      }
+      if (selectedIpo) {
+        resetToDefaultPage();
+        return true;
+      }
+      if (!isPrimaryTab && router.canGoBack()) {
+        router.back();
+        return true;
+      }
+      return false;
+    };
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+    return () => {
+      sub.remove();
+    };
+  }, [showIpoPicker, selectedIpo, isPrimaryTab, router, resetToDefaultPage]);
 
   // Diagnostics controls
   const handleClearDiagnostics = useCallback(() => {
@@ -2071,6 +2142,7 @@ export default function AllotmentCheckerScreen() {
             'Allotment information is not yet available from registrar.';
         } else if (
           backendStatus === 'SOURCE_UNAVAILABLE' ||
+          backendStatus === 'SOURCE_RESPONSE_INVALID' ||
           backendStatus === 'REGISTRAR_UNRESOLVED' ||
           backendStatus === 'REGISTRAR_UNSUPPORTED' ||
           backendStatus === 'CAPTCHA_REQUIRED' ||
@@ -2245,7 +2317,215 @@ export default function AllotmentCheckerScreen() {
     return 'Ready';
   }, [isCreatingJob, activeJob]);
 
-  const topPad = Platform.OS === 'web' ? 16 : insets.top;
+  // Allotment history computed from persisted SQLite ipo_allotments, active check items & legitimate allotments
+  // Filter: strictly show only verified allotments with positive shares (> 0).
+  // Sort: latest IPO issue/opening date first, grouped by IPO with check timestamp secondary sort.
+  const allotmentHistoryItems = useMemo(() => {
+    const itemsMap = new Map<string, AllotmentHistoryItem>();
+
+    // Build reliable lookup for each IPO's issue/opening date
+    const ipoOpenDateMap = new Map<string, string>();
+
+    for (const b of backendIpos || []) {
+      const openDate = b.openDate || b.lifecycle?.openDate;
+      if (openDate && typeof openDate === 'string' && openDate.trim()) {
+        const val = openDate.trim();
+        if (b.id) ipoOpenDateMap.set(b.id, val);
+        if (b.companyName) ipoOpenDateMap.set(b.companyName.trim().toLowerCase(), val);
+        if (b.company?.displayName) ipoOpenDateMap.set(b.company.displayName.trim().toLowerCase(), val);
+        if (b.symbol) ipoOpenDateMap.set(b.symbol.trim().toLowerCase(), val);
+      }
+    }
+
+    for (const i of ipos || []) {
+      const openDate = i.open_date;
+      if (openDate && typeof openDate === 'string' && openDate.trim()) {
+        const val = openDate.trim();
+        if (i.id) ipoOpenDateMap.set(i.id, val);
+        if (i.backend_ipo_id) ipoOpenDateMap.set(i.backend_ipo_id, val);
+        if (i.ipo_name) ipoOpenDateMap.set(i.ipo_name.trim().toLowerCase(), val);
+        if (i.company_name) ipoOpenDateMap.set(i.company_name.trim().toLowerCase(), val);
+        if (i.symbol) ipoOpenDateMap.set(i.symbol.trim().toLowerCase(), val);
+      }
+    }
+
+    for (const a of applications || []) {
+      const openDate = a.open_date;
+      if (openDate && typeof openDate === 'string' && openDate.trim()) {
+        const val = openDate.trim();
+        if (a.ipo_id) ipoOpenDateMap.set(a.ipo_id, val);
+        if (a.ipo_name) ipoOpenDateMap.set(a.ipo_name.trim().toLowerCase(), val);
+      }
+    }
+
+    const getIpoOpenDate = (ipoId?: string, ipoName?: string): string | undefined => {
+      if (ipoId && ipoOpenDateMap.has(ipoId)) {
+        return ipoOpenDateMap.get(ipoId);
+      }
+      const normName = (ipoName || '').trim().toLowerCase();
+      if (normName && ipoOpenDateMap.has(normName)) {
+        return ipoOpenDateMap.get(normName);
+      }
+      return undefined;
+    };
+
+    // 1. Process persisted allotment records from ipo_allotments table
+    for (const alt of allotments || []) {
+      const normStatus = (alt.allotment_status || '').trim().toUpperCase();
+      const isAllotted = normStatus === 'ALLOTTED' || normStatus === 'PARTIALLY_ALLOTTED';
+
+      // Strict requirement: Only display applications with a verified allotment result
+      if (!isAllotted) continue;
+
+      const app = applications.find((a) => a.id === alt.application_id);
+      const usr = users.find((u) => u.id === alt.user_id || u.id === app?.user_id);
+      const ipo = ipos.find((i) => i.id === alt.ipo_id || i.id === app?.ipo_id);
+      const matchedBackendIpo = backendIpos.find(
+        (b) =>
+          b.id === alt.ipo_id ||
+          b.id === app?.ipo_id ||
+          (ipo?.backend_ipo_id && b.id === ipo.backend_ipo_id) ||
+          b.company?.displayName?.toLowerCase().trim() === (app?.ipo_name || ipo?.ipo_name)?.toLowerCase().trim(),
+      );
+
+      const allottedShares =
+        typeof alt.allotted_shares === 'number' && alt.allotted_shares > 0
+          ? alt.allotted_shares
+          : typeof app?.shares_count === 'number' && app.shares_count > 0
+          ? app.shares_count
+          : 0;
+
+      // Exclude zero-share records; never infer from applied quantity or lot size
+      if (allottedShares <= 0) continue;
+
+      const ipoId = matchedBackendIpo?.id || ipo?.id || app?.ipo_id;
+      const ipoName = app?.ipo_name || ipo?.company_name || ipo?.ipo_name || 'IPO';
+      const ipoOpenDate = getIpoOpenDate(ipoId, ipoName);
+
+      itemsMap.set(alt.id, {
+        id: alt.id,
+        ipoId,
+        ipoName,
+        ipoOpenDate,
+        userName: app?.user_name || usr?.name || 'Applicant',
+        pan: usr?.pan_number || (app as any)?.user_pan_number || '',
+        status: normStatus,
+        sharesAllotted: allottedShares,
+        checkedAt: alt.checked_at,
+        checkedAtFormatted: formatAllotmentTimestamp(alt.checked_at),
+      });
+    }
+
+    // 2. Merge activeJob items if available (live or completed check in current session)
+    if (activeJob?.items && selectedIpo) {
+      for (const item of activeJob.items) {
+        const rawStatus = (item.status || '').trim().toUpperCase();
+        const isAllotted = rawStatus === 'ALLOTTED' || rawStatus === 'PARTIALLY_ALLOTTED';
+
+        // Strict requirement: Only display applications with a verified allotment result
+        if (!isAllotted) continue;
+
+        // Exclude zero-share records; never infer from lot_size or applied quantity
+        const allottedShares = typeof item.sharesAllotted === 'number' && item.sharesAllotted > 0 ? item.sharesAllotted : 0;
+        if (allottedShares <= 0) continue;
+
+        const backendMask = (item.maskedId || '').trim().toUpperCase();
+        const usr = users.find((u) => {
+          const p = (u.pan_number || '').trim().toUpperCase();
+          return p.length === 10 && getBackendMaskedPan(p) === backendMask;
+        });
+
+        const app = applications.find((a) => {
+          if (a.user_id !== usr?.id) return false;
+          const aIpo = ipos.find((i) => i.id === a.ipo_id);
+          return (
+            a.ipo_id === selectedIpo.id ||
+            aIpo?.backend_ipo_id === selectedIpo.id ||
+            (a.ipo_name && selectedIpo.ipo_name && a.ipo_name.toLowerCase().trim() === selectedIpo.ipo_name.toLowerCase().trim()) ||
+            (a.ipo_name && selectedIpo.company_name && a.ipo_name.toLowerCase().trim() === selectedIpo.company_name.toLowerCase().trim())
+          );
+        });
+
+        const checkedAt = item.checkedAt || activeJob.updatedAt || activeJob.createdAt;
+
+        // If this application was already persisted in SQLite allotments with identical timestamp & status, skip
+        const existingAlt = app ? (allotments || []).find((a) => a.application_id === app.id) : undefined;
+        if (existingAlt && existingAlt.checked_at === checkedAt && existingAlt.allotment_status?.toUpperCase() === rawStatus) {
+          continue;
+        }
+
+        const key = existingAlt && existingAlt.checked_at === checkedAt
+          ? existingAlt.id
+          : `job_${selectedIpo.id}_${usr?.id || item.maskedId}_${checkedAt || ''}`;
+
+        const ipoId = selectedIpo.id;
+        const ipoName = selectedIpo.company_name || selectedIpo.ipo_name || 'IPO';
+        const ipoOpenDate = getIpoOpenDate(ipoId, ipoName) || (selectedIpo as any).open_date || (selectedIpo as any).openDate;
+
+        itemsMap.set(key, {
+          id: key,
+          ipoId,
+          ipoName,
+          ipoOpenDate,
+          userName: usr?.name || app?.user_name || 'Applicant',
+          pan: usr?.pan_number || '',
+          status: rawStatus,
+          sharesAllotted: allottedShares,
+          checkedAt,
+          checkedAtFormatted: formatAllotmentTimestamp(checkedAt),
+        });
+      }
+    }
+
+    // 3. Include applications with genuine allotment status that lack an ipo_allotments row
+    for (const app of applications) {
+      const isLegitAllotted =
+        app.status === 'Allotted' ||
+        app.status === 'Partially Allotted';
+
+      if (!isLegitAllotted) continue; // STRICTLY EXCLUDE Applied, Mandate Approved, etc.
+
+      // Must have actual verified positive allotted shares; never infer from app.quantity
+      const sharesCount = typeof app.shares_count === 'number' && app.shares_count > 0 ? app.shares_count : 0;
+      if (sharesCount <= 0) continue;
+
+      const alreadyRecorded = Array.from(itemsMap.values()).some((it) => it.id === app.id || (allotments || []).some((alt) => alt.application_id === app.id));
+      if (alreadyRecorded) continue;
+
+      const usr = users.find((u) => u.id === app.user_id);
+      const ipo = ipos.find((i) => i.id === app.ipo_id);
+      const matchedBackendIpo = backendIpos.find(
+        (b) =>
+          b.id === app.ipo_id ||
+          (ipo?.backend_ipo_id && b.id === ipo.backend_ipo_id) ||
+          b.company?.displayName?.toLowerCase().trim() === app.ipo_name?.toLowerCase().trim(),
+      );
+
+      const status = app.status === 'Partially Allotted' ? 'PARTIALLY_ALLOTTED' : 'ALLOTTED';
+      const ipoId = matchedBackendIpo?.id || app.ipo_id;
+      const ipoName = app.ipo_name || ipo?.company_name || ipo?.ipo_name || 'IPO';
+      const ipoOpenDate = getIpoOpenDate(ipoId, ipoName);
+
+      itemsMap.set(app.id, {
+        id: app.id,
+        ipoId,
+        ipoName,
+        ipoOpenDate,
+        userName: app.user_name || usr?.name || 'Applicant',
+        pan: usr?.pan_number || '',
+        status,
+        sharesAllotted: sharesCount,
+        checkedAt: undefined, // Placed after records with valid timestamps deterministically
+        checkedAtFormatted: undefined,
+      });
+    }
+
+    const items = Array.from(itemsMap.values());
+    items.sort(compareAllotmentHistory);
+    return items;
+  }, [allotments, applications, ipos, users, backendIpos, activeJob, selectedIpo]);
+
+  const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
   return (
     <View
@@ -2256,7 +2536,13 @@ export default function AllotmentCheckerScreen() {
     >
       {/* Full Screen Background Graphic for Idle State */}
       {!selectedIpo && (
-        <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+        <View
+          style={[
+            StyleSheet.absoluteFillObject,
+            isNonPro ? { top: -100, bottom: -100 } : null,
+          ]}
+          pointerEvents="none"
+        >
           <Image
             source={ALLOTMENT_HERO_GRAPHIC}
             style={StyleSheet.absoluteFillObject}
@@ -2275,32 +2561,51 @@ export default function AllotmentCheckerScreen() {
 
       {/* Top Header */}
       <View style={styles.header}>
-        <View style={styles.headerSideLeft}>
-          <IconButton
-            name="arrow-left"
-            variant="surface"
-            size="md"
-            onPress={() => {
-              if (selectedIpo) {
-                handleSwitchIpo();
-              } else {
-                router.back();
-              }
-            }}
-          />
-        </View>
-        <View style={styles.headerCenter}>
-          <Text style={[styles.headerEyebrow, { color: colors.mutedForeground }]}>
-            IPO
+        {selectedIpo || !isPrimaryTab ? (
+          <View style={{ marginRight: 12 }}>
+            <IconButton
+              name="arrow-left"
+              variant="surface"
+              size="md"
+              onPress={() => {
+                if (selectedIpo) {
+                  resetToDefaultPage();
+                } else if (router.canGoBack()) {
+                  router.back();
+                } else {
+                  router.replace('/(tabs)');
+                }
+              }}
+            />
+          </View>
+        ) : null}
+
+        <View
+          style={(!isPrimaryTab || selectedIpo) ? styles.headerCenterPro : { flex: 1, justifyContent: 'center' }}
+          pointerEvents={(!isPrimaryTab || selectedIpo) ? 'none' : undefined}
+        >
+          <Text
+            style={[
+              styles.headerEyebrow,
+              { color: colors.primary },
+              (!isPrimaryTab || selectedIpo) && styles.headerEyebrowPro,
+            ]}
+          >
+            {selectedIpo ? 'ALLOTMENT RESULT' : 'REGISTRAR STATUS'}
           </Text>
           <Text
-            style={[styles.headerTitle, { color: colors.foreground }]}
+            style={[
+              styles.headerTitle,
+              { color: colors.foreground },
+              (!isPrimaryTab || selectedIpo) ? styles.headerTitlePro : null,
+            ]}
             numberOfLines={1}
           >
-            Allotment Checker
+            {selectedIpo ? (selectedIpo.ipo_name || selectedIpo.company_name) : 'Allotment Checker'}
           </Text>
         </View>
-        <View style={styles.headerSideRight}>
+
+        <View style={styles.headerRightActions}>
           <TouchableOpacity
             style={[
               styles.historyHeaderBtn,
@@ -2337,8 +2642,8 @@ export default function AllotmentCheckerScreen() {
           styles.scrollContent,
           !selectedIpo && styles.scrollContentIdle,
           {
-            paddingTop: 8,
-            paddingBottom: Platform.OS === 'web' ? 24 : insets.bottom + 16,
+            paddingTop: 18,
+            paddingBottom: Platform.OS === 'web' ? 24 : insets.bottom + (isPrimaryTab ? 96 : 16),
           },
         ]}
         showsVerticalScrollIndicator={false}
@@ -2648,7 +2953,7 @@ export default function AllotmentCheckerScreen() {
 
               {/* Bottom Vertical Specs Container: Registrar & Allotment Date (iOS Glass Effect) */}
               <BlurView
-                intensity={Platform.OS === 'web' ? 0 : 50}
+                intensity={Platform.OS === 'ios' ? 50 : 0}
                 tint={isDark ? 'dark' : 'light'}
                 style={[
                   styles.infoGridContainer,
@@ -2956,7 +3261,7 @@ export default function AllotmentCheckerScreen() {
                   NO RECORD
                 </Text>
                 <View style={styles.summaryIconWrap}>
-                  <Feather name="search" size={14} color={isDark ? '#94A3B8' : '#607386'} />
+                  <Icon name="search" size={14} color={isDark ? '#94A3B8' : '#607386'} />
                 </View>
               </View>
             </View>
@@ -3105,7 +3410,7 @@ export default function AllotmentCheckerScreen() {
                 },
               ]}
             >
-              <Feather
+              <Icon
                 name="search"
                 size={16}
                 color={colors.mutedForeground}
@@ -3413,7 +3718,7 @@ export default function AllotmentCheckerScreen() {
                       {item.ipoName}
                     </Text>
                     <Text style={[styles.historyRowSub, { color: colors.mutedForeground }]}>
-                      {item.userName} • {maskPan(item.pan)}
+                      {item.userName} • {maskPan(item.pan)}{item.checkedAtFormatted ? ` • ${item.checkedAtFormatted}` : ''}
                     </Text>
                   </View>
                   <AllotmentStatusBadge
@@ -3464,8 +3769,7 @@ const diagStyles = StyleSheet.create({
   titleText: {
     color: '#F59E0B',
     fontSize: 13,
-    fontWeight: 'bold',
-    fontFamily: 'SpaceMono',
+    fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: 0.5,
   },
   tagBadge: {
@@ -3531,9 +3835,8 @@ const diagStyles = StyleSheet.create({
   },
   abortedAlertTitle: {
     color: '#EF4444',
-    fontWeight: 'bold',
     fontSize: 12,
-    fontFamily: 'SpaceMono',
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   sectionBox: {
     backgroundColor: '#1E293B',
@@ -3546,14 +3849,13 @@ const diagStyles = StyleSheet.create({
   sectionTitle: {
     color: '#38BDF8',
     fontSize: 11,
-    fontWeight: 'bold',
     marginBottom: 4,
-    fontFamily: 'SpaceMono',
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   diagCodeLine: {
     color: '#94A3B8',
     fontSize: 11,
-    fontFamily: 'SpaceMono',
+    fontFamily: 'GoogleSansFlex_500Medium',
   },
   diagVal: {
     color: '#F1F5F9',
@@ -3578,7 +3880,7 @@ const diagStyles = StyleSheet.create({
   stageName: {
     color: '#CBD5E1',
     fontSize: 11,
-    fontFamily: 'SpaceMono',
+    fontFamily: 'GoogleSansFlex_500Medium',
     flex: 1,
   },
   stageRight: {
@@ -3598,8 +3900,7 @@ const diagStyles = StyleSheet.create({
   },
   badgeText: {
     fontSize: 10,
-    fontWeight: 'bold',
-    fontFamily: 'SpaceMono',
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   apiTraceItem: {
     paddingVertical: 3,
@@ -3609,11 +3910,11 @@ const diagStyles = StyleSheet.create({
   apiTraceMethod: {
     color: '#F1F5F9',
     fontSize: 11,
-    fontFamily: 'SpaceMono',
+    fontFamily: 'GoogleSansFlex_600SemiBold',
   },
   apiTraceSub: {
     fontSize: 10,
-    fontFamily: 'SpaceMono',
+    fontFamily: 'GoogleSansFlex_400Regular',
   },
   logScrollView: {
     maxHeight: 120,
@@ -3623,7 +3924,7 @@ const diagStyles = StyleSheet.create({
   },
   logText: {
     fontSize: 10,
-    fontFamily: 'SpaceMono',
+    fontFamily: 'GoogleSansFlex_400Regular',
     lineHeight: 14,
   },
 });
@@ -3633,22 +3934,59 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    height: 60,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  headerSideLeft: {
-    width: 96,
+    paddingTop: 2,
+    paddingBottom: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
+    position: 'relative',
   },
-  headerSideRight: {
-    width: 96,
+  headerCenterPro: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    paddingHorizontal: 96,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerEyebrow: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+    textAlign: 'left',
+  },
+  headerEyebrowPro: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 1.1,
+    textAlign: 'center',
+  },
+  headerTitle: {
+    fontSize: 30,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.8,
+    lineHeight: 34,
+    textAlign: 'left',
+  },
+  headerTitlePro: {
+    fontSize: 18,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
+    lineHeight: 24,
+    textAlign: 'center',
+  },
+  headerTitleSelected: {
+    fontSize: 20,
+    lineHeight: 26,
+    letterSpacing: -0.4,
+  },
+  headerRightActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
     gap: 8,
   },
   historyHeaderBtn: {
@@ -3682,28 +4020,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerEyebrow: {
-    fontSize: 10,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    textAlign: 'center',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.3,
-    textAlign: 'center',
-  },
   scrollContent: {
     paddingHorizontal: 16,
     paddingBottom: 24,
-    gap: 14,
+    gap: 16,
   },
   ipoSelectorCard: {
     flexDirection: 'row',
@@ -3845,7 +4165,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     paddingHorizontal: 8,
     paddingVertical: 2.5,
-    borderRadius: 6,
+    borderRadius: 50,
   },
   infoTypePillText: {
     fontSize: 11,
@@ -4059,7 +4379,7 @@ const styles = StyleSheet.create({
   },
   applicantPan: {
     fontSize: 12,
-    fontFamily: 'SpaceMono',
+    fontFamily: 'GoogleSansFlex_500Medium',
     letterSpacing: 0.5,
   },
   pickerModalOverlay: {
@@ -4109,7 +4429,7 @@ const styles = StyleSheet.create({
   },
   historyRowSub: {
     fontSize: 11.5,
-    fontFamily: 'SpaceMono',
+    fontFamily: 'GoogleSansFlex_500Medium',
   },
   pickerModalHeader: {
     flexDirection: 'row',
@@ -4304,7 +4624,7 @@ const styles = StyleSheet.create({
   },
   celebrationApplicantPan: {
     fontSize: 12,
-    fontFamily: 'SpaceMono',
+    fontFamily: 'GoogleSansFlex_500Medium',
     marginTop: 2,
   },
   celebrationSharesBadge: {

@@ -25,7 +25,10 @@ import { IconButton } from '@/components/ui/IconButton';
 import { ScoopedBottomSheet } from '@/components/ui/ScoopedBottomSheet';
 import { MergeOfficialBanner } from '@/components/ipo/MergeOfficialBanner';
 import { AnimatedEntrance } from '@/components/ui/AnimatedEntrance';
+import * as WebBrowser from 'expo-web-browser';
+import { useAppExperience } from '@/context/AppExperienceContext';
 import { calculateNormalizedIPOStatus } from '@/services/ipo/statusNormalizer';
+import { getRegistrarConfig } from '@/services/allotment/registrarConfig';
 
 const TIMELINE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -241,6 +244,7 @@ export function IPODetailsLayout({
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { isNonPro } = useAppExperience();
 
   const [logoError, setLogoError] = useState(false);
   const [activeModal, setActiveModal] = useState<string | null>(null);
@@ -261,6 +265,16 @@ export function IPODetailsLayout({
     companyName.toLowerCase().includes('sme');
 
   const segmentLabel = isSme ? 'SME' : 'MAINBOARD';
+
+  const typeText =
+    sector ||
+    (ipo.issue_type && String(ipo.issue_type).trim() !== '' && String(ipo.issue_type).trim() !== '-'
+      ? String(ipo.issue_type).trim()
+      : null) ||
+    (ipo.issueType && String(ipo.issueType).trim() !== '' && String(ipo.issueType).trim() !== '-'
+      ? String(ipo.issueType).trim()
+      : null) ||
+    (isSme ? 'SME' : 'Mainboard');
 
   // Status mapping
   const openDate = ipo.openDate || ipo.open_date || ipo.lifecycle?.openDate || null;
@@ -294,8 +308,8 @@ export function IPODetailsLayout({
   const isUpcoming = normStatus === 'UPCOMING';
 
   const isLive = isOpen || isClosingToday;
-  const isAllotmentCheckable = isAllotmentOut || isListed;
-  const hasBottomCta = isLive || isAllotmentCheckable;
+  const isAllotmentCheckable = isAllotmentOut || isListed || isAllotmentPending || isClosed;
+  const hasBottomCta = (isLive && !isNonPro) || isAllotmentCheckable;
 
   const statusLabel = isClosingToday
     ? 'CLOSING TODAY'
@@ -1001,6 +1015,7 @@ export function IPODetailsLayout({
   };
 
   const handleApplyCta = () => {
+    if (isNonPro) return;
     try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch {}
     if (onApply) {
       onApply();
@@ -1016,11 +1031,26 @@ export function IPODetailsLayout({
     try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch {}
     if (onCheckAllotment) {
       onCheckAllotment();
-    } else {
+      return;
+    }
+    if (isAllotmentOut || isListed) {
       router.push({
         pathname: '/allotment-checker',
         params: { ipoId: ipo.id, symbol: ipo.symbol, companyName },
       } as any);
+    } else {
+      // If allotment has not yet been declared, open the verified official registrar portal
+      const registrar =
+        ipo.registrar ||
+        (ipo as any).allotment?.registrar ||
+        (ipo as any).allotmentConfig?.registrar ||
+        ipo.companyName ||
+        companyName;
+      const portalConfig = getRegistrarConfig(registrar);
+      void WebBrowser.openBrowserAsync(portalConfig.url, {
+        showTitle: true,
+        enableBarCollapsing: true,
+      });
     }
   };
 
@@ -1161,11 +1191,18 @@ export function IPODetailsLayout({
                 )}
               </View>
 
-              {/* Title, Badges & Sector */}
+              {/* Title, Type & Badges */}
               <View style={styles.heroMeta}>
                 <Text style={[styles.companyTitle, { color: colors.foreground }]} numberOfLines={2}>
                   {companyName}
                 </Text>
+
+                {/* IPO Type / Sector Text */}
+                {typeText ? (
+                  <Text style={[styles.sectorText, { color: colors.mutedForeground }]} numberOfLines={1}>
+                    {typeText}
+                  </Text>
+                ) : null}
 
                 {/* Badges Row */}
                 <View style={styles.badgesRow}>
@@ -1174,9 +1211,7 @@ export function IPODetailsLayout({
                     style={[
                       styles.badgePill,
                       {
-                        backgroundColor: isSme
-                          ? (isDark ? 'rgba(236, 72, 153, 0.18)' : '#FCE7F3')
-                          : (isDark ? 'rgba(59, 130, 246, 0.18)' : '#EFF6FF'),
+                        backgroundColor: isSme ? '#EC4899' : '#4F46E5',
                       },
                     ]}
                   >
@@ -1184,9 +1219,7 @@ export function IPODetailsLayout({
                       style={[
                         styles.badgePillText,
                         {
-                          color: isSme
-                            ? (isDark ? '#F472B6' : '#DB2777')
-                            : (isDark ? '#60A5FA' : '#2563EB'),
+                          color: '#FFFFFF',
                         },
                       ]}
                     >
@@ -1200,16 +1233,16 @@ export function IPODetailsLayout({
                       styles.badgePill,
                       {
                         backgroundColor: isClosingToday
-                          ? (isDark ? 'rgba(245, 158, 11, 0.18)' : '#FEF3C7')
+                          ? '#F59E0B'
                           : isOpen
-                          ? (isDark ? 'rgba(16, 185, 129, 0.18)' : '#DCFCE7')
+                          ? '#10B981'
                           : isAllotmentOut
-                          ? (isDark ? 'rgba(59, 130, 246, 0.18)' : '#EFF6FF')
+                          ? '#06B6D4'
                           : isClosed
-                          ? (isDark ? 'rgba(239, 68, 68, 0.18)' : '#FEE2E2')
+                          ? '#EF4444'
                           : isListed
-                          ? (isDark ? 'rgba(139, 92, 246, 0.18)' : '#F5F3FF')
-                          : (isDark ? 'rgba(59, 130, 246, 0.18)' : '#EFF6FF'),
+                          ? '#8B5CF6'
+                          : '#2563EB',
                       },
                     ]}
                   >
@@ -1217,17 +1250,7 @@ export function IPODetailsLayout({
                       style={[
                         styles.badgePillText,
                         {
-                          color: isClosingToday
-                            ? (isDark ? '#FBBF24' : '#D97706')
-                            : isOpen
-                            ? (isDark ? '#34D399' : '#15803D')
-                            : isAllotmentOut
-                            ? (isDark ? '#60A5FA' : '#2563EB')
-                            : isClosed
-                            ? (isDark ? '#F87171' : '#DC2626')
-                            : isListed
-                            ? (isDark ? '#A78BFA' : '#7C3AED')
-                            : (isDark ? '#60A5FA' : '#2563EB'),
+                          color: '#FFFFFF',
                         },
                       ]}
                     >
@@ -1235,13 +1258,6 @@ export function IPODetailsLayout({
                     </Text>
                   </View>
                 </View>
-
-                {/* Sector / Industry Text (only rendered if valid data exists) */}
-                {hasSector && (
-                  <Text style={[styles.sectorText, { color: colors.mutedForeground }]} numberOfLines={1}>
-                    {sector}
-                  </Text>
-                )}
               </View>
             </View>
 
@@ -1932,7 +1948,7 @@ export function IPODetailsLayout({
             },
           ]}
         >
-          {isLive ? (
+          {isLive && !isNonPro ? (
             <TouchableOpacity
               onPress={handleApplyCta}
               style={[
@@ -1982,6 +1998,7 @@ export function IPODetailsLayout({
           {/* Modal Scrollable Content */}
           <ScrollView
             showsVerticalScrollIndicator={false}
+            style={{ flexShrink: 1, flexGrow: 0 }}
             contentContainerStyle={{ gap: 14, paddingTop: 6, paddingBottom: 24 }}
           >
             {/* 1. FINANCIALS MODAL CONTENT */}
@@ -2302,12 +2319,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   badgePill: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
     borderRadius: 5,
   },
   badgePillText: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: 0.4,
   },
@@ -2378,12 +2395,12 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_400Regular',
   },
   statusCountdownPill: {
-    paddingHorizontal: 9,
-    paddingVertical: 4.5,
-    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 50,
   },
   statusCountdownText: {
-    fontSize: 11,
+    fontSize: 9.5,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: 0.2,
   },

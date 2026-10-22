@@ -136,10 +136,10 @@ export function evaluateLifecycle(
     };
   }
 
-  const openDate = record.open_date?.trim() || '';
-  const closeDate = record.close_date?.trim() || '';
-  const allotmentDate = record.allotment_date?.trim() || '';
-  const listingDate = record.listing_date?.trim() || '';
+  const openDate = (record.open_date || (record as any).openDate || (record as any).lifecycle?.openDate)?.trim() || '';
+  const closeDate = (record.close_date || (record as any).closeDate || (record as any).lifecycle?.closeDate)?.trim() || '';
+  const allotmentDate = (record.allotment_date || (record as any).allotmentDate || (record as any).lifecycle?.basisOfAllotmentDate)?.trim() || '';
+  const listingDate = (record.listing_date || (record as any).listingDate || (record as any).lifecycle?.listingDate)?.trim() || '';
 
   const hasValidOpen = isValidDate(openDate);
   const hasValidClose = isValidDate(closeDate);
@@ -163,10 +163,26 @@ export function evaluateLifecycle(
           };
         }
         if (hasValidClose && today > closeDate) {
+          if (hasValidListing && today >= listingDate) {
+            return {
+              lifecycle_status: 'LISTED',
+              lifecycle_confidence: 'High',
+              lifecycle_source: 'Authoritative Listing Date',
+              lifecycle_last_verified_at: nowIso,
+            };
+          }
+          if (hasValidAllotment && today >= allotmentDate) {
+            return {
+              lifecycle_status: 'ALLOTTED_PENDING',
+              lifecycle_confidence: 'High',
+              lifecycle_source: 'Authoritative Allotment Date Reached',
+              lifecycle_last_verified_at: nowIso,
+            };
+          }
           return {
-            lifecycle_status: 'ALLOTTED_PENDING',
+            lifecycle_status: 'CLOSED',
             lifecycle_confidence: 'High',
-            lifecycle_source: 'Authoritative Date Progression',
+            lifecycle_source: 'Authoritative Close Date (Awaiting Allotment Date)',
             lifecycle_last_verified_at: nowIso,
           };
         }
@@ -190,18 +206,6 @@ export function evaluateLifecycle(
           };
         }
         if (hasValidClose && today > closeDate) {
-          return {
-            lifecycle_status: 'ALLOTTED_PENDING',
-            lifecycle_confidence: 'High',
-            lifecycle_source: 'Authoritative Close Date',
-            lifecycle_last_verified_at: nowIso,
-          };
-        }
-      }
-
-      if (normalized === 'CLOSED') {
-        // If close date has passed (subsequent day) and not yet declared/listed, progress to ALLOTTED_PENDING
-        if (hasValidClose && today > closeDate) {
           if (hasValidListing && today >= listingDate) {
             return {
               lifecycle_status: 'LISTED',
@@ -210,13 +214,47 @@ export function evaluateLifecycle(
               lifecycle_last_verified_at: nowIso,
             };
           }
+          if (hasValidAllotment && today >= allotmentDate) {
+            return {
+              lifecycle_status: 'ALLOTTED_PENDING',
+              lifecycle_confidence: 'High',
+              lifecycle_source: 'Authoritative Allotment Date Reached',
+              lifecycle_last_verified_at: nowIso,
+            };
+          }
           return {
-            lifecycle_status: 'ALLOTTED_PENDING',
+            lifecycle_status: 'CLOSED',
             lifecycle_confidence: 'High',
-            lifecycle_source: 'Authoritative Post-Close Progression',
+            lifecycle_source: 'Authoritative Close Date (Awaiting Allotment Date)',
             lifecycle_last_verified_at: nowIso,
           };
         }
+      }
+
+      if (normalized === 'CLOSED') {
+        if (hasValidListing && today >= listingDate) {
+          return {
+            lifecycle_status: 'LISTED',
+            lifecycle_confidence: 'High',
+            lifecycle_source: 'Authoritative Listing Date',
+            lifecycle_last_verified_at: nowIso,
+          };
+        }
+        // When closed, remain CLOSED until its configured allotment date
+        if (hasValidAllotment && today >= allotmentDate) {
+          return {
+            lifecycle_status: 'ALLOTTED_PENDING',
+            lifecycle_confidence: 'High',
+            lifecycle_source: 'Authoritative Allotment Date Reached',
+            lifecycle_last_verified_at: nowIso,
+          };
+        }
+        return {
+          lifecycle_status: 'CLOSED',
+          lifecycle_confidence: 'High',
+          lifecycle_source: 'Authoritative Backend Status (Closed)',
+          lifecycle_last_verified_at: nowIso,
+        };
       }
 
       return {
@@ -239,11 +277,19 @@ export function evaluateLifecycle(
     };
   }
 
-  // Close date passed -> ALLOTTED_PENDING (Client-side date alone cannot determine allotment result)
+  // Close date passed -> CLOSED until allotment date, then ALLOTTED_PENDING (Client-side date alone cannot determine allotment result)
   if (hasValidClose && today > closeDate) {
+    if (hasValidAllotment && today >= allotmentDate) {
+      return {
+        lifecycle_status: 'ALLOTTED_PENDING',
+        lifecycle_confidence: 'Medium',
+        lifecycle_source: 'Authoritative Allotment Date Reached',
+        lifecycle_last_verified_at: nowIso,
+      };
+    }
     return {
-      lifecycle_status: 'ALLOTTED_PENDING',
-      lifecycle_confidence: 'Medium',
+      lifecycle_status: 'CLOSED',
+      lifecycle_confidence: 'High',
       lifecycle_source: 'Authoritative Close Date',
       lifecycle_last_verified_at: nowIso,
     };
