@@ -62,11 +62,12 @@ export interface AllotmentIntelligenceResponse {
 
 export class AllotmentApiService {
   private apiClient: ApiClient;
+  private baseUrl: string;
 
   constructor(baseUrl?: string) {
-    const defaultUrl = baseUrl || API_BASE_URL;
+    this.baseUrl = baseUrl || API_BASE_URL;
     this.apiClient = new ApiClient({
-      baseUrl: defaultUrl,
+      baseUrl: this.baseUrl,
       timeoutMs: 15000,
     });
   }
@@ -194,6 +195,31 @@ export class AllotmentApiService {
   public async fetchBackendIpos(): Promise<any[]> {
     const response = await this.apiClient.get<any[]>('/api/v1/ipos');
     return response.data || [];
+  }
+
+  /**
+   * Fast real-time registrar availability probe (Public, 2.5s timeout).
+   * Checks whether the registrar has published allotment results for the specified IPO.
+   */
+  public async checkIpoAvailability(
+    ipoId: string,
+  ): Promise<{ available: boolean; status?: string; registrarCode?: string }> {
+    try {
+      const fastClient = new ApiClient({
+        baseUrl: this.baseUrl,
+        timeoutMs: 2500,
+      });
+
+      const response = await fastClient.get<{
+        available: boolean;
+        status?: string;
+        registrarCode?: string;
+      }>(`/api/v1/allotment/ipos/${encodeURIComponent(ipoId)}/availability`);
+
+      return response.data || { available: false };
+    } catch {
+      return { available: false };
+    }
   }
 }
 

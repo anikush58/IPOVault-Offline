@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Image,
   Linking,
@@ -30,6 +31,7 @@ import { useAppExperience } from '@/context/AppExperienceContext';
 import { calculateNormalizedIPOStatus } from '@/services/ipo/statusNormalizer';
 import { getRegistrarConfig } from '@/services/allotment/registrarConfig';
 import { getResolvedLogoUrl } from '@/utils/formatters';
+import { allotmentApiService } from '@/services/allotment/AllotmentApiService';
 
 const TIMELINE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -249,6 +251,7 @@ export function IPODetailsLayout({
 
   const [logoError, setLogoError] = useState(false);
   const [activeModal, setActiveModal] = useState<string | null>(null);
+  const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
 
   // 1. Data Normalization
   const companyName =
@@ -1029,30 +1032,53 @@ export function IPODetailsLayout({
     }
   };
 
-  const handleAllotmentCta = () => {
+  const openRegistrarWebPortal = () => {
+    const registrar =
+      ipo.registrar ||
+      (ipo as any).allotment?.registrar ||
+      (ipo as any).allotmentConfig?.registrar ||
+      ipo.companyName ||
+      companyName;
+    const portalConfig = getRegistrarConfig(registrar);
+    void WebBrowser.openBrowserAsync(portalConfig.url, {
+      showTitle: true,
+      enableBarCollapsing: true,
+    });
+  };
+
+  const handleAllotmentCta = async () => {
     try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch {}
     if (onCheckAllotment) {
       onCheckAllotment();
       return;
     }
+    // If allotment is already marked out or listed in app, navigate immediately
     if (isAllotmentOut || isListed) {
       router.push({
         pathname: '/allotment-checker',
         params: { ipoId: ipo.id, symbol: ipo.symbol, companyName },
       } as any);
-    } else {
-      // If allotment has not yet been declared, open the verified official registrar portal
-      const registrar =
-        ipo.registrar ||
-        (ipo as any).allotment?.registrar ||
-        (ipo as any).allotmentConfig?.registrar ||
-        ipo.companyName ||
-        companyName;
-      const portalConfig = getRegistrarConfig(registrar);
-      void WebBrowser.openBrowserAsync(portalConfig.url, {
-        showTitle: true,
-        enableBarCollapsing: true,
-      });
+      return;
+    }
+
+    // Fast-probe registrar availability before falling back to browser portal
+    if (isCheckingAvailability) return;
+    setIsCheckingAvailability(true);
+    try {
+      const probe = await allotmentApiService.checkIpoAvailability(ipo.id);
+      if (probe.available) {
+        try { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch {}
+        router.push({
+          pathname: '/allotment-checker',
+          params: { ipoId: ipo.id, symbol: ipo.symbol, companyName },
+        } as any);
+      } else {
+        openRegistrarWebPortal();
+      }
+    } catch {
+      openRegistrarWebPortal();
+    } finally {
+      setIsCheckingAvailability(false);
     }
   };
 
@@ -1966,15 +1992,25 @@ export function IPODetailsLayout({
           ) : isAllotmentCheckable ? (
             <TouchableOpacity
               onPress={handleAllotmentCta}
+              disabled={isCheckingAvailability}
               style={[
                 styles.primaryCtaBtn,
                 { backgroundColor: isDark ? '#FFFFFF' : '#000000' },
               ]}
               activeOpacity={0.88}
             >
-              <Text style={[styles.primaryCtaBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>
-                Check Allotment
-              </Text>
+              {isCheckingAvailability ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
+                  <Text style={[styles.primaryCtaBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                    Checking Registrar...
+                  </Text>
+                </View>
+              ) : (
+                <Text style={[styles.primaryCtaBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                  Check Allotment
+                </Text>
+              )}
             </TouchableOpacity>
           ) : null}
         </View>
