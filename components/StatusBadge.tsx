@@ -8,50 +8,42 @@ type Props = { status: ApplicationStatus; small?: boolean };
 export function StatusBadge({ status, small }: Props) {
   const colors = useColors();
 
-  const config: Record<ApplicationStatus, { bg: string; text: string; dot: string }> = {
+  const config: Record<ApplicationStatus, { bg: string; text: string }> = {
     Applied: {
       bg: colors.statusAppliedBg,
-      text: colors.statusApplied,
-      dot: colors.statusApplied,
+      text: '#FFFFFF',
     },
     'Mandate Approved': {
       bg: colors.statusAppliedBg,
-      text: colors.statusApplied,
-      dot: colors.statusApplied,
+      text: '#FFFFFF',
     },
     Allotted: {
       bg: colors.statusAllottedBg,
-      text: colors.statusAllotted,
-      dot: colors.statusAllotted,
+      text: '#FFFFFF',
     },
     'Partially Allotted': {
       bg: colors.statusAllottedBg,
-      text: colors.statusAllotted,
-      dot: colors.statusAllotted,
+      text: '#FFFFFF',
     },
     Holding: {
       bg: colors.statusHoldingBg,
-      text: colors.statusHolding,
-      dot: colors.statusHolding,
+      text: '#FFFFFF',
     },
     'Not Allotted': {
       bg: colors.statusNotAllottedBg,
-      text: colors.statusNotAllotted,
-      dot: colors.statusNotAllotted,
+      text: '#FFFFFF',
     },
     Sold: {
       bg: colors.statusSoldBg,
-      text: colors.statusSold,
-      dot: colors.statusSold,
+      text: '#FFFFFF',
     },
     Cancelled: {
       bg: colors.statusRefundBg,
-      text: colors.statusRefund,
-      dot: colors.statusRefund,
+      text: '#FFFFFF',
     },
   };
 
-  const { bg, text, dot } = config[status] ?? config['Applied'];
+  const { bg, text } = config[status] ?? config['Applied'];
 
   return (
     <View style={[styles.badge, { backgroundColor: bg }, small && styles.badgeSmall]}>
@@ -64,27 +56,24 @@ const styles = StyleSheet.create({
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 7,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 100,
+    borderRadius: 6,
     alignSelf: 'flex-start',
   },
   badgeSmall: {
     paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  dot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
+    paddingVertical: 1.5,
+    borderRadius: 5,
   },
   text: {
-    fontSize: 9.5,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: 0.1,
   },
   textSmall: {
     fontSize: 8.5,
   },
 });
+

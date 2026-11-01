@@ -20,7 +20,9 @@ import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconButton } from '@/components/ui/IconButton';
 import { Tabs } from '@/components/ui/Tabs';
+import { useAppExperience } from '@/context/AppExperienceContext';
 import { analyticsApiService } from '@/services/analytics/AnalyticsApiService';
+import { AnalyticsSkeleton } from '@/components/analytics/AnalyticsSkeleton';
 import {
   AnalyticsFilter,
   AnalyticsQualityStatus,
@@ -37,12 +39,12 @@ import { formatCurrency, formatRatio, formatShareCount } from '@/utils/formatter
 
 type AnalyticsTab = 'summary' | 'market' | 'performance' | 'subscription' | 'allotment' | 'quality';
 
-export default function AnalyticsDashboardScreen() {
+function AnalyticsDashboardScreenContent() {
   const colors = useColors();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
   const [activeTab, setActiveTab] = useState<AnalyticsTab>('summary');
@@ -279,12 +281,9 @@ export default function AnalyticsDashboardScreen() {
 
       {/* Main Content Area */}
       {loading ? (
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.mutedForeground }]}>
-            Loading analytics summary telemetry…
-          </Text>
-        </View>
+        <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+          <AnalyticsSkeleton />
+        </ScrollView>
       ) : error ? (
         <View style={styles.centerContainer}>
           <Feather name="wifi-off" size={32} color={colors.destructive} />
@@ -1176,3 +1175,24 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
 });
+
+export default function AnalyticsDashboardScreen() {
+  const { isNonPro, isLoading: isExperienceLoading } = useAppExperience();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isExperienceLoading && isNonPro) {
+      if (typeof (router as any).navigate === 'function') {
+        (router as any).navigate('/(tabs)/ipos');
+      } else {
+        router.replace('/(tabs)/ipos');
+      }
+    }
+  }, [isNonPro, isExperienceLoading, router]);
+
+  if (isNonPro) {
+    return null;
+  }
+
+  return <AnalyticsDashboardScreenContent />;
+}

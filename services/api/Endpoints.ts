@@ -24,5 +24,10 @@ export const ENDPOINTS = {
   ANALYTICS_SUMMARY: '/api/v1/analytics/summary',
   ANALYTICS_METRICS: '/api/v1/analytics/metrics',
   ANALYTICS_CONTRACTS: '/api/v1/analytics/contracts',
+  USER_ENTITLEMENT: '/api/v1/user/entitlement',
+  PRO_PLANS: '/api/v1/pro-plans',
+  PUSH_TOKEN: '/api/v1/notifications/push-token',
+  USER_ACCOUNT: '/api/v1/user/account',
 } as const;
+
 

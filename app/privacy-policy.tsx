@@ -8,7 +8,6 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
@@ -18,7 +17,6 @@ export default function PrivacyPolicyScreen() {
   const colors = useColors();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
@@ -45,15 +43,15 @@ export default function PrivacyPolicyScreen() {
     },
     {
       id: 4,
-      title: '4. No Sale or Sharing of Financial Data',
+      title: '4. Advertising & Data Protection',
       content:
-        'We do not sell, rent, monetize, or disclose your personal or financial data to advertisers, data brokers, lenders, or third parties under any circumstances. There are no tracking or advertising SDKs embedded in the app.',
+        'We do not sell, rent, or disclose your personal or financial data to data brokers, lenders, or third parties under any circumstances. Non-Pro tiers of the application may display non-personalized, privacy-compliant advertisements served via Google AdMob. Under strict architectural guards, NO PAN numbers, bank details, portfolio values, Demat client IDs, or personal identity records are ever shared with or transmitted to Google AdMob or any advertising networks.',
     },
     {
       id: 5,
-      title: '5. Data Ownership & Deletion',
+      title: '5. Data Ownership & Account Deletion',
       content:
-        'You have full control over your data. You can export your data anytime as a standard JSON or CSV file, or delete all records permanently using the "Clear All Data" feature in Settings.',
+        'You have full control over your data. You can export your data anytime as a standard JSON or CSV file, or delete your entire account and all associated cloud and local records permanently using the "Delete Account" feature in Account Settings.',
     },
     {
       id: 6,
@@ -80,6 +78,7 @@ export default function PrivacyPolicyScreen() {
         title="Privacy Policy"
         centerTitle
         showBack
+        transparent
       />
 
       <ScrollView
@@ -95,7 +94,7 @@ export default function PrivacyPolicyScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <Text style={[styles.effectiveDate, { color: colors.mutedForeground }]}>Effective: September 2026</Text>
             <View style={[styles.versionBadge, { backgroundColor: isDark ? '#374151' : '#F3F4F6' }]}>
-              <Text style={[styles.versionText, { color: colors.foreground }]}>v2.0.2</Text>
+              <Text style={[styles.versionText, { color: colors.foreground }]}>v2.3.0</Text>
             </View>
           </View>
           <Text style={[styles.summaryText, { color: colors.foreground }]}>

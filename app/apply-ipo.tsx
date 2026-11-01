@@ -1,7 +1,6 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Modal,
   Platform,
   Pressable,
@@ -12,6 +11,7 @@ import {
   useColorScheme,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -20,18 +20,26 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useColors } from '@/hooks/useColors';
 import { useDialog } from '@/context/DialogContext';
-import { useDB } from '@/context/DBContext';
+import { useDB, User } from '@/context/DBContext';
+import { useAppExperience } from '@/context/AppExperienceContext';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { IPORepository } from '@/services/ipo/ipoRepository';
 import { IPOMasterRecord } from '@/services/ipo/types';
-import { formatCurrency, formatDate } from '@/utils/formatters';
+import { formatCurrency, formatDate, maskPAN, getResolvedLogoUrl } from '@/utils/formatters';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { BackendIpo } from '@/types/backend-ipo';
 import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
-import { getEffectiveAvatarUrl } from '@/utils/avatarUtils';
+import { getCustomAvatarUrl } from '@/utils/avatarUtils';
 import { safeRunAsync } from '@/utils/sqliteDebug';
+import {
+  IpoCategory,
+  CATEGORY_OPTIONS,
+  validateCategoryBid,
+  getIpoOfferCategories,
+  resolveIpoLotSize,
+} from '@/utils/ipoCategoryUtils';
 
 const AVATAR_PALETTES: [string, string][] = [
   ['#8B5CF6', '#6D28D9'], // Purple
@@ -55,12 +63,247 @@ function getAvatarGradient(name: string): [string, string] {
 
 const DEFAULT_UPI_APPS = ['HDFC UPI', 'GPay', 'PhonePe', 'BHIM', 'Paytm', 'ICICI iMobile', 'BoB ASBA', 'IDFC ASBA', 'Other'];
 
-export default function ApplyIPOScreen() {
+interface ApplicantRowItemProps {
+  user: User;
+  isApplied: boolean;
+  isSelected: boolean;
+  currentLots: number;
+  lotSize: number;
+  unitPrice: number;
+  selectedBank: string;
+  selectedUPI: string;
+  selectedCategory: IpoCategory;
+  isFailedAvatar: boolean;
+  isDark: boolean;
+  colors: ReturnType<typeof useColors>;
+  onToggle: (userId: string) => void;
+  onBankPress: (userId: string) => void;
+  onUpiPress: (userId: string) => void;
+  onLotPress: (userId: string) => void;
+  onAvatarError: (userId: string) => void;
+  onCategorySelect: (userId: string, category: IpoCategory) => void;
+}
+
+const ApplicantRowItem = React.memo(function ApplicantRowItem({
+  user,
+  isApplied,
+  isSelected,
+  currentLots,
+  lotSize,
+  unitPrice,
+  selectedBank,
+  selectedUPI,
+  selectedCategory,
+  isFailedAvatar,
+  isDark,
+  colors,
+  onToggle,
+  onBankPress,
+  onUpiPress,
+  onLotPress,
+  onAvatarError,
+  onCategorySelect,
+}: ApplicantRowItemProps) {
+  const totalShares = currentLots * lotSize;
+  const totalAmt = totalShares * unitPrice;
+  const dematVal = user.client_id || (user as any).demat || (user as any).dp_id || (user as any).client_number || '';
+  const customAvatar = getCustomAvatarUrl(user);
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      onPress={() => onToggle(user.id)}
+      disabled={isApplied}
+      style={[
+        styles.applicantCard,
+        {
+          backgroundColor: isSelected ? (isDark ? colors.card : '#FFFFFF') : colors.card,
+          borderColor: isSelected ? '#10B981' : colors.border,
+          borderWidth: isSelected ? 1.5 : 1,
+          opacity: isApplied ? 0.65 : 1,
+        },
+      ]}
+    >
+      {/* Applicant Header */}
+      <View style={styles.applicantHeader}>
+        <View style={styles.applicantAvatarRow}>
+          {customAvatar && !isFailedAvatar ? (
+            <Image
+              source={{ uri: customAvatar }}
+              style={[styles.avatarImage, { backgroundColor: colors.surface }]}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              priority="high"
+              onError={() => onAvatarError(user.id)}
+            />
+          ) : (
+            <LinearGradient
+              colors={getAvatarGradient(user.name || 'User')}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.avatarCircle}
+            >
+              <Text style={[styles.avatarText, { color: '#FFFFFF' }]}>
+                {user.name ? user.name.slice(0, 1).toUpperCase() : 'U'}
+              </Text>
+            </LinearGradient>
+          )}
+          <View>
+            <Text style={[styles.applicantName, { color: colors.foreground }]}>{user.name}</Text>
+            <Text style={[styles.applicantMeta, { color: colors.mutedForeground }]}>
+              PAN: {user.pan_number ? maskPAN(user.pan_number) : '-'}{dematVal ? ` · Demat: ${dematVal}` : ''}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.applicantHeaderRight}>
+          {isSelected && (
+            <View style={[styles.selectedCheckBadge, { backgroundColor: '#10B981' }]}>
+              <Feather name="check" size={11} color="#FFFFFF" />
+            </View>
+          )}
+          <View style={[styles.brokerBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.brokerText, { color: colors.mutedForeground }]}>
+              {user.broker ? user.broker.toUpperCase() : 'CDSL'}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Category Selection Pills */}
+      <View style={styles.categoryPillRow}>
+        {(['RETAIL', 'SHAREHOLDER', 'HNI'] as IpoCategory[]).map((catKey) => {
+          const isCatActive = selectedCategory === catKey;
+          const info = CATEGORY_OPTIONS[catKey];
+          return (
+            <TouchableOpacity
+              key={catKey}
+              onPress={(e) => {
+                e.stopPropagation();
+                onCategorySelect(user.id, catKey);
+              }}
+              activeOpacity={0.7}
+              style={[
+                styles.categoryPill,
+                {
+                  backgroundColor: isCatActive ? info.badgeBorder : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'),
+                  borderColor: isCatActive ? info.badgeBorder : colors.border,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.categoryPillText,
+                  {
+                    color: isCatActive ? '#FFFFFF' : colors.mutedForeground,
+                    fontWeight: isCatActive ? '700' : '500',
+                  },
+                ]}
+              >
+                {info.shortLabel}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {selectedCategory === 'SHAREHOLDER' && (
+        <View style={[styles.categoryNoticeBox, { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.1)' : 'rgba(139, 92, 246, 0.08)', borderColor: 'rgba(139, 92, 246, 0.25)' }]}>
+          <Feather name="info" size={11} color="#8B5CF6" />
+          <Text style={[styles.categoryNoticeText, { color: isDark ? '#C4B5FD' : '#6D28D9' }]}>
+            Shareholder quota: Requires parent equity held on record date. Max ₹2L.
+          </Text>
+        </View>
+      )}
+
+      {/* Account & Mandate Config Row */}
+      <View style={[styles.configRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <TouchableOpacity
+          onPress={() => onBankPress(user.id)}
+          style={styles.configItem}
+          activeOpacity={0.7}
+        >
+          <Feather name="credit-card" size={12} color={colors.mutedForeground} />
+          <Text style={[styles.configText, { color: colors.foreground }]} numberOfLines={1}>
+            {selectedBank}
+          </Text>
+          <Feather name="chevron-down" size={12} color={colors.mutedForeground} />
+        </TouchableOpacity>
+
+        <View style={[styles.configDivider, { backgroundColor: colors.border }]} />
+
+        <TouchableOpacity
+          onPress={() => onUpiPress(user.id)}
+          style={styles.configItem}
+          activeOpacity={0.7}
+        >
+          <Feather name="smartphone" size={12} color={colors.mutedForeground} />
+          <Text style={[styles.configText, { color: colors.foreground }]} numberOfLines={1}>
+            {selectedUPI}
+          </Text>
+          <Feather name="chevron-down" size={12} color={colors.mutedForeground} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Lot Selection Row */}
+      {isApplied ? (
+        <View style={[styles.appliedNoticeRow, { borderTopColor: colors.border }]}>
+          <Feather name="check-circle" size={14} color={isDark ? '#34D399' : '#059669'} />
+          <Text style={[styles.appliedNoticeText, { color: isDark ? '#34D399' : '#059669' }]}>
+            Application already submitted ({CATEGORY_OPTIONS[selectedCategory].shortLabel})
+          </Text>
+        </View>
+      ) : (
+        <View style={[styles.lotSelectionRow, { borderTopColor: colors.border }]}>
+          <View style={styles.lotSelectLeftCol}>
+            <Text style={[styles.lotSelectKey, { color: colors.mutedForeground }]}>
+              BID QUANTITY
+            </Text>
+            {currentLots > 0 ? (
+              <Text style={[styles.lotSelectSub, { color: colors.foreground }]}>
+                {totalShares} Shares · {formatCurrency(totalAmt)}
+              </Text>
+            ) : null}
+          </View>
+
+          <TouchableOpacity
+            onPress={() => onLotPress(user.id)}
+            activeOpacity={0.8}
+            style={[
+              styles.lotSelectTrigger,
+              {
+                borderColor: currentLots > 0 ? 'rgba(0, 0, 0, 0.75)' : colors.border,
+                backgroundColor: currentLots > 0 ? 'rgba(0, 0, 0, 0.05)' : colors.surface,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.lotSelectVal,
+                { color: currentLots > 0 ? colors.foreground : colors.mutedForeground },
+              ]}
+            >
+              {currentLots > 0 ? `${currentLots} Lot${currentLots > 1 ? 's' : ''}` : 'Select Lots'}
+            </Text>
+            <Feather
+              name="chevron-right"
+              size={14}
+              color={currentLots > 0 ? colors.foreground : colors.mutedForeground}
+            />
+          </TouchableOpacity>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+});
+
+function ApplyIPOScreenContent() {
   const colors = useColors();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
   const db = useSQLiteContext();
   const params = useLocalSearchParams<{
     ipoId?: string;
@@ -104,8 +347,10 @@ export default function ApplyIPOScreen() {
   const [userSelectedBank, setUserSelectedBank] = useState<Record<string, string>>({});
   const [userSelectedUPI, setUserSelectedUPI] = useState<Record<string, string>>({});
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+  const [userSelectedCategory, setUserSelectedCategory] = useState<Record<string, IpoCategory>>({});
   const [failedAvatars, setFailedAvatars] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
+  const isSubmittingRef = React.useRef(false);
 
   useEffect(() => {
     if (parsedItem) {
@@ -117,6 +362,7 @@ export default function ApplyIPOScreen() {
   const [showIPOPicker, setShowIPOPicker] = useState(false);
   const [activeLotPickerUserId, setActiveLotPickerUserId] = useState<string | null>(null);
   const [activeBankPickerUserId, setActiveBankPickerUserId] = useState<string | null>(null);
+  const [activeUpiPickerUserId, setActiveUpiPickerUserId] = useState<string | null>(null);
 
   // Success Modal State
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -140,7 +386,7 @@ export default function ApplyIPOScreen() {
   // Fetch record from ipo_master or backend API if selectedIpoId is passed
   useEffect(() => {
     async function resolveMaster() {
-      if (!selectedIpoId) return;
+      if (!selectedIpoId || backendIpoRecord || parsedItem) return;
       try {
         const found = await repo.getById(selectedIpoId);
         if (found) {
@@ -149,7 +395,7 @@ export default function ApplyIPOScreen() {
           const searchResults = await repo.search(selectedIpoId);
           if (searchResults && searchResults.length > 0) {
             setMasterRecord(searchResults[0]);
-          } else if (!backendIpoRecord && !parsedItem) {
+          } else {
             const bIpo = await backendIpoApiService.getBackendIpoDetail(selectedIpoId);
             if (bIpo) {
               setBackendIpoRecord(bIpo);
@@ -205,7 +451,7 @@ export default function ApplyIPOScreen() {
         company_name: compName,
         ipo_name: compName,
         buy_price: typeof price === 'string' ? parseFloat(price) : (price || 0),
-        quantity: bIpo.lotSize || (params.lotSize ? parseInt(params.lotSize, 10) : 1),
+        quantity: resolveIpoLotSize(bIpo) || (params.lotSize ? parseInt(params.lotSize, 10) : 1),
         issue_type: (bIpo.marketSegment === 'SME' || (bIpo as any).issue_type === 'SME' || (bIpo as any).issueType === 'SME' || params.issueType === 'SME') ? 'SME' : 'Mainboard',
         exchange: bIpo.exchange || 'NSE, BSE',
         close_date: bIpo.closeDate || params.closeDate || '',
@@ -326,7 +572,7 @@ export default function ApplyIPOScreen() {
     let totalLots = 0;
     let totalShares = 0;
     let totalAmount = 0;
-    const lotSize = selectedIPO?.quantity || 1;
+    const lotSize = resolveIpoLotSize(selectedIPO) || selectedIPO?.quantity || 1;
     const unitPrice = selectedIPO?.buy_price || 0;
     const defaultLotCount = isSme ? 2 : 1;
 
@@ -345,17 +591,32 @@ export default function ApplyIPOScreen() {
     };
   }, [selectedUserIds, userLotQuantities, selectedIPO, isSme]);
 
-  const toggleApplicantSelection = (userId: string) => {
-    const isAlreadyApplied = Boolean(
-      selectedIpoId && applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === userId && a.status !== 'Cancelled')
-    );
-    if (isAlreadyApplied) return;
+  // Precompute set of already applied user ID + category combinations for selected IPO
+  const appliedUserCategorySet = useMemo(() => {
+    if (!selectedIpoId) return new Set<string>();
+    const set = new Set<string>();
+    for (const a of applications) {
+      if (a.ipo_id === selectedIpoId && a.status !== 'Cancelled') {
+        const cat = (a.category || 'RETAIL').toUpperCase().trim();
+        set.add(`${a.user_id}_${cat}`);
+      }
+    }
+    return set;
+  }, [applications, selectedIpoId]);
 
-    const isSelected = selectedUserIds.has(userId);
+  const toggleApplicantSelection = useCallback((userId: string) => {
+    const cat = userSelectedCategory[userId] || 'RETAIL';
+    if (appliedUserCategorySet.has(`${userId}_${cat}`)) return;
+
     const defaultLotCount = isSme ? 2 : 1;
+    const isSelected = selectedUserIds.has(userId);
 
     if (isSelected) {
-      setUserLotQuantities((prev) => ({ ...prev, [userId]: 0 }));
+      setUserLotQuantities((prev) => {
+        const next = { ...prev };
+        delete next[userId];
+        return next;
+      });
       setSelectedUserIds((prev) => {
         const next = new Set(prev);
         next.delete(userId);
@@ -373,23 +634,33 @@ export default function ApplyIPOScreen() {
       });
     }
     Haptics.selectionAsync();
-  };
+  }, [appliedUserCategorySet, isSme, selectedUserIds, userSelectedCategory]);
 
-  const handleSelectAllApplicants = () => {
-    const eligibleUsers = activeUsers.filter(
-      (u) => !applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === u.id && a.status !== 'Cancelled')
-    );
+  const handleCategorySelect = useCallback((userId: string, category: IpoCategory) => {
+    setUserSelectedCategory((prev) => ({ ...prev, [userId]: category }));
+    const isAlreadyApplied = appliedUserCategorySet.has(`${userId}_${category}`);
+    if (isAlreadyApplied) {
+      setSelectedUserIds((prev) => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
+    }
+    Haptics.selectionAsync();
+  }, [appliedUserCategorySet]);
+
+  const handleSelectAllApplicants = useCallback(() => {
+    const eligibleUsers = activeUsers.filter((u) => {
+      const cat = userSelectedCategory[u.id] || 'RETAIL';
+      return !appliedUserCategorySet.has(`${u.id}_${cat}`);
+    });
     const allSelected = eligibleUsers.length > 0 && eligibleUsers.every((u) => selectedUserIds.has(u.id));
     const defaultLotCount = isSme ? 2 : 1;
 
     if (allSelected) {
       // Deselect all
       setSelectedUserIds(new Set());
-      setUserLotQuantities((prev) => {
-        const next = { ...prev };
-        eligibleUsers.forEach((u) => { next[u.id] = 0; });
-        return next;
-      });
+      setUserLotQuantities({});
     } else {
       // Select all eligible
       const next = new Set(selectedUserIds);
@@ -404,17 +675,64 @@ export default function ApplyIPOScreen() {
       setUserLotQuantities(nextLots);
     }
     Haptics.selectionAsync();
-  };
+  }, [activeUsers, appliedUserCategorySet, isSme, selectedUserIds, userLotQuantities, userSelectedCategory]);
+
+  const handleBankPress = useCallback((userId: string) => {
+    setActiveBankPickerUserId(userId);
+  }, []);
+
+  const handleUpiPress = useCallback((userId: string) => {
+    setActiveUpiPickerUserId(userId);
+  }, []);
+
+  const handleLotPress = useCallback((userId: string) => {
+    setActiveLotPickerUserId(userId);
+  }, []);
+
+  const handleAvatarError = useCallback((userId: string) => {
+    setFailedAvatars((prev) => ({ ...prev, [userId]: true }));
+  }, []);
 
   const handleBulkSubmit = async () => {
+    if (loading || isSubmittingRef.current) return;
     if (!selectedIpoId) {
-      showError('', 'Please select an IPO first.');
+      showError('IPO Required', 'Please select an IPO first.');
       return;
     }
     if (selectedUserIds.size === 0) {
-      showError('', 'Please select bid quantity for at least one applicant.');
+      showError('Applicants Required', 'Please select at least one applicant.');
       return;
     }
+
+    const bIpo = backendIpoRecord || parsedItem;
+    const unitPrice =
+      selectedIPO?.buy_price ||
+      (bIpo?.priceBandHigh ? Number(bIpo.priceBandHigh) : (bIpo?.priceBandLow ? Number(bIpo.priceBandLow) : 100));
+    const lotQty = resolveIpoLotSize(selectedIPO || bIpo) || selectedIPO?.quantity || 1;
+    const offerCats = getIpoOfferCategories(bIpo || selectedIPO);
+
+    // Bid validation before execution against selected category rules
+    for (const uid of Array.from(selectedUserIds)) {
+      const cat = userSelectedCategory[uid] || 'RETAIL';
+      const lots = userLotQuantities[uid] ?? (isSme ? 2 : 1);
+      const catConfig = offerCats.find(
+        (c) => (c.category || '').toUpperCase().trim() === cat
+      );
+      const val = validateCategoryBid({
+        category: cat,
+        lots,
+        unitPrice,
+        lotSize: lotQty,
+        isSme,
+        categoryConfig: catConfig,
+      });
+      if (!val.valid) {
+        showError('Invalid Application', val.error || `Invalid bid for ${CATEGORY_OPTIONS[cat].shortLabel} category.`);
+        return;
+      }
+    }
+
+    isSubmittingRef.current = true;
     setLoading(true);
     try {
       const bankNameMap: Record<string, string> = {};
@@ -442,11 +760,6 @@ export default function ApplyIPOScreen() {
 
       // Ensure local SQLite listing has the complete enriched record before adding applications
       const now = new Date().toISOString();
-      const bIpo = backendIpoRecord || parsedItem;
-      const unitPrice =
-        selectedIPO?.buy_price ||
-        (bIpo?.priceBandHigh ? Number(bIpo.priceBandHigh) : (bIpo?.priceBandLow ? Number(bIpo.priceBandLow) : 100));
-      const lotQty = selectedIPO?.quantity || bIpo?.lotSize || 1;
       const cDate = selectedIPO?.close_date || bIpo?.closeDate || params.closeDate || '';
       const oDate = selectedIPO?.open_date || bIpo?.openDate || params.openDate || '';
       const sym = bIpo?.symbol || params.symbol || '';
@@ -454,31 +767,33 @@ export default function ApplyIPOScreen() {
 
       await safeRunAsync(
         db,
-        `INSERT OR IGNORE INTO ipo_listings (
+        `INSERT INTO ipo_listings (
           id, ipo_name, company_name, symbol, buy_price, quantity, open_date, close_date, listing_date, allotment_date,
           registrar, exchange, issue_type, archived, is_favorite, logo_url, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', '', 'NSE, BSE', 'Mainboard', 0, 0, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', '', 'NSE, BSE', 'Mainboard', 0, 0, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          ipo_name = COALESCE(NULLIF(excluded.ipo_name, ''), ipo_listings.ipo_name),
+          company_name = COALESCE(NULLIF(excluded.company_name, ''), ipo_listings.company_name),
+          symbol = COALESCE(NULLIF(excluded.symbol, ''), ipo_listings.symbol),
+          buy_price = CASE WHEN excluded.buy_price > 0 THEN excluded.buy_price ELSE ipo_listings.buy_price END,
+          quantity = CASE WHEN excluded.quantity > 0 THEN excluded.quantity ELSE ipo_listings.quantity END,
+          open_date = COALESCE(NULLIF(excluded.open_date, ''), ipo_listings.open_date),
+          close_date = COALESCE(NULLIF(excluded.close_date, ''), ipo_listings.close_date),
+          logo_url = COALESCE(NULLIF(excluded.logo_url, ''), ipo_listings.logo_url),
+          updated_at = excluded.updated_at`,
         [selectedIpoId, targetIpoName, targetIpoName, sym, unitPrice, lotQty, oDate, cDate, logo, now, now],
-        'applyIpo.insertListing'
-      );
-      await safeRunAsync(
-        db,
-        `UPDATE ipo_listings SET
-          ipo_name = COALESCE(NULLIF(?, ''), ipo_name),
-          company_name = COALESCE(NULLIF(?, ''), company_name),
-          symbol = COALESCE(NULLIF(?, ''), symbol),
-          buy_price = CASE WHEN ? > 0 THEN ? ELSE buy_price END,
-          quantity = CASE WHEN ? > 0 THEN ? ELSE quantity END,
-          open_date = COALESCE(NULLIF(?, ''), open_date),
-          close_date = COALESCE(NULLIF(?, ''), close_date),
-          logo_url = COALESCE(NULLIF(?, ''), logo_url),
-          updated_at = ?
-        WHERE id = ?`,
-        [targetIpoName, targetIpoName, sym, unitPrice, unitPrice, lotQty, lotQty, oDate, cDate, logo, now, selectedIpoId],
-        'applyIpo.updateListing'
+        'applyIpo.upsertListing'
       );
 
-      await addBulkApplications(selectedIpoId, Array.from(selectedUserIds), bankNameMap, upiAppMap, userLotQuantities);
+      await addBulkApplications(
+        selectedIpoId,
+        Array.from(selectedUserIds),
+        bankNameMap,
+        upiAppMap,
+        userLotQuantities,
+        undefined,
+        userSelectedCategory
+      );
       backendSyncEmitter.notifyChange('applications');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
@@ -491,6 +806,7 @@ export default function ApplyIPOScreen() {
       if (__DEV__) console.error('[ApplyIPO] Bulk application submission error:', err);
       showError('Submission Error', 'Failed to submit IPO applications. Please try again.');
     } finally {
+      isSubmittingRef.current = false;
       setLoading(false);
     }
   };
@@ -500,7 +816,11 @@ export default function ApplyIPOScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace('/(tabs)/ipos');
+      if (typeof (router as any).navigate === 'function') {
+        (router as any).navigate('/(tabs)/ipos');
+      } else {
+        router.replace('/(tabs)/ipos');
+      }
     }
   };
 
@@ -508,7 +828,7 @@ export default function ApplyIPOScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* ── App Bar Header ── */}
       <ScreenHeader
-        eyebrow="DIRECT BID ENGINE"
+        eyebrow="RECORD APPLICATION"
         title="Apply IPO"
         centerTitle
         showBack
@@ -552,24 +872,6 @@ export default function ApplyIPOScreen() {
           </View>
         </View>
 
-        {/* ── UPI Mandate Notice ── */}
-        <View
-          style={[
-            styles.noticeCard,
-            {
-              backgroundColor: isDark ? '#2D2206' : '#FFFDF0',
-              borderColor: isDark ? '#D4A01744' : '#FCD34D',
-            },
-          ]}
-        >
-          <View style={styles.noticeIconWrap}>
-            <Feather name="clock" size={16} color="#D4A017" />
-          </View>
-          <Text style={[styles.noticeText, { color: isDark ? '#FDE68A' : '#92400E' }]}>
-            Bids submitted after 5:00 PM will trigger UPI Mandate requests at 10:00 AM on the next exchange working day.
-          </Text>
-        </View>
-
         {/* ── Selected IPO Showcase Card ── */}
         <View style={styles.sectionHeaderRow}>
           <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>TARGET IPO</Text>
@@ -606,16 +908,20 @@ export default function ApplyIPOScreen() {
                 .join('')
                 .toUpperCase();
               return logoUrl ? (
-                <Image source={{ uri: logoUrl }} style={styles.showcaseLogo} resizeMode="contain" />
+                <View style={[styles.showcaseLogoWrap, { borderColor: isDark ? '#334155' : '#E2E8F0', backgroundColor: '#FFFFFF' }]}>
+                  <Image source={{ uri: getResolvedLogoUrl(logoUrl) || logoUrl }} style={styles.showcaseLogo} resizeMode="contain" />
+                </View>
               ) : ipoName ? (
-                <LinearGradient
-                  colors={getAvatarGradient(ipoName)}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.showcaseAvatar}
-                >
-                  <Text style={styles.showcaseAvatarText}>{initials || '?'}</Text>
-                </LinearGradient>
+                <View style={[styles.showcaseLogoWrap, { borderColor: isDark ? '#334155' : '#E5E7EB', backgroundColor: '#FFFFFF' }]}>
+                  <LinearGradient
+                    colors={getAvatarGradient(ipoName)}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.showcaseAvatar}
+                  >
+                    <Text style={styles.showcaseAvatarText}>{initials || '?'}</Text>
+                  </LinearGradient>
+                </View>
               ) : null;
             })()}
 
@@ -638,8 +944,8 @@ export default function ApplyIPOScreen() {
               </Text>
             </View>
 
-            <View style={[styles.statusBadgeLive, { borderColor: '#10B981', borderWidth: 1 }]}>
-              <Text style={[styles.liveBadgeText, { color: '#10B981' }]}>LIVE BID</Text>
+            <View style={[styles.statusBadgeLive, { backgroundColor: '#10B981', borderWidth: 0 }]}>
+              <Text style={[styles.liveBadgeText, { color: '#FFFFFF' }]}>LIVE BID</Text>
             </View>
           </View>
 
@@ -750,163 +1056,35 @@ export default function ApplyIPOScreen() {
           </View>
         ) : (
           activeUsers.map((u) => {
-            const isAppliedForThisIpo = Boolean(selectedIpoId && applications.some((a) => a.ipo_id === selectedIpoId && a.user_id === u.id && a.status !== 'Cancelled'));
-            const isCardSelected = selectedUserIds.has(u.id) && !isAppliedForThisIpo;
-            const currentLots = isCardSelected ? (userLotQuantities[u.id] || (isSme ? 2 : 1)) : 0;
-            const lotSize = selectedIPO?.quantity || 1;
-            const unitPrice = selectedIPO?.buy_price || 0;
-            const totalShares = currentLots * lotSize;
-            const totalAmt = totalShares * unitPrice;
+            const userCategory = userSelectedCategory[u.id] || 'RETAIL';
+            const isApplied = appliedUserCategorySet.has(`${u.id}_${userCategory}`);
+            const isSelected = selectedUserIds.has(u.id) && !isApplied;
+            const currentLots = isSelected ? (userLotQuantities[u.id] || (isSme ? 2 : 1)) : 0;
             const selectedBank = userSelectedBank[u.id] || u.bank_name || (bankAccounts[0]?.bank_name ?? 'Default Bank');
             const selectedUPI = userSelectedUPI[u.id] || u.upi_id || u.upi_app || 'HDFC UPI';
-            const dematVal = u.client_id || (u as any).demat || (u as any).dp_id || (u as any).client_number || '';
 
             return (
-              <TouchableOpacity
+              <ApplicantRowItem
                 key={u.id}
-                activeOpacity={0.85}
-                onPress={() => toggleApplicantSelection(u.id)}
-                disabled={isAppliedForThisIpo}
-                style={[
-                  styles.applicantCard,
-                  {
-                    backgroundColor: isCardSelected ? (isDark ? colors.card : '#FFFFFF') : colors.card,
-                    borderColor: isCardSelected ? '#10B981' : colors.border,
-                    borderWidth: isCardSelected ? 1.5 : 1,
-                    opacity: isAppliedForThisIpo ? 0.6 : 1,
-                  },
-                ]}
-              >
-                {/* Applicant Header */}
-                <View style={styles.applicantHeader}>
-                  <View style={styles.applicantAvatarRow}>
-                    {(() => {
-                      const avatarUri = (u.avatar_url || u.avatarUrl || (u as any).avatar || '').trim() || getEffectiveAvatarUrl(u);
-                      const isFailed = failedAvatars[u.id];
-                      return avatarUri && !isFailed ? (
-                        <Image
-                          source={{ uri: avatarUri }}
-                          style={[styles.avatarImage, { backgroundColor: colors.surface }]}
-                          resizeMode="cover"
-                          onError={() => setFailedAvatars((prev) => ({ ...prev, [u.id]: true }))}
-                        />
-                      ) : (
-                        <LinearGradient
-                          colors={getAvatarGradient(u.name || 'User')}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                          style={styles.avatarCircle}
-                        >
-                          <Text style={[styles.avatarText, { color: '#FFFFFF' }]}>
-                            {u.name ? u.name.slice(0, 1).toUpperCase() : 'U'}
-                          </Text>
-                        </LinearGradient>
-                      );
-                    })()}
-                    <View>
-                      <Text style={[styles.applicantName, { color: colors.foreground }]}>{u.name}</Text>
-                      <Text style={[styles.applicantMeta, { color: colors.mutedForeground }]}>
-                        PAN: {u.pan_number ? u.pan_number : '-'}{dematVal ? ` · Demat: ${dematVal}` : ''}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.applicantHeaderRight}>
-                    {isCardSelected && (
-                      <View style={[styles.selectedCheckBadge, { backgroundColor: '#10B981' }]}>
-                        <Feather name="check" size={11} color="#FFFFFF" />
-                      </View>
-                    )}
-                    <View style={[styles.brokerBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                      <Text style={[styles.brokerText, { color: colors.mutedForeground }]}>
-                        {u.broker ? u.broker.toUpperCase() : 'CDSL'}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-
-                {/* Account & Mandate Config Row */}
-                <View style={[styles.configRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  <TouchableOpacity
-                    onPress={() => setActiveBankPickerUserId(u.id)}
-                    style={styles.configItem}
-                    activeOpacity={0.7}
-                  >
-                    <Feather name="credit-card" size={12} color={colors.mutedForeground} />
-                    <Text style={[styles.configText, { color: colors.foreground }]} numberOfLines={1}>
-                      {selectedBank}
-                    </Text>
-                    <Feather name="chevron-down" size={12} color={colors.mutedForeground} />
-                  </TouchableOpacity>
-
-                  <View style={[styles.configDivider, { backgroundColor: colors.border }]} />
-
-                  <TouchableOpacity
-                    onPress={() => {
-                      const nextUpiIndex = (DEFAULT_UPI_APPS.indexOf(selectedUPI) + 1) % DEFAULT_UPI_APPS.length;
-                      setUserSelectedUPI((prev) => ({ ...prev, [u.id]: DEFAULT_UPI_APPS[nextUpiIndex] }));
-                      Haptics.selectionAsync();
-                    }}
-                    style={styles.configItem}
-                    activeOpacity={0.7}
-                  >
-                    <Feather name="smartphone" size={12} color={colors.mutedForeground} />
-                    <Text style={[styles.configText, { color: colors.foreground }]} numberOfLines={1}>
-                      {selectedUPI}
-                    </Text>
-                    <Feather name="refresh-cw" size={12} color={colors.mutedForeground} />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Lot Selection Row */}
-                {isAppliedForThisIpo ? (
-                  <View style={[styles.appliedNoticeRow, { borderTopColor: colors.border }]}>
-                    <Feather name="check-circle" size={14} color={isDark ? '#34D399' : '#059669'} />
-                    <Text style={[styles.appliedNoticeText, { color: isDark ? '#34D399' : '#059669' }]}>
-                      Application already submitted
-                    </Text>
-                  </View>
-                ) : (
-                  <View style={[styles.lotSelectionRow, { borderTopColor: colors.border }]}>
-                    <View style={styles.lotSelectLeftCol}>
-                      <Text style={[styles.lotSelectKey, { color: colors.mutedForeground }]}>
-                        BID QUANTITY
-                      </Text>
-                      {currentLots > 0 ? (
-                        <Text style={[styles.lotSelectSub, { color: colors.foreground }]}>
-                          {totalShares} Shares · {formatCurrency(totalAmt)}
-                        </Text>
-                      ) : null}
-                    </View>
-
-                    <TouchableOpacity
-                      onPress={() => setActiveLotPickerUserId(u.id)}
-                      activeOpacity={0.8}
-                      style={[
-                        styles.lotSelectTrigger,
-                        {
-                          borderColor: currentLots > 0 ? 'rgba(0, 0, 0, 0.75)' : colors.border,
-                          backgroundColor: currentLots > 0 ? 'rgba(0, 0, 0, 0.05)' : colors.surface,
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.lotSelectVal,
-                          { color: currentLots > 0 ? colors.foreground : colors.mutedForeground },
-                        ]}
-                      >
-                        {currentLots > 0 ? `${currentLots} Lot${currentLots > 1 ? 's' : ''}` : 'Select Lots'}
-                      </Text>
-                      <Feather
-                        name="chevron-right"
-                        size={14}
-                        color={currentLots > 0 ? colors.foreground : colors.mutedForeground}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </TouchableOpacity>
+                user={u}
+                isApplied={isApplied}
+                isSelected={isSelected}
+                currentLots={currentLots}
+                lotSize={selectedIPO?.quantity || 1}
+                unitPrice={selectedIPO?.buy_price || 0}
+                selectedBank={selectedBank}
+                selectedUPI={selectedUPI}
+                selectedCategory={userCategory}
+                isFailedAvatar={Boolean(failedAvatars[u.id])}
+                isDark={isDark}
+                colors={colors}
+                onToggle={toggleApplicantSelection}
+                onBankPress={handleBankPress}
+                onUpiPress={handleUpiPress}
+                onLotPress={handleLotPress}
+                onAvatarError={handleAvatarError}
+                onCategorySelect={handleCategorySelect}
+              />
             );
           })
         )}
@@ -938,7 +1116,7 @@ export default function ApplyIPOScreen() {
           <Button
             variant="primary"
             size="md"
-            title="Submit Bids →"
+            title="Submit Bids"
             loading={loading}
             disabled={loading || !selectedIpoId || selectedUserIds.size === 0}
             onPress={handleBulkSubmit}
@@ -1054,21 +1232,95 @@ export default function ApplyIPOScreen() {
               {bankAccounts.length === 0 ? (
                 <Text style={[styles.modalEmptyText, { color: colors.mutedForeground }]}>No bank accounts added yet.</Text>
               ) : (
-                bankAccounts.map((b) => (
-                  <TouchableOpacity
-                    key={b.id}
-                    onPress={() => {
-                      if (activeBankPickerUserId) {
-                        setUserSelectedBank((prev) => ({ ...prev, [activeBankPickerUserId]: b.bank_name }));
-                      }
-                      setActiveBankPickerUserId(null);
-                    }}
-                    style={[styles.modalOptionRow, { borderBottomColor: colors.border }]}
-                  >
-                    <Text style={[styles.modalOptionName, { color: colors.foreground }]}>{b.bank_name}</Text>
-                  </TouchableOpacity>
-                ))
+                bankAccounts.map((b) => {
+                  const currentBank = activeBankPickerUserId
+                    ? (userSelectedBank[activeBankPickerUserId] ||
+                       users.find((u) => u.id === activeBankPickerUserId)?.bank_name ||
+                       (bankAccounts[0]?.bank_name ?? ''))
+                    : '';
+                  const isSelected = currentBank === b.bank_name;
+                  return (
+                    <TouchableOpacity
+                      key={b.id}
+                      onPress={() => {
+                        if (activeBankPickerUserId) {
+                          setUserSelectedBank((prev) => ({ ...prev, [activeBankPickerUserId]: b.bank_name }));
+                          Haptics.selectionAsync();
+                        }
+                        setActiveBankPickerUserId(null);
+                      }}
+                      style={[
+                        styles.modalOptionRow,
+                        {
+                          borderBottomColor: colors.border,
+                          backgroundColor: isSelected ? colors.surface : 'transparent',
+                          justifyContent: 'space-between',
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.modalOptionName, { color: isSelected ? colors.primary : colors.foreground }]}>
+                        {b.bank_name}
+                      </Text>
+                      {isSelected && <Feather name="check" size={16} color={colors.primary} />}
+                    </TouchableOpacity>
+                  );
+                })
               )}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ── UPI App Selector Modal ── */}
+      <Modal visible={Boolean(activeUpiPickerUserId)} transparent animationType="fade" onRequestClose={() => setActiveUpiPickerUserId(null)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setActiveUpiPickerUserId(null)}>
+          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Select UPI App</Text>
+              <TouchableOpacity onPress={() => setActiveUpiPickerUserId(null)} hitSlop={8}>
+                <Feather name="x" size={18} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView keyboardShouldPersistTaps="handled">
+              {DEFAULT_UPI_APPS.map((app) => {
+                const currentUpi = activeUpiPickerUserId
+                  ? (userSelectedUPI[activeUpiPickerUserId] ||
+                     users.find((u) => u.id === activeUpiPickerUserId)?.upi_id ||
+                     users.find((u) => u.id === activeUpiPickerUserId)?.upi_app ||
+                     'HDFC UPI')
+                  : '';
+                const isSelected = currentUpi === app;
+                return (
+                  <TouchableOpacity
+                    key={app}
+                    onPress={() => {
+                      if (activeUpiPickerUserId) {
+                        setUserSelectedUPI((prev) => ({ ...prev, [activeUpiPickerUserId]: app }));
+                        Haptics.selectionAsync();
+                      }
+                      setActiveUpiPickerUserId(null);
+                    }}
+                    style={[
+                      styles.modalOptionRow,
+                      {
+                        borderBottomColor: colors.border,
+                        backgroundColor: isSelected ? colors.surface : 'transparent',
+                        justifyContent: 'space-between',
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.modalOptionName,
+                        { color: isSelected ? colors.primary : colors.foreground },
+                      ]}
+                    >
+                      {app}
+                    </Text>
+                    {isSelected && <Feather name="check" size={16} color={colors.primary} />}
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
           </View>
         </TouchableOpacity>
@@ -1092,10 +1344,10 @@ export default function ApplyIPOScreen() {
 
             {/* Title & Subtitle */}
             <Text style={[styles.successTitle, { color: colors.foreground }]}>
-              Applications Created!
+              Applications Recorded
             </Text>
             <Text style={[styles.successSubtitle, { color: colors.mutedForeground }]}>
-              Successfully placed <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_700Bold' }}>{submittedCount}</Text> {submittedCount === 1 ? 'application' : 'applications'} for
+              Successfully recorded <Text style={{ color: colors.foreground, fontFamily: 'GoogleSansFlex_700Bold' }}>{submittedCount}</Text> {submittedCount === 1 ? 'application' : 'applications'} locally for
             </Text>
             <Text style={[styles.successIpoName, { color: colors.primary }]} numberOfLines={2}>
               {submittedIpoName}
@@ -1119,14 +1371,44 @@ export default function ApplyIPOScreen() {
               </View>
             </View>
 
-            {/* Return to IPO Hub CTA */}
+            {/* Prominent Local Application Notice */}
+            <View
+              style={[
+                styles.prominentNoticeBox,
+                {
+                  backgroundColor: isDark ? 'rgba(245, 158, 11, 0.12)' : '#FFFBEB',
+                  borderColor: isDark ? 'rgba(245, 158, 11, 0.32)' : '#FDE68A',
+                },
+              ]}
+            >
+              <View style={styles.prominentNoticeHeader}>
+                <Feather name="alert-circle" size={15} color={isDark ? '#FBBF24' : '#D97706'} />
+                <Text
+                  style={[
+                    styles.prominentNoticeTitle,
+                    { color: isDark ? '#FCD34D' : '#B45309' },
+                  ]}
+                >
+                  Local Application Only
+                </Text>
+              </View>
+              <Text
+                style={[
+                  styles.prominentNoticeBody,
+                  { color: isDark ? '#FDE68A' : '#92400E' },
+                ]}
+              >
+                This application is recorded locally on your device for tracking. It does not place an official bid on the stock exchange. Please apply through your broker or bank ASBA and approve the UPI mandate.
+              </Text>
+            </View>
+
+            {/* Done CTA */}
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={handleSuccessDone}
               style={[styles.successDoneBtn, { backgroundColor: colors.primary }]}
             >
-              <Text style={styles.successDoneBtnText}>Back to IPO Hub</Text>
-              <Feather name="arrow-right" size={16} color="#FFFFFF" />
+              <Text style={[styles.successDoneBtnText, { color: colors.primaryForeground }]}>Done</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1222,29 +1504,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
 
-  noticeCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 12,
-  },
-  noticeIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#D4A01720',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  noticeText: {
-    flex: 1,
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_500Medium',
-    lineHeight: 18,
-  },
-
   sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1283,16 +1542,27 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_400Regular',
     marginTop: 2,
   },
+  showcaseLogoWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+    padding: 0,
+    margin: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
   showcaseLogo: {
-    width: 42,
-    height: 42,
-    borderRadius: 10,
-    backgroundColor: 'transparent',
+    ...StyleSheet.absoluteFillObject,
+    width: 44,
+    height: 44,
+    resizeMode: 'contain',
   },
   showcaseAvatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 10,
+    width: '100%',
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1307,7 +1577,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 12,
+    borderRadius: 5,
     borderWidth: 1,
   },
   livePulseDot: {
@@ -1382,12 +1652,14 @@ const styles = StyleSheet.create({
   avatarImage: {
     width: 38,
     height: 38,
-    borderRadius: 12,
+    borderRadius: 19,
+    overflow: 'hidden',
   },
   avatarCircle: {
     width: 38,
     height: 38,
-    borderRadius: 12,
+    borderRadius: 19,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1425,6 +1697,39 @@ const styles = StyleSheet.create({
   brokerText: {
     fontSize: 10,
     fontFamily: 'GoogleSansFlex_700Bold',
+  },
+
+  categoryPillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  categoryPill: {
+    flex: 1,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryPillText: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  categoryNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  categoryNoticeText: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    flex: 1,
   },
 
   configRow: {
@@ -1666,7 +1971,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingVertical: 12,
     paddingHorizontal: 8,
-    marginBottom: 20,
+    marginBottom: 14,
   },
   successStatItem: {
     flex: 1,
@@ -1685,6 +1990,31 @@ const styles = StyleSheet.create({
     width: 1,
     height: 24,
   },
+  prominentNoticeBox: {
+    width: '100%',
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 20,
+  },
+  prominentNoticeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 5,
+  },
+  prominentNoticeTitle: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  prominentNoticeBody: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_500Medium',
+    lineHeight: 17,
+  },
   successDoneBtn: {
     width: '100%',
     height: 48,
@@ -1700,5 +2030,26 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_700Bold',
   },
 });
+
+export default function ApplyIPOScreen() {
+  const { isNonPro, isLoading: isExperienceLoading } = useAppExperience();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isExperienceLoading && isNonPro) {
+      if (typeof (router as any).navigate === 'function') {
+        (router as any).navigate('/(tabs)/ipos');
+      } else {
+        router.replace('/(tabs)/ipos');
+      }
+    }
+  }, [isNonPro, isExperienceLoading, router]);
+
+  if (isNonPro) {
+    return null;
+  }
+
+  return <ApplyIPOScreenContent />;
+}
 
 

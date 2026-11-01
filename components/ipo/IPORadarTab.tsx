@@ -374,7 +374,7 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 8,
+    borderRadius: 50,
     borderWidth: 1,
   },
   signalChipEmoji: {
@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
   viewPill: {
     paddingHorizontal: 9,
     paddingVertical: 4,
-    borderRadius: 10,
+    borderRadius: 50,
   },
   viewPillText: {
     fontSize: 10,

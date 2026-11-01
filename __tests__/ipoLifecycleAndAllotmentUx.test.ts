@@ -167,7 +167,7 @@ export async function runIpoLifecycleAndUxTestSuite() {
 
     // 2.2 Registrar resolution and verified official URLs
     const kfinConfig = getRegistrarConfig('KFin Technologies Limited');
-    assert(kfinConfig.url === 'https://ris.kfintech.com/ipostatus/', 'Registrar 2.2a', 'KFintech official portal verified');
+    assert(kfinConfig.url === 'https://ipostatus.kfintech.com/', 'Registrar 2.2a', 'KFintech official portal verified');
 
     const linkConfig = getRegistrarConfig('Link Intime India Pvt Ltd');
     assert(linkConfig.url === 'https://in.mpms.mufg.com/Initial_Offer/public-issues.html', 'Registrar 2.2b', 'MUFG/Link Intime official portal verified');

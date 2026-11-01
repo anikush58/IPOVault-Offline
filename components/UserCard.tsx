@@ -1,20 +1,20 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Clipboard,
-  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { User } from '@/context/DBContext';
-import { getEffectiveAvatarUrl } from '@/utils/avatarUtils';
+import { getCustomAvatarUrl } from '@/utils/avatarUtils';
 
 
 type Props = {
@@ -48,7 +48,7 @@ function getAvatarGradient(name: string): [string, string] {
   return AVATAR_PALETTES[index];
 }
 
-export function UserCard({
+export const UserCard = React.memo(function UserCard({
   user,
   applied,
   allotted,
@@ -78,12 +78,22 @@ export function UserCard({
 
   const [avatarError, setAvatarError] = useState(false);
   const [copiedPan, setCopiedPan] = useState(false);
+  const [showPan, setShowPan] = useState(false);
+  const [showTpin, setShowTpin] = useState(false);
 
-  const effectiveAvatarUrl = getEffectiveAvatarUrl(user);
+  const customAvatarUrl = useMemo(
+    () => getCustomAvatarUrl(user),
+    [user.avatar_url, (user as any).avatarUrl]
+  );
 
   useEffect(() => {
     setAvatarError(false);
-  }, [effectiveAvatarUrl]);
+  }, [customAvatarUrl]);
+
+  const getMaskedPan = (pan: string) => {
+    if (!pan || pan.length < 10) return pan;
+    return `${pan.slice(0, 5)}••••${pan.slice(9)}`;
+  };
 
   const handleCopyPan = async () => {
     if (!user.pan_number) return;
@@ -109,25 +119,33 @@ export function UserCard({
     >
       {/* ── Top row: avatar · name/PAN · soft action buttons ── */}
       <View style={styles.topRow}>
-        {effectiveAvatarUrl && !avatarError ? (
-          <Image
-            source={{ uri: effectiveAvatarUrl }}
-            style={styles.avatar}
-            resizeMode="cover"
-            onError={() => setAvatarError(true)}
-          />
-        ) : (
+        <View style={styles.avatar}>
           <LinearGradient
             colors={avatarGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={styles.avatar}
+            style={StyleSheet.absoluteFill}
           >
-            <Text style={styles.avatarText}>
-              {user.name.charAt(0).toUpperCase()}
-            </Text>
+            <View style={styles.avatarInitialContainer}>
+              <Text style={styles.avatarText}>
+                {user.name.charAt(0).toUpperCase()}
+              </Text>
+            </View>
           </LinearGradient>
-        )}
+
+          {customAvatarUrl && !avatarError ? (
+            <Image
+              source={{ uri: customAvatarUrl }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              priority="high"
+              transition={150}
+              recyclingKey={user.id}
+              onError={() => setAvatarError(true)}
+            />
+          ) : null}
+        </View>
 
         <View style={styles.info}>
           <Text
@@ -151,26 +169,39 @@ export function UserCard({
               ]}
               numberOfLines={1}
             >
-              {user.pan_number ? `PAN: ${user.pan_number}` : 'No PAN'}
+              {user.pan_number ? `PAN: ${showPan ? user.pan_number : getMaskedPan(user.pan_number)}` : 'No PAN'}
             </Text>
             {user.pan_number ? (
-              <TouchableOpacity
-                onPress={handleCopyPan}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                activeOpacity={0.7}
-              >
-                <Feather
-                  name={copiedPan ? 'check' : 'copy'}
-                  size={12}
-                  color={
-                    copiedPan
-                      ? isDark
-                        ? '#34D399'
-                        : '#059669'
-                      : colors.mutedForeground
-                  }
-                />
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity
+                  onPress={() => setShowPan((v) => !v)}
+                  hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                  activeOpacity={0.7}
+                >
+                  <Feather
+                    name={showPan ? 'eye-off' : 'eye'}
+                    size={12}
+                    color={colors.mutedForeground}
+                  />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleCopyPan}
+                  hitSlop={{ top: 8, bottom: 8, left: 6, right: 8 }}
+                  activeOpacity={0.7}
+                >
+                  <Feather
+                    name={copiedPan ? 'check' : 'copy'}
+                    size={12}
+                    color={
+                      copiedPan
+                        ? isDark
+                          ? '#34D399'
+                          : '#059669'
+                        : colors.mutedForeground
+                    }
+                  />
+                </TouchableOpacity>
+              </>
             ) : null}
           </View>
         </View>
@@ -202,10 +233,10 @@ export function UserCard({
             activeOpacity={0.7}
             style={[
               styles.softActionBtn,
-              { backgroundColor: colors.statusAppliedBg },
+              { backgroundColor: isDark ? 'rgba(59,130,246,0.15)' : '#EFF6FF' },
             ]}
           >
-            <Feather name="edit-2" size={14} color={colors.statusApplied} />
+            <Feather name="edit-2" size={14} color="#3B82F6" />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -258,12 +289,22 @@ export function UserCard({
             </View>
           ) : null}
           {user.tpin ? (
-            <View style={[styles.chip, { backgroundColor: colors.badgeBg }]}>
-              <Feather name="lock" size={11} color={colors.mutedForeground} />
-              <Text style={[styles.chipText, { color: colors.foreground }]}>
-                {user.tpin}
+            <TouchableOpacity
+              onPress={() => setShowTpin((v) => !v)}
+              activeOpacity={0.7}
+              style={[styles.chip, { backgroundColor: colors.badgeBg }]}
+            >
+              <Feather name={showTpin ? 'unlock' : 'lock'} size={11} color={colors.mutedForeground} />
+              <Text style={[styles.chipText, { color: colors.foreground, letterSpacing: showTpin ? 0.3 : 1 }]}>
+                {showTpin ? `TPIN: ${user.tpin}` : 'TPIN: ••••'}
               </Text>
-            </View>
+              <Feather
+                name={showTpin ? 'eye-off' : 'eye'}
+                size={10}
+                color={colors.mutedForeground}
+                style={{ marginLeft: 3 }}
+              />
+            </TouchableOpacity>
           ) : null}
         </View>
         <Feather
@@ -310,7 +351,30 @@ export function UserCard({
       )}
     </View>
   );
-}
+},
+  (prev, next) => {
+    return (
+      prev.user.id === next.user.id &&
+      prev.user.name === next.user.name &&
+      prev.user.avatar_url === next.user.avatar_url &&
+      (prev.user as any).avatarUrl === (next.user as any).avatarUrl &&
+      prev.user.pan_number === next.user.pan_number &&
+      prev.user.client_id === next.user.client_id &&
+      prev.user.broker === next.user.broker &&
+      prev.user.tpin === next.user.tpin &&
+      prev.user.bank_name === next.user.bank_name &&
+      prev.user.upi_app === next.user.upi_app &&
+      prev.user.archived === next.user.archived &&
+      prev.applied === next.applied &&
+      prev.allotted === next.allotted &&
+      prev.decided === next.decided &&
+      prev.onEdit === next.onEdit &&
+      prev.onDelete === next.onDelete &&
+      prev.onArchive === next.onArchive &&
+      prev.onUnarchive === next.onUnarchive
+    );
+  }
+);
 
 const styles = StyleSheet.create({
   card: {
@@ -332,9 +396,16 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
+    position: 'relative',
+  },
+  avatarInitialContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   avatarText: {
     fontSize: 18,
@@ -375,7 +446,7 @@ const styles = StyleSheet.create({
     gap: 5,
     paddingHorizontal: 9,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 50,
   },
   chipText: { fontSize: 11.5, fontFamily: 'GoogleSansFlex_500Medium' },
   brokerSection: {
@@ -397,13 +468,13 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
   },
   statusBadgeText: {
-    fontSize: 11,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
+    fontSize: 9.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: 0.1,
   },
   brokerActionsRight: {
@@ -436,7 +507,7 @@ const styles = StyleSheet.create({
   statSep: { width: 1, alignSelf: 'stretch' },
   statValue: {
     fontSize: 14,
-    fontFamily: 'SpaceMono_700Bold',
+    fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: -0.3,
   },
   statLabel: {
@@ -482,13 +553,13 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   invStatusBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
   },
   invStatusBadgeText: {
-    fontSize: 10.5,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
+    fontSize: 9.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   invQuantitiesRow: {
     flexDirection: 'row',
@@ -507,7 +578,7 @@ const styles = StyleSheet.create({
   },
   invQtyVal: {
     fontSize: 12.5,
-    fontFamily: 'SpaceMono_700Bold',
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   invHoldingRow: {
     flexDirection: 'row',
@@ -523,6 +594,6 @@ const styles = StyleSheet.create({
   },
   invPriceVal: {
     fontSize: 11.5,
-    fontFamily: 'SpaceMono_700Bold',
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
 });

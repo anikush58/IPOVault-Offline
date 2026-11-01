@@ -4,7 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IPOMasterRecord } from '@/services/ipo/types';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, getResolvedLogoUrl } from '@/utils/formatters';
 
 type Props = {
   ipo: IPOMasterRecord;
@@ -42,10 +42,10 @@ export const CompareCard = React.memo(function CompareCard({ ipo, onRemove, widt
         <Feather name="x" size={14} color={colors.mutedForeground} />
       </TouchableOpacity>
 
-      <View style={[styles.logoWrap, { borderColor: colors.border, backgroundColor: isDark ? '#1E293B' : '#FFFFFF' }]}>
+      <View style={[styles.logoWrap, { borderColor: isDark ? '#334155' : '#E2E8F0', backgroundColor: '#FFFFFF' }]}>
         {ipo.logo_url && !logoError ? (
           <Image
-            source={{ uri: ipo.logo_url }}
+            source={{ uri: getResolvedLogoUrl(ipo.logo_url) || ipo.logo_url }}
             style={styles.logo}
             resizeMode="contain"
             onError={() => setLogoError(true)}
@@ -103,10 +103,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
+    padding: 0,
+    margin: 0,
+    position: 'relative',
   },
   logo: {
-    width: '100%',
-    height: '100%',
+    ...StyleSheet.absoluteFillObject,
+    width: 36,
+    height: 36,
     resizeMode: 'contain',
   },
   avatar: {

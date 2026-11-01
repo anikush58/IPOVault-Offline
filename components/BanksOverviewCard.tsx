@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Svg, { Circle, G } from 'react-native-svg';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/ui/Icon';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { formatCurrency } from '@/utils/formatters';
@@ -24,6 +24,8 @@ export function BanksOverviewCard({
   accountsCount,
 }: Props) {
   const colors = useColors();
+  const { width: windowWidth } = useWindowDimensions();
+  const donutSize = windowWidth < 360 ? 124 : (windowWidth < 390 ? 140 : 155);
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
 
@@ -84,9 +86,9 @@ export function BanksOverviewCard({
       <View style={styles.headerRow}>
         <Text style={[styles.cardTitle, { color: colors.foreground }]}>CAPITAL OVERVIEW</Text>
         {accountsCount !== undefined ? (
-          <View style={[styles.badgePill, { borderColor: colors.border, backgroundColor: isDark ? '#27272A' : '#F8FAFC' }]}>
-            <Feather name="credit-card" size={11} color={colors.mutedForeground} />
-            <Text style={[styles.badgePillText, { color: colors.mutedForeground }]}>
+          <View style={[styles.badgePill, { borderWidth: 0, backgroundColor: isDark ? '#334155' : '#64748B' }]}>
+            <Icon name="credit-card" size={11} color="#FFFFFF" />
+            <Text style={[styles.badgePillText, { color: '#FFFFFF' }]}>
               {accountsCount} {accountsCount === 1 ? 'Account' : 'Accounts'}
             </Text>
           </View>
@@ -96,8 +98,8 @@ export function BanksOverviewCard({
       {/* Main Top Section: Left Donut + Right KPI Legends */}
       <View style={styles.topSectionRow}>
         {/* Left Side: Donut Chart */}
-        <View style={styles.donutWrap}>
-          <Svg width="155" height="155" viewBox="0 0 155 155">
+        <View style={[styles.donutWrap, { width: donutSize, height: donutSize }]}>
+          <Svg width={donutSize} height={donutSize} viewBox="0 0 155 155">
             <G rotation="-90" origin="77.5, 77.5">
               {donutSegments.map((seg) => (
                 <Circle
@@ -125,6 +127,9 @@ export function BanksOverviewCard({
                 { color: colors.foreground, fontSize: totalValFontSize },
               ]}
               numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+              maxFontSizeMultiplier={1.2}
             >
               {formattedTotal}
             </Text>
@@ -138,13 +143,13 @@ export function BanksOverviewCard({
           <View style={styles.legendRow}>
             <View style={styles.legendLeft}>
               <View style={[styles.legendDot, { backgroundColor: colors.positive }]} />
-              <Text style={[styles.legendLabel, { color: colors.foreground }]}>Available</Text>
+              <Text style={[styles.legendLabel, { color: colors.foreground }]} numberOfLines={1}>Available</Text>
             </View>
             <View style={styles.legendRight}>
-              <Text style={[styles.legendCount, { color: colors.positive }]}>
+              <Text style={[styles.legendCount, { color: colors.positive }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
                 {formatCurrency(totalAvailable)}
               </Text>
-              <Text style={[styles.legendPct, { color: colors.positive }]}>({availablePct}%)</Text>
+              <Text style={[styles.legendPct, { color: colors.positive }]} numberOfLines={1}>({availablePct}%)</Text>
             </View>
           </View>
 
@@ -152,13 +157,13 @@ export function BanksOverviewCard({
           <View style={styles.legendRow}>
             <View style={styles.legendLeft}>
               <View style={[styles.legendDot, { backgroundColor: colors.negative }]} />
-              <Text style={[styles.legendLabel, { color: colors.foreground }]}>Blocked</Text>
+              <Text style={[styles.legendLabel, { color: colors.foreground }]} numberOfLines={1}>Blocked</Text>
             </View>
             <View style={styles.legendRight}>
-              <Text style={[styles.legendCount, { color: totalBlocked > 0 ? colors.negative : colors.mutedForeground }]}>
+              <Text style={[styles.legendCount, { color: totalBlocked > 0 ? colors.negative : colors.mutedForeground }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
                 {totalBlocked > 0 ? formatCurrency(totalBlocked) : '—'}
               </Text>
-              <Text style={[styles.legendPct, { color: totalBlocked > 0 ? colors.negative : colors.mutedForeground }]}>
+              <Text style={[styles.legendPct, { color: totalBlocked > 0 ? colors.negative : colors.mutedForeground }]} numberOfLines={1}>
                 ({blockedPct}%)
               </Text>
             </View>
@@ -168,10 +173,10 @@ export function BanksOverviewCard({
           <View style={styles.legendRow}>
             <View style={styles.legendLeft}>
               <View style={[styles.legendDot, { backgroundColor: colors.primary }]} />
-              <Text style={[styles.legendLabel, { color: colors.foreground }]}>IPO Slots</Text>
+              <Text style={[styles.legendLabel, { color: colors.foreground }]} numberOfLines={1}>IPO Slots</Text>
             </View>
             <View style={styles.legendRight}>
-              <Text style={[styles.legendCount, { color: colors.foreground }]}>
+              <Text style={[styles.legendCount, { color: colors.foreground }]} numberOfLines={1}>
                 {totalSlots} {totalSlots === 1 ? 'slot' : 'slots'}
               </Text>
             </View>
@@ -209,7 +214,7 @@ const styles = StyleSheet.create({
     gap: 5,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 18,
+    borderRadius: 5,
     borderWidth: 1,
   },
   badgePillText: {
@@ -263,11 +268,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 6,
   },
   legendLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flex: 1,
+    minWidth: 0,
   },
   legendDot: {
     width: 8,
@@ -277,11 +285,13 @@ const styles = StyleSheet.create({
   legendLabel: {
     fontSize: 12.5,
     fontFamily: 'GoogleSansFlex_500Medium',
+    flexShrink: 1,
   },
   legendRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    flexShrink: 0,
   },
   legendCount: {
     fontSize: 13,

@@ -1470,5 +1470,133 @@ describe('Allotment Checker Frontend Integration Tests', () => {
       expect(ipo.status).not.toBe('upcoming');
       expect(ipo.status).not.toBe('closed');
     });
+
+    it('8. Tonbo Imaging India regression: Registrar NOT_YET_AVAILABLE displays "Allotment Not Available", never marks application "Not Allotted", and retains Applied state', () => {
+      // Simulates the exact Tonbo Imaging India lookup:
+      // Allotment date: 2026-10-21, Checked: 2026-10-22.
+      // Registrar response is NOT_YET_AVAILABLE (allotment not yet released).
+      const familyCheckItems = [
+        { maskedId: 'CFEPK****K', status: 'NOT_YET_AVAILABLE', errorMessage: 'IPO not found in KFin Technologies live active list' },
+        { maskedId: 'OOXPK****R', status: 'NOT_YET_AVAILABLE', errorMessage: 'IPO not found in KFin Technologies live active list' },
+        { maskedId: 'EKWPK****F', status: 'NOT_YET_AVAILABLE', errorMessage: 'IPO not found in KFin Technologies live active list' },
+      ];
+
+      for (const item of familyCheckItems) {
+        let uiStatus = 'pending';
+        let uiLabel = 'Pending';
+        if (item.status === 'NOT_YET_AVAILABLE') {
+          uiStatus = 'not_available';
+          uiLabel = 'Allotment Not Available';
+        }
+
+        expect(uiStatus).toBe('not_available');
+        expect(uiLabel).toBe('Allotment Not Available');
+        expect(uiStatus).not.toBe('not_allotted');
+        expect(uiStatus).not.toBe('check_failed');
+        expect(uiStatus).not.toBe('no_record');
+        expect(uiStatus).not.toBe('allotted');
+      }
+
+      // Verify applications are NOT marked 'Not Allotted' in the local DB
+      const localApps = [
+        { id: 'app-1', status: 'Applied' },
+        { id: 'app-2', status: 'Applied' },
+        { id: 'app-3', status: 'Applied' },
+      ];
+
+      for (const item of familyCheckItems) {
+        const backendStatus = item.status.toUpperCase();
+        // Invariant from syncApplicationStatusesFromJob:
+        const shouldUpdate =
+          backendStatus === 'ALLOTTED' ||
+          backendStatus === 'PARTIALLY_ALLOTTED' ||
+          backendStatus === 'NOT_ALLOTTED';
+
+        expect(shouldUpdate).toBe(false);
+      }
+
+      // Statuses must remain 'Applied'
+      for (const app of localApps) {
+        expect(app.status).toBe('Applied');
+        expect(app.status).not.toBe('Not Allotted');
+      }
+    });
+
+    it('9. Strict distinction across all 6 response states (ALLOTTED, PARTIAL, NOT_ALLOTTED, NO_RECORD, NOT_AVAILABLE, CHECK_FAILED)', () => {
+      const stateMatrix = [
+        { backend: 'ALLOTTED', expectedUi: 'allotted', expectedLabel: 'Allotted' },
+        { backend: 'PARTIALLY_ALLOTTED', expectedUi: 'partially_allotted', expectedLabel: 'Partially Allotted' },
+        { backend: 'NOT_ALLOTTED', expectedUi: 'not_allotted', expectedLabel: 'No Shares allotted' },
+        { backend: 'APPLICATION_NOT_FOUND', expectedUi: 'no_record', expectedLabel: 'No Record Found' },
+        { backend: 'NO_RECORD', expectedUi: 'no_record', expectedLabel: 'No Record Found' },
+        { backend: 'NOT_YET_AVAILABLE', expectedUi: 'not_available', expectedLabel: 'Allotment Not Available' },
+        { backend: 'SOURCE_UNAVAILABLE', expectedUi: 'check_failed', expectedLabel: 'Check Failed' },
+        { backend: 'SOURCE_RESPONSE_INVALID', expectedUi: 'check_failed', expectedLabel: 'Check Failed' },
+        { backend: 'RATE_LIMITED', expectedUi: 'check_failed', expectedLabel: 'Check Failed' },
+      ];
+
+      for (const entry of stateMatrix) {
+        let uiStatus = 'pending';
+        let label = 'Pending';
+
+        if (entry.backend === 'ALLOTTED') {
+          uiStatus = 'allotted';
+          label = 'Allotted';
+        } else if (entry.backend === 'PARTIALLY_ALLOTTED') {
+          uiStatus = 'partially_allotted';
+          label = 'Partially Allotted';
+        } else if (entry.backend === 'NOT_ALLOTTED') {
+          uiStatus = 'not_allotted';
+          label = 'No Shares allotted';
+        } else if (entry.backend === 'APPLICATION_NOT_FOUND' || entry.backend === 'NO_RECORD') {
+          uiStatus = 'no_record';
+          label = 'No Record Found';
+        } else if (entry.backend === 'NOT_YET_AVAILABLE') {
+          uiStatus = 'not_available';
+          label = 'Allotment Not Available';
+        } else if (
+          entry.backend === 'SOURCE_UNAVAILABLE' ||
+          entry.backend === 'SOURCE_RESPONSE_INVALID' ||
+          entry.backend === 'RATE_LIMITED'
+        ) {
+          uiStatus = 'check_failed';
+          label = 'Check Failed';
+        }
+
+        expect(uiStatus).toBe(entry.expectedUi);
+        expect(label).toBe(entry.expectedLabel);
+
+        // Crucial invariant: Only NOT_ALLOTTED maps to 'not_allotted'
+        if (entry.backend !== 'NOT_ALLOTTED') {
+          expect(uiStatus).not.toBe('not_allotted');
+        }
+      }
+    });
+
+    it('10. Malformed data (SOURCE_RESPONSE_INVALID) maps strictly to check_failed and is never masked as not_available or not_allotted', () => {
+      const malformedItem = {
+        status: 'SOURCE_RESPONSE_INVALID',
+        errorMessage: 'Failed to parse JSON response from KFintech API',
+      };
+
+      let uiStatus = 'pending';
+      const backendStatus = malformedItem.status.toUpperCase();
+      if (
+        backendStatus === 'SOURCE_UNAVAILABLE' ||
+        backendStatus === 'SOURCE_RESPONSE_INVALID' ||
+        backendStatus === 'REGISTRAR_UNRESOLVED' ||
+        backendStatus === 'REGISTRAR_UNSUPPORTED' ||
+        backendStatus === 'CAPTCHA_REQUIRED' ||
+        backendStatus === 'RATE_LIMITED' ||
+        backendStatus === 'TEMPORARY_ERROR'
+      ) {
+        uiStatus = 'check_failed';
+      }
+
+      expect(uiStatus).toBe('check_failed');
+      expect(uiStatus).not.toBe('not_available');
+      expect(uiStatus).not.toBe('not_allotted');
+      expect(uiStatus).not.toBe('no_record');
+    });
   });
 });

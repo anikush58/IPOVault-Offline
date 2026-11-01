@@ -1,7 +1,8 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { IPOOutcomeRecord, RadarOutcomeMetrics, RadarCategoryAccuracyMetric } from './types';
 import { RadarCategory } from './radarScoringEngine';
-import { RadarSnapshotRecord } from './radarSnapshotService';
+import { RadarSnapshotRecord, safeNumber } from './radarSnapshotService';
+import { safeRunAsync, safeGetFirstAsync, isClosedResourceError } from '@/utils/sqliteDebug';
 
 export type OutcomeClassification =
   | 'STRONG_POSITIVE'
@@ -222,8 +223,6 @@ export function calculateHighGmpReversalRate(pairs: IPOOutcomePair[]): {
   };
 }
 
-import { safeRunAsync, safeGetFirstAsync } from '@/utils/sqliteDebug';
-
 /**
  * Persist or update an authoritative IPO outcome record in SQLite.
  */
@@ -231,6 +230,7 @@ export async function recordIPOOutcome(
   db: SQLiteDatabase,
   outcome: IPOOutcomeRecord
 ): Promise<boolean> {
+  if (!db || !outcome || !outcome.ipo_id) return false;
   try {
     const now = new Date().toISOString();
     await safeRunAsync(
@@ -246,14 +246,14 @@ export async function recordIPOOutcome(
         day_30_gain_percent = excluded.day_30_gain_percent,
         updated_at = excluded.updated_at`,
       [
-        outcome.ipo_id,
-        outcome.company_name,
-        outcome.issue_price,
-        outcome.listing_price,
-        outcome.listing_gain_percent,
-        outcome.listing_date,
-        outcome.day30_closing_price ?? null,
-        outcome.day30_gain_percent ?? null,
+        String(outcome.ipo_id),
+        String(outcome.company_name || ''),
+        safeNumber(outcome.issue_price) ?? 0,
+        safeNumber(outcome.listing_price),
+        safeNumber(outcome.listing_gain_percent),
+        String(outcome.listing_date || now),
+        safeNumber(outcome.day30_closing_price),
+        safeNumber(outcome.day30_gain_percent),
         outcome.outcome_recorded_at || now,
         outcome.created_at || now,
         now,
@@ -261,7 +261,10 @@ export async function recordIPOOutcome(
       'RadarOutcome.recordIPOOutcome'
     );
     return true;
-  } catch (err) {
+  } catch (err: any) {
+    if (isClosedResourceError(err)) {
+      throw err;
+    }
     console.error('[RadarOutcome] Error recording IPO outcome:', err);
     return false;
   }
@@ -274,15 +277,19 @@ export async function getIPOOutcome(
   db: SQLiteDatabase,
   ipoId: string
 ): Promise<IPOOutcomeRecord | null> {
+  if (!db || !ipoId) return null;
   try {
     const row = await safeGetFirstAsync<IPOOutcomeRecord>(
       db,
       'SELECT * FROM ipo_outcomes WHERE ipo_id = ?',
-      [ipoId],
+      [String(ipoId)],
       'RadarOutcome.getIPOOutcome'
     );
     return row || null;
-  } catch (err) {
+  } catch (err: any) {
+    if (isClosedResourceError(err)) {
+      return null;
+    }
     console.error('[RadarOutcome] Error fetching IPO outcome:', err);
     return null;
   }

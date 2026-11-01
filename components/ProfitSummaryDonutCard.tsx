@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import Svg, { Circle, G, Path } from 'react-native-svg';
 import { Feather } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
@@ -34,6 +34,8 @@ export function ProfitSummaryDonutCard({
   onPeriodChange,
 }: Props) {
   const colors = useColors();
+  const { width: windowWidth } = useWindowDimensions();
+  const svgSize = windowWidth < 360 ? 150 : (windowWidth < 390 ? 175 : 200);
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
   const [showPeriodModal, setShowPeriodModal] = useState(false);
@@ -97,7 +99,7 @@ export function ProfitSummaryDonutCard({
     ];
   }, [isEmptyState, chargesVal, netRealizedVal, circumference, COLOR_CHARGES, COLOR_NET, totalCharges, netRealizedProfit]);
 
-  const lineColor = isDark ? '#374151' : '#E2E8F0';
+  const lineColor = colors.border;
 
   return (
     <View style={styles.wrapper}>
@@ -106,7 +108,7 @@ export function ProfitSummaryDonutCard({
         style={[
           styles.card,
           {
-            backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
+            backgroundColor: colors.card,
             borderColor: colors.border,
           },
         ]}
@@ -124,8 +126,8 @@ export function ProfitSummaryDonutCard({
             style={[
               styles.periodPill,
               {
-                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
-                borderColor: isDark ? '#374151' : '#E5E7EB',
+                backgroundColor: isDark ? colors.surfaceElevated : '#FFFFFF',
+                borderColor: colors.border,
               },
             ]}
           >
@@ -144,6 +146,10 @@ export function ProfitSummaryDonutCard({
                 color: grossProfit > 0 ? COLOR_GROSS : grossProfit < 0 ? colors.negative : colors.foreground,
               },
             ]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
+            maxFontSizeMultiplier={1.2}
           >
             {formatCurrency(grossProfit)}
           </Text>
@@ -167,7 +173,13 @@ export function ProfitSummaryDonutCard({
               <View style={[styles.dot, { backgroundColor: COLOR_CHARGES }]} />
             </View>
 
-            <Text style={[styles.calloutAmount, { color: COLOR_CHARGES }]} numberOfLines={1} adjustsFontSizeToFit>
+            <Text
+              style={[styles.calloutAmount, { color: COLOR_CHARGES }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+              maxFontSizeMultiplier={1.2}
+            >
               {formatCurrency(totalCharges)}
             </Text>
 
@@ -178,8 +190,8 @@ export function ProfitSummaryDonutCard({
           </View>
 
           {/* Center Column: SVG Donut & Stepped Pointer Lines */}
-          <View style={styles.svgContainer}>
-            <Svg width={200} height={200} viewBox="0 0 200 200">
+          <View style={[styles.svgContainer, { width: svgSize, height: svgSize }]}>
+            <Svg width={svgSize} height={svgSize} viewBox="0 0 200 200">
               {/* 1. Background Track & Rotated Arcs (Rendered Underneath) */}
               <G rotation={yellowRotation} origin="100, 100">
                 <Circle
@@ -229,7 +241,7 @@ export function ProfitSummaryDonutCard({
                       ? isDark ? 'rgba(255,255,255,0.08)' : '#F1F5F9'
                       : isDark ? 'rgba(16,185,129,0.15)' : '#ECFDF5',
                     borderColor: isEmptyState
-                      ? isDark ? '#374151' : '#E2E8F0'
+                      ? colors.border
                       : isDark ? 'rgba(16,185,129,0.3)' : '#A7F3D0',
                   },
                 ]}
@@ -252,7 +264,13 @@ export function ProfitSummaryDonutCard({
               </Text>
             </View>
 
-            <Text style={[styles.calloutAmountRight, { color: COLOR_NET }]} numberOfLines={1} adjustsFontSizeToFit>
+            <Text
+              style={[styles.calloutAmountRight, { color: COLOR_NET }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+              maxFontSizeMultiplier={1.2}
+            >
               {formatCurrency(netRealizedProfit)}
             </Text>
 
@@ -360,7 +378,7 @@ export function ProfitSummaryDonutCard({
                       styles.modalOption,
                       {
                         borderBottomColor: colors.border,
-                        backgroundColor: isSelected ? (isDark ? '#27272A' : '#F1F5F9') : 'transparent',
+                        backgroundColor: isSelected ? (isDark ? colors.surfaceElevated : '#F1F5F9') : 'transparent',
                       },
                     ]}
                   >
@@ -368,7 +386,7 @@ export function ProfitSummaryDonutCard({
                       <View
                         style={[
                           styles.modalOptionIcon,
-                          { backgroundColor: isSelected ? (isDark ? '#374151' : '#E2E8F0') : colors.surface },
+                          { backgroundColor: isSelected ? (isDark ? colors.surfaceElevated : '#E2E8F0') : colors.surface },
                         ]}
                       >
                         <Feather name={opt.icon as any} size={16} color={colors.foreground} />
@@ -426,8 +444,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 10,
+    borderRadius: 9999,
+    paddingHorizontal: 12,
     paddingVertical: 5,
   },
   periodText: {
@@ -661,7 +679,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   holdingPill: {
-    borderRadius: 12,
+    borderRadius: 50,
     paddingHorizontal: 10,
     paddingVertical: 3,
   },

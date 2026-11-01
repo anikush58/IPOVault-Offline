@@ -178,7 +178,6 @@ export async function getCachedBackendIpos(
         ELSE 0
       END ASC,
       open_date DESC,
-      created_at DESC,
       company_name ASC,
       id ASC
     `;
@@ -249,6 +248,7 @@ export function mapBackendIpoToRecord(item: BackendIpo): Partial<IPOMasterRecord
     documents_json: documentsJson,
     anchor_details_json: anchorDetailsJson,
     source_type: 'SERVER',
+    created_at: (item as any).createdAt || (item as any).created_at || undefined,
     updated_at: item.updatedAt || undefined,
   };
 }
@@ -274,23 +274,56 @@ export function isRecordDifferent(existing: any, incoming: Partial<IPOMasterReco
     return sa !== sb;
   };
 
+  const dateDiff = (a: any, b: any) => {
+    const sa = (a != null ? String(a) : '').trim();
+    const sb = (b != null ? String(b) : '').trim();
+    if (sa === sb) return false;
+    if (!sa && !sb) return false;
+    if (!sa || !sb) return true;
+    const tA = new Date(sa).getTime();
+    const tB = new Date(sb).getTime();
+    if (!isNaN(tA) && !isNaN(tB)) {
+      return Math.abs(tA - tB) > 1000;
+    }
+    return sa !== sb;
+  };
+
+  const jsonDiff = (a: any, b: any) => {
+    const sa = (a != null ? String(a) : '').trim();
+    const sb = (b != null ? String(b) : '').trim();
+    if (sa === sb) return false;
+    const isEmptyA = !sa || sa === '[]' || sa === '{}' || sa === 'null';
+    const isEmptyB = !sb || sb === '[]' || sb === '{}' || sb === 'null';
+    if (isEmptyA && isEmptyB) return false;
+    if (isEmptyA !== isEmptyB) return true;
+    try {
+      const objA = JSON.parse(sa);
+      const objB = JSON.parse(sb);
+      return JSON.stringify(objA) !== JSON.stringify(objB);
+    } catch {
+      return sa !== sb;
+    }
+  };
+
   const statusDiff = (a: any, b: any) => {
     const sa = (a != null ? String(a) : '').trim().toUpperCase();
     const sb = (b != null ? String(b) : '').trim().toUpperCase();
     return sa !== sb;
   };
 
-  // Status & Lifecycle Status
-  if (incoming.status && statusDiff(existing.status, incoming.status)) return true;
-  if (incoming.lifecycle_status && statusDiff(existing.lifecycle_status, incoming.lifecycle_status)) return true;
+  // Status & Lifecycle Status (compare against existing effective status matching mapSqliteRowToBackendIpo)
+  const existingEffectiveStatus = (existing.lifecycle_status && existing.lifecycle_status !== 'Unknown' && existing.lifecycle_status !== 'NULL')
+    ? existing.lifecycle_status
+    : existing.status;
+  if (incoming.status && statusDiff(existingEffectiveStatus, incoming.status)) return true;
 
   // Dates (only if incoming has non-empty date)
-  if (incoming.open_date && strDiff(existing.open_date, incoming.open_date)) return true;
-  if (incoming.close_date && strDiff(existing.close_date, incoming.close_date)) return true;
-  if (incoming.allotment_date && strDiff(existing.allotment_date, incoming.allotment_date)) return true;
-  if (incoming.listing_date && strDiff(existing.listing_date, incoming.listing_date)) return true;
-  if (incoming.refund_date && strDiff(existing.refund_date, incoming.refund_date)) return true;
-  if (incoming.demat_credit_date && strDiff(existing.demat_credit_date, incoming.demat_credit_date)) return true;
+  if (incoming.open_date && dateDiff(existing.open_date, incoming.open_date)) return true;
+  if (incoming.close_date && dateDiff(existing.close_date, incoming.close_date)) return true;
+  if (incoming.allotment_date && dateDiff(existing.allotment_date, incoming.allotment_date)) return true;
+  if (incoming.listing_date && dateDiff(existing.listing_date, incoming.listing_date)) return true;
+  if (incoming.refund_date && dateDiff(existing.refund_date, incoming.refund_date)) return true;
+  if (incoming.demat_credit_date && dateDiff(existing.demat_credit_date, incoming.demat_credit_date)) return true;
 
   // Price & Lots
   if (incoming.price_band_min != null && numDiff(existing.price_band_min, incoming.price_band_min)) return true;
@@ -302,7 +335,7 @@ export function isRecordDifferent(existing: any, incoming: Partial<IPOMasterReco
   if (incoming.gmp_amount != null && numDiff(existing.gmp_amount, incoming.gmp_amount)) return true;
   if (incoming.gmp_percent != null && numDiff(existing.gmp_percent, incoming.gmp_percent)) return true;
   if (incoming.profit_per_lot != null && numDiff(existing.profit_per_lot, incoming.profit_per_lot)) return true;
-  if (incoming.gmp_updated_at && strDiff(existing.gmp_updated_at, incoming.gmp_updated_at)) return true;
+  if (incoming.gmp_updated_at && dateDiff(existing.gmp_updated_at, incoming.gmp_updated_at)) return true;
 
   // Subscription
   if (incoming.total_sub != null && numDiff(existing.total_sub, incoming.total_sub)) return true;
@@ -316,13 +349,17 @@ export function isRecordDifferent(existing: any, incoming: Partial<IPOMasterReco
   if (incoming.symbol && strDiff(existing.symbol, incoming.symbol)) return true;
   if (incoming.registrar && strDiff(existing.registrar, incoming.registrar)) return true;
   if (incoming.lead_manager && strDiff(existing.lead_manager, incoming.lead_manager)) return true;
-  if (incoming.logo_url && strDiff(existing.logo_url, incoming.logo_url)) return true;
+  if (incoming.logo_url) {
+    const normA = (existing.logo_url || '').replace(/\/image\/upload\/(e_trim\/)?/, '/image/upload/');
+    const normB = (incoming.logo_url || '').replace(/\/image\/upload\/(e_trim\/)?/, '/image/upload/');
+    if (strDiff(normA, normB)) return true;
+  }
 
   // Structured JSON fields (only if incoming provides non-empty JSON that differs)
-  if (incoming.financials_json && strDiff(existing.financials_json, incoming.financials_json)) return true;
-  if (incoming.documents_json && strDiff(existing.documents_json, incoming.documents_json)) return true;
-  if (incoming.participants_json && strDiff(existing.participants_json, incoming.participants_json)) return true;
-  if (incoming.anchor_details_json && strDiff(existing.anchor_details_json, incoming.anchor_details_json)) return true;
+  if (incoming.financials_json && jsonDiff(existing.financials_json, incoming.financials_json)) return true;
+  if (incoming.documents_json && jsonDiff(existing.documents_json, incoming.documents_json)) return true;
+  if (incoming.participants_json && jsonDiff(existing.participants_json, incoming.participants_json)) return true;
+  if (incoming.anchor_details_json && jsonDiff(existing.anchor_details_json, incoming.anchor_details_json)) return true;
 
   return false;
 }

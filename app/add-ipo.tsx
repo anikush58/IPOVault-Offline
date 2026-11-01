@@ -20,7 +20,6 @@ import { useColors } from '@/hooks/useColors';
 import { useDialog } from '@/context/DialogContext';
 import { useDB } from '@/context/DBContext';
 import { Button } from '@/components/ui/Button';
-import { IconButton } from '@/components/ui/IconButton';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { DatePickerModal } from '@/components/DatePickerModal';
 import { ensureBase64DataUrl } from '@/utils/imageUtils';
@@ -437,7 +436,6 @@ export default function AddIPOScreen() {
               COMPANY NAME *
             </Text>
             <TouchableOpacity onPress={handleAutoFetchData} activeOpacity={0.7} style={styles.autoFetchLink}>
-              <Feather name="zap" size={12} color={colors.primary} style={{ marginRight: 4 }} />
               <Text style={[styles.autoFetchLinkText, { color: colors.primary }]}>Auto-Fetch Data</Text>
             </TouchableOpacity>
           </View>
@@ -565,7 +563,7 @@ export default function AddIPOScreen() {
                   style={[styles.issueTypePill, formExchange === ex.code && { backgroundColor: colors.primary }]}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.issueTypeText, { color: formExchange === ex.code ? '#fff' : colors.mutedForeground }]}>
+                  <Text style={[styles.issueTypeText, { color: formExchange === ex.code ? colors.primaryForeground : colors.mutedForeground }]}>
                     {ex.label}
                   </Text>
                 </TouchableOpacity>
@@ -583,7 +581,7 @@ export default function AddIPOScreen() {
                   style={[styles.issueTypePill, formIssueType === t.code && { backgroundColor: colors.primary }]}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.issueTypeText, { color: formIssueType === t.code ? '#fff' : colors.mutedForeground }]}>
+                  <Text style={[styles.issueTypeText, { color: formIssueType === t.code ? colors.primaryForeground : colors.mutedForeground }]}>
                     {t.label}
                   </Text>
                 </TouchableOpacity>
@@ -834,6 +832,11 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 8,
+    resizeMode: 'contain',
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   logoPreviewText: {
     fontSize: 13,

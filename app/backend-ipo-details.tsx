@@ -17,6 +17,7 @@ import { backendIpoApiService, normalizeBackendIpo } from '@/services/ipo/Backen
 import { BackendIpo } from '@/types/backend-ipo';
 import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 import { IPODetailsLayout } from '@/components/ipo/IPODetailsLayout';
+import { IPODetailsSkeleton } from '@/components/ipo/IPOSkeleton';
 
 export default function BackendIpoDetailsScreen() {
   const colors = useColors();
@@ -113,12 +114,7 @@ export default function BackendIpoDetailsScreen() {
             <Feather name="arrow-left" size={19} color={colors.foreground} />
           </TouchableOpacity>
         </View>
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.mutedForeground, marginTop: 12 }]}>
-            Loading IPO Details...
-          </Text>
-        </View>
+        <IPODetailsSkeleton />
       </View>
     );
   }

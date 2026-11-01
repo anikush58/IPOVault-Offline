@@ -1,0 +1,114 @@
+diff --git a/node_modules/react-native/Libraries/Text/Text.js b/node_modules/react-native/Libraries/Text/Text.js
+index b08b8f3..9e504c3 100644
+--- a/node_modules/react-native/Libraries/Text/Text.js
++++ b/node_modules/react-native/Libraries/Text/Text.js
+@@ -170,6 +170,73 @@ const TextImpl: component(
+   const _nativeID = id ?? nativeID;
+ 
+   const hasTextAncestor = useContext(TextAncestorContext);
++
++  const _isBold =
++    processedStyle != null &&
++    (processedStyle.fontWeight === 'bold' ||
++      processedStyle.fontWeight === '700' ||
++      (typeof processedStyle.fontFamily === 'string' &&
++        (processedStyle.fontFamily.indexOf('Bold') !== -1 ||
++          processedStyle.fontFamily.indexOf('700') !== -1 ||
++          processedStyle.fontFamily.indexOf('SemiBold') !== -1 ||
++          processedStyle.fontFamily.indexOf('600') !== -1)));
++
++  const _defaultFont =
++    processedStyle != null && typeof processedStyle.fontFamily === 'string'
++      ? processedStyle.fontFamily
++      : _isBold
++      ? 'GoogleSansFlex_700Bold'
++      : 'GoogleSansFlex_400Regular';
++
++  const _rupeeStyle =
++    processedStyle != null && typeof processedStyle.fontSize === 'number'
++      ? {fontFamily: _defaultFont, fontSize: processedStyle.fontSize}
++      : {fontFamily: _defaultFont};
++
++  let _children = children;
++  if (_children != null) {
++    if (typeof _children === 'string' && _children.indexOf('₹') !== -1) {
++      const parts = _children.split(/(₹)/g);
++      _children = parts.map((part, idx) =>
++        part === '₹' ? (
++          <NativeVirtualText
++            key={`rupee-${idx}`}
++            style={_rupeeStyle}>
++            ₹
++          </NativeVirtualText>
++        ) : (
++          part
++        ),
++      );
++    } else if (Array.isArray(_children)) {
++      let containsRupee = false;
++      for (let i = 0; i < _children.length; i++) {
++        if (typeof _children[i] === 'string' && _children[i].indexOf('₹') !== -1) {
++          containsRupee = true;
++          break;
++        }
++      }
++      if (containsRupee) {
++        _children = _children.flatMap((c, i) => {
++          if (typeof c === 'string' && c.indexOf('₹') !== -1) {
++            const parts = c.split(/(₹)/g);
++            return parts.map((part, idx) =>
++              part === '₹' ? (
++                <NativeVirtualText
++                  key={`rupee-${i}-${idx}`}
++                  style={_rupeeStyle}>
++                  ₹
++                </NativeVirtualText>
++              ) : (
++                part
++              ),
++            );
++          }
++          return c;
++        });
++      }
++    }
++  }
+   if (hasTextAncestor) {
+     if (isPressable) {
+       return (
+@@ -185,7 +252,7 @@ const TextImpl: component(
+             selectionColor: _selectionColor,
+             style: _style,
+             disabled: disabled,
+-            children,
++            children: _children,
+           }}
+           textPressabilityProps={{
+             onLongPress,
+@@ -217,7 +284,7 @@ const TextImpl: component(
+         selectionColor={_selectionColor}
+         style={_style}
+         disabled={disabled}>
+-        {children}
++        {_children}
+       </NativeVirtualText>
+     );
+   }
+@@ -258,7 +325,7 @@ const TextImpl: component(
+           selectable: _selectable,
+           selectionColor: _selectionColor,
+           style: _style,
+-          children,
++          children: _children,
+         }}
+         textPressabilityProps={{
+           onLongPress,
+@@ -292,7 +359,7 @@ const TextImpl: component(
+         selectable={_selectable}
+         selectionColor={_selectionColor}
+         style={_style}>
+-        {children}
++        {_children}
+       </NativeText>
+     );
+   }

@@ -10,7 +10,7 @@ function getCurrentTime() {
 
 export interface IUserRepository {
   getAll(): Promise<User[]>;
-  add(user: Omit<User, 'id'>, ownerId?: string | null): Promise<void>;
+  add(user: Omit<User, 'id'>, ownerId?: string | null): Promise<string>;
   update(id: string, user: Omit<User, 'id'>): Promise<void>;
   archive(id: string, isArchived: boolean): Promise<void>;
   delete(id: string): Promise<void>;
@@ -19,7 +19,7 @@ export interface IUserRepository {
 export interface IBankRepository {
   getAll(): Promise<BankAccount[]>;
   add(bankName: string, balance: number, upiApp?: string, ownerId?: string | null): Promise<BankAccount>;
-  updateBalance(id: string, balance: number, bankName?: string, upiApp?: string): Promise<void>;
+  updateBalance(id: string, balance?: number, bankName?: string, upiApp?: string): Promise<void>;
   delete(id: string, ownerId?: string | null): Promise<void>;
 }
 
@@ -34,6 +34,16 @@ export interface IIPORepository {
   delete(id: string): Promise<void>;
 }
 
+export interface BulkApplyResult {
+  selectedCount: number;
+  createdCount: number;
+  alreadyExistingCount: number;
+  failedCount: number;
+  createdAppIds: string[];
+  skippedUserIds: string[];
+  errors?: Array<{ userId: string; reason: string }>;
+}
+
 export interface IApplicationRepository {
   getAll(): Promise<ApplicationWithDetails[]>;
   addBulk(
@@ -43,14 +53,19 @@ export interface IApplicationRepository {
     upiApp?: string | Record<string, string>,
     lotCounts?: Record<string, number> | number,
     ownerId?: string | null,
-  ): Promise<void>;
+    categoryMap?: string | Record<string, string>,
+  ): Promise<BulkApplyResult>;
   update(
     id: string,
     status: ApplicationStatus,
     sellPrice?: number | null,
     saleDate?: string | null,
     tax?: number,
-    userCut?: number
+    userCut?: number,
+    bankName?: string,
+    upiApp?: string,
+    brokerAccountId?: string | null,
+    sharesCount?: number | null,
   ): Promise<void>;
   partialSell(
     id: string,
@@ -82,7 +97,7 @@ export class UserRepository implements IUserRepository {
     );
   }
 
-  async add(user: Omit<User, 'id'>, ownerId?: string | null): Promise<void> {
+  async add(user: Omit<User, 'id'>, ownerId?: string | null): Promise<string> {
     const id = Crypto.randomUUID();
     const now = getCurrentTime();
     const sql = `
@@ -110,6 +125,7 @@ export class UserRepository implements IUserRepository {
       now,
     ];
     await safeRunAsync(this.db, sql, params, 'UserRepository.add');
+    return id;
   }
 
 
@@ -154,12 +170,27 @@ export class UserRepository implements IUserRepository {
   async delete(id: string): Promise<void> {
     if (!id) return;
     const now = getCurrentTime();
-    const sql = `
-      UPDATE users_table SET
-        deleted_at = ?, updated_at = ?, sync_version = sync_version + 1, sync_status = 'PENDING'
-      WHERE id = ?
-    `;
-    await safeRunAsync(this.db, sql, [now, now, id], 'UserRepository.delete');
+    await runWithTransaction(
+      this.db,
+      async () => {
+        // Soft-delete user
+        const sqlUser = `
+          UPDATE users_table SET
+            deleted_at = ?, updated_at = ?, sync_version = sync_version + 1, sync_status = 'PENDING'
+          WHERE id = ?
+        `;
+        await safeRunAsync(this.db, sqlUser, [now, now, id], 'UserRepository.delete.user');
+
+        // Cascade soft-delete linked applications to preserve referential integrity
+        const sqlApps = `
+          UPDATE ipo_applications SET
+            deleted_at = ?, updated_at = ?, sync_version = sync_version + 1, sync_status = 'PENDING'
+          WHERE user_id = ? AND deleted_at IS NULL
+        `;
+        await safeRunAsync(this.db, sqlApps, [now, now, id], 'UserRepository.delete.cascadeApps');
+      },
+      'UserRepository.delete'
+    );
   }
 }
 
@@ -309,7 +340,7 @@ export class ApplicationRepository implements IApplicationRepository {
     return await safeGetAllAsync<ApplicationWithDetails>(
       this.db,
       `
-      SELECT a.id, a.user_id, a.ipo_id, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
+      SELECT a.id, a.user_id, a.ipo_id, a.category, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
              a.shares_count, a.is_favorite, a.created_at, a.broker_account_id,
              u.name        AS user_name,
              u.broker      AS user_broker,
@@ -318,11 +349,28 @@ export class ApplicationRepository implements IApplicationRepository {
              u.avatar_url  AS user_avatar_url,
              COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
              COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
-             i.ipo_name, i.buy_price, COALESCE(a.shares_count, i.quantity) AS quantity, i.open_date, i.logo_url AS ipo_logo_url
+             COALESCE(NULLIF(i.ipo_name, ''), NULLIF(m.ipo_name, ''), NULLIF(m.company_name, ''), 'IPO') AS ipo_name,
+             COALESCE(NULLIF(i.buy_price, 0), NULLIF(m.price_band_max, 0), NULLIF(m.price_band_min, 0), 100) AS buy_price,
+             COALESCE(
+               CASE
+                 WHEN a.status IN ('Allotted', 'Partially Allotted', 'Holding', 'Sold') AND alt.allotted_shares > 0 THEN alt.allotted_shares
+                 ELSE a.shares_count
+               END,
+               NULLIF(i.quantity, 0),
+               NULLIF(m.lot_size, 0),
+               1
+             ) AS quantity,
+             alt.allotted_shares,
+             alt.allotted_lots,
+             alt.allotment_status,
+             COALESCE(NULLIF(i.open_date, ''), NULLIF(m.open_date, ''), '') AS open_date,
+             COALESCE(NULLIF(i.logo_url, ''), NULLIF(m.logo_url, ''), '') AS ipo_logo_url
       FROM   ipo_applications a
       JOIN   users_table u ON a.user_id = u.id
-      JOIN   ipo_listings i ON a.ipo_id = i.id
-      WHERE  a.deleted_at IS NULL AND u.deleted_at IS NULL AND i.deleted_at IS NULL
+      LEFT JOIN ipo_listings i ON a.ipo_id = i.id
+      LEFT JOIN ipo_master m ON a.ipo_id = m.id
+      LEFT JOIN ipo_allotments alt ON a.id = alt.application_id
+      WHERE  a.deleted_at IS NULL AND u.deleted_at IS NULL AND (i.deleted_at IS NULL OR i.id IS NULL)
       ORDER  BY a.created_at DESC
       `,
       [],
@@ -337,14 +385,25 @@ export class ApplicationRepository implements IApplicationRepository {
     upiApp?: string | Record<string, string>,
     lotCounts?: Record<string, number> | number,
     ownerId?: string | null,
-  ): Promise<void> {
+    categoryMap?: string | Record<string, string>,
+  ): Promise<BulkApplyResult> {
+    const emptyResult: BulkApplyResult = {
+      selectedCount: userIds?.length || 0,
+      createdCount: 0,
+      alreadyExistingCount: 0,
+      failedCount: 0,
+      createdAppIds: [],
+      skippedUserIds: [],
+      errors: [],
+    };
+
     if (!ipoId) {
       if (__DEV__) console.warn('[ApplicationRepository.addBulk] Called with empty ipoId');
-      return;
+      return emptyResult;
     }
     if (!userIds || userIds.length === 0) {
       if (__DEV__) console.warn('[ApplicationRepository.addBulk] Called with empty userIds array');
-      return;
+      return emptyResult;
     }
 
     const timer = startPerfTimer('ApplicationRepository.addBulk', {
@@ -352,29 +411,73 @@ export class ApplicationRepository implements IApplicationRepository {
     });
 
     const now = getCurrentTime();
-    const existing = await safeGetAllAsync<{ user_id: string }>(
+    const existing = await safeGetAllAsync<{ user_id: string; category: string | null }>(
       this.db,
-      "SELECT user_id FROM ipo_applications WHERE ipo_id=? AND status != 'Cancelled' AND deleted_at IS NULL",
+      "SELECT user_id, COALESCE(NULLIF(category, ''), 'RETAIL') as category FROM ipo_applications WHERE ipo_id=? AND status != 'Cancelled' AND (deleted_at IS NULL OR deleted_at = '')",
       [ipoId],
       'ApplicationRepository.addBulk.existing'
     );
-    const existingSet = new Set(existing.map((e) => e.user_id));
+    const existingSet = new Set(existing.map((e) => `${e.user_id}_${e.category || 'RETAIL'}`));
 
-    const ipoRow = await safeGetFirstAsync<{ quantity: number; issue_type: string }>(
+    const ipoRow = await safeGetFirstAsync<{ quantity: number; issue_type: string; symbol?: string; company_name?: string }>(
       this.db,
-      'SELECT quantity, issue_type FROM ipo_listings WHERE id = ?',
+      'SELECT quantity, issue_type, symbol, company_name FROM ipo_listings WHERE id = ?',
       [ipoId],
       'ApplicationRepository.addBulk.ipo'
     );
-    const lotSize = ipoRow?.quantity || 1;
-    const isSme = (ipoRow?.issue_type || '').toUpperCase() === 'SME';
+    let lotSize = ipoRow?.quantity;
+    let isSme = (ipoRow?.issue_type || '').toUpperCase() === 'SME';
+    if (!lotSize || lotSize <= 1) {
+      const masterRow = await safeGetFirstAsync<{ lot_size: number; issue_type: string }>(
+        this.db,
+        'SELECT lot_size, issue_type FROM ipo_master WHERE id = ? OR (symbol IS NOT NULL AND symbol != "" AND symbol = ?) OR (company_name IS NOT NULL AND company_name != "" AND company_name = ?)',
+        [ipoId, ipoRow?.symbol || '', ipoRow?.company_name || ''],
+        'ApplicationRepository.addBulk.master'
+      );
+      if (masterRow?.lot_size && masterRow.lot_size > 0) {
+        lotSize = masterRow.lot_size;
+      }
+      if (!isSme) isSme = (masterRow?.issue_type || '').toUpperCase() === 'SME';
+    }
+    if (!lotSize || lotSize < 1) lotSize = 1;
 
-    const uidsToFetch = userIds.filter((uid) => uid && !existingSet.has(uid));
-    if (uidsToFetch.length === 0) {
-      timer({ appliedCount: 0, skippedCount: userIds.length });
-      return;
+    const applicantsToApply: { uid: string; category: string }[] = [];
+    const skippedUserIds: string[] = [];
+    const seenInBatch = new Set<string>();
+
+    for (const uid of userIds) {
+      if (!uid) continue;
+      const resolvedCategory =
+        typeof categoryMap === 'object' && categoryMap !== null
+          ? (categoryMap[uid] || 'RETAIL')
+          : typeof categoryMap === 'string' && categoryMap.trim() !== ''
+          ? categoryMap.trim()
+          : 'RETAIL';
+      const key = `${uid}_${resolvedCategory}`;
+      if (existingSet.has(key)) {
+        skippedUserIds.push(uid);
+      } else if (!seenInBatch.has(key)) {
+        seenInBatch.add(key);
+        applicantsToApply.push({ uid, category: resolvedCategory });
+      } else {
+        skippedUserIds.push(uid);
+      }
     }
 
+    if (applicantsToApply.length === 0) {
+      timer({ appliedCount: 0, skippedCount: userIds.length });
+      return {
+        selectedCount: userIds.length,
+        createdCount: 0,
+        alreadyExistingCount: skippedUserIds.length,
+        failedCount: 0,
+        createdAppIds: [],
+        skippedUserIds,
+        errors: [],
+      };
+    }
+
+    const uidsToFetch = Array.from(new Set(applicantsToApply.map((a) => a.uid)));
     let userMap = new Map<string, { bank_name: string; upi_app: string }>();
     if (uidsToFetch.length > 0) {
       const placeholders = uidsToFetch.map(() => '?').join(',');
@@ -404,8 +507,9 @@ export class ApplicationRepository implements IApplicationRepository {
     const tPrepStart = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
 
     // Pre-calculate all application rows in memory before entering write transaction
-    const insertRows: { id: string; params: any[] }[] = [];
-    for (const uid of uidsToFetch) {
+    const insertRows: { id: string; params: any[]; uid: string }[] = [];
+    for (const app of applicantsToApply) {
+      const { uid, category } = app;
       const id = Crypto.randomUUID();
       const userObj = userMap.get(uid);
       const rawBank = typeof bankName === 'object' && bankName !== null ? bankName[uid] : bankName;
@@ -431,6 +535,7 @@ export class ApplicationRepository implements IApplicationRepository {
         id,
         uid,
         ipoId,
+        category,
         resolvedBank,
         resolvedUpi,
         calculatedShares,
@@ -438,34 +543,44 @@ export class ApplicationRepository implements IApplicationRepository {
         now,
         now,
       ];
-      insertRows.push({ id, params });
+      insertRows.push({ id, params, uid });
     }
     const tPrepEnd = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
     console.log(`[ApplicationRepository.addBulk] In-memory preparation completed in ${(tPrepEnd - tPrepStart).toFixed(1)}ms (${insertRows.length} applications)`);
 
     // Execute batch soft-delete and all inserts inside ONE atomic SQLite transaction
     const tTxStart = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+    const createdAppIds: string[] = [];
+    const errors: Array<{ userId: string; reason: string }> = [];
+
     await runWithTransaction(
       this.db,
       async () => {
-        // 1. Batch soft-delete previous cancelled applications in one single statement
-        const cancelPlaceholders = uidsToFetch.map(() => '?').join(',');
-        await safeRunAsync(
-          this.db,
-          `UPDATE ipo_applications SET deleted_at=? WHERE ipo_id=? AND user_id IN (${cancelPlaceholders}) AND status='Cancelled'`,
-          [now, ipoId, ...uidsToFetch],
-          'ApplicationRepository.addBulk.cancelOldBatch'
-        );
+        // 1. Soft-delete previous cancelled applications matching uid + category
+        for (const app of applicantsToApply) {
+          await safeRunAsync(
+            this.db,
+            `UPDATE ipo_applications SET deleted_at=?, updated_at=? WHERE ipo_id=? AND user_id=? AND COALESCE(NULLIF(category, ''), 'RETAIL')=? AND status='Cancelled'`,
+            [now, now, ipoId, app.uid, app.category],
+            'ApplicationRepository.addBulk.cancelOldBatch'
+          );
+        }
 
         // 2. Insert all application records within the same active transaction
         const insertSql = `
           INSERT INTO ipo_applications (
-            id, user_id, ipo_id, status, bank_name, upi_app, shares_count, tax, user_cut,
+            id, user_id, ipo_id, category, status, bank_name, upi_app, shares_count, tax, user_cut,
             is_favorite, sync_version, sync_status, owner_id, created_at, updated_at
-          ) VALUES (?, ?, ?, 'Applied', ?, ?, ?, 0, 0, 0, 0, 'PENDING', ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, 'Applied', ?, ?, ?, 0, 0, 0, 0, 'PENDING', ?, ?, ?)
         `;
         for (const row of insertRows) {
-          await safeRunAsync(this.db, insertSql, row.params, 'ApplicationRepository.addBulk.insert');
+          try {
+            await safeRunAsync(this.db, insertSql, row.params, 'ApplicationRepository.addBulk.insert');
+            createdAppIds.push(row.id);
+          } catch (insertErr: any) {
+            errors.push({ userId: row.uid, reason: insertErr?.message || 'Database write error' });
+            throw insertErr; // Trigger transaction rollback to maintain consistency
+          }
         }
       },
       'ApplicationRepository.addBulk'
@@ -474,10 +589,20 @@ export class ApplicationRepository implements IApplicationRepository {
     console.log(`[ApplicationRepository.addBulk] Atomic transaction committed in ${(tTxEnd - tTxStart).toFixed(1)}ms`);
 
     timer({
-      appliedCount: insertRows.length,
-      skippedCount: userIds.length - insertRows.length,
+      appliedCount: createdAppIds.length,
+      skippedCount: userIds.length - createdAppIds.length,
       durationMs: tTxEnd - tPrepStart,
     });
+
+    return {
+      selectedCount: userIds.length,
+      createdCount: createdAppIds.length,
+      alreadyExistingCount: skippedUserIds.length,
+      failedCount: errors.length,
+      createdAppIds,
+      skippedUserIds,
+      errors: errors.length > 0 ? errors : undefined,
+    };
   }
 
 
@@ -488,6 +613,10 @@ export class ApplicationRepository implements IApplicationRepository {
     saleDate?: string | null,
     tax?: number,
     userCut?: number,
+    bankName?: string,
+    upiApp?: string,
+    brokerAccountId?: string | null,
+    sharesCount?: number | null,
   ): Promise<void> {
     if (!id) {
       if (__DEV__) console.warn('[ApplicationRepository.update] Called with invalid/null id');
@@ -496,8 +625,18 @@ export class ApplicationRepository implements IApplicationRepository {
     const now = getCurrentTime();
     const sql = `
       UPDATE ipo_applications SET
-        status = ?, sell_price = ?, sale_date = ?, tax = ?, user_cut = ?,
-        updated_at = ?, sync_version = sync_version + 1, sync_status = 'PENDING'
+        status = ?,
+        sell_price = ?,
+        sale_date = ?,
+        tax = ?,
+        user_cut = ?,
+        bank_name = CASE WHEN ? = 1 THEN ? ELSE bank_name END,
+        upi_app = CASE WHEN ? = 1 THEN ? ELSE upi_app END,
+        broker_account_id = CASE WHEN ? = 1 THEN ? ELSE broker_account_id END,
+        shares_count = CASE WHEN ? = 1 THEN ? ELSE shares_count END,
+        updated_at = ?,
+        sync_version = sync_version + 1,
+        sync_status = 'PENDING'
       WHERE id = ?
     `;
     const params = [
@@ -506,6 +645,14 @@ export class ApplicationRepository implements IApplicationRepository {
       saleDate ?? null,
       tax ?? 0,
       userCut ?? 0,
+      bankName !== undefined ? 1 : 0,
+      bankName ?? null,
+      upiApp !== undefined ? 1 : 0,
+      upiApp ?? null,
+      brokerAccountId !== undefined ? 1 : 0,
+      brokerAccountId ?? null,
+      sharesCount !== undefined ? 1 : 0,
+      sharesCount ?? null,
       now,
       id,
     ];
@@ -790,9 +937,44 @@ export class BankRepository implements IBankRepository {
   }
 
   async add(bankName: string, balance: number, upiApp?: string, ownerId?: string | null): Promise<BankAccount> {
-    const id = Crypto.randomUUID();
-    const now = getCurrentTime();
+    const trimmedBankName = bankName.trim();
     const trimmedUpiApp = upiApp ? upiApp.trim() : '';
+    const now = getCurrentTime();
+
+    // Check if an account for this bank already exists (case-insensitive) for this owner scope
+    const existing = await safeGetFirstAsync<BankAccount>(
+      this.db,
+      ownerId
+        ? 'SELECT * FROM bank_accounts WHERE (owner_id = ? OR owner_id IS NULL OR owner_id = "") AND LOWER(TRIM(bank_name)) = LOWER(?) AND deleted_at IS NULL'
+        : 'SELECT * FROM bank_accounts WHERE (owner_id IS NULL OR owner_id = "") AND LOWER(TRIM(bank_name)) = LOWER(?) AND deleted_at IS NULL',
+      ownerId ? [ownerId, trimmedBankName] : [trimmedBankName],
+      'BankRepository.add.checkDuplicate'
+    );
+
+    if (existing) {
+      const updatedBalance = balance !== undefined && balance !== null ? balance : existing.balance;
+      const updatedUpiApp = trimmedUpiApp || existing.upi_app || '';
+      const sqlUpdate = `
+        UPDATE bank_accounts SET
+          balance = ?,
+          upi_app = ?,
+          owner_id = COALESCE(?, owner_id),
+          sync_status = 'PENDING',
+          updated_at = ?
+        WHERE id = ?
+      `;
+      await safeRunAsync(this.db, sqlUpdate, [updatedBalance, updatedUpiApp, ownerId || null, now, existing.id], 'BankRepository.add.updateExisting');
+      return {
+        ...existing,
+        bank_name: trimmedBankName,
+        balance: updatedBalance,
+        upi_app: updatedUpiApp,
+        owner_id: (ownerId || existing.owner_id) || undefined,
+        updated_at: now,
+      };
+    }
+
+    const id = Crypto.randomUUID();
     const sql = `
       INSERT INTO bank_accounts (
         id, bank_name, balance, upi_app, sync_version, sync_status, owner_id, created_at, updated_at
@@ -800,7 +982,7 @@ export class BankRepository implements IBankRepository {
     `;
     const params = [
       id,
-      bankName.trim(),
+      trimmedBankName,
       balance,
       trimmedUpiApp,
       ownerId || null,
@@ -810,7 +992,7 @@ export class BankRepository implements IBankRepository {
     await safeRunAsync(this.db, sql, params, 'BankRepository.add');
     return {
       id,
-      bank_name: bankName.trim(),
+      bank_name: trimmedBankName,
       balance,
       upi_app: trimmedUpiApp,
       owner_id: ownerId || undefined,
@@ -820,30 +1002,70 @@ export class BankRepository implements IBankRepository {
   }
 
 
-  async updateBalance(id: string, balance: number, bankName?: string, upiApp?: string): Promise<void> {
+  async updateBalance(id: string, balance?: number, bankName?: string, upiApp?: string): Promise<void> {
     if (!id) {
       if (__DEV__) console.warn('[BankRepository.updateBalance] Called with invalid/null id');
       return;
     }
     const now = getCurrentTime();
-    const sql = `
-      UPDATE bank_accounts SET
-        balance = ?,
-        bank_name = COALESCE(?, bank_name),
-        upi_app = COALESCE(?, upi_app),
-        updated_at = ?,
-        sync_version = sync_version + 1,
-        sync_status = 'PENDING'
-      WHERE id = ?
-    `;
-    const params = [
-      balance,
-      bankName !== undefined ? bankName.trim() : null,
-      upiApp !== undefined ? upiApp.trim() : null,
-      now,
-      id,
-    ];
-    await safeRunAsync(this.db, sql, params, 'BankRepository.updateBalance');
+    const trimmedBankName = (bankName !== undefined && bankName.trim().length > 0) ? bankName.trim() : null;
+    const sanitizedBalance = (balance !== undefined && !isNaN(balance)) ? balance : null;
+
+    await runWithTransaction(
+      this.db,
+      async () => {
+        let oldBankName: string | null = null;
+        if (trimmedBankName) {
+          const oldBank = await safeGetFirstAsync<{ bank_name: string }>(
+            this.db,
+            'SELECT bank_name FROM bank_accounts WHERE id = ?',
+            [id],
+            'BankRepository.updateBalance.getOld'
+          );
+          oldBankName = oldBank?.bank_name ?? null;
+        }
+
+        const sql = `
+          UPDATE bank_accounts SET
+            balance = COALESCE(?, balance),
+            bank_name = COALESCE(?, bank_name),
+            upi_app = COALESCE(?, upi_app),
+            updated_at = ?,
+            sync_version = sync_version + 1,
+            sync_status = 'PENDING'
+          WHERE id = ?
+        `;
+        const params = [
+          sanitizedBalance,
+          trimmedBankName,
+          typeof upiApp === 'string' ? upiApp.trim() : null,
+          now,
+          id,
+        ];
+        await safeRunAsync(this.db, sql, params, 'BankRepository.updateBalance');
+
+        // Cascade rename to users and applications if bank name actually changed
+        if (trimmedBankName && oldBankName && trimmedBankName !== oldBankName) {
+          await safeRunAsync(
+            this.db,
+            `UPDATE users_table SET
+               bank_name = ?, updated_at = ?, sync_version = sync_version + 1, sync_status = 'PENDING'
+             WHERE bank_name = ? AND deleted_at IS NULL`,
+            [trimmedBankName, now, oldBankName],
+            'BankRepository.updateBalance.cascadeUserBank'
+          );
+          await safeRunAsync(
+            this.db,
+            `UPDATE ipo_applications SET
+               bank_name = ?, updated_at = ?, sync_version = sync_version + 1, sync_status = 'PENDING'
+             WHERE bank_name = ? AND deleted_at IS NULL`,
+            [trimmedBankName, now, oldBankName],
+            'BankRepository.updateBalance.cascadeAppBank'
+          );
+        }
+      },
+      'BankRepository.updateBalance'
+    );
   }
 
   async delete(id: string, ownerId?: string | null): Promise<void> {

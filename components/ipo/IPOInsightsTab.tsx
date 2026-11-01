@@ -18,11 +18,11 @@ export const IPOInsightsTab = React.memo(function IPOInsightsTab({ ipo }: Props)
 
   // 1. IPO VERDICT
   const getVerdict = (score: number) => {
-    if (score >= 85) return { stars: '★★★★★', label: 'Strong Apply', color: '#18C37E', bg: 'rgba(24, 195, 126, 0.15)' };
-    if (score >= 70) return { stars: '★★★★☆', label: 'Apply', color: '#4B7BFF', bg: 'rgba(75, 123, 255, 0.15)' };
-    if (score >= 50) return { stars: '★★★☆☆', label: 'Neutral', color: colors.primary, bg: colors.primary + '20' };
-    if (score >= 35) return { stars: '★★☆☆☆', label: 'Avoid', color: '#FF5D5D', bg: 'rgba(255, 93, 93, 0.15)' };
-    return { stars: '★☆☆☆☆', label: 'Strong Avoid', color: '#FF5D5D', bg: 'rgba(255, 93, 93, 0.15)' };
+    if (score >= 85) return { stars: '★★★★★', label: 'Strong Apply', color: '#FFFFFF', bg: '#10B981' };
+    if (score >= 70) return { stars: '★★★★☆', label: 'Apply', color: '#FFFFFF', bg: '#3B82F6' };
+    if (score >= 50) return { stars: '★★★☆☆', label: 'Neutral', color: '#FFFFFF', bg: '#F59E0B' };
+    if (score >= 35) return { stars: '★★☆☆☆', label: 'Avoid', color: '#FFFFFF', bg: '#EF4444' };
+    return { stars: '★☆☆☆☆', label: 'Strong Avoid', color: '#FFFFFF', bg: '#DC2626' };
   };
 
   const verdict = getVerdict(totalScore);
@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
   verdictBadge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 12,
+    borderRadius: 5,
   },
   verdictBadgeText: {
     fontSize: 12,

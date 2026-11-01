@@ -6,7 +6,13 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_USE_PROD_ADS": "false"
+      }
     },
     "preview": {
       "distribution": "internal",
@@ -19,11 +25,15 @@
         "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "getipovault1.firebasestorage.app",
         "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "649099972",
         "EXPO_PUBLIC_FIREBASE_APP_ID": "1:649099972:android:0dacd971a8c21982462791",
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "649099972-hrmk5h725abna6a4o96ikcbqfl4ke2tn.apps.googleusercontent.com"
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "649099972-hrmk5h725abna6a4o96ikcbqfl4ke2tn.apps.googleusercontent.com",
+        "EXPO_PUBLIC_USE_PROD_ADS": "false"
       }
     },
     "production": {
       "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.getipovault.in",
         "EXPO_PUBLIC_IPO_SYNC_URL": "https://api.getipovault.in/api/v1/ipos",
@@ -33,7 +43,27 @@
         "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "getipovault1.firebasestorage.app",
         "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "649099972",
         "EXPO_PUBLIC_FIREBASE_APP_ID": "1:649099972:android:0dacd971a8c21982462791",
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "649099972-hrmk5h725abna6a4o96ikcbqfl4ke2tn.apps.googleusercontent.com"
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "649099972-hrmk5h725abna6a4o96ikcbqfl4ke2tn.apps.googleusercontent.com",
+        "EXPO_PUBLIC_USE_PROD_ADS": "true"
+      }
+    },
+    "production-apk": {
+      "autoIncrement": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.getipovault.in",
+        "EXPO_PUBLIC_IPO_SYNC_URL": "https://api.getipovault.in/api/v1/ipos",
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyCI_TIJyybMpBnywMDUeE56TQSyf5mgPWY",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "getipovault1.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "getipovault1",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "getipovault1.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "649099972",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:649099972:android:0dacd971a8c21982462791",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "649099972-hrmk5h725abna6a4o96ikcbqfl4ke2tn.apps.googleusercontent.com",
+        "EXPO_PUBLIC_USE_PROD_ADS": "true"
       }
     }
   },

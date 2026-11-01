@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
+  Animated,
   Linking,
   Modal,
   Platform,
@@ -11,8 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { Icon } from '@/components/ui/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
@@ -205,7 +205,7 @@ const REGISTRARS = [
     name: 'KFin Technologies',
     phone: '1800 309 4001',
     email: 'einward.ris@kfintech.com',
-    website: 'https://kosmic.kfintech.com/ipostatus',
+    website: 'https://ipostatus.kfintech.com/',
   },
   {
     name: 'Bigshare Services',
@@ -225,7 +225,6 @@ export default function HelpCenterScreen() {
   const colors = useColors();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 24 : insets.top;
 
@@ -257,6 +256,8 @@ export default function HelpCenterScreen() {
     Linking.openURL(url).catch((err) => console.warn('Could not open URL:', err));
   };
 
+  const scrollY = useRef(new Animated.Value(0)).current;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScreenHeader
@@ -264,10 +265,16 @@ export default function HelpCenterScreen() {
         title="Help Center"
         centerTitle
         showBack
+        scrollY={scrollY}
       />
 
-      <ScrollView
+      <Animated.ScrollView
         showsVerticalScrollIndicator={false}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
         contentContainerStyle={{
           paddingHorizontal: 16,
           paddingTop: topPad + 60 + 12,
@@ -280,7 +287,7 @@ export default function HelpCenterScreen() {
 
         {/* Search Bar */}
         <View style={[styles.searchBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Feather name="search" size={16} color={colors.mutedForeground} />
+          <Icon name="search" size={16} color={colors.mutedForeground} />
           <TextInput
             placeholder="Search help articles, FAQs..."
             placeholderTextColor={colors.mutedForeground}
@@ -290,7 +297,7 @@ export default function HelpCenterScreen() {
           />
           {searchQuery ? (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Feather name="x" size={16} color={colors.mutedForeground} />
+              <Icon name="x" size={16} color={colors.mutedForeground} />
             </TouchableOpacity>
           ) : null}
         </View>
@@ -313,11 +320,11 @@ export default function HelpCenterScreen() {
                 }}
                 style={[
                   styles.articleRow,
-                  !isLast && { borderBottomWidth: 1, borderBottomColor: isDark ? '#1F2937' : '#F3F4F6' },
+                  !isLast && { borderBottomWidth: 1, borderBottomColor: colors.border },
                 ]}
               >
                 <View style={[styles.articleIconWrap, { backgroundColor: settingIconBg }]}>
-                  <Feather name={article.icon as any} size={18} color={settingIconColor} />
+                  <Icon name={article.icon as any} size={18} color={settingIconColor} strokeWidth={1.8} />
                 </View>
 
                 <View style={{ flex: 1, gap: 2 }}>
@@ -327,7 +334,7 @@ export default function HelpCenterScreen() {
                   </Text>
                 </View>
 
-                <Feather name="chevron-right" size={18} color={isDark ? '#4B5563' : '#9CA3AF'} />
+                <Icon name="chevron-right" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             );
           })}
@@ -346,7 +353,7 @@ export default function HelpCenterScreen() {
               <View
                 key={faq.id}
                 style={[
-                  !isLast && { borderBottomWidth: 1, borderBottomColor: isDark ? '#1F2937' : '#F3F4F6' },
+                  !isLast && { borderBottomWidth: 1, borderBottomColor: colors.border },
                 ]}
               >
                 <TouchableOpacity
@@ -355,7 +362,7 @@ export default function HelpCenterScreen() {
                   onPress={() => toggleFaq(faq.id)}
                 >
                   <Text style={[styles.faqQuestion, { color: colors.foreground }]}>{faq.question}</Text>
-                  <Feather
+                  <Icon
                     name={isOpen ? 'chevron-up' : 'chevron-down'}
                     size={18}
                     color={colors.mutedForeground}
@@ -385,7 +392,7 @@ export default function HelpCenterScreen() {
               style={[styles.registrarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <View style={styles.regHeader}>
                 <View style={[styles.regIconBadge, { backgroundColor: settingIconBg }]}>
-                  <Feather name="external-link" size={14} color={settingIconColor} />
+                  <Icon name="external-link" size={14} color={settingIconColor} />
                 </View>
                 <Text style={[styles.regTitle, { color: colors.foreground }]}>{reg.name}</Text>
               </View>
@@ -395,7 +402,7 @@ export default function HelpCenterScreen() {
                   style={[styles.regBtn, { backgroundColor: settingIconBg }]}
                   onPress={() => handleOpenUrl(`tel:${reg.phone.replace(/[^0-9+]/g, '')}`)}
                 >
-                  <Feather name="phone" size={12} color={settingIconColor} />
+                  <Icon name="phone" size={12} color={settingIconColor} />
                   <Text style={[styles.regBtnText, { color: colors.foreground }]}>{reg.phone}</Text>
                 </TouchableOpacity>
 
@@ -403,7 +410,7 @@ export default function HelpCenterScreen() {
                   style={[styles.regBtn, { backgroundColor: settingIconBg }]}
                   onPress={() => handleOpenUrl(`mailto:${reg.email}`)}
                 >
-                  <Feather name="mail" size={12} color={settingIconColor} />
+                  <Icon name="mail" size={12} color={settingIconColor} />
                   <Text style={[styles.regBtnText, { color: colors.foreground }]}>Email</Text>
                 </TouchableOpacity>
 
@@ -411,14 +418,14 @@ export default function HelpCenterScreen() {
                   style={[styles.regBtn, { backgroundColor: settingIconBg }]}
                   onPress={() => handleOpenUrl(reg.website)}
                 >
-                  <Feather name="globe" size={12} color={settingIconColor} />
+                  <Icon name="globe" size={12} color={settingIconColor} />
                   <Text style={[styles.regBtnText, { color: colors.foreground }]}>Portal</Text>
                 </TouchableOpacity>
               </View>
             </View>
           ))}
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
 
       {/* Guide Detail Modal */}
       <Modal
@@ -470,7 +477,7 @@ export default function HelpCenterScreen() {
                   ]}
                 >
                   <View style={[styles.bannerIconBadge, { backgroundColor: settingIconBg }]}>
-                    <Feather name="info" size={14} color={settingIconColor} />
+                    <Icon name="info" size={14} color={settingIconColor} />
                   </View>
                   <Text style={[styles.infoBannerText, { color: colors.foreground }]}>
                     {selectedArticle.infoNote}
@@ -511,7 +518,7 @@ export default function HelpCenterScreen() {
                   ]}
                 >
                   <View style={[styles.bannerIconBadge, { backgroundColor: settingIconBg }]}>
-                    <Feather name="zap" size={14} color={settingIconColor} />
+                    <Icon name="zap" size={14} color={settingIconColor} />
                   </View>
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text style={[styles.tipBannerTitle, { color: colors.foreground }]}>

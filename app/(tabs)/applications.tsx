@@ -1,9 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useRouter, useFocusEffect } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'expo-router';
 import {
   Animated,
   DeviceEventEmitter,
-  FlatList,
   Keyboard,
   LayoutAnimation,
   Platform,
@@ -21,32 +20,38 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/ui/Icon';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
-import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { useTheme } from '@/context/ThemeContext';
 import { IconButton } from '@/components/ui/IconButton';
 import { useDB, type ApplicationStatus, type ApplicationWithDetails } from '@/context/DBContext';
-import { useAuth } from '@/context/AuthContext';
-import { useSQLiteContext } from 'expo-sqlite';
 import { ApplicationCard } from '@/components/ApplicationCard';
 import { FilterSheet } from '@/components/FilterSheet';
 import { UpdateApplicationModal } from '@/components/UpdateApplicationModal';
 import { ApplicationsOverviewCard } from '@/components/ApplicationsOverviewCard';
+import { ApplicationsSkeleton } from '@/components/applications/ApplicationsSkeleton';
+import { ProFeatureBanner } from '@/components/experience/ProFeatureBanner';
+import { useAppExperience } from '@/context/AppExperienceContext';
 import { FeatureFlags } from '@/constants/FeatureFlags';
-import { calcBuyValue, calcNetProfit, calcProfitLoss, calcSaleValue } from '@/utils/calculations';
-import { formatCurrency } from '@/utils/formatters';
-type TabKey = 'Allotted' | 'Holding' | 'Sold' | 'Applied' | 'Not Allotted';
+type TabKey = 'Applied' | 'Allotted' | 'Holding' | 'Sold' | 'Not Allotted';
 
 const TABS: { key: TabKey; label: string; flex: number }[] = [
+  { key: 'Applied',      label: 'Applied',      flex: 1.0 },
   { key: 'Allotted',     label: 'Allotted',     flex: 1.1 },
   { key: 'Holding',      label: 'Holding',      flex: 1.0 },
   { key: 'Sold',         label: 'Sold',         flex: 0.75 },
-  { key: 'Applied',      label: 'Applied',      flex: 1.0 },
   { key: 'Not Allotted', label: 'Not Allotted', flex: 1.45 },
 ];
+
+function isAppliedStatus(st: string) {
+  return st === 'Applied' || st === 'Mandate Approved';
+}
+
+function isAllottedStatus(st: string) {
+  return st === 'Allotted' || st === 'Partially Allotted' || st === 'Holding' || st === 'Sold';
+}
 
 type AppSection = { title: string; data: ApplicationWithDetails[] };
 const AnimatedSectionList = Animated.createAnimatedComponent(
@@ -57,18 +62,30 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-export default function ApplicationsScreen() {
+function ApplicationsScreenContent() {
   const colors = useColors();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
   const router = useRouter();
-  const { applications, ipos, users, isLoading, refresh, updateBulkApplications } = useDB();
-  const { user: authUser } = useAuth();
-  const db = useSQLiteContext();
+  const { applications, isLoading, refresh, updateBulkApplications, toggleFavorite, updateApplication } = useDB();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
-  const [activeTab, setActiveTab] = useState<TabKey>('Allotted');
+  const [activeTab, setActiveTab] = useState<TabKey>(() => {
+    const hasApplied = applications.some((a) => isAppliedStatus(a.status));
+    return hasApplied ? 'Applied' : 'Allotted';
+  });
+  const hasUserSelectedTabRef = useRef(false);
+
+  // Automatically select Applied if any applications exist in Applied, otherwise Allotted
+  useEffect(() => {
+    if (!isLoading && !hasUserSelectedTabRef.current) {
+      const hasApplied = applications.some((a) => isAppliedStatus(a.status));
+      const targetDefault: TabKey = hasApplied ? 'Applied' : 'Allotted';
+      setActiveTab((prev) => (hasUserSelectedTabRef.current ? prev : targetDefault));
+    }
+  }, [isLoading, applications]);
+
   const [selectedApp, setSelectedApp] = useState<ApplicationWithDetails | null>(null);
   const [filterUserIds, setFilterUserIds] = useState<string[]>([]);
   const [filterBrokers, setFilterBrokers] = useState<string[]>([]);
@@ -76,6 +93,7 @@ export default function ApplicationsScreen() {
   const [filterYear, setFilterYear] = useState<string | null>(null);
   const [filterIpoNames, setFilterIpoNames] = useState<string[]>([]);
   const [showFilter, setShowFilter] = useState(false);
+  const [isStickyActive, setIsStickyActive] = useState(false);
 
   // Sort order for applications (newest first by default)
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
@@ -176,46 +194,58 @@ export default function ApplicationsScreen() {
     outputRange: [topPad + 56, topPad + 110],
   });
 
-  const hasFilter = filterUserIds.length > 0 || filterBrokers.length > 0 || filterIpoNames.length > 0 || filterBankNames.length > 0;
+  const hasFilter =
+    filterUserIds.length > 0 ||
+    filterBrokers.length > 0 ||
+    filterIpoNames.length > 0 ||
+    filterBankNames.length > 0 ||
+    Boolean(filterYear);
+
+  const clearFilters = () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+    setFilterUserIds([]);
+    setFilterBrokers([]);
+    setFilterIpoNames([]);
+    setFilterBankNames([]);
+    setFilterYear(null);
+  };
 
   const effectiveApplications = applications;
 
-  // Base list of applications
-  const sortedApplications = [...effectiveApplications];
+  // Base filtered list of applications
+  const filterBase = useMemo(() => {
+    return effectiveApplications.filter((a) => {
+      if (filterUserIds.length > 0 && !filterUserIds.includes(a.user_id)) return false;
+      if (filterBrokers.length > 0 && !filterBrokers.includes(a.user_broker ?? '')) return false;
+      if (filterBankNames.length > 0) {
+        const appBank = (a.user_bank_name || (a as any).bank_name || '').trim();
+        if (!appBank || !filterBankNames.some((b) => b.trim().toLowerCase() === appBank.toLowerCase())) return false;
+      }
+      if (filterIpoNames.length > 0 && !filterIpoNames.includes(a.ipo_name ?? '')) return false;
+      if (filterYear) {
+        const y = a.open_date ? a.open_date.slice(0, 4) : '';
+        if (y !== filterYear) return false;
+      }
+      return true;
+    });
+  }, [effectiveApplications, filterUserIds, filterBrokers, filterBankNames, filterIpoNames, filterYear]);
 
-  const filterBase = sortedApplications.filter((a) => {
-    if (filterUserIds.length > 0 && !filterUserIds.includes(a.user_id)) return false;
-    if (filterBrokers.length > 0 && !filterBrokers.includes(a.user_broker ?? '')) return false;
-    if (filterBankNames.length > 0) {
-      const appBank = (a.user_bank_name || (a as any).bank_name || '').trim();
-      if (!appBank || !filterBankNames.some((b) => b.trim().toLowerCase() === appBank.toLowerCase())) return false;
-    }
-    if (filterIpoNames.length > 0 && !filterIpoNames.includes(a.ipo_name ?? '')) return false;
-    if (filterYear) {
-      const y = a.open_date ? a.open_date.slice(0, 4) : '';
-      if (y !== filterYear) return false;
-    }
-    return true;
-  });
-
-  const searchFiltered = filterBase.filter((a) => {
-    if (!searchQuery) return true;
+  const searchFiltered = useMemo(() => {
+    if (!searchQuery) return filterBase;
     const q = searchQuery.toLowerCase();
-    return (
-      a.user_name.toLowerCase().includes(q) ||
-      (a.user_broker ?? '').toLowerCase().includes(q) ||
-      (a.user_bank_name ?? '').toLowerCase().includes(q) ||
-      (a.ipo_name ?? '').toLowerCase().includes(q)
-    );
-  });
+    return filterBase.filter((a) => {
+      return (
+        a.user_name.toLowerCase().includes(q) ||
+        (a.user_broker ?? '').toLowerCase().includes(q) ||
+        (a.user_bank_name ?? '').toLowerCase().includes(q) ||
+        (a.ipo_name ?? '').toLowerCase().includes(q)
+      );
+    });
+  }, [filterBase, searchQuery]);
 
-  const isAppliedStatus = (st: string) =>
-    st === 'Applied' || st === 'Mandate Approved';
-
-  const isAllottedStatus = (st: string) =>
-    st === 'Allotted' || st === 'Partially Allotted' || st === 'Holding' || st === 'Sold';
-
-  const getAppTimestamp = (a: ApplicationWithDetails) => {
+  const getAppTimestamp = useCallback((a: ApplicationWithDetails) => {
     if (a.created_at) {
       const t = new Date(a.created_at).getTime();
       if (!isNaN(t) && t > 0) return t;
@@ -229,11 +259,16 @@ export default function ApplicationsScreen() {
       if (!isNaN(t) && t > 0) return t;
     }
     return 0;
-  };
+  }, []);
 
-  // Sort applications respecting current sortOrder across ALL tabs
-  const sortApplicationsList = (items: ApplicationWithDetails[]) => {
-    return [...items].sort((a, b) => {
+  const filtered = useMemo(() => {
+    const tabFiltered = activeTab === 'Applied'
+      ? searchFiltered.filter((a) => isAppliedStatus(a.status))
+      : activeTab === 'Allotted'
+      ? searchFiltered.filter((a) => isAllottedStatus(a.status))
+      : searchFiltered.filter((a) => a.status === activeTab);
+
+    return [...tabFiltered].sort((a, b) => {
       const tsA = getAppTimestamp(a);
       const tsB = getAppTimestamp(b);
       if (tsA !== tsB) {
@@ -243,36 +278,78 @@ export default function ApplicationsScreen() {
         ? (b.id || '').localeCompare(a.id || '')
         : (a.id || '').localeCompare(b.id || '');
     });
-  };
+  }, [activeTab, searchFiltered, sortOrder, getAppTimestamp]);
 
-  const tabFiltered = activeTab === 'Applied'
-    ? searchFiltered.filter((a) => isAppliedStatus(a.status))
-    : activeTab === 'Allotted'
-    ? searchFiltered.filter((a) => isAllottedStatus(a.status))
-    : searchFiltered.filter((a) => a.status === activeTab);
+  // Single-pass count calculation across all 5 tabs
+  const tabCounts = useMemo(() => {
+    let applied = 0;
+    let allotted = 0;
+    let holding = 0;
+    let sold = 0;
+    let notAllotted = 0;
 
-  const filtered = sortApplicationsList(tabFiltered);
+    for (let i = 0; i < searchFiltered.length; i++) {
+      const st = searchFiltered[i].status;
+      if (isAppliedStatus(st)) applied++;
+      if (isAllottedStatus(st)) allotted++;
+      if (st === 'Holding') holding++;
+      if (st === 'Sold') sold++;
+      if (st === 'Not Allotted') notAllotted++;
+    }
 
-  const countFor = (key: TabKey) => {
-    if (key === 'Applied') return searchFiltered.filter((a) => isAppliedStatus(a.status)).length;
-    if (key === 'Allotted') return searchFiltered.filter((a) => isAllottedStatus(a.status)).length;
-    return searchFiltered.filter((a) => a.status === key).length;
-  };
+    return {
+      'Applied': applied,
+      'Allotted': allotted,
+      'Holding': holding,
+      'Sold': sold,
+      'Not Allotted': notAllotted,
+    };
+  }, [searchFiltered]);
 
   const filterUserNames = filterUserIds
     .map((uid) => applications.find((a) => a.user_id === uid)?.user_name)
     .filter(Boolean) as string[];
-  const filterChipLabel = [...filterUserNames, ...filterBrokers, ...filterBankNames, ...filterIpoNames].join(' · ');
+  const filterChipLabel = [
+    ...filterUserNames,
+    ...filterBrokers,
+    ...filterBankNames,
+    ...filterIpoNames,
+    ...(filterYear ? [`Year: ${filterYear}`] : []),
+  ].join(' · ');
 
   // Selection Mode Helpers
-  const toggleSelectApp = (id: string) => {
+  const toggleSelectApp = useCallback((id: string) => {
     try {
       Haptics.selectionAsync();
     } catch {}
     setSelectedAppIds((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
     );
-  };
+  }, []);
+
+  const keyExtractor = useCallback((item: ApplicationWithDetails) => item.id.toString(), []);
+
+  const renderItem = useCallback(
+    ({ item }: { item: ApplicationWithDetails }) => (
+      <ApplicationCard
+        application={item}
+        onPress={() => {
+          if (isSelectionMode) {
+            toggleSelectApp(item.id);
+          } else {
+            setSelectedApp(item);
+          }
+        }}
+        isAppliedTab={activeTab === 'Applied'}
+        isSelectionMode={isSelectionMode}
+        isSelected={selectedAppIds.includes(item.id)}
+        onSelectToggle={() => toggleSelectApp(item.id)}
+        onToggleFavorite={toggleFavorite}
+        onUpdateStatus={updateApplication}
+      />
+    ),
+    [isSelectionMode, toggleSelectApp, activeTab, selectedAppIds, toggleFavorite, updateApplication]
+  );
 
   const handleSelectAll = () => {
     if (selectedAppIds.length === filtered.length) {
@@ -302,7 +379,8 @@ export default function ApplicationsScreen() {
   };
 
   const handleTabChange = (key: string) => {
-    if (key === activeTabRef.current) return;
+    hasUserSelectedTabRef.current = true;
+    if (key === activeTab) return;
     try { Haptics.selectionAsync(); } catch {}
     if (Platform.OS === 'ios' || Platform.OS === 'android') {
       LayoutAnimation.configureNext({
@@ -317,27 +395,6 @@ export default function ApplicationsScreen() {
     setSelectedAppIds([]);
   };
 
-  const activeTabRef = useRef(activeTab);
-  activeTabRef.current = activeTab;
-
-  const handleSwipeLeft = () => {
-    const currentIdx = TABS.findIndex((t) => t.key === activeTabRef.current);
-    if (currentIdx < TABS.length - 1) {
-      handleTabChange(TABS[currentIdx + 1].key);
-    }
-  };
-
-  const handleSwipeRight = () => {
-    const currentIdx = TABS.findIndex((t) => t.key === activeTabRef.current);
-    if (currentIdx > 0) {
-      handleTabChange(TABS[currentIdx - 1].key);
-    }
-  };
-
-  const swipeHandlers = useSwipeGesture({
-    onSwipeLeft: handleSwipeLeft,
-    onSwipeRight: handleSwipeRight,
-  });
 
   // Reusable tab pills renderer (used in both section header and sticky header)
   const renderTabPills = () => (
@@ -349,28 +406,28 @@ export default function ApplicationsScreen() {
         }}
         style={[
           styles.sortByBtn,
-          { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' },
+          { backgroundColor: isDark ? colors.surfaceElevated : '#FFFFFF', borderColor: colors.border },
         ]}
         hitSlop={8}
         activeOpacity={0.75}
       >
-        <Feather name="align-left" size={13} color={isDark ? '#F8FAFC' : '#0B132B'} />
+        <Icon name="align-left" size={13} color={colors.foreground} />
       </TouchableOpacity>
 
-      <View style={[styles.tabDivider, { backgroundColor: isDark ? '#334155' : '#E2E8F0' }]} />
+      <View style={[styles.tabDivider, { backgroundColor: colors.border }]} />
 
       <View
         style={[
           styles.tabPillsTrack,
           {
-            backgroundColor: isDark ? '#181F2C' : '#ECEEF1',
-            borderColor: isDark ? '#2D3748' : '#DFE2E6',
+            backgroundColor: isDark ? colors.surfaceElevated : '#ECEEF1',
+            borderColor: colors.border,
           },
         ]}
       >
         {TABS.map((t) => {
           const isActive = activeTab === t.key;
-          const count = countFor(t.key);
+          const count = tabCounts[t.key];
           return (
             <Pressable
               key={t.key}
@@ -381,7 +438,7 @@ export default function ApplicationsScreen() {
                 isActive && styles.tabPillActive,
                 {
                   backgroundColor: isActive
-                    ? (isDark ? '#2B3548' : '#FFFFFF')
+                    ? colors.pillActiveBg
                     : 'transparent',
                 },
               ]}
@@ -392,8 +449,8 @@ export default function ApplicationsScreen() {
                     styles.tabPillText,
                     {
                       color: isActive
-                        ? (isDark ? '#FFFFFF' : '#0B132B')
-                        : (isDark ? '#8A97A8' : '#6B7280'),
+                        ? colors.pillActiveText
+                        : colors.mutedForeground,
                     },
                     isActive ? styles.fontBold : styles.fontSemiBold,
                   ]}
@@ -429,7 +486,7 @@ export default function ApplicationsScreen() {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]} {...swipeHandlers}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Floating Blurred Header Bar */}
       <View
         style={[
@@ -495,7 +552,7 @@ export default function ApplicationsScreen() {
           pointerEvents={showSearch ? 'auto' : 'none'}
         >
           <View style={[styles.searchInner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Feather name="search" size={16} color={colors.mutedForeground} />
+            <Icon name="search" size={16} color={colors.mutedForeground} />
             <TextInput
               ref={searchRef}
               style={[styles.searchInput, { color: colors.foreground }]}
@@ -507,7 +564,7 @@ export default function ApplicationsScreen() {
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10}>
-                <Feather name="x-circle" size={18} color={colors.mutedForeground} />
+                <Icon name="x-circle" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             )}
           </View>
@@ -522,16 +579,17 @@ export default function ApplicationsScreen() {
             top: stickyTabsTop,
           },
         ]}
-        pointerEvents="box-none"
+        pointerEvents={isStickyActive ? 'box-none' : 'none'}
       >
         <Animated.View
           style={{ opacity: stickyTabsOpacity }}
-          pointerEvents="box-none"
+          pointerEvents={isStickyActive ? 'box-none' : 'none'}
         >
           <BlurView
             intensity={Platform.OS === 'ios' ? 90 : 75}
             tint={isDark ? 'dark' : 'light'}
             style={StyleSheet.absoluteFill}
+            pointerEvents="none"
           />
           <LinearGradient
             colors={
@@ -540,20 +598,46 @@ export default function ApplicationsScreen() {
                 : ['rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.40)']
             }
             style={StyleSheet.absoluteFill}
+            pointerEvents="none"
           />
           {renderTabPills()}
         </Animated.View>
       </Animated.View>
 
-      {/* SectionList with Smooth Blurred Stickiness */}
-      <AnimatedSectionList
-        style={{ flex: 1 }}
-        sections={[{ title: 'Applications', data: filtered }]}
-        keyExtractor={(item) => item.id.toString()}
-        stickySectionHeadersEnabled={false}
+      {/* Main Content Area */}
+      {isLoading && applications.length === 0 ? (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingTop: topPad + 56 + 8,
+            paddingBottom: insets.bottom + 90,
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          <ApplicationsSkeleton />
+        </ScrollView>
+      ) : (
+        /* SectionList with Smooth Blurred Stickiness */
+        <AnimatedSectionList
+          style={{ flex: 1 }}
+          sections={[{ title: 'Applications', data: filtered }]}
+          keyExtractor={keyExtractor}
+          stickySectionHeadersEnabled={false}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS !== 'web'}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true }
+          {
+            useNativeDriver: true,
+            listener: (e: any) => {
+              const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+              const threshold = Math.max(0, listHeaderHeight - 8);
+              const active = y >= threshold;
+              setIsStickyActive((prev) => (prev !== active ? active : prev));
+            },
+          }
         )}
         scrollEventThrottle={16}
         contentContainerStyle={{
@@ -573,6 +657,8 @@ export default function ApplicationsScreen() {
             {/* Animated search spacer to shift content down seamlessly */}
             <Animated.View style={{ height: searchSpacerHeight }} />
 
+            <ProFeatureBanner featureName="Applications Management" />
+
             <View
               onLayout={(e) => {
                 const h = Math.round(e.nativeEvent.layout.height);
@@ -585,12 +671,17 @@ export default function ApplicationsScreen() {
             {/* Active filter chip */}
             {hasFilter && (
               <View style={[styles.filterBar, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
-                <Feather name="filter" size={12} color={colors.primary} />
+                <Icon name="filter" size={12} color={colors.primary} />
                 <Text style={[styles.filterBarText, { color: colors.primary }]}>
                   {filterChipLabel}
                 </Text>
-                <TouchableOpacity onPress={() => { setFilterUserIds([]); setFilterBrokers([]); setFilterIpoNames([]); setFilterBankNames([]); setFilterYear(null); }} hitSlop={8}>
-                  <Feather name="x" size={14} color={colors.primary} />
+                <TouchableOpacity
+                  onPress={clearFilters}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  style={styles.filterBarCloseBtn}
+                  activeOpacity={0.7}
+                >
+                  <Icon name="x" size={14} color={colors.primary} />
                 </TouchableOpacity>
               </View>
             )}
@@ -633,26 +724,11 @@ export default function ApplicationsScreen() {
             </View>
           </View>
         )}
-        renderItem={({ item }) => (
-          <ApplicationCard
-            application={item}
-            onPress={() => {
-              if (isSelectionMode) {
-                toggleSelectApp(item.id);
-              } else {
-                setSelectedApp(item);
-              }
-            }}
-            isAppliedTab={activeTab === 'Applied'}
-            isSelectionMode={isSelectionMode}
-            isSelected={selectedAppIds.includes(item.id)}
-            onSelectToggle={() => toggleSelectApp(item.id)}
-          />
-        )}
+        renderItem={renderItem}
         ListEmptyComponent={() => (
           <View style={styles.empty}>
             <View style={[styles.emptyIcon, { backgroundColor: colors.surface }]}>
-              <Feather
+              <Icon
                 name="inbox"
                 size={28}
                 color={colors.mutedForeground}
@@ -669,6 +745,7 @@ export default function ApplicationsScreen() {
           </View>
         )}
       />
+      )}
 
       {/* Floating Action Bar (White Surface, Topmost Layer Above Menu) */}
       {isSelectionMode && (
@@ -676,7 +753,7 @@ export default function ApplicationsScreen() {
           style={[
             styles.floatingBulkContainer,
             {
-              backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+              backgroundColor: colors.card,
               borderColor: colors.border,
               bottom: Platform.OS === 'web' ? 30 : Math.max(insets.bottom + 76, 92),
             },
@@ -710,7 +787,7 @@ export default function ApplicationsScreen() {
                 selectedAppIds.length === 0 && { opacity: 0.5 },
               ]}
             >
-              <Feather name="clock" size={13} color="#FFFFFF" />
+              <Icon name="clock" size={13} color="#FFFFFF" />
               <Text style={styles.bulk4BtnText}>Mandate</Text>
             </TouchableOpacity>
 
@@ -724,7 +801,7 @@ export default function ApplicationsScreen() {
                 selectedAppIds.length === 0 && { opacity: 0.5 },
               ]}
             >
-              <Feather name="check" size={13} color="#FFFFFF" />
+              <Icon name="check" size={13} color="#FFFFFF" />
               <Text style={styles.bulk4BtnText}>Allotted</Text>
             </TouchableOpacity>
 
@@ -738,7 +815,7 @@ export default function ApplicationsScreen() {
                 selectedAppIds.length === 0 && { opacity: 0.5 },
               ]}
             >
-              <Feather name="x" size={13} color="#FFFFFF" />
+              <Icon name="x" size={13} color="#FFFFFF" />
               <Text style={styles.bulk4BtnText}>Not Allotted</Text>
             </TouchableOpacity>
 
@@ -752,7 +829,7 @@ export default function ApplicationsScreen() {
                 selectedAppIds.length === 0 && { opacity: 0.5 },
               ]}
             >
-              <Feather name="slash" size={13} color="#FFFFFF" />
+              <Icon name="slash" size={13} color="#FFFFFF" />
               <Text style={styles.bulk4BtnText}>Cancelled</Text>
             </TouchableOpacity>
           </View>
@@ -835,6 +912,12 @@ const styles = StyleSheet.create({
     borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, borderWidth: 1,
   },
   filterBarText: { flex: 1, fontSize: 13, fontFamily: 'GoogleSansFlex_600SemiBold' },
+  filterBarCloseBtn: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   tabBarRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1014,3 +1097,24 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_700Bold',
   },
 });
+
+export default function ApplicationsScreen() {
+  const { isNonPro, isLoading: isExperienceLoading } = useAppExperience();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isExperienceLoading && isNonPro) {
+      if (typeof (router as any).navigate === 'function') {
+        (router as any).navigate('/(tabs)/ipos');
+      } else {
+        router.replace('/(tabs)/ipos');
+      }
+    }
+  }, [isNonPro, isExperienceLoading, router]);
+
+  if (isNonPro) {
+    return null;
+  }
+
+  return <ApplicationsScreenContent />;
+}

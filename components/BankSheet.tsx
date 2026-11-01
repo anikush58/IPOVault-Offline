@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,14 +7,15 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/ui/Icon';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DesignSystem } from '@/constants/DesignSystem';
 
 import { useColors } from '@/hooks/useColors';
-import { useTheme } from '@/context/ThemeContext';
 import { useDialog } from '@/context/DialogContext';
-import type { BankAccount } from '@/context/DBContext';
+import { useDB, type BankAccount } from '@/context/DBContext';
 import { ScoopedBottomSheet } from '@/components/ui/ScoopedBottomSheet';
 
 const IPO_LOT_COST = 15000;
@@ -29,7 +28,7 @@ export interface BankSheetProps {
   onSave: (name: string, balance: number, upiApp?: string) => void;
 }
 
-export function BankSheet({
+export const BankSheet = React.memo(function BankSheet({
   visible,
   bank,
   onClose,
@@ -37,36 +36,52 @@ export function BankSheet({
 }: BankSheetProps) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { resolvedScheme } = useTheme();
-  const isDark = resolvedScheme === 'dark';
   const isAdd = bank === null;
+  const { bankAccounts } = useDB();
 
   const [name, setName] = useState('');
   const [balance, setBalance] = useState('');
   const [upiApp, setUpiApp] = useState('');
+  const isSavingRef = React.useRef(false);
 
   useEffect(() => {
     if (visible) {
       setName(bank?.bank_name ?? '');
       setBalance(bank ? String(bank.balance) : '');
       setUpiApp(bank?.upi_app ?? '');
+      isSavingRef.current = false;
     }
   }, [visible, bank]);
 
   const { showError } = useDialog();
 
   const handleSave = () => {
+    if (isSavingRef.current) return;
     const trimmed = name.trim();
-    const num = parseFloat(balance.replace(/,/g, ''));
-    if (isAdd && !trimmed) {
+    if (!trimmed) {
       showError('Required', 'Enter a bank name.');
       return;
     }
+    const num = parseFloat(balance.replace(/,/g, ''));
     if (isNaN(num) || num < 0) {
-      showError('Invalid', 'Enter a valid balance amount.');
+      showError('Invalid', 'Enter a valid balance amount (₹0 or more).');
       return;
     }
-    onSave(trimmed, num, upiApp);
+    const isDup = bankAccounts.some(
+      (b) => b.id !== bank?.id && b.bank_name.toLowerCase().trim() === trimmed.toLowerCase()
+    );
+    if (isDup) {
+      showError('Duplicate Bank', 'A bank account with that name already exists.');
+      return;
+    }
+    isSavingRef.current = true;
+    try {
+      onSave(trimmed, num, upiApp);
+    } finally {
+      setTimeout(() => {
+        isSavingRef.current = false;
+      }, 600);
+    }
   };
 
   if (!visible) return null;
@@ -76,13 +91,6 @@ export function BankSheet({
       {/* Sheet Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <View style={styles.headerTitleGroup}>
-          <View style={[styles.headerIconWrap, { backgroundColor: colors.primary + '18' }]}>
-            <Feather
-              name={isAdd ? 'credit-card' : 'edit-2'}
-              size={18}
-              color={colors.primary}
-            />
-          </View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.title, { color: colors.foreground }]}>
               {isAdd ? 'Add Bank Account' : 'Update Bank Account'}
@@ -96,42 +104,34 @@ export function BankSheet({
         </View>
       </View>
 
-      <View style={{ flex: 1, minHeight: 0 }}>
+      <View style={{ flexShrink: 1, flexGrow: 0, minHeight: 0 }}>
         <ScrollView
-          style={{ flex: 1 }}
+          style={{ flexShrink: 1, flexGrow: 0 }}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {isAdd && (
-            <View style={styles.fieldGroup}>
-              <View style={styles.labelRow}>
-                <Feather name="briefcase" size={12} color={colors.primary} />
-                <Text style={[styles.stepLabel, { color: colors.mutedForeground }]}>BANK NAME</Text>
-              </View>
-              <View style={[styles.inputWithIcon, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-                <Feather name="credit-card" size={16} color={colors.mutedForeground} style={{ marginRight: 10 }} />
-                <TextInput
-                  style={[styles.inputInside, { color: colors.foreground }]}
-                  placeholder="e.g. HDFC Bank"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={name}
-                  onChangeText={setName}
-                  autoCapitalize="words"
-                />
-              </View>
+          <View style={styles.fieldGroup}>
+            <View style={styles.labelRow}>
+              <Text style={[styles.stepLabel, { color: colors.mutedForeground }]}>BANK NAME</Text>
             </View>
-          )}
+            <View style={[styles.inputWithIcon, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+              <TextInput
+                style={[styles.inputInside, { color: colors.foreground }]}
+                placeholder="e.g. HDFC Bank"
+                placeholderTextColor={colors.mutedForeground}
+                value={name}
+                onChangeText={setName}
+                autoCapitalize="words"
+              />
+            </View>
+          </View>
 
           <View style={styles.fieldGroup}>
             <View style={styles.labelRow}>
-              <Feather name="dollar-sign" size={12} color={colors.primary} />
               <Text style={[styles.stepLabel, { color: colors.mutedForeground }]}>CURRENT BALANCE (₹)</Text>
             </View>
             <View style={[styles.inputWithIcon, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-              <Text style={{ fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', color: colors.mutedForeground, marginRight: 8 }}>
-                ₹
-              </Text>
               <TextInput
                 style={[styles.inputInside, { color: colors.foreground }]}
                 placeholder="e.g. 75000"
@@ -147,7 +147,6 @@ export function BankSheet({
           {/* BIND DEFAULT UPI APP */}
           <View style={styles.fieldGroup}>
             <View style={styles.labelRow}>
-              <Feather name="smartphone" size={12} color={colors.primary} />
               <Text style={[styles.stepLabel, { color: colors.mutedForeground }]}>
                 BIND DEFAULT UPI APP (AUTO-SELECT IN BULK APPLY)
               </Text>
@@ -173,11 +172,13 @@ export function BankSheet({
                     ]}
                     activeOpacity={0.7}
                   >
-                    <Feather
-                      name={isSelected ? 'check' : 'smartphone'}
-                      size={12}
-                      color={isSelected ? colors.primaryForeground : colors.mutedForeground}
-                    />
+                    {isSelected && (
+                      <Icon
+                        name="check"
+                        size={12}
+                        color={colors.primaryForeground}
+                      />
+                    )}
                     <Text
                       style={[
                         styles.chipText,
@@ -197,7 +198,7 @@ export function BankSheet({
 
           {balance.length > 0 && !isNaN(parseFloat(balance)) && (
             <View style={[styles.preview, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Feather name="trending-up" size={14} color={colors.primary} />
+              <Icon name="trending-up" size={14} color={colors.primary} />
               <Text style={[styles.previewText, { color: colors.mutedForeground }]}>
                 IPO capacity:{' '}
                 <Text style={[styles.previewBold, { color: colors.primary }]}>
@@ -232,7 +233,7 @@ export function BankSheet({
       </View>
     </ScoopedBottomSheet>
   );
-}
+});
 
 // Alias export for backward compatibility
 export const BankModal = BankSheet;

@@ -18,6 +18,7 @@ import { IPORepository } from '@/services/ipo/ipoRepository';
 import { IPOMasterRecord } from '@/services/ipo/types';
 import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 import { IPODetailsLayout } from '@/components/ipo/IPODetailsLayout';
+import { IPODetailsSkeleton } from '@/components/ipo/IPOSkeleton';
 
 export default function IPODetailsScreen() {
   const colors = useColors();
@@ -123,12 +124,7 @@ export default function IPODetailsScreen() {
             <Feather name="arrow-left" size={19} color={colors.foreground} />
           </TouchableOpacity>
         </View>
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.mutedForeground, marginTop: 12 }]}>
-            Loading IPO Details...
-          </Text>
-        </View>
+        <IPODetailsSkeleton />
       </View>
     );
   }

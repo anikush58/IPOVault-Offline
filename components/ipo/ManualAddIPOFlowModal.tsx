@@ -12,6 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/ui/Icon';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -115,31 +116,21 @@ export const ManualAddIPOFlowModal = React.memo(function ManualAddIPOFlowModal({
         <View style={[styles.modalContent, { backgroundColor: colors.card, borderColor: colors.border }]}>
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, marginRight: 8 }}>
-              <View
-                style={[
-                  styles.headerIconWrap,
-                  { backgroundColor: colors.primary + '18' },
-                ]}
-              >
-                <Feather name="search" size={18} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.title, { color: colors.foreground }]}>Check Existing IPO</Text>
-                <Text style={[styles.subtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
-                  Step 1 of 2 · Search database before adding
-                </Text>
-              </View>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={[styles.title, { color: colors.foreground }]}>Check Existing IPO</Text>
+              <Text style={[styles.subtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
+                Step 1 of 2 · Search database before adding
+              </Text>
             </View>
             <TouchableOpacity onPress={onClose} style={[styles.closeBtn, { backgroundColor: colors.surface }]} hitSlop={8}>
-              <Feather name="x" size={18} color={colors.foreground} />
+              <Icon name="x" size={18} color={colors.foreground} />
             </TouchableOpacity>
           </View>
 
           {/* Search Field */}
           <View style={styles.searchSection}>
             <View style={[styles.inputWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Feather name="search" size={18} color={colors.mutedForeground} />
+              <Icon name="search" size={18} color={colors.mutedForeground} />
               <TextInput
                 value={query}
                 onChangeText={handleSearch}
@@ -150,7 +141,7 @@ export const ManualAddIPOFlowModal = React.memo(function ManualAddIPOFlowModal({
               />
               {query ? (
                 <TouchableOpacity onPress={() => handleSearch('')} hitSlop={8}>
-                  <Feather name="x-circle" size={16} color={colors.mutedForeground} />
+                  <Icon name="x-circle" size={16} color={colors.mutedForeground} />
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -177,7 +168,7 @@ export const ManualAddIPOFlowModal = React.memo(function ManualAddIPOFlowModal({
           ) : hasSearched && query.trim() ? (
             <View style={styles.emptyWrap}>
               <View style={[styles.emptyIcon, { backgroundColor: colors.primary + '14' }]}>
-                <Feather name="search" size={24} color={colors.primary} />
+                <Icon name="search" size={24} color={colors.primary} />
               </View>
               <Text style={[styles.emptyTitle, { color: colors.foreground }]}>IPO Not Found</Text>
               <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
@@ -199,7 +190,6 @@ export const ManualAddIPOFlowModal = React.memo(function ManualAddIPOFlowModal({
               style={[styles.createBtn, { backgroundColor: colors.primary }]}
               activeOpacity={0.85}
             >
-              <Feather name="plus-circle" size={18} color={colors.primaryForeground} />
               <Text style={[styles.createBtnText, { color: colors.primaryForeground }]}>Create Manually</Text>
             </TouchableOpacity>
           </View>

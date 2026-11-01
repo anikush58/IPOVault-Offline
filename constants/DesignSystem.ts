@@ -49,6 +49,7 @@ export const DesignSystem = {
   },
 
   gradients: {
+    cta: ['#05D672', '#00BCD4', '#1A8CFF', '#7662FA'] as const,
     gold: ['#D4A017', '#E5C158'] as const,
     goldDark: ['#B8860B', '#D4A017'] as const,
   },

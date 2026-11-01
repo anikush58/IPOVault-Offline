@@ -20,6 +20,7 @@ import { IPOMasterRecord } from '@/services/ipo/types';
 import { calculateNormalizedIPOStatus } from '@/services/ipo/statusNormalizer';
 import { IPOCard } from './IPOCard';
 import { IPOEmptyState } from './IPOEmptyState';
+import { IPOSkeletonList } from './IPOSkeleton';
 import { SegmentedTabControl } from '@/components/ui/SegmentedTabControl';
 
 export type IPOSubTab = 'open' | 'upcoming' | 'listed';
@@ -28,6 +29,7 @@ export type SortOption = 'DEFAULT' | 'GMP' | 'DATE' | 'MIN_INVEST' | 'NAME';
 interface IPOsTabProps {
   repo?: any;
   ipos?: any[];
+  loading?: boolean;
   onSelectIPO?: (ipo: any) => void;
   onOpenManualAdd?: () => void;
   onRefresh?: () => Promise<void>;
@@ -38,6 +40,7 @@ interface IPOsTabProps {
 export function IPOsTab({
   repo,
   ipos: propIpos,
+  loading = false,
   onSelectIPO,
   onOpenManualAdd,
   onRefresh,
@@ -223,7 +226,11 @@ export function IPOsTab({
       </View>
 
       {/* Primary Feed View */}
-      {currentList.length > 0 ? (
+      {loading && allIpos.length === 0 ? (
+        <View style={{ paddingBottom: bottomPad }}>
+          <IPOSkeletonList count={4} />
+        </View>
+      ) : currentList.length > 0 ? (
         <View style={[styles.feedContainer, { paddingBottom: bottomPad }]}>
           {currentList.map((ipo) => (
             <IPOCard

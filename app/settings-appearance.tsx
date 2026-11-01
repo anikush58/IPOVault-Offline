@@ -7,28 +7,15 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
+import { Icon } from '@/components/ui/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
-import { useTheme } from '@/context/ThemeContext';
-import { IconButton } from '@/components/ui/IconButton';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 
 export default function SettingsAppearanceScreen() {
   const colors = useColors();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { preference, setPreference, resolvedScheme } = useTheme();
-  const isDark = resolvedScheme === 'dark';
-
   const topPad = Platform.OS === 'web' ? 20 : insets.top;
-
-  const handleSelectTheme = (theme: 'light' | 'dark' | 'system') => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setPreference(theme);
-  };
 
   const activeColor = '#3B82F6';
 
@@ -39,6 +26,7 @@ export default function SettingsAppearanceScreen() {
         title="Appearance"
         centerTitle
         showBack
+        transparent
       />
 
       <ScrollView
@@ -53,94 +41,30 @@ export default function SettingsAppearanceScreen() {
           Choose how IPOVault looks on your device
         </Text>
 
-        {/* 3 Theme Selection Cards */}
+        {/* Theme Selection */}
         <View style={styles.themeCardsRow}>
           {/* Light Theme Card */}
-          <TouchableOpacity
+          <View
             style={[
               styles.themeCard,
               {
                 backgroundColor: colors.card,
-                borderColor: preference === 'light' ? activeColor : colors.border,
+                borderColor: activeColor,
               },
-              preference === 'light' && styles.themeCardActive,
+              styles.themeCardActive,
             ]}
-            activeOpacity={0.8}
-            onPress={() => handleSelectTheme('light')}
           >
             <View style={[styles.themeIconWrap, { backgroundColor: '#FEF3C7' }]}>
-              <Feather name="sun" size={22} color="#F59E0B" />
+              <Icon name="sun" size={22} color="#F59E0B" />
             </View>
-            <Text style={[styles.themeTitle, { color: colors.foreground }]}>Light</Text>
-            <Text style={[styles.themeSub, { color: colors.mutedForeground }]}>Clean and bright</Text>
+            <Text style={[styles.themeTitle, { color: colors.foreground }]}>Light Mode</Text>
+            <Text style={[styles.themeSub, { color: colors.mutedForeground }]}>Clean, crisp and bright</Text>
             <View style={styles.checkSlot}>
-              {preference === 'light' ? (
-                <View style={[styles.checkBadge, { backgroundColor: activeColor }]}>
-                  <Feather name="check" size={11} color="#FFFFFF" />
-                </View>
-              ) : (
-                <View style={[styles.checkPlaceholder, { borderColor: isDark ? '#374151' : '#E5E7EB' }]} />
-              )}
+              <View style={[styles.checkBadge, { backgroundColor: activeColor }]}>
+                <Icon name="check" size={11} color="#FFFFFF" strokeWidth={2.5} />
+              </View>
             </View>
-          </TouchableOpacity>
-
-          {/* Dark Theme Card */}
-          <TouchableOpacity
-            style={[
-              styles.themeCard,
-              {
-                backgroundColor: colors.card,
-                borderColor: preference === 'dark' ? activeColor : colors.border,
-              },
-              preference === 'dark' && styles.themeCardActive,
-            ]}
-            activeOpacity={0.8}
-            onPress={() => handleSelectTheme('dark')}
-          >
-            <View style={[styles.themeIconWrap, { backgroundColor: isDark ? '#334155' : '#1E293B' }]}>
-              <Feather name="moon" size={22} color="#F1F5F9" />
-            </View>
-            <Text style={[styles.themeTitle, { color: colors.foreground }]}>Dark</Text>
-            <Text style={[styles.themeSub, { color: colors.mutedForeground }]}>Easy on eyes</Text>
-            <View style={styles.checkSlot}>
-              {preference === 'dark' ? (
-                <View style={[styles.checkBadge, { backgroundColor: activeColor }]}>
-                  <Feather name="check" size={11} color="#FFFFFF" />
-                </View>
-              ) : (
-                <View style={[styles.checkPlaceholder, { borderColor: isDark ? '#374151' : '#E5E7EB' }]} />
-              )}
-            </View>
-          </TouchableOpacity>
-
-          {/* System Theme Card */}
-          <TouchableOpacity
-            style={[
-              styles.themeCard,
-              {
-                backgroundColor: colors.card,
-                borderColor: preference === 'system' ? activeColor : colors.border,
-              },
-              preference === 'system' && styles.themeCardActive,
-            ]}
-            activeOpacity={0.8}
-            onPress={() => handleSelectTheme('system')}
-          >
-            <View style={[styles.themeIconWrap, { backgroundColor: isDark ? '#1E293B' : '#EFF6FF' }]}>
-              <Feather name="smartphone" size={22} color="#3B82F6" />
-            </View>
-            <Text style={[styles.themeTitle, { color: colors.foreground }]}>System</Text>
-            <Text style={[styles.themeSub, { color: colors.mutedForeground }]}>Follow device</Text>
-            <View style={styles.checkSlot}>
-              {preference === 'system' ? (
-                <View style={[styles.checkBadge, { backgroundColor: activeColor }]}>
-                  <Feather name="check" size={11} color="#FFFFFF" />
-                </View>
-              ) : (
-                <View style={[styles.checkPlaceholder, { borderColor: isDark ? '#374151' : '#E5E7EB' }]} />
-              )}
-            </View>
-          </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </View>

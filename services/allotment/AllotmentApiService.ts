@@ -4,6 +4,18 @@ import { API_BASE_URL } from '@/constants/apiConfig';
 import { getAuthHeaders } from '../api/authHeaders';
 import { ApiError } from '../api/ApiError';
 
+export interface CategoryAllotmentResult {
+  category?: string;
+  rawCategory?: string;
+  status: string;
+  sharesApplied?: number | null;
+  sharesAllotted?: number | null;
+  allotmentPrice?: number | null;
+  amountApplied?: number | null;
+  amountRefunded?: number | null;
+  applicationNumber?: string | null;
+}
+
 export interface BackendJobItem {
   id: string;
   maskedId: string;
@@ -12,6 +24,7 @@ export interface BackendJobItem {
   sharesAllotted?: number | null;
   errorMessage?: string | null;
   checkedAt?: string | null;
+  categoryResults?: CategoryAllotmentResult[];
 }
 
 export interface BackendJobResponse {

@@ -46,3 +46,8 @@ app-example
 # scratch
 scratch/
 
+# Temporary root captures & compiled test outputs
+/*.png
+__tests__/*.cjs
+
+

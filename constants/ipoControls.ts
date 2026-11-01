@@ -16,6 +16,14 @@ export const CONTROLLED_REGISTRARS: ControlledOption[] = [
   { code: 'MUDRA', label: 'Mudra RTA' },
   { code: 'ALANKIT', label: 'Alankit Assignments' },
   { code: 'BEETAL', label: 'Beetal Financial' },
+  { code: 'DATAMATICS', label: 'Datamatics' },
+  { code: 'VCCIPL', label: 'Venture Capital (VCCIPL)' },
+  { code: 'ANKIT', label: 'Ankit Consultancy' },
+  { code: 'SK_INFO', label: 'SK Info Solutions' },
+  { code: 'SHAREX', label: 'Sharex Dynamic' },
+  { code: 'MCS', label: 'MCS Share Transfer' },
+  { code: 'NICHE', label: 'Niche Technologies' },
+  { code: 'MAHESHWARI', label: 'Maheshwari Datamatics' },
   { code: 'OTHER', label: 'Other / Unknown' },
 ];
 
@@ -52,6 +60,15 @@ export function getRegistrarLabel(codeOrText?: string | null): string {
   if (clean.includes('MAS')) return 'Mas Services';
   if (clean.includes('MUDRA')) return 'Mudra RTA';
   if (clean.includes('ALANKIT')) return 'Alankit Assignments';
+  if (clean.includes('BEETAL')) return 'Beetal Financial';
+  if (clean.includes('DATAMATICS') && !clean.includes('MAHESHWARI')) return 'Datamatics';
+  if (clean.includes('VCCIPL') || clean.includes('VENTURECAPITAL')) return 'Venture Capital (VCCIPL)';
+  if (clean.includes('ANKIT')) return 'Ankit Consultancy';
+  if (clean.includes('SKINFO')) return 'SK Info Solutions';
+  if (clean.includes('SHAREX')) return 'Sharex Dynamic';
+  if (clean.includes('MCS')) return 'MCS Share Transfer';
+  if (clean.includes('NICHE')) return 'Niche Technologies';
+  if (clean.includes('MAHESHWARI')) return 'Maheshwari Datamatics';
   return trimmed;
 }
 
@@ -74,6 +91,14 @@ export function resolveRegistrarCode(input?: string | null): string {
   if (clean.includes('MUDRA')) return 'MUDRA';
   if (clean.includes('ALANKIT')) return 'ALANKIT';
   if (clean.includes('BEETAL')) return 'BEETAL';
+  if (clean.includes('DATAMATICS') && !clean.includes('MAHESHWARI')) return 'DATAMATICS';
+  if (clean.includes('VCCIPL') || clean.includes('VENTURECAPITAL')) return 'VCCIPL';
+  if (clean.includes('ANKIT')) return 'ANKIT';
+  if (clean.includes('SKINFO')) return 'SK_INFO';
+  if (clean.includes('SHAREX')) return 'SHAREX';
+  if (clean.includes('MCS')) return 'MCS';
+  if (clean.includes('NICHE')) return 'NICHE';
+  if (clean.includes('MAHESHWARI')) return 'MAHESHWARI';
 
   const exact = CONTROLLED_REGISTRARS.find((r) => r.code === upper);
   return exact ? exact.code : 'OTHER';

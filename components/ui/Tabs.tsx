@@ -158,7 +158,7 @@ export function Tabs<T extends string = string>({
             isActive && [
               styles.pillTabBtnActive,
               {
-                backgroundColor: isDark ? '#2B3548' : '#111827',
+                backgroundColor: colors.pillActiveBg,
               },
             ],
             tabStyle,
@@ -177,7 +177,7 @@ export function Tabs<T extends string = string>({
               <Feather
                 name={tab.icon}
                 size={pillTrackHeight >= 36 ? 12 : 11}
-                color={isActive ? '#FFFFFF' : (isDark ? '#8A97A8' : '#6B7280')}
+                color={isActive ? colors.pillActiveText : colors.mutedForeground}
               />
             ) : null}
             <Text
@@ -186,8 +186,8 @@ export function Tabs<T extends string = string>({
                 {
                   fontSize: pillFontSize,
                   color: isActive
-                    ? '#FFFFFF'
-                    : (isDark ? '#8A97A8' : '#6B7280'),
+                    ? colors.pillActiveText
+                    : colors.mutedForeground,
                 },
                 isActive ? styles.fontBold : styles.fontSemiBold,
                 textStyle,
@@ -208,7 +208,7 @@ export function Tabs<T extends string = string>({
                     height: pillBadgeSize,
                     borderRadius: pillBadgeRadius,
                     backgroundColor: isActive
-                      ? '#EF4444'
+                      ? colors.negative
                       : (isDark ? 'rgba(255, 255, 255, 0.12)' : '#DDE1E6'),
                   },
                 ]}
@@ -221,7 +221,7 @@ export function Tabs<T extends string = string>({
                       lineHeight: pillBadgeSize - 3,
                       color: isActive
                         ? '#FFFFFF'
-                        : (isDark ? '#8A97A8' : '#6B7280'),
+                        : colors.mutedForeground,
                     },
                   ]}
                 >
@@ -333,8 +333,8 @@ export function Tabs<T extends string = string>({
               {
                 minHeight: pillTrackHeight,
                 borderRadius: pillRadius,
-                backgroundColor: isDark ? '#181F2C' : '#ECEEF1',
-                borderColor: isDark ? '#2D3748' : '#DFE2E6',
+                backgroundColor: isDark ? colors.surfaceElevated : '#ECEEF1',
+                borderColor: colors.border,
               },
             ]}
           >
@@ -351,8 +351,8 @@ export function Tabs<T extends string = string>({
           {
             minHeight: pillTrackHeight,
             borderRadius: pillRadius,
-            backgroundColor: isDark ? '#181F2C' : '#ECEEF1',
-            borderColor: isDark ? '#2D3748' : '#DFE2E6',
+            backgroundColor: isDark ? colors.surfaceElevated : '#ECEEF1',
+            borderColor: colors.border,
           },
           style,
         ]}

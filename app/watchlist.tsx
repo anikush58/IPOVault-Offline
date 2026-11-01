@@ -6,7 +6,6 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -22,6 +21,7 @@ import { IPORepository } from '@/services/ipo/ipoRepository';
 import { IPOMasterRecord } from '@/services/ipo/types';
 import { IPOCard } from '@/components/ipo/IPOCard';
 import { IPOEmptyState } from '@/components/ipo/IPOEmptyState';
+import { WatchlistSkeleton } from '@/components/watchlist/WatchlistSkeleton';
 
 export default function WatchlistScreen() {
   const colors = useColors();
@@ -127,9 +127,8 @@ export default function WatchlistScreen() {
       />
 
       {loading ? (
-        <View style={[styles.loadingWrap, { paddingTop: topPad + 60 }]}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.mutedForeground }]}>Loading your watchlist...</Text>
+        <View style={{ paddingTop: topPad + 60 }}>
+          <WatchlistSkeleton />
         </View>
       ) : (
         <FlatList

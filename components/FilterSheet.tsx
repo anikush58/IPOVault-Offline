@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import {
+  Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,12 +11,14 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/ui/Icon';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
+import { DesignSystem } from '@/constants/DesignSystem';
 import { useDB, type User, type BankAccount, type ApplicationWithDetails } from '@/context/DBContext';
-import { ScoopedBottomSheet } from '@/components/ui/ScoopedBottomSheet';
 
 type Props = {
   visible: boolean;
@@ -181,51 +185,62 @@ export function FilterSheet({
 
   return (
     <>
-      {/* Main Filter Scooped Bottom Sheet */}
-      <ScoopedBottomSheet
+      {/* Main Filter Modal */}
+      <Modal
         visible={visible && activePicker === null}
-        onClose={onClose}
-        maxHeight="88%"
+        animationType="fade"
+        transparent
+        onRequestClose={onClose}
       >
-        {/* Sheet Header */}
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <View style={styles.headerTitleGroup}>
-            <View style={[styles.headerIconWrap, { backgroundColor: colors.primary + '18' }]}>
-              <Feather name="filter" size={16} color={colors.primary} />
-            </View>
-            <View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={[styles.title, { color: colors.foreground }]}>Filter Records</Text>
-                {activeCount > 0 && (
-                  <View style={[styles.activeBadge, { backgroundColor: colors.primary }]}>
-                    <Text style={[styles.activeBadgeText, { color: colors.primaryForeground }]}>{activeCount}</Text>
+        <View style={styles.centerModalOverlay}>
+          <Pressable style={styles.backdropDismiss} onPress={onClose} />
+          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {/* Modal Header */}
+            <View style={[styles.header, { borderBottomColor: colors.border }]}>
+              <View style={styles.headerTitleGroup}>
+                <View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={[styles.title, { color: colors.foreground }]}>Filter Records</Text>
+                    {activeCount > 0 && (
+                      <View style={[styles.activeBadge, { backgroundColor: colors.primary }]}>
+                        <Text style={[styles.activeBadgeText, { color: colors.primaryForeground }]}>{activeCount}</Text>
+                      </View>
+                    )}
                   </View>
-                )}
+                  <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
+                    Refine dashboard & application list
+                  </Text>
+                </View>
               </View>
-              <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-                Refine dashboard & application list
-              </Text>
+
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {activeCount > 0 && (
+                  <TouchableOpacity
+                    onPress={handleClearAll}
+                    style={[styles.clearBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}
+                    activeOpacity={0.7}
+                  >
+                    <Feather name="rotate-ccw" size={12} color={colors.primary} style={{ marginRight: 4 }} />
+                    <Text style={[styles.clearText, { color: colors.primary }]}>Reset</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  onPress={onClose}
+                  style={[styles.closeBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                  hitSlop={8}
+                >
+                  <Feather name="x" size={16} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
 
-          {activeCount > 0 && (
-            <TouchableOpacity
-              onPress={handleClearAll}
-              style={[styles.clearBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}
-              activeOpacity={0.7}
-            >
-              <Feather name="rotate-ccw" size={12} color={colors.primary} style={{ marginRight: 4 }} />
-              <Text style={[styles.clearText, { color: colors.primary }]}>Reset</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
+          <ScrollView
+            style={{ flexShrink: 1, flexGrow: 0 }}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            keyboardShouldPersistTaps="handled"
+          >
           {/* If bank and broker are both hidden (Dashboard filter) */}
           {hideBank && hideBroker ? (
             <View style={styles.gridRow}>
@@ -512,45 +527,57 @@ export function FilterSheet({
         </ScrollView>
 
         {/* Bottom Actions */}
-        <View style={[styles.footer, { borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 22) + 6 }]}>
+        <View style={[styles.footer, { borderTopColor: colors.border, paddingBottom: 16 }]}>
           <TouchableOpacity
             onPress={handleApply}
             style={[styles.applyBtn, { backgroundColor: colors.primary }]}
             activeOpacity={0.85}
           >
-            <Feather name="check" size={16} color={colors.primaryForeground} style={{ marginRight: 6 }} />
             <Text style={[styles.applyBtnText, { color: colors.primaryForeground }]}>
               {activeCount > 0 ? `Apply Filters (${activeCount})` : 'Apply Filters'}
             </Text>
           </TouchableOpacity>
         </View>
-      </ScoopedBottomSheet>
-
-      {/* Option Picker Scooped Bottom Sheet */}
-      <ScoopedBottomSheet
-        visible={activePicker !== null}
-        onClose={() => setActivePicker(null)}
-        maxHeight="85%"
-      >
-        <View style={[styles.pickerTitleRow, { borderBottomColor: colors.border }]}>
-          <View>
-            <Text style={[styles.pickerTitle, { color: colors.foreground }]}>
-              {activePicker === 'bank' && 'Select Banks'}
-              {activePicker === 'user' && 'Select Users'}
-              {activePicker === 'broker' && 'Select Brokers'}
-              {activePicker === 'year' && 'Select Year'}
-              {activePicker === 'ipo' && 'Select IPOs'}
-            </Text>
-            <Text style={[styles.pickerSubtitle, { color: colors.mutedForeground }]}>
-              {activePicker === 'year' ? 'Choose specific filing year' : 'Choose one or multiple items'}
-            </Text>
           </View>
         </View>
+      </Modal>
+
+      {/* Option Picker Modal */}
+      <Modal
+        visible={visible && activePicker !== null}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setActivePicker(null)}
+      >
+        <View style={styles.centerModalOverlay}>
+          <Pressable style={styles.backdropDismiss} onPress={() => setActivePicker(null)} />
+          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.pickerTitleRow, { borderBottomColor: colors.border }]}>
+              <View style={{ flex: 1, marginRight: 12 }}>
+                <Text style={[styles.pickerTitle, { color: colors.foreground }]} numberOfLines={1}>
+                  {activePicker === 'bank' && 'Select Banks'}
+                  {activePicker === 'user' && 'Select Users'}
+                  {activePicker === 'broker' && 'Select Brokers'}
+                  {activePicker === 'year' && 'Select Year'}
+                  {activePicker === 'ipo' && 'Select IPOs'}
+                </Text>
+                <Text style={[styles.pickerSubtitle, { color: colors.mutedForeground }]}>
+                  {activePicker === 'year' ? 'Choose specific filing year' : 'Choose one or multiple items'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setActivePicker(null)}
+                style={[styles.closeBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                hitSlop={8}
+              >
+                <Feather name="x" size={16} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
 
         {/* Search bar for option lists */}
         {(activePicker === 'bank' || activePicker === 'user' || activePicker === 'broker' || activePicker === 'ipo') && (
           <View style={[styles.searchBox, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-            <Feather name="search" size={15} color={colors.mutedForeground} />
+            <Icon name="search" size={15} color={colors.mutedForeground} />
             <TextInput
               placeholder="Search options..."
               placeholderTextColor={colors.mutedForeground}
@@ -560,18 +587,18 @@ export function FilterSheet({
             />
             {pickerSearch.length > 0 && (
               <TouchableOpacity onPress={() => setPickerSearch('')}>
-                <Feather name="x" size={15} color={colors.mutedForeground} />
+                <Icon name="x" size={15} color={colors.mutedForeground} />
               </TouchableOpacity>
             )}
           </View>
         )}
 
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          style={{ maxHeight: 320 }}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 4, gap: 6 }}
-          showsVerticalScrollIndicator={false}
-        >
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            style={{ flexShrink: 1, flexGrow: 0, maxHeight: 380 }}
+            contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 4, gap: 6 }}
+            showsVerticalScrollIndicator={false}
+          >
           {/* PICKER: BANK */}
           {activePicker === 'bank' && (
             <>
@@ -860,7 +887,7 @@ export function FilterSheet({
           )}
         </ScrollView>
 
-        <View style={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: Math.max(insets.bottom, 22) + 6 }}>
+        <View style={[styles.footer, { borderTopColor: colors.border, paddingBottom: 16 }]}>
           <TouchableOpacity
             onPress={() => setActivePicker(null)}
             style={[styles.applyBtn, { backgroundColor: colors.primary }]}
@@ -869,7 +896,9 @@ export function FilterSheet({
             <Text style={[styles.applyBtnText, { color: colors.primaryForeground }]}>Done</Text>
           </TouchableOpacity>
         </View>
-      </ScoopedBottomSheet>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -1047,6 +1076,39 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  centerModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  backdropDismiss: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 440,
+    maxHeight: '85%',
+    borderRadius: 24,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+    paddingTop: 16,
+    zIndex: 10,
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },

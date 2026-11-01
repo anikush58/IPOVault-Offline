@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+
   Modal,
   Platform,
   Pressable,
@@ -10,23 +11,37 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { useDB } from '@/context/DBContext';
+import { DesignSystem } from '@/constants/DesignSystem';
 import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 import { useDialog } from '@/context/DialogContext';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, getResolvedLogoUrl } from '@/utils/formatters';
 import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { ScoopedBottomSheet } from '@/components/ui/ScoopedBottomSheet';
 import { BackendIpo } from '@/types/backend-ipo';
 import { safeRunAsync } from '@/utils/sqliteDebug';
 import { startPerfTimer } from '@/utils/performanceMetrics';
+import { isIpoAvailableForBulkApply } from '@/utils/bulkApplyUtils';
+import { isCustomAvatarUrl } from '@/utils/avatarUtils';
 
 import { calculateNormalizedIPOStatus } from '@/services/ipo/statusNormalizer';
+import {
+  IpoCategory,
+  CATEGORY_OPTIONS,
+  validateCategoryBid,
+  getIpoOfferCategories,
+  getCategoryLotLimits,
+  CategoryLotLimits,
+  resolveIpoLotSize,
+} from '@/utils/ipoCategoryUtils';
 
 function parseDateOnly(dateStr?: string | null): string | null {
   if (!dateStr || typeof dateStr !== 'string') return null;
@@ -147,7 +162,10 @@ export function BulkApplySheet({ visible, onClose }: Props) {
   const [bulkIPOId, setBulkIPOId] = useState<string | null>(null);
   const [bulkBankName, setBulkBankName] = useState<string | null>(null);
   const [bulkUPIApp, setBulkUPIApp] = useState<string | null>(null);
+  const [bulkCategory, setBulkCategory] = useState<IpoCategory>('RETAIL');
+  const [bulkLots, setBulkLots] = useState<number>(1);
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+  const [failedAvatarIds, setFailedAvatarIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
 
   const [backendIpos, setBackendIpos] = useState<BackendIpo[]>(() => {
@@ -167,6 +185,8 @@ export function BulkApplySheet({ visible, onClose }: Props) {
       setBulkIPOId(null);
       setBulkBankName(null);
       setBulkUPIApp(null);
+      setBulkCategory('RETAIL');
+      setBulkLots(1);
       setSelectedUserIds(new Set());
       setBulkLoading(false);
 
@@ -237,11 +257,11 @@ export function BulkApplySheet({ visible, onClose }: Props) {
       .filter((b) => {
         const compName = (b.company?.displayName || b.companyName || b.symbol || '').trim();
         if (!compName || compName.toUpperCase() === 'IPO') return false;
-        return isIpoCurrentlyOpen(b);
+        return isIpoAvailableForBulkApply(b);
       })
       .map((b): BulkIPOOption => {
         const price = b.priceBandHigh || b.priceBandLow || 100;
-        const lot = b.lotSize || 1;
+        const lot = resolveIpoLotSize(b);
         const compName = (b.company?.displayName || b.companyName || b.symbol || '').trim();
         return {
           id: b.id,
@@ -254,7 +274,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
           listing_date: b.listingDate || '',
           allotment_date: b.allotmentDate || '',
           registrar: b.registrar || '',
-          logo_url: b.logoUrl || b.company?.logoUrl || '',
+          logo_url: getResolvedLogoUrl(b.logoUrl || b.company?.logoUrl) || (b.logoUrl || b.company?.logoUrl || ''),
           issue_type: b.marketSegment === 'SME' ? 'SME' : 'Mainboard',
           symbol: b.symbol || '',
           isBackend: true,
@@ -266,7 +286,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
     // Build lookup of all non-open backend IPO identifiers to prevent showing closed IPOs stored in local SQLite
     const closedBackendIdentifiers = new Set<string>();
     for (const b of backendIpos) {
-      if (!isIpoCurrentlyOpen(b)) {
+      if (!isIpoAvailableForBulkApply(b)) {
         if (b.id) closedBackendIdentifiers.add(b.id.toLowerCase());
         if (b.symbol) closedBackendIdentifiers.add(b.symbol.toLowerCase().trim());
         const compName = (b.company?.displayName || b.companyName || '').toLowerCase().trim();
@@ -291,7 +311,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
           return false;
         }
 
-        return isIpoCurrentlyOpen(i);
+        return isIpoAvailableForBulkApply(i);
       })
       .map((i): BulkIPOOption => ({
         id: i.id,
@@ -304,7 +324,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
         listing_date: i.listing_date,
         allotment_date: i.allotment_date,
         registrar: i.registrar,
-        logo_url: i.logo_url,
+        logo_url: getResolvedLogoUrl(i.logo_url) || i.logo_url,
         issue_type: i.issue_type,
         symbol: i.symbol,
         isBackend: false,
@@ -369,16 +389,33 @@ export function BulkApplySheet({ visible, onClose }: Props) {
     }
   }, [showUPIPicker]);
 
-  // Filtered users for selected IPO (excluding users who already have a non-cancelled application)
+  // Filtered users for selected IPO (excluding users who already have an active application in this category)
   const filteredUsers = useMemo(() => {
     if (!bulkIPOId) return activeUsers;
+    const matchingIpoIds = new Set<string>([bulkIPOId]);
+    if (selectedIPO) {
+      if (selectedIPO.id) matchingIpoIds.add(selectedIPO.id);
+      if ((selectedIPO as any).backend_ipo_id) matchingIpoIds.add((selectedIPO as any).backend_ipo_id);
+    }
+    for (const loc of ipos) {
+      if (loc.id === bulkIPOId || (loc.backend_ipo_id && loc.backend_ipo_id === bulkIPOId)) {
+        matchingIpoIds.add(loc.id);
+        if (loc.backend_ipo_id) matchingIpoIds.add(loc.backend_ipo_id);
+      }
+    }
+
     const existingUserIds = new Set(
       applications
-        .filter((a) => a.ipo_id === bulkIPOId && a.status !== 'Cancelled')
+        .filter(
+          (a) =>
+            matchingIpoIds.has(a.ipo_id) &&
+            a.status !== 'Cancelled' &&
+            (a.category || 'RETAIL') === bulkCategory
+        )
         .map((a) => a.user_id)
     );
     return activeUsers.filter((u) => !existingUserIds.has(u.id));
-  }, [activeUsers, applications, bulkIPOId]);
+  }, [activeUsers, applications, bulkIPOId, bulkCategory, selectedIPO, ipos]);
 
   const toggleUser = (userId: string) => {
     setSelectedUserIds((prev) => {
@@ -388,6 +425,49 @@ export function BulkApplySheet({ visible, onClose }: Props) {
       return next;
     });
   };
+
+  // Offer categories & dynamic lot limits for selected IPO
+  const offerCategories = useMemo(() => {
+    if (!selectedIPO) return [];
+    return getIpoOfferCategories((selectedIPO as any).backendData || selectedIPO);
+  }, [selectedIPO]);
+
+  const currentCategoryConfig = useMemo(() => {
+    return offerCategories.find(
+      (c) => (c.category || '').toUpperCase().trim() === bulkCategory
+    );
+  }, [offerCategories, bulkCategory]);
+
+  const lotLimits: CategoryLotLimits = useMemo(() => {
+    if (!selectedIPO) {
+      return getCategoryLotLimits({
+        category: bulkCategory,
+        unitPrice: 0,
+        lotSize: 0,
+        isSme: false,
+      });
+    }
+    return getCategoryLotLimits({
+      category: bulkCategory,
+      unitPrice: selectedIPO.buy_price,
+      lotSize: resolveIpoLotSize(selectedIPO, bulkCategory),
+      isSme: selectedIPO.issue_type === 'SME',
+      categoryConfig: currentCategoryConfig,
+    });
+  }, [selectedIPO, bulkCategory, currentCategoryConfig]);
+
+  // Whenever selected IPO or category changes, pre-select default lots
+  useEffect(() => {
+    if (lotLimits.defaultLots) {
+      setBulkLots(lotLimits.defaultLots);
+    }
+  }, [bulkIPOId, bulkCategory, lotLimits.defaultLots]);
+
+  // Financial calculations
+  const singleAppLots = bulkLots;
+  const singleAppShares = selectedIPO ? resolveIpoLotSize(selectedIPO, bulkCategory) * singleAppLots : 0;
+  const singleAppAmount = selectedIPO ? selectedIPO.buy_price * singleAppShares : 0;
+  const totalBlockedAmount = singleAppAmount * selectedUserIds.size;
 
   const toggleSelectAllUsers = () => {
     if (selectedUserIds.size === filteredUsers.length && filteredUsers.length > 0) {
@@ -408,15 +488,39 @@ export function BulkApplySheet({ visible, onClose }: Props) {
       return;
     }
 
+    if (!lotLimits.hasValidLotData) {
+      showError('Invalid IPO Data', lotLimits.errorMessage || 'Lot size or price band is missing for this IPO.');
+      return;
+    }
+
+    // Validate bid parameters for the chosen category
+    const unitPrice = selectedIPO.buy_price;
+    const lotQty = resolveIpoLotSize(selectedIPO, bulkCategory);
+    const isSme = selectedIPO.issue_type === 'SME';
+    const val = validateCategoryBid({
+      category: bulkCategory,
+      lots: bulkLots,
+      unitPrice,
+      lotSize: lotQty,
+      isSme,
+      categoryConfig: currentCategoryConfig,
+    });
+    if (!val.valid) {
+      showError('Invalid Application', val.error || `Invalid bid for ${CATEGORY_OPTIONS[bulkCategory].shortLabel} category.`);
+      return;
+    }
+
     const opId = `bulk_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const t0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-    console.log(`[BulkApply Trace:${opId}] 1. Submit button registered (${selectedUserIds.size} applicant(s), IPO: ${selectedIPO.ipo_name || selectedIPO.id})`);
+    console.log(`[BulkApply Trace:${opId}] 1. Submit button registered (${selectedUserIds.size} applicant(s), IPO: ${selectedIPO.ipo_name || selectedIPO.id}, Category: ${bulkCategory}, Lots: ${bulkLots})`);
 
     isSubmittingRef.current = true;
     setBulkLoading(true);
     const totalSubmitTimer = startPerfTimer('BulkApplySheet.handleBulkCreate', {
       applicantCount: selectedUserIds.size,
       ipoId: selectedIPO.id,
+      category: bulkCategory,
+      lots: bulkLots,
       opId,
     });
 
@@ -429,8 +533,9 @@ export function BulkApplySheet({ visible, onClose }: Props) {
           Array.from(selectedUserIds),
           bulkBankName ?? undefined,
           bulkUPIApp ?? undefined,
-          selectedIPO.issue_type === 'SME' ? 2 : 1,
-          selectedIPO
+          bulkLots,
+          selectedIPO,
+          bulkCategory
         );
       } finally {
         const addDuration = (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - tAddStart;
@@ -500,7 +605,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
                       setBulkIPOId(ipo.id);
                       setShowIPOPicker(false);
                     }}
-                    style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: bulkIPOId === ipo.id ? (isDark ? '#27272A' : '#F1F5F9') : 'transparent' }]}
+                    style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: bulkIPOId === ipo.id ? (isDark ? colors.surfaceElevated : '#F1F5F9') : 'transparent' }]}
                   >
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -552,7 +657,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
                       }
                       setShowBankPicker(false);
                     }}
-                    style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: bulkBankName === bName ? (isDark ? '#27272A' : '#F1F5F9') : 'transparent' }]}
+                    style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: bulkBankName === bName ? (isDark ? colors.surfaceElevated : '#F1F5F9') : 'transparent' }]}
                   >
                     <Text style={[styles.pickerRowName, { color: colors.foreground }]}>{bName}</Text>
                     {bulkBankName === bName && <Feather name="check" size={16} color={colors.foreground} />}
@@ -583,7 +688,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
                     setBulkUPIApp(app);
                     setShowUPIPicker(false);
                   }}
-                  style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: bulkUPIApp === app ? (isDark ? '#27272A' : '#F1F5F9') : 'transparent' }]}
+                  style={[styles.pickerRow, { borderBottomColor: colors.border, backgroundColor: bulkUPIApp === app ? (isDark ? colors.surfaceElevated : '#F1F5F9') : 'transparent' }]}
                 >
                   <Text style={[styles.pickerRowName, { color: colors.foreground }]}>{app}</Text>
                   {bulkUPIApp === app && <Feather name="check" size={16} color={colors.foreground} />}
@@ -610,14 +715,6 @@ export function BulkApplySheet({ visible, onClose }: Props) {
         {/* Sheet Header */}
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <View style={styles.headerTitleGroup}>
-            <View
-              style={[
-                styles.headerIconWrap,
-                { backgroundColor: colors.primary + '18' },
-              ]}
-            >
-              <Feather name="layers" size={18} color={colors.primary} />
-            </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Bulk Apply</Text>
               <Text style={[styles.sheetSubtitle, { color: colors.mutedForeground }]} numberOfLines={1}>
@@ -627,9 +724,9 @@ export function BulkApplySheet({ visible, onClose }: Props) {
           </View>
         </View>
 
-        <View style={{ flex: 1, minHeight: 0 }}>
+        <View style={{ flexShrink: 1, flexGrow: 0, minHeight: 0 }}>
           <ScrollView
-            style={{ flex: 1 }}
+            style={{ flexShrink: 1, flexGrow: 0 }}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={true}
             keyboardShouldPersistTaps="handled"
@@ -656,15 +753,198 @@ export function BulkApplySheet({ visible, onClose }: Props) {
                   numberOfLines={1}
                 >
                   {selectedIPO
-                    ? `${selectedIPO.ipo_name} — ${formatCurrency(
-                        selectedIPO.buy_price *
-                          selectedIPO.quantity *
-                          (selectedIPO.issue_type === 'SME' ? 2 : 1)
-                      )}`
+                    ? `${selectedIPO.ipo_name} — ${formatCurrency(singleAppAmount)} (${bulkLots} ${bulkLots === 1 ? 'Lot' : 'Lots'})`
                     : 'Choose Active IPO…'}
                 </Text>
                 <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
               </TouchableOpacity>
+            </View>
+
+            {/* CATEGORY SELECTION */}
+            <View>
+              <Text style={[styles.stepLabel, { color: colors.mutedForeground }]}>APPLICATION CATEGORY</Text>
+              <View style={styles.categoryPillRow}>
+                {(['RETAIL', 'SHAREHOLDER', 'HNI'] as IpoCategory[]).map((catKey) => {
+                  const isCatActive = bulkCategory === catKey;
+                  const info = CATEGORY_OPTIONS[catKey];
+                  return (
+                    <TouchableOpacity
+                      key={catKey}
+                      onPress={() => setBulkCategory(catKey)}
+                      activeOpacity={0.7}
+                      style={[
+                        styles.categoryPill,
+                        {
+                          backgroundColor: isCatActive ? info.badgeBorder : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'),
+                          borderColor: isCatActive ? info.badgeBorder : colors.border,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.categoryPillText,
+                          {
+                            color: isCatActive ? '#FFFFFF' : colors.mutedForeground,
+                            fontWeight: isCatActive ? '700' : '500',
+                          },
+                        ]}
+                      >
+                        {info.shortLabel}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* LOT SIZE SELECTION */}
+            <View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <Text style={[styles.stepLabel, { color: colors.mutedForeground, marginBottom: 0 }]}>
+                  LOT SIZE & QUANTITY
+                </Text>
+                {selectedIPO && lotLimits.hasValidLotData && (
+                  <Text style={{ fontSize: 11, fontFamily: 'GoogleSansFlex_600SemiBold', color: colors.mutedForeground }}>
+                    {singleAppShares} sh @ {formatCurrency(selectedIPO.buy_price)}
+                  </Text>
+                )}
+              </View>
+
+              {!selectedIPO ? (
+                <View style={[styles.lotCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <Text style={[styles.lotPlaceholderText, { color: colors.mutedForeground }]}>
+                    Choose an open IPO above to configure lot size.
+                  </Text>
+                </View>
+              ) : !lotLimits.hasValidLotData ? (
+                <View style={[styles.lotCard, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEF2F2', borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : '#FCA5A5' }]}>
+                  <Text style={[styles.lotErrorTitle, { color: isDark ? '#FCA5A5' : '#B91C1C' }]}>
+                    Lot Data Unavailable
+                  </Text>
+                  <Text style={[styles.lotErrorSub, { color: isDark ? '#FECACA' : '#7F1D1D' }]}>
+                    {lotLimits.errorMessage || 'This IPO does not have defined lot size or price band data.'}
+                  </Text>
+                </View>
+              ) : (
+                <View style={[styles.lotCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  {/* Stepper */}
+                  <View style={styles.stepperContainer}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        if (bulkLots > lotLimits.minLots) {
+                          setBulkLots((prev) => Math.max(lotLimits.minLots, prev - 1));
+                          try {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          } catch {}
+                        }
+                      }}
+                      disabled={bulkLots <= lotLimits.minLots}
+                      activeOpacity={0.7}
+                      style={[
+                        styles.stepperBtn,
+                        {
+                          borderColor: colors.border,
+                          backgroundColor: colors.card,
+                          opacity: bulkLots <= lotLimits.minLots ? 0.35 : 1,
+                        },
+                      ]}
+                      hitSlop={8}
+                    >
+                      <Feather name="minus" size={16} color={colors.foreground} />
+                    </TouchableOpacity>
+
+                    <View style={styles.stepperDisplay}>
+                      <Text style={[styles.stepperNumber, { color: colors.foreground }]}>
+                        {bulkLots} {bulkLots === 1 ? 'Lot' : 'Lots'}
+                      </Text>
+                      <Text style={[styles.stepperSubtext, { color: colors.mutedForeground }]}>
+                        {singleAppShares} Shares · {formatCurrency(singleAppAmount)} / applicant
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity
+                      onPress={() => {
+                        if (bulkLots < lotLimits.maxLots) {
+                          setBulkLots((prev) => Math.min(lotLimits.maxLots, prev + 1));
+                          try {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          } catch {}
+                        }
+                      }}
+                      disabled={bulkLots >= lotLimits.maxLots}
+                      activeOpacity={0.7}
+                      style={[
+                        styles.stepperBtn,
+                        {
+                          borderColor: colors.border,
+                          backgroundColor: colors.card,
+                          opacity: bulkLots >= lotLimits.maxLots ? 0.35 : 1,
+                        },
+                      ]}
+                      hitSlop={8}
+                    >
+                      <Feather name="plus" size={16} color={colors.foreground} />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Quick Select Chips */}
+                  {lotLimits.options.length > 1 && (
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.quickChipsRow}
+                    >
+                      {lotLimits.options.map((optionLots) => {
+                        const isActive = bulkLots === optionLots;
+                        return (
+                          <TouchableOpacity
+                            key={optionLots}
+                            onPress={() => {
+                              setBulkLots(optionLots);
+                              try {
+                                Haptics.selectionAsync();
+                              } catch {}
+                            }}
+                            activeOpacity={0.7}
+                            style={[
+                              styles.quickChip,
+                              {
+                                backgroundColor: isActive ? colors.primary : colors.card,
+                                borderColor: isActive ? colors.primary : colors.border,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.quickChipText,
+                                {
+                                  color: isActive ? colors.primaryForeground : colors.foreground,
+                                  fontWeight: isActive ? '700' : '500',
+                                },
+                              ]}
+                            >
+                              {optionLots} {optionLots === 1 ? 'Lot' : 'Lots'}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  )}
+
+                  <View style={[styles.lotGuidanceRow, { borderTopColor: colors.border }]}>
+                    <Feather name="shield" size={11} color={colors.mutedForeground} />
+                    <Text style={[styles.lotGuidanceText, { color: colors.mutedForeground }]}>
+                      {bulkCategory === 'HNI'
+                        ? `HNI requirement: Min ${lotLimits.minLots} lots (> ₹2,00,000). Max ${lotLimits.maxLots} lots.`
+                        : bulkCategory === 'SHAREHOLDER'
+                        ? `Shareholder limits: Min ${lotLimits.minLots} lot${lotLimits.minLots > 1 ? 's' : ''}, max ${lotLimits.maxLots} lots (up to ${formatCurrency(lotLimits.maxAmount)}).`
+                        : selectedIPO.issue_type === 'SME'
+                        ? `SME mandatory minimum: 2 lots (${selectedIPO.quantity * 2} shares min). Max ${lotLimits.maxLots} lots.`
+                        : `Retail limit: Min 1 lot, max ${lotLimits.maxLots} lots (₹2,00,000 ceiling).`}
+                    </Text>
+                  </View>
+                </View>
+              )}
             </View>
 
             {/* 2. BANK & PAYMENT METHOD */}
@@ -677,7 +957,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
                     styles.pickerTrigger,
                     {
                       flex: 1,
-                      borderColor: bulkBankName ? colors.foreground : colors.border,
+                      borderColor: bulkBankName ? '#10B981' : colors.border,
                       backgroundColor: colors.surface,
                     },
                   ]}
@@ -701,7 +981,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
                     styles.pickerTrigger,
                     {
                       flex: 1,
-                      borderColor: bulkUPIApp ? colors.foreground : colors.border,
+                      borderColor: bulkUPIApp ? '#10B981' : colors.border,
                       backgroundColor: colors.surface,
                     },
                   ]}
@@ -743,6 +1023,9 @@ export function BulkApplySheet({ visible, onClose }: Props) {
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                     {filteredUsers.map((u) => {
                       const isChecked = selectedUserIds.has(u.id);
+                      const customAvatar = (u.avatar_url || (u as any).avatarUrl || (u as any).avatar || '').trim();
+                      const canLoadImage = isCustomAvatarUrl(customAvatar) && !failedAvatarIds.has(u.id);
+
                       return (
                         <TouchableOpacity
                           key={u.id}
@@ -767,6 +1050,22 @@ export function BulkApplySheet({ visible, onClose }: Props) {
                           >
                             {isChecked && <Feather name="check" size={10} color="#FFFFFF" />}
                           </View>
+                          {canLoadImage ? (
+                            <Image
+                              source={{ uri: customAvatar }}
+                              style={styles.chipAvatar}
+                              contentFit="cover"
+                              cachePolicy="memory-disk"
+                              priority="high"
+                              onError={() => setFailedAvatarIds((prev) => new Set(prev).add(u.id))}
+                            />
+                          ) : (
+                            <View style={[styles.chipAvatarFallback, { backgroundColor: colors.primary + '20' }]}>
+                              <Text style={[styles.chipAvatarText, { color: colors.primary }]}>
+                                {u.name ? u.name.charAt(0).toUpperCase() : 'U'}
+                              </Text>
+                            </View>
+                          )}
                           <Text style={[styles.chipText, { color: colors.foreground }]}>{u.name}</Text>
                         </TouchableOpacity>
                       );
@@ -790,9 +1089,9 @@ export function BulkApplySheet({ visible, onClose }: Props) {
         >
           <TouchableOpacity
             onPress={handleBulkCreate}
-            disabled={bulkLoading || !bulkIPOId || selectedUserIds.size === 0}
+            disabled={bulkLoading || !bulkIPOId || selectedUserIds.size === 0 || !lotLimits.hasValidLotData}
             style={
-              bulkLoading || !bulkIPOId || selectedUserIds.size === 0
+              bulkLoading || !bulkIPOId || selectedUserIds.size === 0 || !lotLimits.hasValidLotData
                 ? [styles.goldBtnDisabled, isDark && { backgroundColor: colors.surface }]
                 : [styles.goldBtn, { backgroundColor: colors.primary }]
             }
@@ -800,12 +1099,12 @@ export function BulkApplySheet({ visible, onClose }: Props) {
           >
             <Text
               style={
-                bulkLoading || !bulkIPOId || selectedUserIds.size === 0
+                bulkLoading || !bulkIPOId || selectedUserIds.size === 0 || !lotLimits.hasValidLotData
                   ? [styles.goldBtnTextDisabled, isDark && { color: colors.mutedForeground }]
                   : [styles.goldBtnText, { color: colors.primaryForeground }]
               }
             >
-              {bulkLoading ? 'Creating…' : `Create ${selectedUserIds.size} Application${selectedUserIds.size !== 1 ? 's' : ''}`}
+              {bulkLoading ? 'Creating…' : `Create ${selectedUserIds.size} Application${selectedUserIds.size !== 1 ? 's' : ''}${selectedUserIds.size > 0 && selectedIPO && lotLimits.hasValidLotData ? ` (${formatCurrency(totalBlockedAmount)})` : ''}`}
             </Text>
           </TouchableOpacity>
         </View>
@@ -874,6 +1173,23 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     minHeight: 44,
   },
+  chipAvatar: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    overflow: 'hidden',
+  },
+  chipAvatarFallback: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipAvatarText: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
   chipText: { fontSize: 13, fontFamily: 'GoogleSansFlex_500Medium' },
   chipEmptyText: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', fontStyle: 'italic', paddingVertical: 8 },
   checkbox: { width: 18, height: 18, borderRadius: 4, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
@@ -883,4 +1199,118 @@ const styles = StyleSheet.create({
   goldBtnTextDisabled: { color: '#A0AEC0', fontSize: 16, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: 0.1 },
   pickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, paddingHorizontal: 18, borderBottomWidth: 1 },
   pickerRowName: { fontSize: 14, fontFamily: 'GoogleSansFlex_600SemiBold' },
+  categoryPillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  categoryPill: {
+    flex: 1,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryPillText: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  categoryNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 6,
+  },
+  categoryNoticeText: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    flex: 1,
+  },
+  lotCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+    gap: 10,
+    marginTop: 8,
+  },
+  lotPlaceholderText: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 6,
+  },
+  lotErrorTitle: {
+    fontSize: 12.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  lotErrorSub: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    lineHeight: 15,
+  },
+  stepperContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+  },
+  stepperBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperDisplay: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  stepperNumber: {
+    fontSize: 20,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
+  },
+  stepperSubtext: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_500Medium',
+    marginTop: 2,
+  },
+  quickChipsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingVertical: 2,
+  },
+  quickChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickChipText: {
+    fontSize: 11,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+  },
+  lotGuidanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+  },
+  lotGuidanceText: {
+    fontSize: 10.5,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    flex: 1,
+  },
 });

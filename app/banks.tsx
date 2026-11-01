@@ -28,8 +28,10 @@ import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { useDB, type BankAccount } from '@/context/DBContext';
 import { useDialog } from '@/context/DialogContext';
+import { useAppExperience } from '@/context/AppExperienceContext';
 import { BanksOverviewCard } from '@/components/BanksOverviewCard';
 import { BankSheet } from '@/components/BankSheet';
+import { BanksSkeleton } from '@/components/banks/BanksSkeleton';
 import { IconButton } from '@/components/ui/IconButton';
 import { AnimatedEntrance } from '@/components/ui/AnimatedEntrance';
 import { formatCurrency } from '@/utils/formatters';
@@ -45,7 +47,7 @@ function calcBankSlots(balance: number, blocked: number, ipoPrice: number = IPO_
 
 // ── Bank Card ─────────────────────────────────────────────────────────────────
 
-function BankCard({
+const BankCard = React.memo(function BankCard({
   bank,
   blocked,
   ipoPrice = 15000,
@@ -57,8 +59,8 @@ function BankCard({
   blocked: number;
   ipoPrice?: number;
   isDeleting?: boolean;
-  onEdit: () => void;
-  onDelete: () => void;
+  onEdit: (bank: BankAccount) => void;
+  onDelete: (bank: BankAccount) => void;
 }) {
   const colors = useColors();
   const { resolvedScheme } = useTheme();
@@ -96,7 +98,7 @@ function BankCard({
         </View>
         <View style={styles.cardActions}>
           <TouchableOpacity
-            onPress={onEdit}
+            onPress={() => onEdit(bank)}
             activeOpacity={0.7}
             disabled={isDeleting}
             style={[styles.softActionBtn, { backgroundColor: isDark ? 'rgba(59,130,246,0.15)' : '#EFF6FF', opacity: isDeleting ? 0.5 : 1 }]}
@@ -104,7 +106,7 @@ function BankCard({
             <Feather name="edit-2" size={13} color="#3B82F6" />
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={onDelete}
+            onPress={() => onDelete(bank)}
             activeOpacity={0.7}
             disabled={isDeleting}
             style={[styles.softActionBtn, { backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : '#FEE2E2', opacity: isDeleting ? 0.5 : 1 }]}
@@ -161,15 +163,16 @@ function BankCard({
       )}
     </View>
   );
-}
+});
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
-export default function BanksScreen() {
+function BanksScreenContent() {
   const colors = useColors();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
   const router = useRouter();
+
   const { from } = useLocalSearchParams<{ from?: string }>();
   const { bankAccounts, ipos, applications, isLoading, refresh, addBankAccount, updateBankBalance, deleteBankAccount } = useDB();
   const { showConfirm, showError } = useDialog();
@@ -180,49 +183,94 @@ export default function BanksScreen() {
   const [editingBank, setEditingBank] = useState<BankAccount | null>(null);
 
   // Find active retail Mainboard IPO with standard lot cost (₹10k - ₹16k), fallback to standard ₹15,000
-  const activeRetailIpo = ipos.find((i) => {
-    if (i.archived !== 0) return false;
-    const lot = (i.buy_price || 0) * (i.quantity || 0);
-    return lot >= 10000 && lot <= 16000;
-  });
-  const activeIpoLotCost = (activeRetailIpo && activeRetailIpo.buy_price && activeRetailIpo.quantity)
-    ? activeRetailIpo.buy_price * activeRetailIpo.quantity
-    : IPO_LOT_COST;
+  const activeIpoLotCost = React.useMemo(() => {
+    const active = ipos.find((i) => {
+      if (i.archived !== 0) return false;
+      const lot = (i.buy_price || 0) * (i.quantity || 0);
+      return lot >= 10000 && lot <= 16000;
+    });
+    return (active && active.buy_price && active.quantity)
+      ? active.buy_price * active.quantity
+      : IPO_LOT_COST;
+  }, [ipos]);
 
-  const getBankBlocked = (bankName: string) => {
-    const targetKey = (bankName || '').trim().toLowerCase();
-    return applications
-      .filter(
-        (a) =>
-          a.status === 'Mandate Approved' &&
-          (a.user_bank_name || '').trim().toLowerCase() === targetKey
-      )
-      .reduce((sum, a) => sum + (a.buy_price || 0) * (a.quantity || 0), 0);
-  };
+  // Precomputed O(1) blocked capital map for banks
+  const blockedByBank = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const a of applications) {
+      if (a.status === 'Mandate Approved') {
+        const key = (a.user_bank_name || '').trim().toLowerCase();
+        if (key) {
+          map.set(key, (map.get(key) || 0) + (a.buy_price || 0) * (a.quantity || 0));
+        }
+      }
+    }
+    return map;
+  }, [applications]);
 
-  const totalBalance = bankAccounts.reduce((s, b) => s + b.balance, 0);
-  const totalBlocked = bankAccounts.reduce((s, b) => s + getBankBlocked(b.bank_name), 0);
-  const totalAvailable = Math.max(0, totalBalance - totalBlocked);
-  const totalSlots = bankAccounts.reduce((sum, b) => {
-    const blocked = getBankBlocked(b.bank_name);
-    const avail = Math.max(0, b.balance - blocked);
-    return sum + Math.floor(avail / (activeIpoLotCost > 0 ? activeIpoLotCost : 15000));
-  }, 0);
+  const getBankBlocked = React.useCallback(
+    (bankName: string) => blockedByBank.get((bankName || '').trim().toLowerCase()) || 0,
+    [blockedByBank]
+  );
 
-  const openAdd = () => {
+  const { totalBalance, totalBlocked, totalAvailable, totalSlots } = React.useMemo(() => {
+    let balanceSum = 0;
+    let blockedSum = 0;
+    let slotsSum = 0;
+    const lotCost = activeIpoLotCost > 0 ? activeIpoLotCost : 15000;
+
+    for (const b of bankAccounts) {
+      balanceSum += b.balance;
+      const blocked = blockedByBank.get((b.bank_name || '').trim().toLowerCase()) || 0;
+      blockedSum += blocked;
+      const avail = Math.max(0, b.balance - blocked);
+      slotsSum += Math.floor(avail / lotCost);
+    }
+
+    return {
+      totalBalance: balanceSum,
+      totalBlocked: blockedSum,
+      totalAvailable: Math.max(0, balanceSum - blockedSum),
+      totalSlots: slotsSum,
+    };
+  }, [bankAccounts, blockedByBank, activeIpoLotCost]);
+
+  const openAdd = React.useCallback(() => {
     setEditingBank(null);
     setModalVisible(true);
-  };
+  }, []);
 
-  const openEdit = (bank: BankAccount) => {
+  const openEdit = React.useCallback((bank: BankAccount) => {
     setEditingBank(bank);
     setModalVisible(true);
-  };
+  }, []);
+
+  const closeModal = React.useCallback(() => {
+    setModalVisible(false);
+    setEditingBank(null);
+  }, []);
 
   const [deletingBankId, setDeletingBankId] = useState<string | null>(null);
 
-  const handleDelete = (bank: BankAccount) => {
+  const handleDelete = React.useCallback((bank: BankAccount) => {
     if (deletingBankId) return;
+    const targetKey = (bank.bank_name || '').trim().toLowerCase();
+    const referencedApps = applications.filter(
+      (a) =>
+        ((a.user_bank_name || '').trim().toLowerCase() === targetKey ||
+          ((a as any).bank_name || '').trim().toLowerCase() === targetKey) &&
+        a.status !== 'Cancelled'
+    );
+    if (referencedApps.length > 0) {
+      showError(
+        'Cannot Delete Bank',
+        `"${bank.bank_name}" is currently referenced by ${referencedApps.length} active IPO ${
+          referencedApps.length === 1 ? 'application' : 'applications'
+        }. Please reassign or update those applications before deleting this bank.`
+      );
+      return;
+    }
+
     showConfirm({
       title: 'Delete Bank Account',
       message: `Remove "${bank.bank_name}" from your tracked accounts?`,
@@ -240,9 +288,9 @@ export default function BanksScreen() {
         }
       },
     });
-  };
+  }, [deletingBankId, applications, showError, showConfirm, deleteBankAccount]);
 
-  const handleSave = async (name: string, balance: number, upiApp?: string) => {
+  const handleSave = React.useCallback(async (name: string, balance: number, upiApp?: string) => {
     try {
       if (editingBank) {
         await updateBankBalance(editingBank.id, balance, name, upiApp);
@@ -251,10 +299,11 @@ export default function BanksScreen() {
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setModalVisible(false);
+      setEditingBank(null);
     } catch (e: any) {
       showError('Error', e?.message?.includes('UNIQUE') ? 'A bank with that name already exists.' : 'Failed to save.');
     }
-  };
+  }, [editingBank, updateBankBalance, addBankAccount, showError]);
 
   const scrollY = useRef(new Animated.Value(0)).current;
   const headerBlurOpacity = scrollY.interpolate({
@@ -303,7 +352,7 @@ export default function BanksScreen() {
             }}
           />
 
-          <View style={{ flex: 1, alignItems: 'center' }}>
+          <View style={styles.headerCenter} pointerEvents="none">
             <Text style={[styles.headerEyebrow, { color: colors.primary }]}>CAPITAL</Text>
             <Text style={[styles.headerTitle, { color: colors.foreground }]}>Banks</Text>
           </View>
@@ -317,9 +366,21 @@ export default function BanksScreen() {
         </View>
       </View>
 
-      <AnimatedFlatList
-        data={bankAccounts}
-        keyExtractor={(b: any) => b.id.toString()}
+      {isLoading && bankAccounts.length === 0 ? (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingTop: topPad + 68,
+            paddingBottom: insets.bottom + 90,
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          <BanksSkeleton />
+        </ScrollView>
+      ) : (
+        <AnimatedFlatList
+          data={bankAccounts}
+          keyExtractor={(b: any) => b.id.toString()}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: true }
@@ -355,6 +416,10 @@ export default function BanksScreen() {
             )}
           </>
         )}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS !== 'web'}
         renderItem={({ item, index }: { item: BankAccount; index: number }) => (
           <AnimatedEntrance delay={Math.min(index, 8) * 40} distance={12}>
             <BankCard
@@ -362,8 +427,8 @@ export default function BanksScreen() {
               blocked={getBankBlocked(item.bank_name)}
               ipoPrice={activeIpoLotCost}
               isDeleting={deletingBankId === item.id}
-              onEdit={() => openEdit(item)}
-              onDelete={() => handleDelete(item)}
+              onEdit={openEdit}
+              onDelete={handleDelete}
             />
           </AnimatedEntrance>
         )}
@@ -386,14 +451,12 @@ export default function BanksScreen() {
           </View>
         )}
       />
+      )}
 
       <BankSheet
         visible={modalVisible}
         bank={editingBank}
-        onClose={() => {
-          setModalVisible(false);
-          setEditingBank(null);
-        }}
+        onClose={closeModal}
         onSave={handleSave}
       />
     </View>
@@ -415,13 +478,34 @@ const styles = StyleSheet.create({
   header: {
     height: 56,
     paddingHorizontal: 16,
-    overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    position: 'relative',
   },
-  headerEyebrow: { fontSize: 11, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 2, textAlign: 'center' },
-  headerTitle: { fontSize: 28, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.6, lineHeight: 32, textAlign: 'center' },
+  headerCenter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    paddingHorizontal: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerEyebrow: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+    textAlign: 'center',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
+    lineHeight: 24,
+    textAlign: 'center',
+  },
   backBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
   addBtn: {
     width: 40,
@@ -482,3 +566,24 @@ const styles = StyleSheet.create({
   emptyBtn: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 13, borderRadius: 9999 },
   emptyBtnText: { color: '#fff', fontSize: 15, fontFamily: 'GoogleSansFlex_600SemiBold' },
 });
+
+export default function BanksScreen() {
+  const { isNonPro, isLoading: isExperienceLoading } = useAppExperience();
+  const router = useRouter();
+
+  React.useEffect(() => {
+    if (!isExperienceLoading && isNonPro) {
+      if (typeof (router as any).navigate === 'function') {
+        (router as any).navigate('/(tabs)/ipos');
+      } else {
+        router.replace('/(tabs)/ipos');
+      }
+    }
+  }, [isNonPro, isExperienceLoading, router]);
+
+  if (isNonPro) {
+    return null;
+  }
+
+  return <BanksScreenContent />;
+}

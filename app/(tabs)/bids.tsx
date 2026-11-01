@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import {
   Animated,
   Image,
@@ -22,11 +22,12 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDialog } from '@/context/DialogContext';
+import { useAppExperience } from '@/context/AppExperienceContext';
 import { useDB, type ApplicationStatus, type ApplicationWithDetails, type IPOListing, type User } from '@/context/DBContext';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, getResolvedLogoUrl } from '@/utils/formatters';
 import { StatusBadge } from '@/components/StatusBadge';
 import { AddIPOModal } from '@/components/AddIPOModal';
 
@@ -188,7 +189,7 @@ function SwipeableBidCard({
           {
             transform: [{ translateX: pan }],
             backgroundColor: isChecked
-              ? (isDark ? '#27272A' : '#F1F5F9')
+              ? (isDark ? colors.surfaceElevated : '#F1F5F9')
               : colors.card,
             borderColor: isChecked ? (isDark ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.25)') : colors.border,
           },
@@ -218,7 +219,7 @@ function SwipeableBidCard({
               )}
 
               {bid.ipo_logo_url ? (
-                <Image source={{ uri: bid.ipo_logo_url }} style={[styles.ipoAvatarBox, { backgroundColor: colors.surface }]} resizeMode="contain" />
+                <Image source={{ uri: getResolvedLogoUrl(bid.ipo_logo_url) || bid.ipo_logo_url }} style={[styles.ipoAvatarBox, { backgroundColor: '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0', borderWidth: 1 }]} resizeMode="contain" />
               ) : (
                 <LinearGradient
                   colors={getAvatarGradient(bid.ipo_name)}
@@ -257,7 +258,7 @@ function SwipeableBidCard({
             </View>
 
             {bid.user_bank_name ? (
-              <View style={[styles.bankPill, { backgroundColor: isDark ? '#1F2937' : '#F3F4F6', borderColor: colors.border }]}>
+              <View style={[styles.bankPill, { backgroundColor: isDark ? colors.surfaceElevated : '#F3F4F6', borderColor: colors.border }]}>
                 <Feather name="credit-card" size={12} color={colors.mutedForeground} />
                 <Text style={[styles.bankPillText, { color: colors.mutedForeground }]} numberOfLines={1}>
                   {bid.user_bank_name}
@@ -271,14 +272,22 @@ function SwipeableBidCard({
   );
 }
 
-export default function BidsScreen() {
+function BidsScreenContent() {
   const colors = useColors();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const router = useRouter();
+  const {
+    ipos,
+    applications,
+    users,
+    bankAccounts,
+    addBulkApplications,
+    updateBulkApplications,
+    updateApplication,
+  } = useDB();
+  const { showError } = useDialog();
   const params = useLocalSearchParams<{ ipoId?: string; autoOpenApply?: string }>();
-  const { showSuccess, showError } = useDialog();
-  const { users, ipos, applications, bankAccounts, addBulkApplications, updateApplication, updateBulkApplications } = useDB();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
 
@@ -523,8 +532,8 @@ export default function BidsScreen() {
                 activeOpacity={0.8}
                 style={[styles.quickActionCard, { backgroundColor: colors.card, borderColor: colors.border }]}
               >
-                <View style={[styles.quickIconWrap, { backgroundColor: isDark ? '#27272A' : '#F1F5F9' }]}>
-                  <Feather name="layers" size={20} color={colors.foreground} />
+                <View style={[styles.quickIconWrap, { backgroundColor: isDark ? '#161B28' : '#FFFFFF', borderColor: isDark ? '#2D354B' : '#E2E8F0', borderWidth: 1 }]}>
+                  <Feather name="layers" size={20} color={isDark ? '#FFFFFF' : '#111827'} />
                 </View>
                 <View style={{ flex: 1, paddingRight: 4 }}>
                   <Text style={[styles.quickActionTitle, { color: colors.foreground }]}>Bulk Apply</Text>
@@ -703,7 +712,7 @@ export default function BidsScreen() {
                 <View key={app.id} style={[styles.attentionItemCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <View style={styles.attentionItemLeft}>
                     {app.ipo_logo_url ? (
-                      <Image source={{ uri: app.ipo_logo_url }} style={[styles.ipoAvatar, { backgroundColor: colors.surface }]} resizeMode="contain" />
+                      <Image source={{ uri: getResolvedLogoUrl(app.ipo_logo_url) || app.ipo_logo_url }} style={[styles.ipoAvatar, { backgroundColor: '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0', borderWidth: 1 }]} resizeMode="contain" />
                     ) : (
                       <LinearGradient
                         colors={getAvatarGradient(app.ipo_name)}
@@ -896,8 +905,8 @@ export default function BidsScreen() {
                           </View>
                           <Text style={[styles.radioLabel, { color: colors.foreground }]}>{stOption.label}</Text>
                           {isCurrent && (
-                            <View style={[styles.currentBadge, { backgroundColor: isDark ? colors.surface : '#EDF2F7' }]}>
-                              <Text style={[styles.currentBadgeText, { color: colors.mutedForeground }]}>Current</Text>
+                            <View style={[styles.currentBadge, { backgroundColor: isDark ? '#475569' : '#64748B' }]}>
+                              <Text style={[styles.currentBadgeText, { color: '#FFFFFF' }]}>Current</Text>
                             </View>
                           )}
                         </TouchableOpacity>
@@ -1075,8 +1084,8 @@ export default function BidsScreen() {
           style={[
             styles.bulkFloatingBar,
             {
-              backgroundColor: isDark ? '#1E293B' : '#0F172A',
-              borderColor: isDark ? '#334155' : '#1E293B',
+              backgroundColor: colors.card,
+              borderColor: colors.border,
               bottom: Platform.OS === 'web' ? 80 : insets.bottom + 90,
             },
           ]}
@@ -1323,7 +1332,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   attentionItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  ipoAvatar: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  ipoAvatar: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: 0, margin: 0 },
   ipoAvatarText: { color: '#FFFFFF', fontFamily: 'GoogleSansFlex_700Bold', fontSize: 15 },
   attentionItemTitle: { fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold' },
   attentionItemSub: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 2 },
@@ -1411,6 +1420,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+    padding: 0,
+    margin: 0,
   },
   ipoAvatarLetter: {
     fontSize: 16,
@@ -1526,7 +1538,7 @@ const styles = StyleSheet.create({
   radioCircle: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#D4A017' },
   radioLabel: { fontSize: 14, fontFamily: 'GoogleSansFlex_500Medium', flex: 1 },
-  currentBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 },
+  currentBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 5 },
   currentBadgeText: { fontSize: 10, fontFamily: 'GoogleSansFlex_600SemiBold' },
 
   fieldSubLabel: { fontSize: 11, fontFamily: 'GoogleSansFlex_500Medium', marginBottom: 4 },
@@ -1563,7 +1575,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 8,
+    borderRadius: 50,
     borderWidth: 1,
   },
   userPillNameText: {
@@ -1575,7 +1587,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 8,
+    borderRadius: 50,
     borderWidth: 1,
   },
   bankNameText: {
@@ -1587,7 +1599,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 12,
+    borderRadius: 50,
     borderWidth: 1,
   },
   bulkHeaderPillText: {
@@ -1670,3 +1682,24 @@ const styles = StyleSheet.create({
   pickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 15, borderBottomWidth: 1, minHeight: 52 },
   pickerRowName: { fontSize: 14, fontFamily: 'GoogleSansFlex_500Medium' },
 });
+
+export default function BidsScreen() {
+  const { isNonPro, isLoading: isExperienceLoading } = useAppExperience();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isExperienceLoading && isNonPro) {
+      if (typeof (router as any).navigate === 'function') {
+        (router as any).navigate('/(tabs)/ipos');
+      } else {
+        router.replace('/(tabs)/ipos');
+      }
+    }
+  }, [isNonPro, isExperienceLoading, router]);
+
+  if (isNonPro) {
+    return null;
+  }
+
+  return <BidsScreenContent />;
+}

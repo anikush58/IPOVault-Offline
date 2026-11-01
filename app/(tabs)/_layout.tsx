@@ -1,24 +1,49 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Animated, DeviceEventEmitter, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Feather, Ionicons } from '@expo/vector-icons';
+import {
+  Animated,
+  DeviceEventEmitter,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import { Icon } from '@/components/ui/Icon';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Tabs, useRouter } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
-import { BulkApplySheet } from '@/components/BulkApplySheet';
+import { useAppExperience } from '@/context/AppExperienceContext';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
-const MAIN_BAR_TABS = [
+const PRO_TABS = [
   { name: 'index',        title: 'Home',         iconOutline: 'layers-outline' as const,        iconFilled: 'layers' as const        },
   { name: 'ipos',         title: 'IPO Hub',      iconOutline: 'grid-outline' as const,          iconFilled: 'grid' as const          },
   { name: 'applications', title: 'Applications', iconOutline: 'document-text-outline' as const, iconFilled: 'document-text' as const },
   { name: 'settings',     title: 'Settings',     iconOutline: 'settings-outline' as const,      iconFilled: 'settings' as const      },
 ] as const;
 
-const ALL_TAB_NAMES = ['index', 'applications', 'ipos', 'bids', 'settings', 'forms', 'banks', 'users', 'hub'] as const;
+const NON_PRO_TABS = [
+  { name: 'ipos',              title: 'IPO Hub',           iconOutline: 'grid-outline' as const,   iconFilled: 'grid' as const   },
+  { name: 'allotment-checker', title: 'Allotment',         iconOutline: 'ticket-rupee' as const,   iconFilled: 'ticket-rupee' as const },
+  { name: 'users',             title: 'Users',             iconOutline: 'person-outline' as const, iconFilled: 'person' as const },
+  { name: 'settings',          title: 'Settings',          iconOutline: 'settings-outline' as const, iconFilled: 'settings' as const },
+] as const;
+
+const ALL_TAB_NAMES = ['index', 'applications', 'ipos', 'bids', 'settings', 'forms', 'banks', 'users', 'hub', 'allotment-checker'] as const;
+
+// Green -> Cyan -> Electric Blue -> Violet gradient matching the Auto Enhance CTA reference
+const ACTIVE_TAB_GRADIENT: readonly [string, string, ...string[]] = [
+  '#05D672',
+  '#00BCD4',
+  '#1A8CFF',
+  '#7662FA',
+];
 
 function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: BottomTabBarProps & { onOpenApply: () => void }) {
   const colors = useColors();
@@ -26,9 +51,13 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
   const isDark = resolvedScheme === 'dark';
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { isNonPro, isLoading, isReady } = useAppExperience();
+  const { width: windowWidth } = useWindowDimensions();
+  const isNarrow = windowWidth < 360;
 
+  const currentTabs = isNonPro ? NON_PRO_TABS : PRO_TABS;
   const currentRouteName = state.routes[state.index]?.name;
-  const activeIndex = MAIN_BAR_TABS.findIndex((t) => t.name === currentRouteName);
+  const activeIndex = currentTabs.findIndex((t) => t.name === currentRouteName);
 
   const [isAppSelectionActive, setIsAppSelectionActive] = useState(false);
   const [appActiveTab, setAppActiveTab] = useState<string>('Applied');
@@ -86,15 +115,52 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
     };
   }, [fabScaleAnim]);
 
-  if (currentRouteName === 'users' || currentRouteName === 'banks') {
+  // Synchronize navigator route if tier revocation leaves active route on a Pro-only tab
+  useEffect(() => {
+    if (isNonPro && isReady && !isLoading) {
+      if (
+        currentRouteName !== 'ipos' &&
+        currentRouteName !== 'allotment-checker' &&
+        currentRouteName !== 'users' &&
+        currentRouteName !== 'settings'
+      ) {
+        if (typeof (router as any).navigate === 'function') {
+          (router as any).navigate('/(tabs)/ipos');
+        } else {
+          router.replace('/(tabs)/ipos');
+        }
+      }
+    }
+  }, [isNonPro, isReady, isLoading, currentRouteName, router]);
+
+  if (isLoading || !isReady) {
     return null;
+  }
+
+  if (isNonPro) {
+    if (
+      currentRouteName !== 'ipos' &&
+      currentRouteName !== 'allotment-checker' &&
+      currentRouteName !== 'users' &&
+      currentRouteName !== 'settings'
+    ) {
+      return null;
+    }
+  } else {
+    if (
+      currentRouteName === 'users' ||
+      currentRouteName === 'banks' ||
+      currentRouteName === 'allotment-checker'
+    ) {
+      return null;
+    }
   }
 
   const bottomPad = Platform.OS === 'web' ? 16 : Math.max(insets.bottom, 12);
   const blurMaskHeight = bottomPad + 110;
 
   const gradientColors: [string, string, string, string] = isDark
-    ? ['rgba(14,17,23,0)', 'rgba(14,17,23,0.5)', 'rgba(14,17,23,0.88)', colors.background]
+    ? ['rgba(9,10,15,0)', 'rgba(9,10,15,0.5)', 'rgba(9,10,15,0.88)', colors.background]
     : ['rgba(248,249,250,0)', 'rgba(248,249,250,0.45)', 'rgba(248,249,250,0.88)', colors.background];
 
   const handlePlusPress = () => {
@@ -157,12 +223,24 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
       </View>
 
       {/* ── Floating Navigation Menu ── */}
-      <View style={[styles.floatingContainer, { bottom: bottomPad }]} pointerEvents="box-none">
+      <View
+        style={[
+          styles.floatingContainer,
+          {
+            bottom: bottomPad,
+            left: isNarrow ? 8 : 16,
+            right: isNarrow ? 8 : 16,
+            gap: isNarrow ? 6 : 10,
+          },
+        ]}
+        pointerEvents="box-none"
+      >
         {/* ── Main Floating Capsule Bar ── */}
         <View
           onLayout={(e) => setCapsuleWidth(e.nativeEvent.layout.width)}
           style={[
             styles.mainCapsule,
+            isNarrow && { height: 60, padding: 4 },
             {
               backgroundColor: colors.card,
               borderColor: colors.border,
@@ -186,7 +264,7 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
             />
           )}
 
-          {MAIN_BAR_TABS.map(({ name, title, iconOutline, iconFilled }) => {
+          {currentTabs.map(({ name, title, iconOutline, iconFilled }) => {
             const isFocused = currentRouteName === name;
 
             const onPress = () => {
@@ -197,6 +275,10 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
                 target: targetRoute?.key ?? '',
                 canPreventDefault: true,
               });
+
+              if (name === 'allotment-checker') {
+                DeviceEventEmitter.emit('ALLOTMENT_TAB_NAV_PRESS');
+              }
 
               if (!isFocused && !event.defaultPrevented) {
                 navigation.navigate(name);
@@ -211,20 +293,27 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
                 key={name}
                 onPress={onPress}
                 activeOpacity={0.85}
-                style={styles.tabItem}
+                style={[
+                  styles.tabItem,
+                  isNarrow && { height: 50, paddingHorizontal: 2, paddingVertical: 2, gap: 1.5 },
+                ]}
               >
-                <Ionicons
-                  name={isFocused ? iconFilled : iconOutline}
-                  size={20}
+                <Icon
+                  name={(isFocused ? iconFilled : iconOutline) as any}
+                  size={isNarrow ? 18 : 20}
                   color={isFocused ? activeText : inactiveText}
+                  strokeWidth={isFocused ? 2.2 : 1.8}
                 />
                 <Text
                   style={[
                     styles.tabLabel,
+                    isNarrow && { fontSize: 9.5 },
                     { color: isFocused ? activeText : inactiveText },
                     isFocused ? styles.tabLabelActive : styles.tabLabelInactive,
                   ]}
                   numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
                 >
                   {title}
                 </Text>
@@ -233,56 +322,78 @@ function CustomFloatingTabBar({ state, descriptors, navigation, onOpenApply }: B
           })}
         </View>
 
-        {/* ── Animated Center FAB Button ── */}
-        <Animated.View style={{ transform: [{ scale: fabScaleAnim }] }}>
-          <TouchableOpacity
-            onPress={handlePlusPress}
-            activeOpacity={0.85}
-            style={[
-              styles.circleBtn,
-              {
-                backgroundColor: isDestructiveState ? colors.destructive : colors.primary,
-                borderColor: isDestructiveState ? colors.destructive : colors.primary,
-              },
-            ]}
-          >
-            <Feather
-              name={getFabIconName()}
-              size={24}
-              color={isDestructiveState ? '#FFFFFF' : colors.primaryForeground}
-            />
-          </TouchableOpacity>
-        </Animated.View>
+        {/* ── Animated Center FAB Button (Pro mode only) ── */}
+        {!isNonPro && (
+          <Animated.View style={{ transform: [{ scale: fabScaleAnim }] }}>
+            <TouchableOpacity
+              onPress={handlePlusPress}
+              activeOpacity={0.85}
+              style={[
+                styles.circleBtn,
+                isNarrow && { width: 58, height: 58, borderRadius: 29 },
+                {
+                  backgroundColor: isDestructiveState ? colors.destructive : 'transparent',
+                  borderColor: isDestructiveState ? colors.destructive : 'transparent',
+                  overflow: 'hidden',
+                },
+              ]}
+            >
+              {!isDestructiveState && (
+                <LinearGradient
+                  colors={ACTIVE_TAB_GRADIENT}
+                  start={{ x: 0, y: 0.15 }}
+                  end={{ x: 1, y: 0.85 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              )}
+              <Icon
+                name={getFabIconName()}
+                size={24}
+                color="#FFFFFF"
+                strokeWidth={2.2}
+              />
+            </TouchableOpacity>
+          </Animated.View>
+        )}
       </View>
     </>
   );
 }
 
 export default function TabLayout() {
-  const [showApplySheet, setShowApplySheet] = useState(false);
+  const router = useRouter();
+  const { isNonPro } = useAppExperience();
 
-  const handleOpenApplySheet = useCallback(() => {
-    setShowApplySheet(true);
-  }, []);
+  const handleOpenApply = useCallback(() => {
+    if (isNonPro) return;
+    router.push('/bulk-apply');
+  }, [router, isNonPro]);
 
-  const handleCloseApplySheet = useCallback(() => {
-    setShowApplySheet(false);
+  useEffect(() => {
+    SplashScreen.hideAsync().catch(() => {});
   }, []);
 
   useEffect(() => {
-    const sub = DeviceEventEmitter.addListener('OPEN_BULK_APPLY', () => {
-      setShowApplySheet(true);
+    const sub = DeviceEventEmitter.addListener('OPEN_BULK_APPLY', (paramIpoId?: string) => {
+      if (isNonPro) return;
+      if (paramIpoId && typeof paramIpoId === 'string') {
+        router.push({ pathname: '/bulk-apply', params: { ipoId: paramIpoId } });
+      } else {
+        router.push('/bulk-apply');
+      }
     });
     return () => sub.remove();
-  }, []);
+  }, [router, isNonPro]);
 
   return (
     <View style={{ flex: 1 }}>
       <Tabs
+        key={isNonPro ? 'tabs-non-pro' : 'tabs-pro'}
+        initialRouteName={isNonPro ? 'ipos' : 'index'}
         tabBar={(props) => (
           <CustomFloatingTabBar
             {...props}
-            onOpenApply={handleOpenApplySheet}
+            onOpenApply={handleOpenApply}
           />
         )}
         screenOptions={{
@@ -299,11 +410,6 @@ export default function TabLayout() {
           />
         ))}
       </Tabs>
-
-      <BulkApplySheet
-        visible={showApplySheet}
-        onClose={handleCloseApplySheet}
-      />
     </View>
   );
 }

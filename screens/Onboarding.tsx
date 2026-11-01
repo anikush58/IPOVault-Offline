@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -6,7 +6,7 @@ import {
   FlatList,
   NativeSyntheticEvent,
   NativeScrollEvent,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -24,42 +24,32 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { ONBOARDING_SLIDES, ONBOARDING_STORAGE_KEY } from '@/constants/onboarding';
-import { useColorSchemeAssets } from '@/hooks/useColorSchemeAssets';
-import { useColors } from '@/hooks/useColors';
+import defaultColors from '@/constants/colors';
 import { OnboardingSlide } from '@/components/onboarding/OnboardingSlide';
 import { PageIndicator } from '@/components/onboarding/PageIndicator';
 import { PrimaryButton } from '@/components/onboarding/PrimaryButton';
-import { ThemeToggle } from '@/components/onboarding/ThemeToggle';
+import { AutoStatusBar } from '@/components/ui/AutoStatusBar';
 
 import { useAuth } from '@/context/AuthContext';
 import * as SplashScreen from 'expo-splash-screen';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-const BG_IMAGES = {
-  dark: [
-    require('@/assets/images/onboarding-bg-dark-1.png'),
-    require('@/assets/images/onboarding-bg-dark-2.png'),
-    require('@/assets/images/onboarding-bg-dark-3.png'),
-  ],
-  light: [
-    require('@/assets/images/onboarding-bg-1.png'),
-    require('@/assets/images/onboarding-bg-2.png'),
-    require('@/assets/images/onboarding-bg-3.png'),
-  ],
-};
+const BG_IMAGES = [
+  require('@/assets/images/onboarding-bg-1.png'),
+  require('@/assets/images/onboarding-bg-2.png'),
+  require('@/assets/images/onboarding-bg-3.png'),
+];
 
 function BackgroundLayers({
   scrollX,
-  isDark,
+  windowWidth,
 }: {
   scrollX: SharedValue<number>;
-  isDark: boolean;
+  windowWidth: number;
 }) {
   const layer1Style = useAnimatedStyle(() => {
     const opacity = interpolate(
       scrollX.value,
-      [0, SCREEN_WIDTH],
+      [0, windowWidth],
       [0, 1],
       Extrapolation.CLAMP
     );
@@ -69,41 +59,39 @@ function BackgroundLayers({
   const layer2Style = useAnimatedStyle(() => {
     const opacity = interpolate(
       scrollX.value,
-      [SCREEN_WIDTH, 2 * SCREEN_WIDTH],
+      [windowWidth, 2 * windowWidth],
       [0, 1],
       Extrapolation.CLAMP
     );
     return { opacity };
   });
 
-  const sources = isDark ? BG_IMAGES.dark : BG_IMAGES.light;
-
   return (
     <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
       {/* Base Layer 0: Always 100% opaque underneath to prevent background bleed/blink */}
-      <Image source={sources[0]} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+      <Image source={BG_IMAGES[0]} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
 
       {/* Layer 1: Dissolves seamlessly over Layer 0 */}
       <Animated.View style={[StyleSheet.absoluteFillObject, layer1Style]}>
-        <Image source={sources[1]} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+        <Image source={BG_IMAGES[1]} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
       </Animated.View>
 
       {/* Layer 2: Dissolves seamlessly over Layer 1 */}
       <Animated.View style={[StyleSheet.absoluteFillObject, layer2Style]}>
-        <Image source={sources[2]} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+        <Image source={BG_IMAGES[2]} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
       </Animated.View>
     </View>
   );
 }
 
 const FloatingStationaryLogo = React.memo(function FloatingStationaryLogo({
-  isDark,
+  isSmallScreen,
 }: {
-  isDark: boolean;
+  isSmallScreen: boolean;
 }) {
   const translateY = useSharedValue(0);
 
-  useEffect(() => {
+  React.useEffect(() => {
     translateY.value = withRepeat(
       withSequence(
         withTiming(-4, { duration: 2000, easing: Easing.inOut(Easing.quad) }),
@@ -118,15 +106,31 @@ const FloatingStationaryLogo = React.memo(function FloatingStationaryLogo({
     transform: [{ translateY: translateY.value }],
   }));
 
-  const logoSource = isDark
-    ? require('@/assets/images/onboarding-brand-logo-dark.png')
-    : require('@/assets/images/onboarding-brand-logo.png');
+  const logoSource = require('@/assets/images/onboarding-brand-logo.png');
+  const logoSize = isSmallScreen ? 96 : 120;
+  const logoRadius = isSmallScreen ? 22 : 28;
 
   return (
-    <Animated.View style={[styles.brandingContainer, animStyle]}>
+    <Animated.View
+      style={[
+        styles.brandingContainer,
+        {
+          marginTop: isSmallScreen ? 0 : 4,
+          marginBottom: isSmallScreen ? 4 : 8,
+        },
+        animStyle,
+      ]}
+    >
       <Image
         source={logoSource}
-        style={styles.logoImage}
+        style={[
+          styles.logoImage,
+          {
+            width: logoSize,
+            height: logoSize,
+            borderRadius: logoRadius,
+          },
+        ]}
         resizeMode="cover"
       />
     </Animated.View>
@@ -136,35 +140,19 @@ const FloatingStationaryLogo = React.memo(function FloatingStationaryLogo({
 export function OnboardingScreenView() {
   const router = useRouter();
   const { user } = useAuth();
-  const { isDark } = useColorSchemeAssets();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isSmallScreen = windowHeight < 720;
+  const isNarrow = windowWidth < 360;
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const currentIndexRef = useRef(0);
   currentIndexRef.current = currentIndex;
 
   const scrollX = useSharedValue(0);
   const flatListRef = useRef<FlatList>(null);
-  const isUserTouchingRef = useRef(false);
 
   React.useEffect(() => {
     SplashScreen.hideAsync().catch(() => {});
-  }, []);
-
-  // 3-Second Smooth Auto-Scroll Dissolve Interval (stops at final CTA slide)
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (isUserTouchingRef.current) return;
-      if (currentIndexRef.current < ONBOARDING_SLIDES.length - 1) {
-        const nextIndex = currentIndexRef.current + 1;
-        flatListRef.current?.scrollToOffset({
-          offset: nextIndex * SCREEN_WIDTH,
-          animated: true,
-        });
-        currentIndexRef.current = nextIndex;
-        setCurrentIndex(nextIndex);
-      }
-    }, 3000);
-
-    return () => clearInterval(timer);
   }, []);
 
   const scrollHandler = useAnimatedScrollHandler({
@@ -173,71 +161,95 @@ export function OnboardingScreenView() {
     },
   });
 
-  const handleScrollBeginDrag = () => {
-    isUserTouchingRef.current = true;
-  };
-
-  const handleMomentumScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const handleScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetX = event.nativeEvent.contentOffset.x;
-    const index = Math.round(offsetX / SCREEN_WIDTH);
-    if (index >= 0 && index < ONBOARDING_SLIDES.length) {
+    const index = Math.round(offsetX / windowWidth);
+    if (index >= 0 && index < ONBOARDING_SLIDES.length && index !== currentIndexRef.current) {
       setCurrentIndex(index);
       currentIndexRef.current = index;
     }
-    setTimeout(() => {
-      isUserTouchingRef.current = false;
-    }, 1000);
   };
 
-  const handleNext = async () => {
+  const handleFinish = async () => {
+    try {
+      await safeAsyncStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+    } catch (e) {
+      if (__DEV__) console.warn('Failed to save onboarding completion state', e);
+    }
+    if (user) {
+      router.replace('/(tabs)');
+    } else {
+      router.replace('/auth');
+    }
+  };
+
+  const handleSkip = () => {
+    handleFinish();
+  };
+
+  const handleContinue = () => {
     if (currentIndex < ONBOARDING_SLIDES.length - 1) {
       const nextIndex = currentIndex + 1;
       currentIndexRef.current = nextIndex;
       setCurrentIndex(nextIndex);
       flatListRef.current?.scrollToOffset({
-        offset: nextIndex * SCREEN_WIDTH,
+        offset: nextIndex * windowWidth,
         animated: true,
       });
-    } else {
-      try {
-        await safeAsyncStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
-      } catch (e) {
-        if (__DEV__) console.warn('Failed to save onboarding completion state', e);
-      }
-      if (user) {
-        router.replace('/(tabs)');
-      } else {
-        router.replace('/auth');
-      }
     }
   };
 
-  const colors = useColors();
-  const bgColor = colors.background;
+  const handleGetStarted = () => {
+    handleFinish();
+  };
+
+  const colors = defaultColors.light;
+  const isDark = false;
+  const bgColor = '#F9FBFE';
   const textColor = colors.foreground;
   const subtitleColor = colors.mutedForeground;
 
-  const buttonLabel = currentIndex === ONBOARDING_SLIDES.length - 1 ? 'Get Started' : 'Next';
+  const isLastSlide = currentIndex === ONBOARDING_SLIDES.length - 1;
+  const buttonHeight = isSmallScreen ? 50 : 56;
+
+  // Pure Opacity Cross-Fade without any translateY/position displacement
+  const twoButtonsAnimStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      scrollX.value,
+      [(ONBOARDING_SLIDES.length - 2) * windowWidth, (ONBOARDING_SLIDES.length - 1) * windowWidth],
+      [1, 0],
+      Extrapolation.CLAMP
+    );
+    return { opacity };
+  });
+
+  const singleButtonAnimStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      scrollX.value,
+      [(ONBOARDING_SLIDES.length - 2) * windowWidth, (ONBOARDING_SLIDES.length - 1) * windowWidth],
+      [0, 1],
+      Extrapolation.CLAMP
+    );
+    return { opacity };
+  });
 
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
-      {/* Zero-Blink Cumulative Background Dissolve Layer Stack */}
-      <BackgroundLayers scrollX={scrollX} isDark={isDark} />
+      {/* Auto-adjusting Status Bar: Automatically detects light background and applies dark content */}
+      <AutoStatusBar backgroundColor={bgColor} />
 
+      {/* Zero-Blink Cumulative Background Dissolve Layer Stack */}
+      <BackgroundLayers scrollX={scrollX} windowWidth={windowWidth} />
 
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
-        {/* Top Header Bar with Theme Switcher */}
-        <View style={styles.headerBar}>
-          <View style={styles.headerRight}>
-            <ThemeToggle />
-          </View>
-        </View>
+        {/* Top Header Bar */}
+        <View style={styles.headerBar} />
 
         {/* Stationary Floating Logo (Stays fixed with persistent smooth breathing) */}
-        <FloatingStationaryLogo isDark={isDark} />
+        <FloatingStationaryLogo isSmallScreen={isSmallScreen} />
 
         <View style={styles.content}>
-          {/* Horizontal Carousel Driven on UI Thread */}
+          {/* Horizontal Carousel Driven on UI Thread (manual swiping only) */}
           <Animated.FlatList
             ref={flatListRef}
             data={ONBOARDING_SLIDES}
@@ -246,12 +258,12 @@ export function OnboardingScreenView() {
             pagingEnabled
             showsHorizontalScrollIndicator={false}
             onScroll={scrollHandler}
-            onScrollBeginDrag={handleScrollBeginDrag}
-            onMomentumScrollEnd={handleMomentumScrollEnd}
+            onMomentumScrollEnd={handleScrollEnd}
+            onScrollEndDrag={handleScrollEnd}
             scrollEventThrottle={16}
             getItemLayout={(_, index) => ({
-              length: SCREEN_WIDTH,
-              offset: SCREEN_WIDTH * index,
+              length: windowWidth,
+              offset: windowWidth * index,
               index,
             })}
             renderItem={({ item, index }) => (
@@ -261,19 +273,81 @@ export function OnboardingScreenView() {
                 scrollX={scrollX}
                 textColor={textColor}
                 subtitleColor={subtitleColor}
+                windowWidth={windowWidth}
+                windowHeight={windowHeight}
               />
             )}
           />
 
-          {/* Footer Controls (Continuous Page Indicator & Primary Button) */}
-          <View style={styles.footer}>
+          {/* Footer Controls (Screen Indicator in theme & Dynamic CTA Buttons) */}
+          <View
+            style={[
+              styles.footer,
+              {
+                paddingHorizontal: isNarrow ? 16 : 24,
+                paddingTop: isSmallScreen ? 10 : 16,
+                paddingBottom: isSmallScreen ? 14 : 20,
+                gap: isSmallScreen ? 16 : 24,
+              },
+            ]}
+          >
             <PageIndicator
               total={ONBOARDING_SLIDES.length}
               scrollX={scrollX}
+              activeColor={colors.primary}
               isDark={isDark}
+              windowWidth={windowWidth}
+              onSelectIndex={(index) => {
+                flatListRef.current?.scrollToOffset({
+                  offset: index * windowWidth,
+                  animated: true,
+                });
+                currentIndexRef.current = index;
+                setCurrentIndex(index);
+              }}
             />
-            <View style={styles.buttonWrapper}>
-              <PrimaryButton label={buttonLabel} onPress={handleNext} isDark={isDark} />
+
+            {/* CTA Buttons: Exactly identical container and positioning across all screens with smooth cross-fade */}
+            <View style={[styles.buttonWrapper, { height: buttonHeight }]}>
+              {/* Screens 1 & 2 CTA: Skip & Continue side by side */}
+              <Animated.View
+                style={[styles.ctaLayer, { height: buttonHeight }, twoButtonsAnimStyle]}
+                pointerEvents={!isLastSlide ? 'auto' : 'none'}
+              >
+                <View style={[styles.ctaRow, { height: buttonHeight, gap: isNarrow ? 8 : 12 }]}>
+                  <PrimaryButton
+                    label="Skip"
+                    variant="outline"
+                    isDark={isDark}
+                    strokeOpacity={0.5}
+                    onPress={handleSkip}
+                    style={[styles.halfButton, { height: buttonHeight }]}
+                  />
+                  <PrimaryButton
+                    label="Continue"
+                    variant="primary"
+                    isDark={isDark}
+                    onPress={handleContinue}
+                    style={[styles.halfButton, { height: buttonHeight }]}
+                  />
+                </View>
+              </Animated.View>
+
+              {/* Screen 3 CTA: Full-width Let's Get Started in the exact same ctaRow container */}
+              <Animated.View
+                style={[styles.ctaLayer, { height: buttonHeight }, singleButtonAnimStyle]}
+                pointerEvents={isLastSlide ? 'auto' : 'none'}
+              >
+                <View style={[styles.ctaRow, { height: buttonHeight }]}>
+                  <PrimaryButton
+                    label="Let’s Get Started"
+                    variant="primary"
+                    isDark={isDark}
+                    onPress={handleGetStarted}
+                    style={[styles.fullButton, { height: buttonHeight }]}
+                  />
+                </View>
+              </Animated.View>
             </View>
           </View>
         </View>
@@ -298,14 +372,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 10,
   },
-  headerRight: {
-    alignItems: 'center',
-  },
   brandingContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
-    marginBottom: 8,
     zIndex: 10,
   },
   logoImage: {
@@ -326,7 +395,26 @@ const styles = StyleSheet.create({
   },
   buttonWrapper: {
     width: '100%',
+    height: 56,
+    position: 'relative',
+  },
+  ctaLayer: {
+    ...StyleSheet.absoluteFillObject,
+    height: 56,
+  },
+  ctaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    width: '100%',
+    height: 56,
+  },
+  halfButton: {
+    flex: 1,
+    height: 56,
+  },
+  fullButton: {
+    flex: 1,
+    height: 56,
   },
 });
-
-

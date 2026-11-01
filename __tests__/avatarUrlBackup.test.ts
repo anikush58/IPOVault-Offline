@@ -1,4 +1,4 @@
-import { getDiceBearAvatarUrl, getEffectiveAvatarUrl } from '../utils/avatarUtils';
+import { getDiceBearAvatarUrl, getEffectiveAvatarUrl } from '@/utils/avatarUtils';
 
 let passCount = 0;
 let failCount = 0;

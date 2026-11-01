@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/ui/Icon';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColors } from '@/hooks/useColors';
@@ -26,6 +26,7 @@ import {
   getNotificationPermissionStatus,
   requestNotificationPermission,
 } from '@/services/notifications/notificationEngine';
+import { NotificationsSkeleton } from '@/components/notifications/NotificationsSkeleton';
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList as any);
 
@@ -86,7 +87,7 @@ export default function NotificationCenterScreen() {
         ]}
       >
         <View style={[styles.permissionBannerIconWrap, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.2)' : '#DBEAFE' }]}>
-          <Feather name="bell-off" size={16} color="#3B82F6" />
+          <Icon name="bell-off" size={16} color="#3B82F6" />
         </View>
         <View style={styles.permissionBannerTextWrap}>
           <Text style={[styles.permissionBannerTitle, { color: colors.foreground }]}>
@@ -101,7 +102,7 @@ export default function NotificationCenterScreen() {
           onPress={handleEnableSystemNotifications}
           activeOpacity={0.8}
         >
-          <Text style={styles.permissionBannerBtnText}>Enable</Text>
+          <Text style={[styles.permissionBannerBtnText, { color: colors.primaryForeground }]}>Enable</Text>
         </TouchableOpacity>
       </View>
     );
@@ -266,13 +267,13 @@ export default function NotificationCenterScreen() {
 
       {/* Body List */}
       {isLoading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.primary} />
+        <View style={{ paddingTop: topPad + 115 }}>
+          <NotificationsSkeleton />
         </View>
       ) : filteredNotifications.length === 0 ? (
         <View style={[styles.emptyView, { paddingTop: topPad + 115 }]}>
           {renderPermissionBanner()}
-          <Feather name="bell-off" size={44} color={colors.mutedForeground} style={{ marginBottom: 12 }} />
+          <Icon name="bell-off" size={44} color={colors.mutedForeground} style={{ marginBottom: 12 }} />
           <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No Notifications</Text>
           <Text style={[styles.emptySub, { color: colors.mutedForeground }]}>
             {activeTab === 'UNREAD'
@@ -309,7 +310,7 @@ export default function NotificationCenterScreen() {
                   activeOpacity={0.8}
                 >
                   <View style={[styles.iconWrap, { backgroundColor: iconConfig.bg }]}>
-                    <Feather name={iconConfig.name as any} size={20} color={iconConfig.color} />
+                    <Icon name={iconConfig.name as any} size={20} color={iconConfig.color} />
                   </View>
 
                   <View style={styles.cardBody}>
@@ -334,7 +335,7 @@ export default function NotificationCenterScreen() {
                     style={styles.deleteBtn}
                     hitSlop={8}
                   >
-                    <Feather name="trash-2" size={14} color={colors.mutedForeground} />
+                    <Icon name="trash-2" size={14} color={colors.mutedForeground} />
                   </TouchableOpacity>
                 </TouchableOpacity>
               </AnimatedEntrance>

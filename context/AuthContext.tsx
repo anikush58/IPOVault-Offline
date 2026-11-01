@@ -9,11 +9,17 @@ import {
   signOutFirebaseUser,
   updateUserProfileCloud,
   fetchUserProfileCloud,
+  deleteCurrentUserAccount,
 } from '@/services/auth/firebaseAuthService';
 import { firebaseAuth } from '@/services/auth/firebaseConfig';
 import { cancelDebouncedFirestoreSync } from '@/services/cloud/firestoreSyncService';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { ensureBase64DataUrl, saveBase64ToLocalImage } from '@/utils/imageUtils';
+import { userEntitlementService } from '@/services/user/userEntitlementService';
+import {
+  registerDevicePushTokenAsync,
+  unregisterDevicePushTokenAsync,
+} from '@/services/notifications/notificationEngine';
 
 export type AuthUser = AuthUserProfile;
 
@@ -26,6 +32,7 @@ export type AuthContextType = {
   signInWithGoogle: () => Promise<{ user?: AuthUser | null; error: string | null }>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<{ success: boolean; error: string | null }>;
   updateProfile: (displayName?: string, avatarUri?: string | null) => Promise<{ success: boolean; error: string | null }>;
   syncProfileFromCloud: (targetUid?: string) => Promise<{ displayName?: string | null; avatarUri?: string | null } | null>;
 };
@@ -41,6 +48,7 @@ const DEFAULT_AUTH_VALUE: AuthContextType = {
   signInWithGoogle: async () => ({ user: null, error: 'Auth not initialized' }),
   resetPassword: async () => ({ error: 'Auth not initialized' }),
   signOut: async () => {},
+  deleteAccount: async () => ({ success: false, error: 'Auth not initialized' }),
   updateProfile: async () => ({ success: true, error: null }),
   syncProfileFromCloud: async () => null,
 };
@@ -115,6 +123,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
       }
 
+      if (cloudProfile?.isPro) {
+        userEntitlementService
+          .recordProUser({
+            uid,
+            email: cloudProfile.email,
+            username: cloudProfile.displayName || cloudProfile.username,
+          })
+          .catch(() => {});
+      }
+
       return { displayName: hydratedName, avatarUri: hydratedAvatar };
     } catch (err) {
       console.warn('[AuthContext] Error syncing profile from cloud:', err);
@@ -123,17 +141,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    let isMounted = true;
+
+    // Safety fallback timer: unblock app startup if onAuthStateChanged is delayed, offline, or remounting
+    const fallbackTimer = setTimeout(() => {
+      if (isMounted) {
+        const current = firebaseAuth.currentUser;
+        if (current) {
+          setUser({
+            id: current.uid,
+            uid: current.uid,
+            email: current.email,
+            displayName: current.displayName,
+            photoURL: current.photoURL,
+          });
+        }
+        setIsLoading(false);
+      }
+    }, 2500);
+
     const unsubscribe = subscribeToAuthState((authUser) => {
-      setUser(authUser);
-      setIsLoading(false);
-      if (authUser?.uid) {
-        syncProfileFromCloud(authUser.uid).catch((e) =>
-          console.warn('[AuthContext] syncProfileFromCloud error:', e)
-        );
+      clearTimeout(fallbackTimer);
+      if (isMounted) {
+        setUser(authUser);
+        setIsLoading(false);
+        if (authUser?.uid) {
+          userEntitlementService.handleUserChange(
+            authUser.uid,
+            authUser.email,
+            authUser.displayName
+          );
+          syncProfileFromCloud(authUser.uid).catch((e) => {
+            if (__DEV__) console.warn('[AuthContext] syncProfileFromCloud error:', e);
+          });
+          registerDevicePushTokenAsync(authUser.uid).catch((e) => {
+            if (__DEV__) console.warn('[AuthContext] registerDevicePushTokenAsync error:', e);
+          });
+        } else {
+          userEntitlementService.handleUserChange(null);
+        }
       }
     });
 
     return () => {
+      isMounted = false;
+      clearTimeout(fallbackTimer);
       unsubscribe();
     };
   }, []);
@@ -142,6 +194,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const res = await loginWithEmailPassword(email, pass);
     if (res.user) {
       setUser(res.user);
+      userEntitlementService.handleUserChange(
+        res.user.uid,
+        res.user.email || null,
+        res.user.displayName
+      );
       try {
         const synced = await syncProfileFromCloud(res.user.uid);
         if (synced) {
@@ -163,6 +220,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const res = await registerWithEmailPassword(email, pass, fullName);
     if (res.user) {
       setUser(res.user);
+      userEntitlementService.handleUserChange(
+        res.user.uid,
+        res.user.email || null,
+        res.user.displayName
+      );
       if (fullName && fullName.trim()) {
         const trimmed = fullName.trim();
         await safeAsyncStorage.setItem('@ipovault_username', trimmed);
@@ -176,6 +238,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const res = await signInWithGoogleNative();
     if (res.user) {
       setUser(res.user);
+      userEntitlementService.handleUserChange(
+        res.user.uid,
+        res.user.email || null,
+        res.user.displayName
+      );
       try {
         const synced = await syncProfileFromCloud(res.user.uid);
         if (synced) {
@@ -200,9 +267,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     cancelDebouncedFirestoreSync();
+    if (user?.uid) {
+      await unregisterDevicePushTokenAsync(user.uid).catch(() => {});
+    }
     await Promise.all([
       safeAsyncStorage.removeItem('@ipovault_username'),
       safeAsyncStorage.removeItem('@ipovault_avatar_uri'),
+      userEntitlementService.handleSignOut(),
     ]).catch(() => {});
     await signOutFirebaseUser();
     setUser(null);
@@ -267,6 +338,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const deleteAccount = async (): Promise<{ success: boolean; error: string | null }> => {
+    try {
+      setIsLoading(true);
+      // 1. Unregister device push token before session terminates
+      if (user?.uid) {
+        await unregisterDevicePushTokenAsync(user.uid).catch(() => {});
+      }
+      // 2. Cancel any pending debounced sync operations
+      cancelDebouncedFirestoreSync();
+      // 3. Clear cached entitlement state
+      await userEntitlementService.handleSignOut().catch(() => {});
+
+      // 4. Perform atomic server & Firebase identity deletion
+      const res = await deleteCurrentUserAccount();
+      if (res.success) {
+        setUser(null);
+      }
+      return res;
+    } catch (err: any) {
+      console.error('[AuthContext] deleteAccount error:', err);
+      return { success: false, error: err?.message || 'Failed to delete account' };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const session = user ? { user } : null;
 
   const value = {
@@ -278,6 +375,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signInWithGoogle,
     resetPassword,
     signOut,
+    deleteAccount,
     updateProfile,
     syncProfileFromCloud,
   };

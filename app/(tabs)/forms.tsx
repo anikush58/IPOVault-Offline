@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useDialog } from '@/context/DialogContext';
 import { useDB, type ApplicationWithDetails } from '@/context/DBContext';
+import { useAppExperience } from '@/context/AppExperienceContext';
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { IPORepository } from '@/services/ipo/ipoRepository';
@@ -50,10 +51,11 @@ const sc = StyleSheet.create({
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
-export default function FormsScreen() {
+function FormsScreenContent() {
   const colors = useColors();
   const { showConfirm, showSuccess, showError } = useDialog();
   const router = useRouter();
+
   const { users, ipos, applications, bankAccounts, addBulkApplications, updateApplication } = useDB();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
@@ -768,5 +770,25 @@ const styles = StyleSheet.create({
   pickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 15, borderBottomWidth: 1, gap: 12 },
   pickerRowName: { fontSize: 15, fontFamily: 'GoogleSansFlex_500Medium' },
   pickerRowSub: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 2 },
-
 });
+
+export default function FormsScreen() {
+  const { isNonPro, isLoading: isExperienceLoading } = useAppExperience();
+  const router = useRouter();
+
+  React.useEffect(() => {
+    if (!isExperienceLoading && isNonPro) {
+      if (typeof (router as any).navigate === 'function') {
+        (router as any).navigate('/(tabs)/ipos');
+      } else {
+        router.replace('/(tabs)/ipos');
+      }
+    }
+  }, [isNonPro, isExperienceLoading, router]);
+
+  if (isNonPro) {
+    return null;
+  }
+
+  return <FormsScreenContent />;
+}

@@ -10,7 +10,7 @@
  * - Absolutely zero financial, portfolio, or user identity data is leaked.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -22,7 +22,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useAdContext } from '@/context/AdContext';
-import { getNativeAdUnitId, buildSanitizedAdRequestOptions } from '@/services/ads/adConfig';
+import { getNativeAdUnitId, isAdConfigurationValid, buildSanitizedAdRequestOptions } from '@/services/ads/adConfig';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { DesignSystem } from '@/constants/DesignSystem';
@@ -32,7 +32,7 @@ export interface NativeAdCardProps {
   testID?: string;
 }
 
-export const NativeAdCard: React.FC<NativeAdCardProps> = ({
+export const NativeAdCard: React.FC<NativeAdCardProps> = React.memo(({
   style,
   testID = 'native-ad-card',
 }) => {
@@ -45,26 +45,52 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = ({
   const [hasError, setHasError] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Persistent reference to the native ad instance for leak-free lifecycle cleanup
+  const adRef = useRef<any>(null);
+  const isRequestingRef = useRef(false);
+
   // Load native ad when native module is supported and consent is active
   useEffect(() => {
     let isMounted = true;
 
     if (adsEnabled && canRequestAds && isNativeAdMobSupported && Platform.OS !== 'web') {
+      const adUnitId = getNativeAdUnitId();
+
+      // Validate ID: collapse safely if configuration is missing or invalid
+      if (!isAdConfigurationValid(adUnitId)) {
+        setHasError(true);
+        return;
+      }
+
+      // Prevent duplicate concurrent requests on rerenders
+      if (isRequestingRef.current || adRef.current) {
+        return;
+      }
+
       try {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { NativeAd } = require('react-native-google-mobile-ads');
-        const adUnitId = getNativeAdUnitId();
         const requestOptions = buildSanitizedAdRequestOptions();
 
+        isRequestingRef.current = true;
         setLoading(true);
+
         NativeAd.createForAdRequest(adUnitId, requestOptions)
           .then((ad: any) => {
+            isRequestingRef.current = false;
             if (isMounted) {
+              adRef.current = ad;
               setNativeAdInstance(ad);
               setLoading(false);
+            } else {
+              // Component unmounted while ad request was in-flight: destroy immediately
+              try {
+                ad?.destroy?.();
+              } catch {}
             }
           })
           .catch((err: unknown) => {
+            isRequestingRef.current = false;
             console.warn('[NativeAdCard] Failed to load native ad:', err);
             if (isMounted) {
               setHasError(true);
@@ -72,6 +98,7 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = ({
             }
           });
       } catch (err) {
+        isRequestingRef.current = false;
         console.warn('[NativeAdCard] NativeAd initialization error:', err);
         setHasError(true);
       }
@@ -79,10 +106,11 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = ({
 
     return () => {
       isMounted = false;
-      if (nativeAdInstance && typeof nativeAdInstance.destroy === 'function') {
+      if (adRef.current && typeof adRef.current.destroy === 'function') {
         try {
-          nativeAdInstance.destroy();
+          adRef.current.destroy();
         } catch {}
+        adRef.current = null;
       }
     };
   }, [adsEnabled, canRequestAds, isNativeAdMobSupported]);
@@ -215,7 +243,9 @@ export const NativeAdCard: React.FC<NativeAdCardProps> = ({
   }
 
   return null;
-};
+});
+
+NativeAdCard.displayName = 'NativeAdCard';
 
 const styles = StyleSheet.create({
   cardContainer: {

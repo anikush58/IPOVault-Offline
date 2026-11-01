@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  Image,
   Modal,
   Platform,
   Pressable,
@@ -10,12 +9,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/ui/Icon';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
-import { IconButton } from '@/components/ui/IconButton';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 
 export default function SettingsAboutScreen() {
@@ -41,6 +39,7 @@ export default function SettingsAboutScreen() {
         title="About IPOVault"
         centerTitle
         showBack
+        transparent
       />
 
       <ScrollView
@@ -58,15 +57,15 @@ export default function SettingsAboutScreen() {
         {/* App Version Card */}
         <View style={[styles.appHeaderCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={[styles.appLogoWrap, { backgroundColor: settingIconBg, borderColor: colors.border }]}>
-            <Feather name="trending-up" size={26} color={settingIconColor} />
+            <Icon name="trending-up" size={26} color={settingIconColor} />
           </View>
 
           <View style={{ flex: 1, gap: 2 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={[styles.appName, { color: colors.foreground }]}>IPOVault</Text>
-              <View style={[styles.upToDateBadge, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5', borderColor: isDark ? 'rgba(16, 185, 129, 0.3)' : '#BBF7D0' }]}>
-                <Feather name="check" size={11} color="#10B981" />
-                <Text style={[styles.upToDateText, { color: isDark ? '#4ADE80' : '#15803D' }]}>Up to date</Text>
+              <View style={[styles.upToDateBadge, { backgroundColor: '#10B981', borderWidth: 0 }]}>
+                <Icon name="check" size={11} color="#FFFFFF" strokeWidth={2.5} />
+                <Text style={[styles.upToDateText, { color: '#FFFFFF' }]}>Up to date</Text>
               </View>
             </View>
             <Text style={[styles.appVersion, { color: colors.mutedForeground }]}>Version 2.3.0</Text>
@@ -82,13 +81,13 @@ export default function SettingsAboutScreen() {
             onPress={() => setShowWhatsNewModal(true)}
           >
             <View style={[styles.menuIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="star" size={17} color={settingIconColor} />
+              <Icon name="star" size={17} color={settingIconColor} />
             </View>
             <View style={styles.menuTextWrap}>
-              <Text style={[styles.menuTitle, { color: colors.foreground }]}>What's New</Text>
-              <Text style={[styles.menuSub, { color: colors.mutedForeground }]}>See what's new in this version</Text>
+              <Text style={[styles.menuTitle, { color: colors.foreground }]}>{"What's New"}</Text>
+              <Text style={[styles.menuSub, { color: colors.mutedForeground }]}>{"See what's new in this version"}</Text>
             </View>
-            <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+            <Icon name="chevron-right" size={16} color={colors.mutedForeground} />
           </TouchableOpacity>
 
           {/* Terms of Service */}
@@ -98,13 +97,13 @@ export default function SettingsAboutScreen() {
             onPress={() => setShowTermsModal(true)}
           >
             <View style={[styles.menuIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="file-text" size={17} color={settingIconColor} />
+              <Icon name="file-text" size={17} color={settingIconColor} />
             </View>
             <View style={styles.menuTextWrap}>
               <Text style={[styles.menuTitle, { color: colors.foreground }]}>Terms of Service</Text>
               <Text style={[styles.menuSub, { color: colors.mutedForeground }]}>Read our terms and conditions</Text>
             </View>
-            <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+            <Icon name="chevron-right" size={16} color={colors.mutedForeground} />
           </TouchableOpacity>
 
           {/* Privacy Policy */}
@@ -114,13 +113,13 @@ export default function SettingsAboutScreen() {
             onPress={() => router.push('/privacy-policy')}
           >
             <View style={[styles.menuIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="shield" size={17} color={settingIconColor} />
+              <Icon name="shield" size={17} color={settingIconColor} />
             </View>
             <View style={styles.menuTextWrap}>
               <Text style={[styles.menuTitle, { color: colors.foreground }]}>Privacy Policy</Text>
               <Text style={[styles.menuSub, { color: colors.mutedForeground }]}>How your data is protected</Text>
             </View>
-            <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+            <Icon name="chevron-right" size={16} color={colors.mutedForeground} />
           </TouchableOpacity>
 
           {/* Open Source Licenses */}
@@ -130,13 +129,13 @@ export default function SettingsAboutScreen() {
             onPress={() => setShowLicensesModal(true)}
           >
             <View style={[styles.menuIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="code" size={17} color={settingIconColor} />
+              <Icon name="code" size={17} color={settingIconColor} />
             </View>
             <View style={styles.menuTextWrap}>
               <Text style={[styles.menuTitle, { color: colors.foreground }]}>Open Source Licenses</Text>
               <Text style={[styles.menuSub, { color: colors.mutedForeground }]}>MIT and Apache 2.0 open source licenses</Text>
             </View>
-            <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+            <Icon name="chevron-right" size={16} color={colors.mutedForeground} />
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -147,13 +146,13 @@ export default function SettingsAboutScreen() {
           <Pressable style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => {}}>
             <View style={styles.modalHeader}>
               <View>
-                <Text style={[styles.modalTitle, { color: colors.foreground }]}>What's New</Text>
+                <Text style={[styles.modalTitle, { color: colors.foreground }]}>{"What's New"}</Text>
                 <Text style={[styles.modalSubTitle, { color: colors.mutedForeground }]}>
                   Version 2.3.0 • Recent Updates
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setShowWhatsNewModal(false)} hitSlop={8}>
-                <Feather name="x" size={18} color={colors.mutedForeground} />
+                <Icon name="x" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             </View>
 
@@ -161,7 +160,7 @@ export default function SettingsAboutScreen() {
               <View style={{ gap: 14, paddingVertical: 6 }}>
                 <View style={styles.whatsNewItem}>
                   <View style={[styles.whatsNewIconWrap, { backgroundColor: settingIconBg }]}>
-                    <Feather name="zap" size={16} color={settingIconColor} />
+                    <Icon name="zap" size={16} color={settingIconColor} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.whatsNewItemTitle, { color: colors.foreground }]}>Faster Dashboard Loading</Text>
@@ -173,7 +172,7 @@ export default function SettingsAboutScreen() {
 
                 <View style={styles.whatsNewItem}>
                   <View style={[styles.whatsNewIconWrap, { backgroundColor: settingIconBg }]}>
-                    <Feather name="link-2" size={16} color={settingIconColor} />
+                    <Icon name="link-2" size={16} color={settingIconColor} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.whatsNewItemTitle, { color: colors.foreground }]}>Improved Broker Integration</Text>
@@ -185,7 +184,7 @@ export default function SettingsAboutScreen() {
 
                 <View style={styles.whatsNewItem}>
                   <View style={[styles.whatsNewIconWrap, { backgroundColor: settingIconBg }]}>
-                    <Feather name="bar-chart" size={16} color={settingIconColor} />
+                    <Icon name="bar-chart" size={16} color={settingIconColor} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.whatsNewItemTitle, { color: colors.foreground }]}>New Performance Bar Chart</Text>
@@ -220,7 +219,7 @@ export default function SettingsAboutScreen() {
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setShowTermsModal(false)} hitSlop={8}>
-                <Feather name="x" size={18} color={colors.mutedForeground} />
+                <Icon name="x" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             </View>
 
@@ -261,7 +260,7 @@ export default function SettingsAboutScreen() {
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.foreground }]}>Open Source Licenses</Text>
               <TouchableOpacity onPress={() => setShowLicensesModal(false)} hitSlop={8}>
-                <Feather name="x" size={18} color={colors.mutedForeground} />
+                <Icon name="x" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             </View>
 
@@ -344,7 +343,7 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 12,
+    borderRadius: 5,
     borderWidth: 1,
   },
   upToDateText: { fontSize: 10.5, fontFamily: 'GoogleSansFlex_600SemiBold' },

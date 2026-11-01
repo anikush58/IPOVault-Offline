@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/ui/Icon';
 import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -289,6 +289,7 @@ export default function SettingsDataBackupScreen() {
         title="Data & Backup"
         centerTitle
         showBack
+        transparent
       />
 
       <ScrollView
@@ -308,7 +309,7 @@ export default function SettingsDataBackupScreen() {
         <View style={[styles.overviewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.overviewHeader}>
             <View style={[styles.overviewIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="hard-drive" size={18} color={settingIconColor} />
+              <Icon name="hard-drive" size={18} color={settingIconColor} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.overviewTitle, { color: colors.foreground }]}>Stored on this Device</Text>
@@ -321,19 +322,19 @@ export default function SettingsDataBackupScreen() {
           {/* Stats Chips Row */}
           <View style={styles.statChipsRow}>
             <View style={[styles.statChip, { backgroundColor: settingIconBg, borderColor: colors.border }]}>
-              <Feather name="users" size={13} color={settingIconColor} />
+              <Icon name="users" size={13} color={settingIconColor} />
               <Text style={[styles.statChipVal, { color: colors.foreground }]}>{users.length}</Text>
               <Text style={[styles.statChipLabel, { color: colors.mutedForeground }]}>Users</Text>
             </View>
 
             <View style={[styles.statChip, { backgroundColor: settingIconBg, borderColor: colors.border }]}>
-              <Feather name="trending-up" size={13} color={settingIconColor} />
+              <Icon name="trending-up" size={13} color={settingIconColor} />
               <Text style={[styles.statChipVal, { color: colors.foreground }]}>{ipos.length}</Text>
               <Text style={[styles.statChipLabel, { color: colors.mutedForeground }]}>IPOs</Text>
             </View>
 
             <View style={[styles.statChip, { backgroundColor: settingIconBg, borderColor: colors.border }]}>
-              <Feather name="file-text" size={13} color={settingIconColor} />
+              <Icon name="file-text" size={13} color={settingIconColor} />
               <Text style={[styles.statChipVal, { color: colors.foreground }]}>{applications.length}</Text>
               <Text style={[styles.statChipLabel, { color: colors.mutedForeground }]}>Bids</Text>
             </View>
@@ -346,13 +347,13 @@ export default function SettingsDataBackupScreen() {
           {/* Row 1: Local Device Backup */}
           <View style={styles.slickActionRow}>
             <View style={[styles.actionIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="download" size={17} color={settingIconColor} />
+              <Icon name="download" size={17} color={settingIconColor} />
             </View>
             <View style={styles.actionTextWrap}>
               <View style={styles.actionTitleRow}>
                 <Text style={[styles.actionTitle, { color: colors.foreground }]}>Local Device Backup</Text>
-                <View style={[styles.metaBadge, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.14)' : '#EFF6FF' }]}>
-                  <Text style={[styles.metaBadgeText, { color: '#3B82F6' }]}>OFFLINE</Text>
+                <View style={[styles.metaBadge, { backgroundColor: '#3B82F6' }]}>
+                  <Text style={[styles.metaBadgeText, { color: '#FFFFFF' }]}>OFFLINE</Text>
                 </View>
               </View>
               <Text style={[styles.actionSub, { color: colors.mutedForeground }]} numberOfLines={1}>
@@ -373,7 +374,7 @@ export default function SettingsDataBackupScreen() {
                 <ActivityIndicator size="small" color={colors.primaryForeground} />
               ) : (
                 <>
-                  <Feather name="download" size={12.5} color={colors.primaryForeground} />
+                  <Icon name="download" size={12.5} color={colors.primaryForeground} />
                   <Text style={[styles.pillPrimaryText, { color: colors.primaryForeground }]}>Export</Text>
                 </>
               )}
@@ -385,7 +386,7 @@ export default function SettingsDataBackupScreen() {
           {/* Row 2: Cloud Firestore Sync */}
           <View style={styles.slickActionRow}>
             <View style={[styles.actionIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="cloud" size={17} color={settingIconColor} />
+              <Icon name="cloud" size={17} color={settingIconColor} />
             </View>
             <View style={styles.actionTextWrap}>
               <View style={styles.actionTitleRow}>
@@ -394,26 +395,20 @@ export default function SettingsDataBackupScreen() {
                   style={[
                     styles.metaBadge,
                     {
-                      backgroundColor: isCloudAuth
-                        ? isDark
-                          ? 'rgba(16, 185, 129, 0.15)'
-                          : '#ECFDF5'
-                        : isDark
-                        ? 'rgba(245, 158, 11, 0.15)'
-                        : '#FEF3C7',
+                      backgroundColor: isCloudAuth ? '#10B981' : '#F59E0B',
                     },
                   ]}
                 >
                   <View
                     style={[
                       styles.metaBadgeDot,
-                      { backgroundColor: isCloudAuth ? '#10B981' : '#F59E0B' },
+                      { backgroundColor: '#FFFFFF' },
                     ]}
                   />
                   <Text
                     style={[
                       styles.metaBadgeText,
-                      { color: isCloudAuth ? '#10B981' : '#F59E0B' },
+                      { color: '#FFFFFF' },
                     ]}
                   >
                     {isCloudAuth ? 'CONNECTED' : 'SETUP'}
@@ -442,7 +437,7 @@ export default function SettingsDataBackupScreen() {
                 <ActivityIndicator size="small" color={colors.primaryForeground} />
               ) : (
                 <>
-                  <Feather name="cloud" size={12.5} color={colors.primaryForeground} />
+                  <Icon name="cloud" size={12.5} color={colors.primaryForeground} />
                   <Text style={[styles.pillPrimaryText, { color: colors.primaryForeground }]}>
                     {isCloudAuth ? 'Sync' : 'Connect'}
                   </Text>
@@ -458,13 +453,13 @@ export default function SettingsDataBackupScreen() {
           {/* Row 1: Import Local Backup */}
           <View style={styles.slickActionRow}>
             <View style={[styles.actionIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="upload" size={17} color={settingIconColor} />
+              <Icon name="upload" size={17} color={settingIconColor} />
             </View>
             <View style={styles.actionTextWrap}>
               <View style={styles.actionTitleRow}>
                 <Text style={[styles.actionTitle, { color: colors.foreground }]}>Import Backup File</Text>
-                <View style={[styles.metaBadge, { backgroundColor: isDark ? 'rgba(139, 92, 246, 0.14)' : '#F5F3FF' }]}>
-                  <Text style={[styles.metaBadgeText, { color: '#8B5CF6' }]}>JSON / CSV</Text>
+                <View style={[styles.metaBadge, { backgroundColor: '#8B5CF6' }]}>
+                  <Text style={[styles.metaBadgeText, { color: '#FFFFFF' }]}>JSON / CSV</Text>
                 </View>
               </View>
               <Text style={[styles.actionSub, { color: colors.mutedForeground }]} numberOfLines={1}>
@@ -485,7 +480,7 @@ export default function SettingsDataBackupScreen() {
                 <ActivityIndicator size="small" color={colors.primaryForeground} />
               ) : (
                 <>
-                  <Feather name="upload" size={12.5} color={colors.primaryForeground} />
+                  <Icon name="upload" size={12.5} color={colors.primaryForeground} />
                   <Text style={[styles.pillPrimaryText, { color: colors.primaryForeground }]}>Import</Text>
                 </>
               )}
@@ -497,14 +492,14 @@ export default function SettingsDataBackupScreen() {
           {/* Row 2: Restore from Cloud */}
           <View style={styles.slickActionRow}>
             <View style={[styles.actionIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="refresh-cw" size={17} color={settingIconColor} />
+              <Icon name="refresh-cw" size={17} color={settingIconColor} />
             </View>
             <View style={styles.actionTextWrap}>
               <View style={styles.actionTitleRow}>
                 <Text style={[styles.actionTitle, { color: colors.foreground }]}>Restore from Cloud</Text>
                 {latestMetadata ? (
-                  <View style={[styles.metaBadge, { backgroundColor: isDark ? 'rgba(14, 165, 233, 0.14)' : '#E0F2FE' }]}>
-                    <Text style={[styles.metaBadgeText, { color: '#0EA5E9' }]}>
+                  <View style={[styles.metaBadge, { backgroundColor: '#0EA5E9' }]}>
+                    <Text style={[styles.metaBadgeText, { color: '#FFFFFF' }]}>
                       {latestMetadata.applicationCount ?? 0} BIDS
                     </Text>
                   </View>
@@ -531,7 +526,7 @@ export default function SettingsDataBackupScreen() {
                 <ActivityIndicator size="small" color={colors.foreground} />
               ) : (
                 <>
-                  <Feather name="refresh-cw" size={12.5} color={colors.foreground} />
+                  <Icon name="refresh-cw" size={12.5} color={colors.foreground} />
                   <Text style={[styles.pillSecondaryText, { color: colors.foreground }]}>
                     {isCloudAuth ? 'Restore' : 'Sign In'}
                   </Text>
@@ -546,13 +541,13 @@ export default function SettingsDataBackupScreen() {
         <View style={[styles.slickGroupCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.slickActionRow}>
             <View style={[styles.actionIconWrap, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.14)' : '#FEF2F2' }]}>
-              <Feather name="trash-2" size={17} color="#EF4444" />
+              <Icon name="trash-2" size={17} color="#EF4444" />
             </View>
             <View style={styles.actionTextWrap}>
               <View style={styles.actionTitleRow}>
                 <Text style={[styles.actionTitle, { color: '#EF4444' }]}>Clear All Data</Text>
-                <View style={[styles.metaBadge, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.14)' : '#FEF2F2' }]}>
-                  <Text style={[styles.metaBadgeText, { color: '#EF4444' }]}>PERMANENT</Text>
+                <View style={[styles.metaBadge, { backgroundColor: '#EF4444' }]}>
+                  <Text style={[styles.metaBadgeText, { color: '#FFFFFF' }]}>PERMANENT</Text>
                 </View>
               </View>
               <Text style={[styles.actionSub, { color: colors.mutedForeground }]} numberOfLines={1}>
@@ -570,7 +565,6 @@ export default function SettingsDataBackupScreen() {
               activeOpacity={0.8}
               onPress={() => setShowClearDataModal(true)}
             >
-              <Feather name="trash-2" size={12.5} color="#EF4444" />
               <Text style={styles.pillDangerText}>Clear</Text>
             </TouchableOpacity>
           </View>
@@ -594,15 +588,15 @@ export default function SettingsDataBackupScreen() {
                 { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5' },
               ]}
             >
-              <Feather name="shield" size={17} color="#10B981" />
+              <Icon name="shield" size={17} color="#10B981" />
             </View>
             <View style={{ flex: 1 }}>
               <View style={styles.privacyTitleRow}>
                 <Text style={[styles.privacyTitle, { color: colors.foreground }]}>
                   Bank-Grade Privacy
                 </Text>
-                <View style={[styles.metaBadge, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5' }]}>
-                  <Text style={[styles.metaBadgeText, { color: '#10B981' }]}>OFFLINE FIRST</Text>
+                <View style={[styles.metaBadge, { backgroundColor: '#10B981' }]}>
+                  <Text style={[styles.metaBadgeText, { color: '#FFFFFF' }]}>OFFLINE FIRST</Text>
                 </View>
               </View>
               <Text style={[styles.privacySub, { color: colors.mutedForeground }]}>
@@ -616,7 +610,7 @@ export default function SettingsDataBackupScreen() {
           <View style={styles.privacyPillarsList}>
             <View style={styles.pillarItem}>
               <View style={[styles.pillarIconBadge, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9' }]}>
-                <Feather name="lock" size={11} color="#10B981" />
+                <Icon name="lock" size={11} color="#10B981" />
               </View>
               <Text style={[styles.pillarText, { color: colors.mutedForeground }]}>
                 <Text style={[styles.pillarBold, { color: colors.foreground }]}>Local SQLite: </Text>
@@ -626,7 +620,7 @@ export default function SettingsDataBackupScreen() {
 
             <View style={styles.pillarItem}>
               <View style={[styles.pillarIconBadge, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9' }]}>
-                <Feather name="cloud" size={11} color="#3B82F6" />
+                <Icon name="cloud" size={11} color="#3B82F6" />
               </View>
               <Text style={[styles.pillarText, { color: colors.mutedForeground }]}>
                 <Text style={[styles.pillarBold, { color: colors.foreground }]}>Zero Tracking: </Text>
@@ -636,7 +630,7 @@ export default function SettingsDataBackupScreen() {
 
             <View style={styles.pillarItem}>
               <View style={[styles.pillarIconBadge, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9' }]}>
-                <Feather name="check-circle" size={11} color="#8B5CF6" />
+                <Icon name="check-circle" size={11} color="#8B5CF6" />
               </View>
               <Text style={[styles.pillarText, { color: colors.mutedForeground }]}>
                 <Text style={[styles.pillarBold, { color: colors.foreground }]}>Zero Lock-In: </Text>
@@ -653,7 +647,7 @@ export default function SettingsDataBackupScreen() {
           <Pressable style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => {}}>
             <View style={{ alignItems: 'center', gap: 12, paddingVertical: 8 }}>
               <View style={[styles.deleteIconWrap, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2' }]}>
-                <Feather name="trash-2" size={26} color="#EF4444" />
+                <Icon name="trash-2" size={26} color="#EF4444" />
               </View>
               <Text style={[styles.modalTitle, { color: colors.foreground }]}>Clear All Data</Text>
               <Text style={[styles.deleteModalDesc, { color: colors.mutedForeground }]}>
@@ -661,7 +655,7 @@ export default function SettingsDataBackupScreen() {
               </Text>
 
               <View style={[styles.dangerWarningBox, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2', borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : '#FECACA' }]}>
-                <Feather name="alert-triangle" size={15} color="#EF4444" />
+                <Icon name="alert-triangle" size={15} color="#EF4444" />
                 <Text style={[styles.dangerWarningText, { color: '#EF4444' }]}>
                   This action cannot be undone.
                 </Text>
@@ -806,7 +800,7 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 6,
     paddingVertical: 1.5,
-    borderRadius: 6,
+    borderRadius: 5,
   },
   metaBadgeDot: {
     width: 4.5,

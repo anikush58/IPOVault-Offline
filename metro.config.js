@@ -21,6 +21,12 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
       type: 'sourceFile',
     };
   }
+  if (moduleName === 'expo-blur' && platform === 'android') {
+    return {
+      filePath: path.resolve(__dirname, 'node_modules/expo-blur/build/BlurView.android.js'),
+      type: 'sourceFile',
+    };
+  }
   if (defaultResolveRequest) {
     return defaultResolveRequest(context, moduleName, platform);
   }

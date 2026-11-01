@@ -3,27 +3,27 @@ import {
   FlatList,
   Platform,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
-import { IconButton } from '@/components/ui/IconButton';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { useDB, type ApplicationWithDetails } from '@/context/DBContext';
-
+import { useAppExperience } from '@/context/AppExperienceContext';
 
 import { ApplicationCard } from '@/components/ApplicationCard';
 import { UpdateApplicationModal } from '@/components/UpdateApplicationModal';
+import { ApplicationsSkeleton } from '@/components/applications/ApplicationsSkeleton';
 
-export default function FavoriteApplicationsScreen() {
+function FavoriteApplicationsScreenContent() {
   const colors = useColors();
-  const router = useRouter();
-  const { applications, isLoading, refresh } = useDB();
+
+  const { applications, isLoading, refresh, toggleFavorite, updateApplication } = useDB();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
@@ -44,48 +44,63 @@ export default function FavoriteApplicationsScreen() {
       />
 
       {/* ── Favorites List ── */}
-      <FlatList
-        data={favoriteApps}
-        keyExtractor={(item) => item.id}
-        refreshControl={
-          <RefreshControl
-            refreshing={isLoading}
-            onRefresh={refresh}
-            tintColor={colors.primary}
-            progressViewOffset={topPad + 60}
-          />
-        }
-        renderItem={({ item }) => (
-          <ApplicationCard
-            application={item}
-            onPress={() => setSelectedApp(item)}
-          />
-        )}
-        contentContainerStyle={{
-          paddingTop: topPad + 60 + 12,
-          paddingBottom: insets.bottom + 40,
-        }}
-        ListHeaderComponent={() =>
-          favoriteApps.length > 0 ? (
-            <Text style={[styles.sectionLabel, { color: colors.mutedForeground, marginHorizontal: 16 }]}>
-              {favoriteApps.length} favorite {favoriteApps.length === 1 ? 'application' : 'applications'}
-            </Text>
-          ) : null
-        }
-        ListEmptyComponent={() => (
-          <View style={styles.empty}>
-            <View style={[styles.emptyIcon, { backgroundColor: colors.surface }]}>
-              <Feather name="star" size={28} color={colors.primary} />
+      {isLoading && favoriteApps.length === 0 ? (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingTop: topPad + 60 + 12,
+            paddingBottom: insets.bottom + 40,
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          <ApplicationsSkeleton />
+        </ScrollView>
+      ) : (
+        <FlatList
+          data={favoriteApps}
+          keyExtractor={(item) => item.id}
+          refreshControl={
+            <RefreshControl
+              refreshing={isLoading}
+              onRefresh={refresh}
+              tintColor={colors.primary}
+              progressViewOffset={topPad + 60}
+            />
+          }
+          renderItem={({ item }) => (
+            <ApplicationCard
+              application={item}
+              onPress={() => setSelectedApp(item)}
+              onToggleFavorite={toggleFavorite}
+              onUpdateStatus={updateApplication}
+            />
+          )}
+          contentContainerStyle={{
+            paddingTop: topPad + 60 + 12,
+            paddingBottom: insets.bottom + 40,
+          }}
+          ListHeaderComponent={() =>
+            favoriteApps.length > 0 ? (
+              <Text style={[styles.sectionLabel, { color: colors.mutedForeground, marginHorizontal: 16 }]}>
+                {favoriteApps.length} favorite {favoriteApps.length === 1 ? 'application' : 'applications'}
+              </Text>
+            ) : null
+          }
+          ListEmptyComponent={() => (
+            <View style={styles.empty}>
+              <View style={[styles.emptyIcon, { backgroundColor: colors.surface }]}>
+                <Feather name="star" size={28} color={colors.primary} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+                No Favorites Yet
+              </Text>
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
+                Tap the star icon on any application to add it to your favorite applications list.
+              </Text>
             </View>
-            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-              No Favorites Yet
-            </Text>
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              Tap the star icon on any application to add it to your favorite applications list.
-            </Text>
-          </View>
-        )}
-      />
+          )}
+        />
+      )}
 
       <UpdateApplicationModal
         application={selectedApp}
@@ -112,3 +127,24 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', marginBottom: 6 },
   emptyText: { fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', textAlign: 'center', lineHeight: 19 },
 });
+
+export default function FavoriteApplicationsScreen() {
+  const { isNonPro, isLoading: isExperienceLoading } = useAppExperience();
+  const router = useRouter();
+
+  React.useEffect(() => {
+    if (!isExperienceLoading && isNonPro) {
+      if (typeof (router as any).navigate === 'function') {
+        (router as any).navigate('/(tabs)/ipos');
+      } else {
+        router.replace('/(tabs)/ipos');
+      }
+    }
+  }, [isNonPro, isExperienceLoading, router]);
+
+  if (isNonPro) {
+    return null;
+  }
+
+  return <FavoriteApplicationsScreenContent />;
+}

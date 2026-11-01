@@ -57,9 +57,9 @@ export const AllotmentStatusBadge: React.FC<AllotmentStatusBadgeProps> = ({
       label =
         label ||
         (sharesAllotted ? `Allotted • ${sharesAllotted} Shares` : 'Allotted');
-      textColor = isDark ? '#4ADE80' : '#2FA011';
-      bg = isDark ? 'rgba(47, 160, 17, 0.18)' : '#EBFFDF';
-      iconBg = isDark ? '#22C55E' : '#2FA011';
+      textColor = '#FFFFFF';
+      bg = '#10B981';
+      iconBg = 'rgba(255, 255, 255, 0.22)';
       iconType = 'feather';
       iconName = 'check';
       break;
@@ -70,36 +70,36 @@ export const AllotmentStatusBadge: React.FC<AllotmentStatusBadgeProps> = ({
         (sharesAllotted
           ? `Partial • ${sharesAllotted} Shares`
           : 'Partially Allotted');
-      textColor = isDark ? '#4ADE80' : '#2FA011';
-      bg = isDark ? 'rgba(47, 160, 17, 0.18)' : '#EBFFDF';
-      iconBg = isDark ? '#22C55E' : '#2FA011';
+      textColor = '#FFFFFF';
+      bg = '#F59E0B';
+      iconBg = 'rgba(255, 255, 255, 0.22)';
       iconType = 'feather';
       iconName = 'check';
       break;
 
     case 'NOT_ALLOTTED':
       label = label || 'No Shares allotted';
-      textColor = isDark ? '#FB7185' : '#F24E4E';
-      bg = isDark ? 'rgba(242, 78, 78, 0.18)' : '#FFE8E8';
-      iconBg = isDark ? '#FB7185' : '#F24E4E';
+      textColor = '#FFFFFF';
+      bg = '#EF4444';
+      iconBg = 'rgba(255, 255, 255, 0.22)';
       iconType = 'feather';
       iconName = 'x';
       break;
 
     case 'NO_RECORD':
       label = label || 'No Record Found';
-      textColor = isDark ? '#94A3B8' : '#607386';
-      bg = isDark ? 'rgba(96, 115, 134, 0.18)' : '#EDF4F9';
-      iconBg = isDark ? '#94A3B8' : '#607386';
+      textColor = '#FFFFFF';
+      bg = '#64748B';
+      iconBg = 'rgba(255, 255, 255, 0.22)';
       iconType = 'fa5';
       iconName = 'question';
       break;
 
     case 'NOT_AVAILABLE':
       label = label || 'Allotment Not Available';
-      textColor = isDark ? '#94A3B8' : '#607386';
-      bg = isDark ? 'rgba(96, 115, 134, 0.18)' : '#EDF4F9';
-      iconBg = isDark ? '#94A3B8' : '#607386';
+      textColor = '#FFFFFF';
+      bg = '#64748B';
+      iconBg = 'rgba(255, 255, 255, 0.22)';
       iconType = 'feather';
       iconName = 'info';
       break;
@@ -107,27 +107,27 @@ export const AllotmentStatusBadge: React.FC<AllotmentStatusBadgeProps> = ({
     case 'CHECK_FAILED':
     case 'UNAVAILABLE':
       label = label || 'Check Failed';
-      textColor = isDark ? '#FB7185' : '#F24E4E';
-      bg = isDark ? 'rgba(242, 78, 78, 0.18)' : '#FFE8E8';
-      iconBg = isDark ? '#FB7185' : '#F24E4E';
+      textColor = '#FFFFFF';
+      bg = '#EF4444';
+      iconBg = 'rgba(255, 255, 255, 0.22)';
       iconType = 'feather';
       iconName = 'slash';
       break;
 
     case 'NEEDS_REVIEW':
       label = label || 'Needs Review';
-      textColor = isDark ? '#FBBF24' : '#D97706';
-      bg = isDark ? 'rgba(217, 119, 6, 0.18)' : '#FFF0D9';
-      iconBg = isDark ? '#FBBF24' : '#D97706';
+      textColor = '#FFFFFF';
+      bg = '#F59E0B';
+      iconBg = 'rgba(255, 255, 255, 0.22)';
       iconType = 'feather';
       iconName = 'clock';
       break;
 
     case 'CHECKING':
       label = label || 'Checking...';
-      textColor = colors.primary;
-      bg = isDark ? 'rgba(255, 255, 255, 0.08)' : '#FFF0D9';
-      iconBg = colors.primary;
+      textColor = '#FFFFFF';
+      bg = '#2563EB';
+      iconBg = 'rgba(255, 255, 255, 0.22)';
       iconType = 'feather';
       iconName = 'loader';
       break;
@@ -135,9 +135,9 @@ export const AllotmentStatusBadge: React.FC<AllotmentStatusBadgeProps> = ({
     case 'PENDING':
     default:
       label = label || 'Pending';
-      textColor = colors.mutedForeground;
-      bg = isDark ? 'rgba(255, 255, 255, 0.06)' : '#EDF4F9';
-      iconBg = colors.mutedForeground;
+      textColor = '#FFFFFF';
+      bg = '#64748B';
+      iconBg = 'rgba(255, 255, 255, 0.22)';
       iconType = 'feather';
       iconName = 'clock';
       break;
@@ -153,7 +153,7 @@ export const AllotmentStatusBadge: React.FC<AllotmentStatusBadgeProps> = ({
           backgroundColor: bg,
           paddingHorizontal: 8,
           paddingVertical: 5,
-          borderRadius: 70,
+          borderRadius: 5,
         },
       ]}
     >

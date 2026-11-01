@@ -89,6 +89,75 @@ export function validateSqlInsertCounts(sql: string, params: any[], callerInfo: 
 }
 
 /**
+ * Determines whether an error is caused by accessing a closed database resource.
+ */
+export function isClosedResourceError(err: any): boolean {
+  if (!err) return false;
+  const errMsg = (err?.message || String(err)).toLowerCase();
+  return (
+    errMsg.includes('access to closed resource') ||
+    errMsg.includes('closed resource') ||
+    errMsg.includes('cannot execute query on closed database') ||
+    errMsg.includes('database is closed') ||
+    (errMsg.includes('already released') && errMsg.includes('database'))
+  );
+}
+
+const closedDatabases = new WeakSet<object>();
+
+/**
+ * Checks if a database handle is open and usable.
+ */
+export function isDatabaseOpen(db: any): boolean {
+  if (!db || typeof db !== 'object') return false;
+  if (db.isOpen === false || db._closed === true || db.closed === true) return false;
+  if (closedDatabases.has(db)) return false;
+  return true;
+}
+
+/**
+ * Explicitly marks a database handle as closed.
+ * Prevents further queued writes or query executions on this handle.
+ */
+export function markDatabaseClosed(db: any): void {
+  if (db && typeof db === 'object') {
+    closedDatabases.add(db);
+  }
+}
+
+/**
+ * Resets closed state for a database handle (e.g. upon reconnection or testing).
+ */
+export function markDatabaseOpen(db: any): void {
+  if (db && typeof db === 'object') {
+    closedDatabases.delete(db);
+  }
+}
+
+/**
+ * Sanitizes parameters bound to SQLite queries:
+ * - undefined -> null
+ * - NaN, Infinity, -Infinity -> null
+ */
+export function sanitizeSqliteParam(p: any, idx?: number, callerInfo?: string, sql?: string): any {
+  if (p === undefined) {
+    if (isDev && callerInfo) {
+      console.warn(`[SQL BIND WARNING] ${callerInfo} -> Parameter at index ${idx != null ? idx + 1 : '?'} is UNDEFINED. Converting to null. SQL:`, sql);
+    }
+    return null;
+  }
+  if (typeof p === 'number') {
+    if (Number.isNaN(p) || !Number.isFinite(p)) {
+      if (isDev && callerInfo) {
+        console.warn(`[SQL BIND WARNING] ${callerInfo} -> Parameter at index ${idx != null ? idx + 1 : '?'} is non-finite (${p}). Converting to null. SQL:`, sql);
+      }
+      return null;
+    }
+  }
+  return p;
+}
+
+/**
  * Helper to retry SQLite operations if the database is locked.
  */
 export async function retryOnLock<T>(fn: () => Promise<T>, retries = 10, baseDelayMs = 100, callerInfo = 'Unknown'): Promise<T> {
@@ -96,10 +165,10 @@ export async function retryOnLock<T>(fn: () => Promise<T>, retries = 10, baseDel
     try {
       return await fn();
     } catch (err: any) {
-      const errMsg = (err?.message || String(err)).toLowerCase();
-      if (errMsg.includes('closed resource') || errMsg.includes('access to closed resource')) {
+      if (isClosedResourceError(err)) {
         throw err;
       }
+      const errMsg = (err?.message || String(err)).toLowerCase();
       const isLocked = errMsg.includes('locked') || errMsg.includes('busy') || errMsg.includes('cannot start a transaction') || errMsg.includes('database is locked');
       if (isLocked && attempt < retries - 1) {
         concurrencyTelemetry.recordSqliteBusyRetry(callerInfo);
@@ -164,18 +233,25 @@ export async function safeRunAsync(
   params: any[] = [],
   callerInfo: string = 'Unknown'
 ): Promise<any> {
+  if (!isDatabaseOpen(db)) {
+    throw new Error(`Access to closed resource: ${callerInfo}`);
+  }
   validateSqlInsertCounts(sql, params, callerInfo);
-  const sanitizedParams = params.map((p, idx) => {
-    if (p === undefined) {
-      if (isDev) {
-        console.warn(`[SQL BIND WARNING] ${callerInfo} -> Parameter at index ${idx + 1} is UNDEFINED. Converting to null. SQL:`, sql);
-      }
-      return null;
-    }
-    return p;
-  });
+  const sanitizedParams = params.map((p, idx) => sanitizeSqliteParam(p, idx, callerInfo, sql));
 
-  return queueWrite(() => retryOnLock(() => db.runAsync(sql, sanitizedParams), 10, 100, callerInfo), callerInfo);
+  return queueWrite(async () => {
+    if (!isDatabaseOpen(db)) {
+      throw new Error(`Access to closed resource: ${callerInfo}`);
+    }
+    try {
+      return await retryOnLock(() => db.runAsync(sql, sanitizedParams), 10, 100, callerInfo);
+    } catch (err: any) {
+      if (isClosedResourceError(err)) {
+        markDatabaseClosed(db);
+      }
+      throw err;
+    }
+  }, callerInfo);
 }
 
 export async function safeGetFirstAsync<T>(
@@ -184,15 +260,10 @@ export async function safeGetFirstAsync<T>(
   params: any[] = [],
   callerInfo: string = 'Unknown'
 ): Promise<T | null> {
-  const sanitizedParams = params.map((p, idx) => {
-    if (p === undefined) {
-      if (__DEV__) {
-        console.warn(`[SQL BIND WARNING] ${callerInfo} -> Parameter at index ${idx + 1} is UNDEFINED. Converting to null. SQL:`, sql);
-      }
-      return null;
-    }
-    return p;
-  });
+  if (!isDatabaseOpen(db)) {
+    throw new Error(`Access to closed resource: ${callerInfo}`);
+  }
+  const sanitizedParams = params.map((p, idx) => sanitizeSqliteParam(p, idx, callerInfo, sql));
 
   const probe = concurrencyTelemetry.startExecuting('SQLITE_READ', callerInfo);
   try {
@@ -200,6 +271,9 @@ export async function safeGetFirstAsync<T>(
     probe.finish();
     return res;
   } catch (err) {
+    if (isClosedResourceError(err)) {
+      markDatabaseClosed(db);
+    }
     probe.finish(err);
     throw err;
   } finally {
@@ -213,15 +287,10 @@ export async function safeGetAllAsync<T>(
   params: any[] = [],
   callerInfo: string = 'Unknown'
 ): Promise<T[]> {
-  const sanitizedParams = params.map((p, idx) => {
-    if (p === undefined) {
-      if (__DEV__) {
-        console.warn(`[SQL BIND WARNING] ${callerInfo} -> Parameter at index ${idx + 1} is UNDEFINED. Converting to null. SQL:`, sql);
-      }
-      return null;
-    }
-    return p;
-  });
+  if (!isDatabaseOpen(db)) {
+    throw new Error(`Access to closed resource: ${callerInfo}`);
+  }
+  const sanitizedParams = params.map((p, idx) => sanitizeSqliteParam(p, idx, callerInfo, sql));
 
   const probe = concurrencyTelemetry.startExecuting('SQLITE_READ', callerInfo);
   try {
@@ -229,6 +298,9 @@ export async function safeGetAllAsync<T>(
     probe.finish();
     return res;
   } catch (err) {
+    if (isClosedResourceError(err)) {
+      markDatabaseClosed(db);
+    }
     probe.finish(err);
     throw err;
   } finally {
@@ -241,7 +313,22 @@ export async function safeExecAsync(
   sql: string,
   callerInfo: string = 'Unknown'
 ): Promise<void> {
-  return queueWrite(() => retryOnLock(() => db.execAsync(sql), 10, 100, callerInfo), callerInfo);
+  if (!isDatabaseOpen(db)) {
+    throw new Error(`Access to closed resource: ${callerInfo}`);
+  }
+  return queueWrite(async () => {
+    if (!isDatabaseOpen(db)) {
+      throw new Error(`Access to closed resource: ${callerInfo}`);
+    }
+    try {
+      return await retryOnLock(() => db.execAsync(sql), 10, 100, callerInfo);
+    } catch (err: any) {
+      if (isClosedResourceError(err)) {
+        markDatabaseClosed(db);
+      }
+      throw err;
+    }
+  }, callerInfo);
 }
 
 /**
@@ -256,6 +343,9 @@ export async function runWithTransaction<T>(
   action: () => Promise<T>,
   callerInfo: string = 'Unknown'
 ): Promise<T> {
+  if (!isDatabaseOpen(db)) {
+    throw new Error(`Access to closed resource: ${callerInfo}`);
+  }
   // If we are already executing inside an active transaction, execute action directly without nesting BEGIN
   if (isInsideTransaction) {
     return action();
@@ -273,7 +363,18 @@ export async function runWithTransaction<T>(
     isInsideTransaction = true;
     try {
       if (typeof (db as any).withTransactionAsync === 'function') {
-        const res = (await retryOnLock<T>(() => (db as any).withTransactionAsync(action), 10, 100, `${callerInfo}.withTx`)) as T;
+        const res = (await retryOnLock<T>(
+          () =>
+            (db as any).withTransactionAsync(async () => {
+              try {
+                await (db as any).execAsync('PRAGMA defer_foreign_keys = ON;');
+              } catch {}
+              return await action();
+            }),
+          10,
+          100,
+          `${callerInfo}.withTx`
+        )) as T;
         executingProbe.finish();
         return res;
       }
@@ -282,6 +383,9 @@ export async function runWithTransaction<T>(
         let inTransaction = false;
         try {
           await db.execAsync('BEGIN IMMEDIATE TRANSACTION;');
+          try {
+            await (db as any).execAsync('PRAGMA defer_foreign_keys = ON;');
+          } catch {}
           inTransaction = true;
           const result = await action();
           await db.execAsync('COMMIT;');
@@ -291,7 +395,11 @@ export async function runWithTransaction<T>(
         } catch (originalError: any) {
           executingProbe.finish(originalError);
           if (isDev) {
-            console.error(`[SQL TRANSACTION ERROR] ${callerInfo} -> Original failure:`, originalError);
+            if (isClosedResourceError(originalError)) {
+              console.warn(`[SQL TRANSACTION] ${callerInfo} -> Database closed during transaction.`);
+            } else {
+              console.error(`[SQL TRANSACTION ERROR] ${callerInfo} -> Original failure:`, originalError);
+            }
           }
           if (inTransaction) {
             try {

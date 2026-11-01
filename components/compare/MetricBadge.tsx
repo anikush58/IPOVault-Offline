@@ -13,23 +13,25 @@ export const MetricBadge = React.memo(function MetricBadge({ text, variant = 'ne
   const getStyle = () => {
     switch (variant) {
       case 'gold':
-        return { bg: '#FEF3C7', border: '#F59E0B', text: '#92400E' };
+        return { bg: '#F59E0B', text: '#FFFFFF' };
       case 'success':
-        return { bg: colors.positiveBg, border: colors.positive + '40', text: colors.positive };
+        return { bg: '#10B981', text: '#FFFFFF' };
       case 'warning':
-        return { bg: '#FFFBEC', border: '#F59E0B40', text: '#D97706' };
+        return { bg: '#F59E0B', text: '#FFFFFF' };
       case 'info':
-        return { bg: colors.primary + '12', border: colors.primary + '30', text: colors.primary };
+        return { bg: '#2563EB', text: '#FFFFFF' };
+      case 'primary':
+        return { bg: colors.primary, text: '#FFFFFF' };
       case 'neutral':
       default:
-        return { bg: colors.surface, border: colors.border, text: colors.mutedForeground };
+        return { bg: '#64748B', text: '#FFFFFF' };
     }
   };
 
   const styleConfig = getStyle();
 
   return (
-    <View style={[styles.badge, { backgroundColor: styleConfig.bg, borderColor: styleConfig.border }]}>
+    <View style={[styles.badge, { backgroundColor: styleConfig.bg }]}>
       <Text style={[styles.text, { color: styleConfig.text }]}>{text}</Text>
     </View>
   );
@@ -39,8 +41,7 @@ const styles = StyleSheet.create({
   badge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
+    borderRadius: 5,
     alignSelf: 'flex-start',
   },
   text: {

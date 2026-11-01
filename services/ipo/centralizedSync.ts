@@ -4,10 +4,12 @@ import { LiveIPOProvider } from './providers/LiveIPOProvider';
 import { ipoDiagnosticsStore } from './diagnosticsStore';
 import { syncStore } from '@/services/sync/syncStatus';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
-import { runWithTransaction, safeExecAsync, safeRunAsync } from '@/utils/sqliteDebug';
+import { runWithTransaction, safeExecAsync, safeRunAsync, isClosedResourceError, isDatabaseOpen, markDatabaseClosed } from '@/utils/sqliteDebug';
 import { concurrencyTelemetry } from '@/utils/concurrencyTelemetry';
 
 import { API_BASE_URL } from '@/constants/apiConfig';
+
+const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
 
 export const LAST_SYNCED_AT_KEY = 'ipo_last_synced_at';
 
@@ -33,6 +35,17 @@ export async function triggerCentralizedIPOSync(
 ): Promise<CentralizedSyncResult> {
   const source = options?.source || 'Manual';
   const nowMs = Date.now();
+
+  // 0. Database Lifecycle Guard
+  if (!isDatabaseOpen(db)) {
+    if (__DEV__) console.warn(`[IPOVault Sync] Database handle closed (Trigger: ${source}). Skipping.`);
+    return {
+      success: false,
+      recordsDownloaded: 0,
+      recordsUpdated: 0,
+      error: 'Database handle closed',
+    };
+  }
 
   // 1. Concurrency & Debounce Guard (5s minimum interval unless forced)
   if (isSyncing) {
@@ -145,67 +158,105 @@ export async function triggerCentralizedIPOSync(
       }
 
       // ── RUN RADAR SNAPSHOT & OUTCOME INTEGRATION ──
+      let incompleteWritesReason: string | null = null;
       try {
-        const { evaluateIPORadarScore } = require('./radarScoringEngine');
-        const { persistRadarSnapshotIfChanged, markFinalPreListingSnapshot } = require('./radarSnapshotService');
-        const { recordIPOOutcome } = require('./radarOutcomeService');
-        const { IPOParser } = require('./ipoParser');
+        if (!isDatabaseOpen(db)) {
+          incompleteWritesReason = 'Database closed before radar processing';
+        } else {
+          const { evaluateIPORadarScore } = require('./radarScoringEngine');
+          const { persistRadarSnapshotIfChanged, markFinalPreListingSnapshot } = require('./radarSnapshotService');
+          const { recordIPOOutcome } = require('./radarOutcomeService');
+          const { IPOParser } = require('./ipoParser');
 
-        // Pre-compute CPU transformations outside write transaction to minimize lock duration
-        const preparedRadarBatch: Array<{
-          fullIpo: any;
-          radar: any;
-          isClosedOrListed: boolean;
-          outcomeRecord: any | null;
-        }> = [];
+          // Pre-compute CPU transformations outside write transaction to minimize lock duration
+          const preparedRadarBatch: Array<{
+            fullIpo: any;
+            radar: any;
+            isClosedOrListed: boolean;
+            outcomeRecord: any | null;
+          }> = [];
 
-        for (const rawData of result.data || []) {
-          if (!rawData || !rawData.id) continue;
-          const fullIpo = IPOParser.parse(rawData);
-          if (!fullIpo || !fullIpo.id) continue;
+          for (const rawData of result.data || []) {
+            if (!rawData || !rawData.id) continue;
+            const fullIpo = IPOParser.parse(rawData);
+            if (!fullIpo || !fullIpo.id) continue;
 
-          const radar = evaluateIPORadarScore(fullIpo, null, []);
-          const statusLower = (fullIpo.status || '').toLowerCase();
-          const isClosedOrListed = statusLower === 'closed' || statusLower === 'listed';
-          const isListedWithGain = statusLower === 'listed' && (fullIpo.listing_price != null || fullIpo.listing_gain_percent != null);
-          const outcomeRecord = isListedWithGain ? {
-            ipo_id: fullIpo.id,
-            company_name: fullIpo.company_name,
-            issue_price: fullIpo.price_band_max || fullIpo.price_band_min || 0,
-            listing_date: fullIpo.listing_date || new Date().toISOString(),
-            listing_price: fullIpo.listing_price,
-            listing_gain_percent: fullIpo.listing_gain_percent,
-            outcome_recorded_at: new Date().toISOString(),
-          } : null;
+            const radar = evaluateIPORadarScore(fullIpo, null, []);
+            const statusLower = (fullIpo.status || '').toLowerCase();
+            const isClosedOrListed = statusLower === 'closed' || statusLower === 'listed';
+            const isListedWithGain = statusLower === 'listed' && (fullIpo.listing_price != null || fullIpo.listing_gain_percent != null);
+            const outcomeRecord = isListedWithGain ? {
+              ipo_id: fullIpo.id,
+              company_name: fullIpo.company_name,
+              issue_price: fullIpo.price_band_max || fullIpo.price_band_min || 0,
+              listing_date: fullIpo.listing_date || new Date().toISOString(),
+              listing_price: fullIpo.listing_price,
+              listing_gain_percent: fullIpo.listing_gain_percent,
+              outcome_recorded_at: new Date().toISOString(),
+            } : null;
 
-          preparedRadarBatch.push({ fullIpo, radar, isClosedOrListed, outcomeRecord });
-        }
+            preparedRadarBatch.push({ fullIpo, radar, isClosedOrListed, outcomeRecord });
+          }
 
-        // Process radar snapshots in small cooperative chunks yielding to event loop
-        // so user-initiated interactive transactions are never blocked
-        const CHUNK_SIZE = 5;
-        for (let i = 0; i < preparedRadarBatch.length; i += CHUNK_SIZE) {
-          const chunk = preparedRadarBatch.slice(i, i + CHUNK_SIZE);
-          await runWithTransaction(
-            db,
-            async () => {
-              for (const item of chunk) {
-                await persistRadarSnapshotIfChanged(db, item.fullIpo, item.radar);
-                if (item.isClosedOrListed) {
-                  await markFinalPreListingSnapshot(db, item.fullIpo.id);
-                }
-                if (item.outcomeRecord) {
-                  await recordIPOOutcome(db, item.outcomeRecord);
-                }
+          // Process radar snapshots in small cooperative chunks yielding to event loop
+          // so user-initiated interactive transactions are never blocked
+          const CHUNK_SIZE = 5;
+          for (let i = 0; i < preparedRadarBatch.length; i += CHUNK_SIZE) {
+            if (!isDatabaseOpen(db)) {
+              incompleteWritesReason = 'Database closed during radar batch processing';
+              break;
+            }
+            const chunk = preparedRadarBatch.slice(i, i + CHUNK_SIZE);
+            try {
+              await runWithTransaction(
+                db,
+                async () => {
+                  for (const item of chunk) {
+                    await persistRadarSnapshotIfChanged(db, item.fullIpo, item.radar);
+                    if (item.isClosedOrListed) {
+                      await markFinalPreListingSnapshot(db, item.fullIpo.id);
+                    }
+                    if (item.outcomeRecord) {
+                      await recordIPOOutcome(db, item.outcomeRecord);
+                    }
+                  }
+                },
+                `centralizedSync.radarSnapshotBatch.${i}`
+              );
+            } catch (batchErr: any) {
+              if (isClosedResourceError(batchErr)) {
+                markDatabaseClosed(db);
+                incompleteWritesReason = 'Database closed during radar batch processing';
+                if (__DEV__) console.log('[IPOVault Sync] DB closed during radar batch processing. Aborting remaining batches.');
+                break;
               }
-            },
-            `centralizedSync.radarSnapshotBatch.${i}`
-          );
-          // Yield event loop
-          await new Promise((resolve) => setTimeout(resolve, 0));
+              throw batchErr;
+            }
+            // Yield event loop
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
         }
-      } catch (radarErr) {
-        if (__DEV__) console.warn('[IPOVault Sync] Radar sync processing error:', radarErr);
+      } catch (radarErr: any) {
+        if (isClosedResourceError(radarErr)) {
+          markDatabaseClosed(db);
+          incompleteWritesReason = 'Database closed during radar processing';
+        } else {
+          if (__DEV__) console.warn('[IPOVault Sync] Radar sync processing error:', radarErr);
+        }
+      }
+
+      if (incompleteWritesReason) {
+        syncStore.update({
+          state: 'Idle',
+          error: incompleteWritesReason,
+        });
+        return {
+          success: false,
+          recordsDownloaded: result.data.length,
+          recordsUpdated: upsertedCount,
+          error: incompleteWritesReason,
+          statusCode: result.statusCode,
+        };
       }
 
       if (__DEV__) {

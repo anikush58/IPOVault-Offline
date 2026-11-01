@@ -202,6 +202,8 @@ export class LiveIPOProvider implements IPOProvider {
       : null;
 
     const registrarName =
+      raw.allotment?.registrar ||
+      raw.allotmentConfig?.registrar ||
       raw.registrar ||
       raw.registrar_name ||
       regPart?.name ||

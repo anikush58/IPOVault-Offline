@@ -12,7 +12,6 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
-import { useDialog } from '@/context/DialogContext';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 
 export default function PrivacySecurityScreen() {
@@ -21,7 +20,6 @@ export default function PrivacySecurityScreen() {
   const isDark = resolvedScheme === 'dark';
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { showInfo } = useDialog();
   const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
   const settingIconColor = isDark ? '#FFFFFF' : '#111827';
@@ -77,6 +75,7 @@ export default function PrivacySecurityScreen() {
         title="Privacy & Security"
         centerTitle
         showBack
+        transparent
       />
 
       <ScrollView
@@ -236,7 +235,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 4.5,
-    borderRadius: 999,
+    borderRadius: 5,
     gap: 5,
   },
   statusDot: {

@@ -362,6 +362,7 @@ export default function IPOHubScreen() {
         <IPOOverviewTab
           repo={repo}
           ipos={records}
+          loading={loading}
           onSelectIPO={handleCardPress}
           onRefresh={handleRefresh}
           refreshing={refreshing}
@@ -463,7 +464,7 @@ const styles = StyleSheet.create({
     gap: 5,
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 12,
+    borderRadius: 5,
     borderWidth: 1,
     marginTop: 2,
   },

@@ -169,7 +169,7 @@ class MockSQLiteDB {
         if (existingRow) {
           existingRow.bank_name = b.bank_name || 'Bank';
           existingRow.balance = b.balance || 0;
-          existingRow.upi_app = b.upi_app || '';
+          existingRow.upi_app = (b.upi_app && b.upi_app.trim() !== '') ? b.upi_app.trim() : (existingRow.upi_app || '');
           existingRow.owner_id = uid;
           existingRow.updated_at = b.updated_at || nowIso;
         } else {
@@ -230,7 +230,8 @@ class MockSQLiteDB {
 
       if (existing) {
         const newBalance = bank.balance !== undefined && bank.balance !== null ? bank.balance : existing.balance;
-        const newUpiApp = bank.upi_app !== undefined && bank.upi_app !== null ? bank.upi_app.trim() : (existing.upi_app || '');
+        const incomingUpi = (bank.upi_app && typeof bank.upi_app === 'string') ? bank.upi_app.trim() : '';
+        const newUpiApp = incomingUpi || (existing.upi_app || '');
         const newOwnerId = currentUid || existing.owner_id || null;
 
         await this.runAsync(
@@ -430,6 +431,64 @@ async function runTests() {
   );
   assert(user3Banks.length === 3, 'User 3 Banks', 'User 3 sees all 3 bank accounts');
   assert(otherUserBanks.length === 0, 'User Isolation', 'Another user sees 0 bank accounts');
+
+  
+  // ── TEST 7: UPI App Binding Persistence across Cloud Sync ──
+  console.log('\n--- TEST 7: UPI App Binding Persistence across Cloud Sync ---');
+  const db7 = new MockSQLiteDB();
+  const t7Now = new Date().toISOString();
+  await db7.runAsync(
+    'INSERT INTO bank_accounts (id, bank_name, balance, upi_app, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?)',
+    ['bank-persisted-1', 'State Bank of India', 50000, 'GPay', 'user-uid-7', t7Now, t7Now]
+  );
+  assert(db7.bankAccounts[0].upi_app === 'GPay', 'Local GPay Bound', 'Bank account initialized with GPay');
+
+  // Case A: Cloud delta arrives with empty / omitted upi_app (e.g. from older client or balance-only update)
+  const cloudDeltaEmptyUpi = {
+    bankAccounts: [
+      {
+        id: 'bank-persisted-1',
+        bank_name: 'State Bank of India',
+        balance: 65000,
+        upi_app: '',
+        updated_at: new Date(Date.now() + 1000).toISOString(),
+      },
+    ],
+  };
+  await db7.applySecondaryDeltaToSQLite(cloudDeltaEmptyUpi, 'user-uid-7');
+  assert(db7.bankAccounts[0].balance === 65000, 'Balance Updated from Cloud', 'Balance updated to 65000');
+  assert(db7.bankAccounts[0].upi_app === 'GPay', 'Preserve UPI Binding on Empty Cloud Delta', 'Local GPay binding preserved when cloud sends empty upi_app');
+
+  // Case B: Cloud full restore / importSecondaryData with omitted upi_app
+  const cloudImportOmittedUpi = {
+    banks: [
+      {
+        id: 'bank-persisted-1',
+        bank_name: 'State Bank of India',
+        balance: 70000,
+        // upi_app omitted
+      },
+    ],
+  };
+  await db7.importSecondaryData(cloudImportOmittedUpi, 'user-uid-7');
+  assert(db7.bankAccounts[0].balance === 70000, 'Balance Updated from Import', 'Balance updated to 70000');
+  assert(db7.bankAccounts[0].upi_app === 'GPay', 'Preserve UPI Binding on Omitted upi_app Import', 'Local GPay binding preserved when cloud import omits upi_app');
+
+  // Case C: Cloud delta arrives with explicit new UPI binding (e.g. updated on another device to PhonePe)
+  const cloudDeltaNewUpi = {
+    bankAccounts: [
+      {
+        id: 'bank-persisted-1',
+        bank_name: 'State Bank of India',
+        balance: 75000,
+        upi_app: 'PhonePe',
+        updated_at: new Date(Date.now() + 2000).toISOString(),
+      },
+    ],
+  };
+  await db7.applySecondaryDeltaToSQLite(cloudDeltaNewUpi, 'user-uid-7');
+  assert(db7.bankAccounts[0].balance === 75000, 'Balance Updated', 'Balance updated to 75000');
+  assert(db7.bankAccounts[0].upi_app === 'PhonePe', 'Cloud UPI Update Applied', 'New valid UPI binding from cloud was applied');
 
   console.log('\n================================================================');
   console.log(`🎉 ALL TESTS PASSED: ${passCount} Passed, ${failCount} Failed`);

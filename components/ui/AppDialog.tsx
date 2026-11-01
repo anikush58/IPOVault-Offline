@@ -4,8 +4,8 @@ import {
   Modal,
   StyleSheet,
   Text,
-  TouchableOpacity,
   TouchableWithoutFeedback,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -40,6 +40,8 @@ export function AppDialog({
   onClose,
 }: AppDialogProps) {
   const colors = useColors();
+  const { width: windowWidth } = useWindowDimensions();
+  const isNarrow = windowWidth < 360;
   const animFade = useRef(new Animated.Value(0)).current;
   const animScale = useRef(new Animated.Value(0.92)).current;
 
@@ -109,7 +111,7 @@ export function AppDialog({
 
   return (
     <Modal transparent visible={visible} animationType="none" onRequestClose={handleDismiss}>
-      <View style={styles.overlay}>
+      <View style={[styles.overlay, isNarrow && styles.overlayNarrow]}>
         <TouchableWithoutFeedback onPress={type === 'confirm' ? handleDismiss : handleConfirmAction}>
           <Animated.View style={[styles.backdrop, { opacity: animFade }]} />
         </TouchableWithoutFeedback>
@@ -117,6 +119,7 @@ export function AppDialog({
         <Animated.View
           style={[
             styles.dialogCard,
+            isNarrow && styles.dialogCardNarrow,
             {
               backgroundColor: colors.card,
               borderColor: colors.border,
@@ -126,22 +129,35 @@ export function AppDialog({
           ]}
         >
           {/* Icon Badge */}
-          <View style={[styles.iconWrap, { backgroundColor: iconConfig.bg }]}>
-            <Feather name={iconConfig.name as any} size={26} color={iconConfig.color} />
+          <View style={[styles.iconWrap, isNarrow && styles.iconWrapNarrow, { backgroundColor: iconConfig.bg }]}>
+            <Feather name={iconConfig.name as any} size={isNarrow ? 22 : 26} color={iconConfig.color} />
           </View>
 
           {/* Title & Body */}
-          <Text style={[styles.title, { color: colors.foreground }]}>{title}</Text>
+          <Text
+            style={[styles.title, { color: colors.foreground }]}
+            numberOfLines={2}
+            adjustsFontSizeToFit
+            minimumFontScale={0.8}
+            maxFontSizeMultiplier={1.25}
+          >
+            {title}
+          </Text>
           {message ? (
-            <Text style={[styles.message, { color: colors.mutedForeground }]}>{message}</Text>
+            <Text
+              style={[styles.message, { color: colors.mutedForeground }]}
+              maxFontSizeMultiplier={1.3}
+            >
+              {message}
+            </Text>
           ) : null}
 
           {/* Buttons */}
-          <View style={styles.buttonRow}>
+          <View style={[styles.buttonRow, isNarrow && { gap: 8 }]}>
             {type === 'confirm' && (
               <Button
                 variant="secondary"
-                size="md"
+                size={isNarrow ? 'sm' : 'md'}
                 title={cancelText}
                 onPress={handleDismiss}
                 style={{ flex: 1 }}
@@ -150,7 +166,7 @@ export function AppDialog({
 
             <Button
               variant={isDanger ? 'destructive' : 'primary'}
-              size="md"
+              size={isNarrow ? 'sm' : 'md'}
               title={confirmText || (type === 'confirm' ? 'Confirm' : 'OK')}
               onPress={handleConfirmAction}
               style={{ flex: type === 'confirm' ? 1 : undefined, width: type !== 'confirm' ? '100%' : undefined }}
@@ -169,6 +185,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
   },
+  overlayNarrow: {
+    padding: 16,
+  },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
@@ -186,6 +205,10 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 12,
   },
+  dialogCardNarrow: {
+    padding: 18,
+    borderRadius: 20,
+  },
   iconWrap: {
     width: 56,
     height: 56,
@@ -193,6 +216,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+  },
+  iconWrapNarrow: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginBottom: 12,
   },
   title: {
     fontSize: 19,
@@ -214,28 +243,5 @@ const styles = StyleSheet.create({
     width: '100%',
     gap: 12,
     marginTop: 4,
-  },
-  btn: {
-    height: 48,
-    borderRadius: 9999,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-  },
-  cancelBtn: {
-    flex: 1,
-    borderWidth: 1,
-  },
-  cancelBtnText: {
-    fontSize: 15,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
-  },
-  confirmBtn: {
-    flex: 1,
-  },
-  confirmBtnText: {
-    fontSize: 15,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
-    color: '#FFFFFF',
   },
 });

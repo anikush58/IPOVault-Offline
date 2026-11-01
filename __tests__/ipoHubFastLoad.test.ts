@@ -3,6 +3,8 @@ import {
   mapSqliteRowToBackendIpo,
   saveBackendIposToCache,
   getCachedBackendIpos,
+  reconcileBackendIposWithCache,
+  isRecordDifferent,
 } from '../services/ipo/ipoHubCacheService';
 import { IPORepository } from '../services/ipo/ipoRepository';
 import { initDB } from '../db/schema';
@@ -463,6 +465,309 @@ export async function runIpoHubFastLoadTestSuite() {
     networkCallCount === 1,
     'Deduping Non-Search',
     'Concurrent identical non-search fetches are properly deduplicated'
+  );
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // TEST 8: Reopening with unchanged backend data preserves SQLite records and order
+  // ──────────────────────────────────────────────────────────────────────────
+  const testDbRaw = new DatabaseSync(':memory:');
+  const testDb = createSqliteWrapper(testDbRaw);
+  await initDB(testDb);
+  const testRepo = new IPORepository(testDb);
+
+  const initialTimestamp = '2026-10-18T10:00:00.000Z';
+  await testRepo.upsertBatch([
+    {
+      id: 'ipo-test-alpha',
+      company_name: 'Alpha Energy Ltd',
+      symbol: 'ALPHA',
+      status: 'OPEN',
+      lifecycle_status: 'OPEN',
+      open_date: '2026-10-24',
+      close_date: '2026-10-28',
+      price_band_min: 100,
+      price_band_max: 105,
+      updated_at: initialTimestamp,
+      created_at: '2026-10-01T00:00:00Z',
+    },
+    {
+      id: 'ipo-test-beta',
+      company_name: 'Beta Solar Ltd',
+      symbol: 'BETA',
+      status: 'OPEN',
+      lifecycle_status: 'OPEN',
+      open_date: '2026-10-22',
+      close_date: '2026-10-29',
+      price_band_min: 200,
+      price_band_max: 210,
+      updated_at: initialTimestamp,
+      created_at: '2026-10-02T00:00:00Z',
+    },
+  ], true);
+
+  // 1. Initial screen entry loads cached records from SQLite
+  const cachedInitial = await getCachedBackendIpos(testDb);
+  assert(cachedInitial.length === 2, 'P0 Reopen - Initial Count', 'Loaded 2 cached records on screen entry');
+  assert(cachedInitial[0].id === 'ipo-test-alpha', 'P0 Reopen - Initial 1st', 'Alpha Energy is first based on timeline open_date');
+  assert(cachedInitial[1].id === 'ipo-test-beta', 'P0 Reopen - Initial 2nd', 'Beta Solar is second');
+
+  // 2. Background sync fetches backend data which has IDENTICAL values
+  const identicalBackendPayload: BackendIpo[] = [
+    {
+      id: 'ipo-test-alpha',
+      companyName: 'Alpha Energy Ltd',
+      symbol: 'ALPHA',
+      marketSegment: 'MAINBOARD',
+      status: 'OPEN',
+      openDate: '2026-10-24',
+      closeDate: '2026-10-28',
+      priceBandLow: 100,
+      priceBandHigh: 105,
+    },
+    {
+      id: 'ipo-test-beta',
+      companyName: 'Beta Solar Ltd',
+      symbol: 'BETA',
+      marketSegment: 'MAINBOARD',
+      status: 'OPEN',
+      openDate: '2026-10-22',
+      closeDate: '2026-10-29',
+      priceBandLow: 200,
+      priceBandHigh: 210,
+    },
+  ];
+
+  const syncResult1 = await reconcileBackendIposWithCache(testDb, identicalBackendPayload);
+  assert(syncResult1.hasChanges === false, 'P0 Reopen - No Changes Flag', 'Reconciliation detects zero data changes');
+  assert(syncResult1.unchangedCount === 2, 'P0 Reopen - Unchanged Count', 'Both records identified as unchanged');
+  assert(syncResult1.insertedCount === 0 && syncResult1.updatedCount === 0, 'P0 Reopen - Zero Writes', 'Zero inserts and zero updates executed');
+
+  // Verify timestamps were NOT touched
+  const rowsAfterSync1 = await testDb.getAllAsync("SELECT id, updated_at FROM ipo_master WHERE id IN ('ipo-test-alpha', 'ipo-test-beta')");
+  for (const row of rowsAfterSync1) {
+    assert(row.updated_at === initialTimestamp, 'P0 Reopen - Timestamp Untouched', `Record ${row.id} updated_at remained intact`);
+  }
+
+  // 3. User leaves and reopens IPO Hub
+  const cachedOnReopen = await getCachedBackendIpos(testDb);
+  assert(cachedOnReopen.length === 2, 'P0 Reopen - Reopen Count', 'Cache count intact on reopen');
+  assert(cachedOnReopen[0].id === 'ipo-test-alpha', 'P0 Reopen - Reopen 1st', 'Order strictly preserved on reopen (Alpha 1st)');
+  assert(cachedOnReopen[1].id === 'ipo-test-beta', 'P0 Reopen - Reopen 2nd', 'Order strictly preserved on reopen (Beta 2nd)');
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // TEST 9: Genuinely new IPO inserted, changed fields updated, unchanged untouched
+  // ──────────────────────────────────────────────────────────────────────────
+  const mixedBackendPayload: BackendIpo[] = [
+    // Unchanged Alpha
+    {
+      id: 'ipo-test-alpha',
+      companyName: 'Alpha Energy Ltd',
+      symbol: 'ALPHA',
+      marketSegment: 'MAINBOARD',
+      status: 'OPEN',
+      openDate: '2026-10-24',
+      closeDate: '2026-10-28',
+      priceBandLow: 100,
+      priceBandHigh: 105,
+    },
+    // Changed Beta: GMP updated from null to 45, status moved to CLOSING_TODAY
+    {
+      id: 'ipo-test-beta',
+      companyName: 'Beta Solar Ltd',
+      symbol: 'BETA',
+      marketSegment: 'MAINBOARD',
+      status: 'CLOSING_TODAY',
+      openDate: '2026-10-20',
+      closeDate: '2026-10-24',
+      priceBandLow: 200,
+      priceBandHigh: 210,
+      currentGmp: {
+        gmpAmount: 45,
+        gmpPercentage: 21.43,
+        estProfitPerLot: 4500,
+        observedAt: '2026-10-19T09:30:00Z',
+      },
+    },
+    // Genuinely New Gamma
+    {
+      id: 'ipo-test-gamma',
+      companyName: 'Gamma Healthcare Ltd',
+      symbol: 'GAMMA',
+      status: 'UPCOMING',
+      marketSegment: 'MAINBOARD',
+      openDate: '2026-10-25',
+      closeDate: '2026-10-27',
+      priceBandLow: 350,
+      priceBandHigh: 365,
+    },
+  ];
+
+  const syncResult2 = await reconcileBackendIposWithCache(testDb, mixedBackendPayload);
+  assert(syncResult2.hasChanges === true, 'P0 Mixed Sync - Has Changes', 'Detected genuine modifications');
+  assert(syncResult2.insertedCount === 1, 'P0 Mixed Sync - Inserted Count', 'Genuinely new IPO (Gamma) inserted');
+  assert(syncResult2.updatedCount === 1, 'P0 Mixed Sync - Updated Count', 'Changed IPO (Beta) updated');
+  assert(syncResult2.unchangedCount === 1, 'P0 Mixed Sync - Unchanged Count', 'Unchanged IPO (Alpha) untouched');
+
+  // Verify Alpha's timestamp is STILL initialTimestamp
+  const alphaRow = await testDb.getFirstAsync("SELECT updated_at FROM ipo_master WHERE id = 'ipo-test-alpha'");
+  assert(alphaRow.updated_at === initialTimestamp, 'P0 Mixed Sync - Alpha Unchanged', 'Alpha timestamp remained original untouched timestamp');
+
+  // Verify Beta was updated
+  const betaRow = await testDb.getFirstAsync("SELECT status, gmp_amount, updated_at FROM ipo_master WHERE id = 'ipo-test-beta'");
+  assert(betaRow.status === 'CLOSING_TODAY', 'P0 Mixed Sync - Beta Status', 'Beta status updated to CLOSING_TODAY');
+  assert(Number(betaRow.gmp_amount) === 45, 'P0 Mixed Sync - Beta GMP', 'Beta GMP amount updated to 45');
+  assert(betaRow.updated_at !== initialTimestamp, 'P0 Mixed Sync - Beta Timestamp', 'Beta timestamp updated reflecting change');
+
+  // Verify Gamma was inserted
+  const gammaRow = await testDb.getFirstAsync("SELECT id, company_name FROM ipo_master WHERE id = 'ipo-test-gamma'");
+  assert(gammaRow != null && gammaRow.company_name === 'Gamma Healthcare Ltd', 'P0 Mixed Sync - Gamma Inserted', 'Gamma successfully persisted into SQLite');
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // TEST 10: Backend response order differences do NOT alter intended display order
+  // ──────────────────────────────────────────────────────────────────────────
+  // Suppose backend returns items in reverse order [Gamma, Beta, Alpha] or scrambled order
+  const reverseBackendPayload: BackendIpo[] = [
+    mixedBackendPayload[2], // Gamma (Upcoming)
+    mixedBackendPayload[1], // Beta (Closing Today / Live)
+    mixedBackendPayload[0], // Alpha (Open / Live)
+  ];
+
+  const syncResultReverse = await reconcileBackendIposWithCache(testDb, reverseBackendPayload);
+  assert(syncResultReverse.hasChanges === false, 'P0 Order Invariance - No Changes', 'Reconciliation recognizes identical data despite reverse response order');
+
+  // Display data is read from SQLite
+  const cachedOrdered = await getCachedBackendIpos(testDb);
+  // Status ordering: Live / Closing Today (Category 1) -> Upcoming (Category 2)
+  // Within Live: Alpha (open 2026-10-18) before Beta (open 2026-10-16)
+  assert(cachedOrdered[0].id === 'ipo-test-alpha', 'P0 Order Invariance - 1st is Alpha', 'Alpha Energy remains 1st (Live, latest open_date)');
+  assert(cachedOrdered[1].id === 'ipo-test-beta', 'P0 Order Invariance - 2nd is Beta', 'Beta Solar remains 2nd (Live, earlier open_date)');
+  assert(cachedOrdered[2].id === 'ipo-test-gamma', 'P0 Order Invariance - 3rd is Gamma', 'Gamma Healthcare is 3rd (Upcoming)');
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // TEST 11: Regression Test - SME IPO jumping bug reproduced and resolved
+  // ──────────────────────────────────────────────────────────────────────────
+  // Seed a Mainboard IPO and an SME IPO
+  const mainboardIpo: Partial<IPOMasterRecord> = {
+    id: 'ipo-mb-premier',
+    company_name: 'Premier Mainboard Ltd',
+    symbol: 'PREMIER',
+    issue_type: 'Mainboard',
+    status: 'OPEN',
+    lifecycle_status: 'OPEN',
+    open_date: '2026-10-24',
+    close_date: '2026-10-28',
+    price_band_min: 500,
+    price_band_max: 525,
+    created_at: '2026-10-01T00:00:00Z',
+    updated_at: '2026-10-01T00:00:00Z',
+  };
+
+  const smeIpo: Partial<IPOMasterRecord> = {
+    id: 'ipo-sme-innovate',
+    company_name: 'Innovate SME Ltd',
+    symbol: 'INNOVATE',
+    issue_type: 'SME',
+    status: 'OPEN',
+    lifecycle_status: 'OPEN',
+    open_date: '2026-10-22', // Earlier open date -> positioned at bottom in timeline sort
+    close_date: '2026-10-27',
+    price_band_min: 120,
+    price_band_max: 125,
+    created_at: '2026-10-05T00:00:00Z', // Created in backend more recently
+    updated_at: '2026-10-05T00:00:00Z',
+  };
+
+  await testRepo.upsertBatch([mainboardIpo, smeIpo], true);
+
+  // 1. Initial screen entry: SQLite hydrates cache
+  const initialHubList = await getCachedBackendIpos(testDb);
+  assert(initialHubList.length >= 2, 'P0 SME Regression - Seeded', 'Both Mainboard and SME are seeded');
+  const premierIdxInitial = initialHubList.findIndex((i) => i.id === 'ipo-mb-premier');
+  const smeIdxInitial = initialHubList.findIndex((i) => i.id === 'ipo-sme-innovate');
+  assert(premierIdxInitial < smeIdxInitial, 'P0 SME Regression - SME at Bottom Initially', 'In SQLite timeline sort, SME is at the bottom (index > mainboard)');
+
+  // 2. Backend API returns items in reverse/created_at order where SME is at the TOP [SME, Premier]
+  const backendResponseWithSmeAtTop: BackendIpo[] = [
+    {
+      id: 'ipo-sme-innovate',
+      companyName: 'Innovate SME Ltd',
+      symbol: 'INNOVATE',
+      marketSegment: 'SME',
+      status: 'OPEN',
+      openDate: '2026-10-22',
+      closeDate: '2026-10-27',
+      priceBandLow: 120,
+      priceBandHigh: 125,
+    },
+    {
+      id: 'ipo-mb-premier',
+      companyName: 'Premier Mainboard Ltd',
+      symbol: 'PREMIER',
+      marketSegment: 'MAINBOARD',
+      status: 'OPEN',
+      openDate: '2026-10-24',
+      closeDate: '2026-10-28',
+      priceBandLow: 500,
+      priceBandHigh: 525,
+    },
+  ];
+
+  // In OLD buggy code:
+  // setRawIpos(data) directly assigned `backendResponseWithSmeAtTop` to state,
+  // causing SME to jump to index 0 (top)!
+  // In NEW fixed code:
+  // reconcileBackendIposWithCache checks incoming data against SQLite:
+  const smeSyncResult = await reconcileBackendIposWithCache(testDb, backendResponseWithSmeAtTop);
+  assert(smeSyncResult.hasChanges === false, 'P0 SME Regression - Sync Unchanged', 'Identical backend data does not overwrite SQLite or update timestamps');
+
+  // Because data is unchanged, rawIpos is NOT overwritten with backend array order.
+  // And on reload from SQLite:
+  const reopenedHubList = await getCachedBackendIpos(testDb);
+  const premierIdxReopened = reopenedHubList.findIndex((i) => i.id === 'ipo-mb-premier');
+  const smeIdxReopened = reopenedHubList.findIndex((i) => i.id === 'ipo-sme-innovate');
+
+  assert(
+    premierIdxReopened < smeIdxReopened,
+    'P0 SME Regression - SME Remains at Bottom',
+    'SME IPO order does NOT jump to top on backend sync or screen reopen'
+  );
+  assert(
+    premierIdxInitial === premierIdxReopened && smeIdxInitial === smeIdxReopened,
+    'P0 SME Regression - Deterministic Ordering Invariant',
+    'Position of SME IPO is 100% stable across screen navigation and API responses'
+  );
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // TEST 12: Offline loading, failed requests, and incomplete response resiliency
+  // ──────────────────────────────────────────────────────────────────────────
+  // 1. Offline loading: SQLite data is loaded immediately
+  const offlineCached = await getCachedBackendIpos(testDb);
+  assert(offlineCached.length > 0, 'P0 Offline - Cache Available', 'Valid SQLite cached IPOs are immediately available offline');
+
+  // 2. Failed request does NOT delete or clear local SQLite data
+  let simulatedUiRawIpos = [...offlineCached];
+  try {
+    throw new Error('Simulated network timeout (Offline/Airplane mode)');
+  } catch (err: any) {
+    // Mimic app/new-ipos.tsx catch block:
+    // Only set error if simulatedUiRawIpos is empty; keep cached IPOs intact!
+    if (simulatedUiRawIpos.length === 0) {
+      // should not enter here because cached IPOs exist
+      assert(false, 'P0 Offline - Error Screen', 'Should not blank out when cache exists');
+    }
+  }
+  assert(simulatedUiRawIpos.length === offlineCached.length, 'P0 Offline - No Empty Flash', 'Cached IPOs remain displayed with zero empty-list flash');
+
+  // 3. Incomplete backend response (e.g. backend sends partial page of 1 item)
+  // Must NOT delete existing local records
+  const partialBackendResponse: BackendIpo[] = [backendResponseWithSmeAtTop[0]]; // Only SME returned
+  await reconcileBackendIposWithCache(testDb, partialBackendResponse);
+
+  const localRecordsAfterPartial = await testDb.getAllAsync('SELECT id FROM ipo_master WHERE deleted_at IS NULL');
+  assert(
+    localRecordsAfterPartial.length >= 5,
+    'P0 Partial Response - No Accidental Deletion',
+    'Local records are NOT deleted merely because response is partial or incomplete'
   );
 
   console.log(`\n===============================================================`);

@@ -25,6 +25,7 @@ class AdConsentService {
   // Default is strictly false: no ads may be requested until consent is confirmed
   private canServeAds = false;
   private listeners: Set<ConsentChangeListener> = new Set();
+  private initPromise: Promise<ConsentResult> | null = null;
 
   /**
    * Safe dynamic accessor for AdsConsent module to prevent runtime crashes in Expo Go or Web.
@@ -57,69 +58,96 @@ class AdConsentService {
   /**
    * Initializes consent in the background following Google's recommended flow.
    * Asynchronously gathers UMP consent without delaying UI rendering.
+   * Strictly deduplicates concurrent or in-flight initialization calls.
    */
   public async initializeConsent(): Promise<ConsentResult> {
-    const AdsConsent = this.getAdsConsentModule();
-
-    // In environments without native AdMob (Web, Expo Go, Unit tests)
-    if (!AdsConsent) {
-      this.consentReady = true;
-      // In __DEV__ without native binaries, permit simulated preview cards
-      this.canServeAds = typeof __DEV__ !== 'undefined' ? __DEV__ : false;
-      this.notifyListeners();
-      return {
-        canRequestAds: this.canServeAds,
-        status: 'NOT_REQUIRED_OR_MOCKED',
-      };
+    if (this.initPromise) {
+      return this.initPromise;
     }
 
-    try {
-      // 4-second timeout to guarantee slow network does not hang app startup
-      const consentPromise = (async () => {
-        // Step 1: Request info update from Google UMP
-        const initialInfo = await AdsConsent.requestInfoUpdate();
+    this.initPromise = (async () => {
+      const AdsConsent = this.getAdsConsentModule();
 
-        // Step 2: Present form if required
-        if (
-          initialInfo?.isConsentFormAvailable &&
-          (initialInfo?.status === 'REQUIRED' || initialInfo?.status === 'UNKNOWN')
-        ) {
-          await AdsConsent.loadAndShowConsentFormIfRequired();
-        }
-
-        // Step 3: Fetch updated status to check authoritative canRequestAds
-        const finalInfo = await AdsConsent.getConsentInfo();
-        return finalInfo;
-      })();
-
-      const timeoutPromise = new Promise<null>((resolve) =>
-        setTimeout(() => resolve(null), 4000)
-      );
-
-      const result = await Promise.race([consentPromise, timeoutPromise]);
-
-      if (result) {
-        // Authoritative decision from Google UMP SDK
-        this.canServeAds = Boolean(result.canRequestAds);
+      // In environments without native AdMob (Web, Expo Go, Unit tests)
+      if (!AdsConsent) {
         this.consentReady = true;
+        // In __DEV__ without native binaries, permit simulated preview cards
+        this.canServeAds = typeof __DEV__ !== 'undefined' ? __DEV__ : false;
         this.notifyListeners();
-
         return {
           canRequestAds: this.canServeAds,
-          status: result.status || 'OBTAINED',
-          privacyOptionsRequirementStatus: result.privacyOptionsRequirementStatus,
+          status: 'NOT_REQUIRED_OR_MOCKED',
         };
-      } else {
-        // TIMEOUT FALLBACK:
-        // Do NOT bypass consent requirements! Inspect cached session consent.
-        console.warn('[AdConsentService] Consent request timed out, inspecting cached consent');
-        return this.handleFallbackWithCachedConsent('TIMEOUT_UNRESOLVED');
       }
-    } catch (err) {
-      // ERROR FALLBACK:
-      // Network failure or UMP API error: check cached consent; never bypass.
-      console.warn('[AdConsentService] Consent gathering error, inspecting cached consent:', err);
-      return this.handleFallbackWithCachedConsent('ERROR_UNRESOLVED');
+
+      try {
+        // 8-second timeout for mobile networks, non-blocking to app initialization
+        const consentPromise = (async () => {
+          // Step 1: Request info update from Google UMP
+          const initialInfo = await AdsConsent.requestInfoUpdate();
+
+          // Step 2: Present form if required
+          if (
+            initialInfo?.isConsentFormAvailable &&
+            (initialInfo?.status === 'REQUIRED' || initialInfo?.status === 'UNKNOWN')
+          ) {
+            await AdsConsent.loadAndShowConsentFormIfRequired();
+          }
+
+          // Step 3: Fetch updated status to check authoritative canRequestAds
+          const finalInfo = await AdsConsent.getConsentInfo();
+          return finalInfo;
+        })();
+
+        // Attach background listener in case UMP resolves after initial timeout
+        consentPromise
+          .then((bgResult) => {
+            if (bgResult && bgResult.canRequestAds !== undefined) {
+              const allowed = Boolean(bgResult.canRequestAds);
+              if (this.canServeAds !== allowed) {
+                this.canServeAds = allowed;
+                this.consentReady = true;
+                this.notifyListeners();
+              }
+            }
+          })
+          .catch(() => {});
+
+        const timeoutPromise = new Promise<null>((resolve) =>
+          setTimeout(() => resolve(null), 8000)
+        );
+
+        const result = await Promise.race([consentPromise, timeoutPromise]);
+
+        if (result) {
+          // Authoritative decision from Google UMP SDK
+          this.canServeAds = Boolean(result.canRequestAds);
+          this.consentReady = true;
+          this.notifyListeners();
+
+          return {
+            canRequestAds: this.canServeAds,
+            status: result.status || 'OBTAINED',
+            privacyOptionsRequirementStatus: result.privacyOptionsRequirementStatus,
+          };
+        } else {
+          // TIMEOUT FALLBACK:
+          // Do NOT bypass consent requirements! Inspect cached session consent.
+          console.warn('[AdConsentService] Consent request timed out, inspecting cached consent');
+          return this.handleFallbackWithCachedConsent('TIMEOUT_UNRESOLVED');
+        }
+      } catch (err) {
+        // ERROR FALLBACK:
+        // Network failure or UMP API error: check cached consent; never bypass.
+        console.warn('[AdConsentService] Consent gathering error, inspecting cached consent:', err);
+        return this.handleFallbackWithCachedConsent('ERROR_UNRESOLVED');
+      }
+    })();
+
+    try {
+      return await this.initPromise;
+    } finally {
+      this.initPromise = null;
     }
   }
 

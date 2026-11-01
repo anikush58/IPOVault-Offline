@@ -54,15 +54,15 @@ export function IPOScoreCard({ scoreRecord }: Props) {
   const getBadgeColor = (rec: string) => {
     switch (rec) {
       case 'Strong Apply':
-        return { bg: 'rgba(16, 185, 129, 0.14)', text: '#10B981', border: 'rgba(16, 185, 129, 0.30)' };
+        return { bg: '#10B981', text: '#FFFFFF', border: '#10B981' };
       case 'Apply':
-        return { bg: 'rgba(59, 130, 246, 0.14)', text: '#3B82F6', border: 'rgba(59, 130, 246, 0.30)' };
+        return { bg: '#3B82F6', text: '#FFFFFF', border: '#3B82F6' };
       case 'Neutral':
-        return { bg: 'rgba(245, 158, 11, 0.14)', text: '#F59E0B', border: 'rgba(245, 158, 11, 0.30)' };
+        return { bg: '#F59E0B', text: '#FFFFFF', border: '#F59E0B' };
       case 'Avoid':
-        return { bg: 'rgba(239, 68, 68, 0.14)', text: '#EF4444', border: 'rgba(239, 68, 68, 0.30)' };
+        return { bg: '#EF4444', text: '#FFFFFF', border: '#EF4444' };
       default:
-        return { bg: colors.surface, text: colors.foreground, border: colors.border };
+        return { bg: '#64748B', text: '#FFFFFF', border: '#64748B' };
     }
   };
 
@@ -185,7 +185,7 @@ const styles = StyleSheet.create({
   badge: {
     paddingHorizontal: 12,
     paddingVertical: 5,
-    borderRadius: 20,
+    borderRadius: 5,
     borderWidth: 1,
   },
   badgeText: {

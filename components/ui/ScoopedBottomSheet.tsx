@@ -10,8 +10,8 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import { Icon } from '@/components/ui/Icon';
 import { BlurView } from 'expo-blur';
-import { Feather } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,13 +30,33 @@ interface ScoopedBottomSheetProps {
   overlay?: React.ReactNode;
 }
 
+const R = 32; // Top corner radius
+const SCOOP_W = 60; // Scoop half-width
+const SCOOP_D = 28; // Scoop depth
+
+function getScoopedPath(w: number, h: number): string {
+  if (w <= 0 || h <= 0) return '';
+  const cx = w / 2;
+
+  return `M 0 ${h}
+    L 0 ${R}
+    A ${R} ${R} 0 0 1 ${R} 0
+    L ${cx - SCOOP_W} 0
+    C ${cx - 38} 0, ${cx - 32} ${SCOOP_D}, ${cx} ${SCOOP_D}
+    C ${cx + 32} ${SCOOP_D}, ${cx + 38} 0, ${cx + SCOOP_W} 0
+    L ${w - R} 0
+    A ${R} ${R} 0 0 1 ${w} ${R}
+    L ${w} ${h}
+    Z`;
+}
+
 export function ScoopedBottomSheet({
   visible,
   onClose,
   children,
   maxHeight = '90%',
   height,
-  autoHeight = false,
+  autoHeight,
   style,
   showCloseButton = true,
   overlay,
@@ -47,11 +67,11 @@ export function ScoopedBottomSheet({
   const isDark = resolvedScheme === 'dark';
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
+  const isAuto = autoHeight ?? (height === undefined);
+
   // Initialize with synchronous window dimensions so sheet is NEVER 0x0 / transparent on frame 0 or during lag
   const [measuredWidth, setMeasuredWidth] = useState(0);
   const [measuredHeight, setMeasuredHeight] = useState(0);
-
-  if (!visible) return null;
 
   const resolvedTargetHeight = React.useMemo(() => {
     const raw = height ?? maxHeight;
@@ -67,38 +87,26 @@ export function ScoopedBottomSheet({
     return Math.round(windowHeight * 0.9);
   }, [height, maxHeight, windowHeight]);
 
-  const effectiveWidth = measuredWidth > 0 ? measuredWidth : windowWidth;
-  const effectiveHeight =
-    autoHeight && measuredHeight > 0
-      ? measuredHeight
-      : resolvedTargetHeight;
-
-  const R = 32; // Top corner radius
-  const SCOOP_W = 60; // Scoop half-width
-  const SCOOP_D = 28; // Scoop depth
-
-  const getScoopedPath = (w: number, h: number) => {
-    if (w <= 0 || h <= 0) return '';
-    const cx = w / 2;
-
-    return `M 0 ${h}
-      L 0 ${R}
-      A ${R} ${R} 0 0 1 ${R} 0
-      L ${cx - SCOOP_W} 0
-      C ${cx - 38} 0, ${cx - 32} ${SCOOP_D}, ${cx} ${SCOOP_D}
-      C ${cx + 32} ${SCOOP_D}, ${cx + 38} 0, ${cx + SCOOP_W} 0
-      L ${w - R} 0
-      A ${R} ${R} 0 0 1 ${w} ${R}
-      L ${w} ${h}
-      Z`;
-  };
-
-  const bottomPad = Platform.OS === 'web' ? 20 : Math.max(insets.bottom, 24);
-
-  const handleClose = () => {
+  const handleClose = React.useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
-  };
+  }, [onClose]);
+
+  // Reset measured dimensions when sheet is dismissed so subsequent openings recalculate cleanly
+  React.useEffect(() => {
+    if (!visible) {
+      setMeasuredWidth(0);
+      setMeasuredHeight(0);
+    }
+  }, [visible]);
+
+  const effectiveWidth = measuredWidth > 0 ? measuredWidth : windowWidth;
+  const effectiveHeight =
+    isAuto && measuredHeight > 0
+      ? measuredHeight
+      : (isAuto ? Math.min(resolvedTargetHeight, 480) : resolvedTargetHeight);
+
+  const bottomPad = Platform.OS === 'web' ? 20 : Math.max(insets.bottom, 24);
 
   return (
     <Modal
@@ -106,7 +114,7 @@ export function ScoopedBottomSheet({
       animationType="slide"
       transparent
       statusBarTranslucent
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
       <View style={styles.modalOverlay}>
         {/* Blurred Background Backdrop */}
@@ -138,7 +146,7 @@ export function ScoopedBottomSheet({
             }}
             style={[
               styles.sheetContainer,
-              autoHeight
+              isAuto
                 ? { maxHeight: resolvedTargetHeight, paddingBottom: bottomPad }
                 : { height: resolvedTargetHeight, maxHeight: resolvedTargetHeight, paddingBottom: bottomPad },
               style,
@@ -189,13 +197,13 @@ export function ScoopedBottomSheet({
                     },
                   ]}
                 >
-                  <Feather name="x" size={21} color={colors.foreground} />
+                  <Icon name="x" size={21} color={colors.foreground} strokeWidth={2} />
                 </TouchableOpacity>
               </View>
             )}
 
             {/* Sheet Content (Flex-bounded to never overflow the bottom sheet or push CTAs off-screen) */}
-            <View style={styles.contentContainer}>
+            <View style={[styles.contentContainer, isAuto ? { flex: 0, flexShrink: 1 } : null]}>
               {children}
             </View>
           </Pressable>

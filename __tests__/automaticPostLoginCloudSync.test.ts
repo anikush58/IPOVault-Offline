@@ -200,6 +200,105 @@ class DBContextSimulator {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Simulation of DBContext Post-Login Reactive State Machine
+// ---------------------------------------------------------------------------
+class PostLoginSyncLifecycleSimulator {
+  public repo: MockSQLiteRepository = new MockSQLiteRepository();
+  public authUser: { uid: string; email: string } | null = null;
+  public isLoading: boolean = true;
+  public syncedUid: string | null = null;
+  public cloudSyncStatus: 'idle' | 'syncing' | 'restoring' | 'success' | 'error' = 'idle';
+  public cloudSyncError: string | null = null;
+  public isRestoring: boolean = false;
+  public syncInvocationCount: number = 0;
+  private isSyncInProgress: boolean = false;
+  private activeSyncUid: string | null = null;
+
+  async onAuthStateChanged(user: { uid: string; email: string } | null) {
+    this.authUser = user;
+    if (!user) {
+      this.syncedUid = null;
+      this.cloudSyncStatus = 'idle';
+      this.cloudSyncError = null;
+      return;
+    }
+    await this.evaluateAutoSync();
+  }
+
+  async setDatabaseReady() {
+    this.isLoading = false;
+    await this.evaluateAutoSync();
+  }
+
+  async evaluateAutoSync() {
+    const currentUid = this.authUser?.uid;
+    if (!currentUid || this.isLoading) return;
+    if (this.syncedUid === currentUid) return;
+    await this.performAutomaticCloudSync(currentUid);
+  }
+
+  async performAutomaticCloudSync(targetUid: string, isManualRetry = false): Promise<boolean> {
+    if (!targetUid) return false;
+    if (this.isSyncInProgress) {
+      if (this.activeSyncUid === targetUid) return false;
+      while (this.isSyncInProgress) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      if (this.authUser?.uid !== targetUid) return false;
+    }
+
+    this.isSyncInProgress = true;
+    this.activeSyncUid = targetUid;
+    this.isRestoring = true;
+    this.cloudSyncStatus = isManualRetry ? 'restoring' : 'syncing';
+    this.cloudSyncError = null;
+    this.syncInvocationCount++;
+
+    try {
+      const deltaRes = await this.mockSyncDelta(targetUid);
+
+      // Guard: user switched mid-sync
+      if (this.authUser?.uid !== targetUid) {
+        return false;
+      }
+
+      if (deltaRes.success) {
+        if (deltaRes.data) {
+          await this.repo.importCriticalData(deltaRes.data);
+          await this.repo.importSecondaryData(deltaRes.data);
+        }
+        this.syncedUid = targetUid;
+        this.cloudSyncStatus = 'success';
+        this.cloudSyncError = null;
+        return true;
+      } else {
+        throw new Error(deltaRes.error || 'Cloud synchronization failed');
+      }
+    } catch (err: any) {
+      if (this.authUser?.uid !== targetUid) return false;
+      this.cloudSyncStatus = 'error';
+      this.cloudSyncError = err.message || 'Cloud synchronization failed';
+      return false;
+    } finally {
+      this.isSyncInProgress = false;
+      this.activeSyncUid = null;
+      this.isRestoring = false;
+    }
+  }
+
+  async retryCloudSync(): Promise<boolean> {
+    if (!this.authUser?.uid) return false;
+    this.syncedUid = null;
+    return this.performAutomaticCloudSync(this.authUser.uid, true);
+  }
+
+  public mockSyncDelta: (uid: string) => Promise<{ success: boolean; data?: any; error?: string }> = async () => ({
+    success: true,
+    data: { users: [] },
+  });
+}
+
 async function runAutomaticPostLoginCloudSyncTestSuite() {
   console.log('===============================================================');
   console.log('RUNNING IPOVAULT 3-STAGE CLOUD SYNC ARCHITECTURE TEST SUITE');
@@ -425,6 +524,199 @@ async function runAutomaticPostLoginCloudSyncTestSuite() {
       'TEST 6.2',
       'Newer cloud metadata triggers incremental delta query'
     );
+  }
+
+  // --- TEST 7: Successful Login Triggers Automatic Sync Without Pressing Sync ---
+  console.log('\n--- TEST 7: Automatic Sync Triggered on Login Without Manual Action ---');
+  {
+    const simulator = new PostLoginSyncLifecycleSimulator();
+    simulator.isLoading = false; // SQLite already ready
+    let syncTriggered = false;
+
+    simulator.mockSyncDelta = async (uid) => {
+      syncTriggered = true;
+      return {
+        success: true,
+        data: {
+          users: [{ id: 'user-auto-1', name: 'Auto Restored User' }],
+          ipos: [{ id: 'ipo-auto-1', ipo_name: 'Auto Restored IPO', buy_price: 150 }],
+          applications: [{ id: 'app-auto-1', user_id: 'user-auto-1', ipo_id: 'ipo-auto-1', ipo_name: 'Auto Restored IPO', status: 'Applied' }],
+        },
+      };
+    };
+
+    // User logs in - no manual sync or restore button pressed!
+    await simulator.onAuthStateChanged({ uid: 'user-777', email: 'auto@ipovault.app' });
+
+    assert(syncTriggered, 'TEST 7.1', 'Automatic sync invoked immediately upon user login');
+    assert(simulator.cloudSyncStatus === 'success', 'TEST 7.2', 'Cloud sync status reached success');
+    assert(simulator.repo.users.length === 1, 'TEST 7.3', 'Cloud user data populated into SQLite automatically');
+    assert(simulator.repo.applications.length === 1, 'TEST 7.4', 'Cloud application data restored into SQLite automatically');
+  }
+
+  // --- TEST 8: Google and Email/Password Login Use the Same Reliable Lifecycle ---
+  console.log('\n--- TEST 8: Equivalence of Google Sign-In & Email/Password Lifecycles ---');
+  {
+    const googleSim = new PostLoginSyncLifecycleSimulator();
+    googleSim.isLoading = false;
+    let googleSyncCount = 0;
+    googleSim.mockSyncDelta = async () => {
+      googleSyncCount++;
+      return { success: true, data: { users: [{ id: 'g-user', name: 'Google User' }] } };
+    };
+
+    const emailSim = new PostLoginSyncLifecycleSimulator();
+    emailSim.isLoading = false;
+    let emailSyncCount = 0;
+    emailSim.mockSyncDelta = async () => {
+      emailSyncCount++;
+      return { success: true, data: { users: [{ id: 'e-user', name: 'Email User' }] } };
+    };
+
+    // Trigger Google login
+    await googleSim.onAuthStateChanged({ uid: 'google-uid-1', email: 'google@gmail.com' });
+    // Trigger Email/Password login
+    await emailSim.onAuthStateChanged({ uid: 'email-uid-1', email: 'email@domain.com' });
+
+    assert(googleSyncCount === 1, 'TEST 8.1', 'Google login invoked automatic cloud sync');
+    assert(emailSyncCount === 1, 'TEST 8.2', 'Email/password login invoked automatic cloud sync');
+    assert(googleSim.cloudSyncStatus === 'success' && emailSim.cloudSyncStatus === 'success', 'TEST 8.3', 'Both auth methods transition to success state identical lifecycle');
+  }
+
+  // --- TEST 9: Sync Waits for SQLite Readiness ---
+  console.log('\n--- TEST 9: Sync Defers Until SQLite Readiness (isLoading: true -> false) ---');
+  {
+    const simulator = new PostLoginSyncLifecycleSimulator();
+    simulator.isLoading = true; // SQLite still initializing
+    let syncTriggered = false;
+
+    simulator.mockSyncDelta = async () => {
+      syncTriggered = true;
+      return { success: true, data: { users: [] } };
+    };
+
+    // Auth state arrives before SQLite is ready
+    await simulator.onAuthStateChanged({ uid: 'user-sqlite-wait', email: 'wait@ipovault.app' });
+
+    assert(!syncTriggered, 'TEST 9.1', 'Sync is paused while SQLite database is initializing (isLoading=true)');
+
+    // SQLite finishes initializing
+    await simulator.setDatabaseReady();
+
+    assert(syncTriggered, 'TEST 9.2', 'Sync triggers immediately once SQLite readiness is signaled (isLoading=false)');
+  }
+
+  // --- TEST 10: Duplicate Auth Callbacks Deduplication ---
+  console.log('\n--- TEST 10: Deduplication of Rapid/Concurrent Auth Callbacks ---');
+  {
+    const simulator = new PostLoginSyncLifecycleSimulator();
+    simulator.isLoading = false;
+    let syncInvocations = 0;
+
+    simulator.mockSyncDelta = async () => {
+      syncInvocations++;
+      await new Promise((r) => setTimeout(r, 20));
+      return { success: true, data: { users: [] } };
+    };
+
+    // Rapid successive auth transitions (e.g. signIn method + listener)
+    const p1 = simulator.onAuthStateChanged({ uid: 'rapid-user', email: 'rapid@ipovault.app' });
+    const p2 = simulator.onAuthStateChanged({ uid: 'rapid-user', email: 'rapid@ipovault.app' });
+    const p3 = simulator.evaluateAutoSync();
+
+    await Promise.all([p1, p2, p3]);
+
+    assert(syncInvocations === 1, 'TEST 10.1', `Only 1 sync execution occurs despite 3 duplicate triggers (invocations: ${syncInvocations})`);
+  }
+
+  // --- TEST 11: Failed Sync Retries & Recovers State ---
+  console.log('\n--- TEST 11: Failed Sync Sets Error State and Enables Actionable Retry ---');
+  {
+    const simulator = new PostLoginSyncLifecycleSimulator();
+    simulator.isLoading = false;
+    let attempts = 0;
+
+    simulator.mockSyncDelta = async () => {
+      attempts++;
+      if (attempts === 1) {
+        throw new Error('Network timeout reaching Firestore');
+      }
+      return {
+        success: true,
+        data: { users: [{ id: 'user-retry-1', name: 'Recovered User' }] },
+      };
+    };
+
+    // Initial login attempts sync and fails
+    await simulator.onAuthStateChanged({ uid: 'retry-uid', email: 'retry@ipovault.app' });
+
+    assert(simulator.cloudSyncStatus === 'error', 'TEST 11.1', 'Failed sync transitions to error state');
+    assert(simulator.cloudSyncError === 'Network timeout reaching Firestore', 'TEST 11.2', 'Actionable error message captured in state');
+    assert(simulator.syncedUid === null, 'TEST 11.3', 'syncedUid remains null on failure so retry is allowed');
+
+    // User triggers Retry
+    const retryResult = await simulator.retryCloudSync();
+
+    assert(retryResult === true, 'TEST 11.4', 'Manual retry recovers and returns true');
+    assert(simulator.cloudSyncStatus === 'success', 'TEST 11.5', 'Sync status updates to success after retry');
+    assert(simulator.repo.users.length === 1, 'TEST 11.6', 'Data successfully imported after retry');
+  }
+
+  // --- TEST 12: Offline Login Preserves Cached Local Data ---
+  console.log('\n--- TEST 12: Offline Login Preserves Cached Local SQLite Records ---');
+  {
+    const simulator = new PostLoginSyncLifecycleSimulator();
+    simulator.isLoading = false;
+
+    // Pre-populate offline SQLite cache
+    simulator.repo.users = [{ id: 'offline-cached-1', name: 'Cached Offline User' }];
+    simulator.repo.applications = [{ id: 'app-cached-1', user_id: 'offline-cached-1', ipo_id: 'ipo-1', ipo_name: 'IPO 1', status: 'Applied' }];
+
+    // Offline network failure during sync attempt
+    simulator.mockSyncDelta = async () => {
+      throw new Error('Offline (no network connection)');
+    };
+
+    await simulator.onAuthStateChanged({ uid: 'offline-uid', email: 'offline@ipovault.app' });
+
+    assert(simulator.cloudSyncStatus === 'error', 'TEST 12.1', 'Sync status indicates offline failure');
+    assert(simulator.repo.users.length === 1, 'TEST 12.2', 'Existing cached local users preserved completely');
+    assert(simulator.repo.applications.length === 1, 'TEST 12.3', 'Existing cached local applications preserved completely');
+    assert(simulator.repo.users[0].name === 'Cached Offline User', 'TEST 12.4', 'Local record values untouched by failed sync');
+  }
+
+  // --- TEST 13: Logout / Account Switching Session Isolation ---
+  console.log('\n--- TEST 13: Account Switching Isolation Prevents Cross-Session Pollution ---');
+  {
+    const simulator = new PostLoginSyncLifecycleSimulator();
+    simulator.isLoading = false;
+
+    // Simulate in-flight sync for Account A that takes 50ms
+    simulator.mockSyncDelta = async (uid) => {
+      await new Promise((r) => setTimeout(r, 50));
+      return {
+        success: true,
+        data: { users: [{ id: `user-${uid}`, name: `User from ${uid}` }] },
+      };
+    };
+
+    // User A logs in
+    const userASyncPromise = simulator.onAuthStateChanged({ uid: 'account-A', email: 'a@ipovault.app' });
+
+    // Mid-sync, user logs out and switches to Account B
+    await new Promise((r) => setTimeout(r, 10)); // Account A is mid-flight
+    await simulator.onAuthStateChanged(null); // Logout
+
+    assert(simulator.syncedUid === null, 'TEST 13.1', 'Logout resets syncedUidRef');
+    assert(simulator.cloudSyncStatus === 'idle', 'TEST 13.2', 'Logout resets cloudSyncStatus to idle');
+
+    // Account B logs in
+    const userBSyncPromise = simulator.onAuthStateChanged({ uid: 'account-B', email: 'b@ipovault.app' });
+
+    await Promise.all([userASyncPromise, userBSyncPromise]);
+
+    assert(simulator.syncedUid === 'account-B', 'TEST 13.3', 'Final synced UID is strictly Account B');
+    assert(simulator.repo.users.length === 1 && simulator.repo.users[0].id === 'user-account-B', 'TEST 13.4', 'SQLite contains strictly Account B data; Account A was discarded');
   }
 
   console.log('\n===============================================================');

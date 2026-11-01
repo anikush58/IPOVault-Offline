@@ -9,8 +9,9 @@ import {
   PressableStateCallbackType,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useColors } from '@/hooks/useColors';
 import { DesignSystem } from '@/constants/DesignSystem';
 
@@ -22,8 +23,8 @@ export interface ButtonProps {
   children?: React.ReactNode;
   variant?: ButtonVariant;
   size?: ButtonSize;
-  iconLeft?: keyof typeof Feather.glyphMap | React.ReactNode;
-  iconRight?: keyof typeof Feather.glyphMap | React.ReactNode;
+  iconLeft?: IconName | React.ReactNode;
+  iconRight?: IconName | React.ReactNode;
   loading?: boolean;
   disabled?: boolean;
   fullWidth?: boolean;
@@ -139,7 +140,7 @@ export function Button({
         };
       default:
         return {
-          container: { backgroundColor: colors.primary },
+          container: { backgroundColor: colors.primary, borderWidth: 0 },
           text: { color: colors.primaryForeground, fontFamily: DesignSystem.typography.fontBold },
           spinnerColor: colors.primaryForeground,
         };
@@ -147,20 +148,22 @@ export function Button({
   };
 
   // Size Specs
-  const getSizeSpecs = (): { height: number; paddingHorizontal: number; fontSize: number; radius: number; iconSize: number } => {
+  const getSizeSpecs = (): { minHeight: number; paddingHorizontal: number; paddingVertical: number; fontSize: number; radius: number; iconSize: number } => {
     switch (size) {
       case 'lg':
         return {
-          height: 54,
+          minHeight: 52,
           paddingHorizontal: 20,
+          paddingVertical: 14,
           fontSize: DesignSystem.typography.size.subhead, // 15
           radius: DesignSystem.radius.pill,
           iconSize: 18,
         };
       case 'sm':
         return {
-          height: 36,
+          minHeight: 34,
           paddingHorizontal: 12,
+          paddingVertical: 6,
           fontSize: DesignSystem.typography.size.bodySm, // 12
           radius: DesignSystem.radius.pill,
           iconSize: 14,
@@ -168,8 +171,9 @@ export function Button({
       case 'md':
       default:
         return {
-          height: 46,
+          minHeight: 44,
           paddingHorizontal: 16,
+          paddingVertical: 10,
           fontSize: DesignSystem.typography.size.bodyLg, // 14
           radius: DesignSystem.radius.pill,
           iconSize: 16,
@@ -180,14 +184,14 @@ export function Button({
   const variantStyle = getVariantStyles();
   const sizeSpec = getSizeSpecs();
 
-  const renderIcon = (icon: keyof typeof Feather.glyphMap | React.ReactNode) => {
+  const renderIcon = (icon: IconName | React.ReactNode) => {
     if (!icon) return null;
     if (typeof icon === 'string') {
       return (
-        <Feather
-          name={icon as keyof typeof Feather.glyphMap}
+        <Icon
+          name={icon as IconName}
           size={sizeSpec.iconSize}
-          color={variantStyle.text.color}
+          color={typeof variantStyle.text.color === 'string' ? variantStyle.text.color : undefined}
         />
       );
     }
@@ -203,7 +207,8 @@ export function Button({
         styles.base,
         variantStyle.container,
         {
-          height: sizeSpec.height,
+          minHeight: sizeSpec.minHeight,
+          paddingVertical: sizeSpec.paddingVertical,
           paddingHorizontal: sizeSpec.paddingHorizontal,
           borderRadius: sizeSpec.radius,
           width: fullWidth ? '100%' : undefined,
@@ -212,6 +217,7 @@ export function Button({
         typeof style === 'function' ? style(state) : style,
       ]}
     >
+
       {loading ? (
         <ActivityIndicator size="small" color={variantStyle.spinnerColor} />
       ) : (
@@ -226,6 +232,9 @@ export function Button({
                 textStyle,
               ]}
               numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+              maxFontSizeMultiplier={1.3}
             >
               {title}
             </Text>

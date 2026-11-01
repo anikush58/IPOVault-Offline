@@ -1,13 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Image, PanResponder, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/ui/Icon';
 import * as Haptics from 'expo-haptics';
-import { formatCurrency } from '@/utils/formatters';
+import { formatCurrency, getResolvedLogoUrl } from '@/utils/formatters';
 import { calcBuyValue, calcNetProfit, calcProfitLoss, calcSaleValue } from '@/utils/calculations';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
-import { useDB } from '@/context/DBContext';
 import type { ApplicationStatus, ApplicationWithDetails } from '@/context/DBContext';
 
 type Props = {
@@ -17,6 +16,8 @@ type Props = {
   isSelectionMode?: boolean;
   isSelected?: boolean;
   onSelectToggle?: () => void;
+  onToggleFavorite?: (id: string, isFav: boolean) => void;
+  onUpdateStatus?: (id: string, status: ApplicationStatus) => void;
 };
 
 // Avatar gradient palettes matching UserCard.tsx
@@ -40,18 +41,19 @@ function getAvatarGradient(name: string): [string, string] {
   return AVATAR_PALETTES[index];
 }
 
-export function ApplicationCard({
+export const ApplicationCard = React.memo(function ApplicationCard({
   application: app,
   onPress,
   isAppliedTab = false,
   isSelectionMode = false,
   isSelected = false,
   onSelectToggle,
+  onToggleFavorite,
+  onUpdateStatus,
 }: Props) {
   const colors = useColors();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
-  const { toggleFavorite, updateApplication } = useDB();
 
   // Collapsed by default for ALL cards (including Holding & Sold)
   const [expanded, setExpanded] = useState<boolean>(false);
@@ -63,26 +65,39 @@ export function ApplicationCard({
   const showFavStar = app.status !== 'Applied' && app.status !== 'Mandate Approved' && app.status !== 'Not Allotted';
 
   // Values calculation
-  const buyValue  = calcBuyValue(app.buy_price, app.quantity);
+  const isAllottedState =
+    app.status === 'Allotted' ||
+    app.status === 'Partially Allotted' ||
+    app.status === 'Holding' ||
+    app.status === 'Sold';
+
+  const effectiveQty = isAllottedState
+    ? (typeof app.allotted_shares === 'number' && app.allotted_shares > 0
+        ? app.allotted_shares
+        : (app.shares_count || app.quantity || 1))
+    : (app.shares_count || app.quantity || 1);
+
+  const buyValue  = calcBuyValue(app.buy_price, effectiveQty);
   const isSold    = app.status === 'Sold' && app.sell_price != null;
-  const saleValue = isSold ? calcSaleValue(app.sell_price!, app.quantity) : null;
+  const saleValue = isSold ? calcSaleValue(app.sell_price!, effectiveQty) : null;
   const pl        = saleValue != null ? calcProfitLoss(saleValue, buyValue) : null;
   const netProfit = pl != null ? calcNetProfit(pl, app.tax ?? 0, app.user_cut ?? 0) : null;
   const isProfit  = netProfit != null && netProfit >= 0;
 
   // Holding Price calculation (uses authoritative broker LTP / manual sell_price, or falls back to buy_price)
   const holdingPrice = app.sell_price != null && app.sell_price > 0 ? app.sell_price : (app.buy_price || 0);
-  const holdingValue = calcSaleValue(holdingPrice, app.quantity);
+  const holdingValue = calcSaleValue(holdingPrice, effectiveQty);
   const currentProfit = holdingValue - buyValue;
 
-  const [avatarError, setAvatarError] = useState(false);
+  const [logoError, setLogoError] = useState(false);
+  const ipoLogoUrl = getResolvedLogoUrl(app.ipo_logo_url) || app.ipo_logo_url || null;
 
   useEffect(() => {
-    setAvatarError(false);
-  }, [app.user_avatar_url]);
+    setLogoError(false);
+  }, [ipoLogoUrl]);
 
-  // Avatar gradient matching Users page
-  const avatarGradient = getAvatarGradient(app.user_name || 'User');
+  const avatarGradient = getAvatarGradient(app.ipo_name || 'IPO');
+  const avatarInitial = (app.ipo_name || 'I').replace(/[^a-zA-Z0-9]/g, '').trim().charAt(0).toUpperCase() || 'I';
 
   // Subtitle format: Broker · Bank
   const brokerBankDetails = [
@@ -106,6 +121,13 @@ export function ApplicationCard({
           bg: colors.statusAllottedBg,
           text: colors.statusAllotted,
           label: 'Allotted',
+          hasChevron: false,
+        };
+      case 'Partially Allotted':
+        return {
+          bg: '#D97706',
+          text: '#FFFFFF',
+          label: 'Partially Allotted',
           hasChevron: false,
         };
       case 'Not Allotted':
@@ -177,7 +199,7 @@ export function ApplicationCard({
           } catch {}
           Animated.timing(pan, { toValue: { x: 380, y: 0 }, duration: 120, useNativeDriver: false }).start(() => {
             pan.setValue({ x: 0, y: 0 });
-            updateApplication(app.id, 'Allotted');
+            onUpdateStatus?.(app.id, 'Allotted');
           });
         } else if (gestureState.dx < -55) {
           // Fast Swipe Left -> Not Allotted
@@ -186,7 +208,7 @@ export function ApplicationCard({
           } catch {}
           Animated.timing(pan, { toValue: { x: -380, y: 0 }, duration: 120, useNativeDriver: false }).start(() => {
             pan.setValue({ x: 0, y: 0 });
-            updateApplication(app.id, 'Not Allotted');
+            onUpdateStatus?.(app.id, 'Not Allotted');
           });
         } else {
           // Instant spring snap back
@@ -208,14 +230,14 @@ export function ApplicationCard({
         <View style={StyleSheet.absoluteFill}>
           {/* Swiping Right: Green Panel + Tick Icon + "Allotted" */}
           <Animated.View style={[styles.swipeBgRight, { backgroundColor: '#16A34A', opacity: swipeOpacityRight }]}>
-            <Feather name="check-circle" size={22} color="#FFFFFF" />
+            <Icon name="check-circle" size={22} color="#FFFFFF" />
             <Text style={styles.swipeText}>Allotted</Text>
           </Animated.View>
 
           {/* Swiping Left: Red Panel + Cross Icon + "Not Allotted" */}
           <Animated.View style={[styles.swipeBgLeft, { backgroundColor: '#DC2626', opacity: swipeOpacityLeft }]}>
             <Text style={styles.swipeText}>Not Allotted</Text>
-            <Feather name="x-circle" size={22} color="#FFFFFF" />
+            <Icon name="x-circle" size={22} color="#FFFFFF" />
           </Animated.View>
         </View>
       )}
@@ -226,188 +248,368 @@ export function ApplicationCard({
         style={[
           styles.cardContainer,
           {
-            backgroundColor: colors.surface,
-            borderColor: isSelectionMode && isSelected ? (isDark ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0, 0, 0, 0.25)') : colors.border,
+            backgroundColor: colors.card,
+            borderColor: isSelectionMode && isSelected ? (isDark ? 'rgba(255, 255, 255, 0.4)' : colors.primary) : colors.border,
+            borderWidth: isSelectionMode && isSelected ? 1.5 : 1,
             transform: [{ translateX: pan.x }, { rotate: cardRotate }],
           },
         ]}
       >
-        {/* Header Row */}
-        <View style={styles.headerRow}>
-          <TouchableOpacity
-            onPress={isSelectionMode && onSelectToggle ? onSelectToggle : onPress}
-            activeOpacity={0.8}
-            style={{ flex: 1 }}
-          >
-            <Text style={[styles.ipoTitle, { color: colors.foreground }]} numberOfLines={1}>
-              {app.ipo_name}
-            </Text>
-          </TouchableOpacity>
-
-          {/* 25% Reduced Selection Checkbox Circle (15x15) */}
-          {isSelectionMode ? (
-            <TouchableOpacity
-              onPress={onSelectToggle}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              style={styles.selectionCheckboxTouch}
-            >
-              {isSelected ? (
-                <View style={[styles.selectedCircle, { backgroundColor: '#16A34A' }]}>
-                  <Feather name="check" size={10} color="#FFFFFF" />
-                </View>
-              ) : (
-                <View style={[styles.unselectedCircle, { borderColor: colors.mutedForeground }]} />
-              )}
-            </TouchableOpacity>
-          ) : showFavStar ? (
-            <TouchableOpacity
-              onPress={() => toggleFavorite(app.id, !isFav)}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Feather
-                name="star"
-                size={16}
-                color={isFav ? '#EAB308' : isDark ? '#4B5563' : '#CBD5E1'}
-              />
-            </TouchableOpacity>
-          ) : null}
-        </View>
-
-        {/* Inner Surface Box */}
         <TouchableOpacity
           onPress={isSelectionMode && onSelectToggle ? onSelectToggle : onPress}
-          activeOpacity={0.85}
-          style={[styles.innerSurface, { backgroundColor: colors.card, borderColor: colors.border }]}
+          activeOpacity={0.88}
         >
-          <View style={styles.userRow}>
-            {/* User Avatar matching Users Page */}
-            {app.user_avatar_url && !avatarError ? (
-              <Image
-                source={{ uri: app.user_avatar_url }}
-                style={styles.avatarImage}
-                resizeMode="cover"
-                onError={() => setAvatarError(true)}
-              />
-            ) : (
-              <LinearGradient colors={avatarGradient} style={styles.avatarGradientCircle}>
-                <Text style={styles.avatarInitial}>
-                  {(app.user_name || 'U').charAt(0).toUpperCase()}
-                </Text>
-              </LinearGradient>
-            )}
+          {/* Top Header Row: Logo/Avatar + Title & User Details on Left, Badges & Actions on Right */}
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.headerLeftWrap}>
+              <View
+                style={[
+                  styles.logoWrap,
+                  {
+                    backgroundColor: '#FFFFFF',
+                    borderColor: isDark ? '#334155' : '#E2E8F0',
+                  },
+                ]}
+              >
+                {ipoLogoUrl && !logoError ? (
+                  <Image
+                    source={{ uri: ipoLogoUrl }}
+                    style={styles.logoImage}
+                    resizeMode="contain"
+                    onError={() => setLogoError(true)}
+                  />
+                ) : (
+                  <LinearGradient
+                    colors={avatarGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.avatarGradient}
+                  >
+                    <Text style={styles.avatarText}>
+                      {avatarInitial}
+                    </Text>
+                  </LinearGradient>
+                )}
+              </View>
 
-            {/* User Details */}
-            <View style={styles.userMetaCol}>
-              <Text style={[styles.userNameText, { color: colors.foreground }]} numberOfLines={1}>
-                {app.user_name}
-              </Text>
-              {!!brokerBankDetails && (
-                <Text style={[styles.subtextDetails, { color: colors.mutedForeground }]} numberOfLines={1}>
-                  {brokerBankDetails}
+              <View style={styles.titleAndPriceWrap}>
+                <Text
+                  style={[styles.companyTitle, { color: colors.foreground }]}
+                  numberOfLines={1}
+                >
+                  {app.ipo_name}
                 </Text>
-              )}
+                <View style={styles.subDetailRow}>
+                  <Text style={[styles.subDetailText, { color: isDark ? '#94A3B8' : '#64748B' }]} numberOfLines={1}>
+                    {app.user_name}{brokerBankDetails ? ` • ${brokerBankDetails}` : ''}
+                  </Text>
+                </View>
+              </View>
             </View>
 
-            {/* Status Badge */}
-            <View style={styles.statusPillWrapper}>
-              <View style={[styles.statusBadgePill, { backgroundColor: badgeStyle.bg }]}>
-                <Text style={[styles.statusBadgeText, { color: badgeStyle.text }]}>
+            {/* Right Badges & Controls */}
+            <View style={styles.badgesRow}>
+              {/* Category Pill */}
+              {app.category && app.category !== 'RETAIL' && (
+                <View
+                  style={[
+                    styles.categoryPill,
+                    {
+                      backgroundColor:
+                        app.category === 'SHAREHOLDER'
+                          ? '#8B5CF6'
+                          : '#F59E0B',
+                      borderColor:
+                        app.category === 'SHAREHOLDER' ? '#8B5CF6' : '#F59E0B',
+                    },
+                  ]}
+                >
+                  <Text style={styles.badgeTextWhite}>
+                    {app.category === 'SHAREHOLDER' ? 'Shareholder' : app.category}
+                  </Text>
+                </View>
+              )}
+
+              {/* Status Pill (Full fill solid color) */}
+              <View
+                style={[
+                  styles.statusPill,
+                  {
+                    backgroundColor: badgeStyle.bg,
+                    borderColor: badgeStyle.bg,
+                  },
+                ]}
+              >
+                <Text style={styles.badgeTextWhite}>
                   {badgeStyle.label}
                 </Text>
               </View>
 
-              {badgeStyle.hasChevron && (
+              {/* Selection Checkbox */}
+              {isSelectionMode ? (
                 <TouchableOpacity
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    setExpanded((prev) => !prev);
-                  }}
-                  hitSlop={8}
+                  onPress={onSelectToggle}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  style={styles.actionIconTouch}
                 >
-                  <Feather
-                    name={expanded ? 'chevron-up' : 'chevron-down'}
-                    size={15}
-                    color={colors.mutedForeground}
-                    style={{ marginLeft: 2 }}
+                  {isSelected ? (
+                    <View style={[styles.selectedCircle, { backgroundColor: '#10B981' }]}>
+                      <Icon name="check" size={11} color="#FFFFFF" strokeWidth={2.5} />
+                    </View>
+                  ) : (
+                    <View style={[styles.unselectedCircle, { borderColor: isDark ? '#64748B' : '#94A3B8' }]} />
+                  )}
+                </TouchableOpacity>
+              ) : showFavStar ? (
+                <TouchableOpacity
+                  onPress={() => onToggleFavorite?.(app.id, !isFav)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  style={styles.actionIconTouch}
+                >
+                  <Icon
+                    name="star"
+                    size={16}
+                    color={isFav ? '#EAB308' : isDark ? colors.mutedForeground : '#CBD5E1'}
+                    fill={isFav ? '#EAB308' : 'none'}
                   />
                 </TouchableOpacity>
-              )}
+              ) : null}
             </View>
           </View>
 
-          {/* 4-Column Metrics Grid (Visible for Holding, Sold or when expanded) */}
-          {(app.status === 'Sold' || app.status === 'Holding' || expanded) && (
-            <View
-              style={[
-                styles.expandedMetricsGrid,
-                {
-                  borderTopColor: isDark ? 'rgba(255, 255, 255, 0.07)' : 'rgba(0, 0, 0, 0.05)',
-                  borderTopWidth: StyleSheet.hairlineWidth,
-                },
-              ]}
-            >
-              {/* Column 1: BUY PRICE */}
-              <View style={styles.gridCellLeft}>
-                <Text style={[styles.gridLabel, { color: colors.mutedForeground }]}>BUY PRICE</Text>
-                <Text style={[styles.gridValue, { color: colors.foreground }]}>
-                  {formatCurrency(app.buy_price || 0)}
-                </Text>
-              </View>
+          {/* Inner Data Card (Matching IPOCard structure) */}
+          <View
+            style={[
+              styles.innerDataCard,
+              {
+                backgroundColor: colors.cardAlt,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <View style={styles.dataRow}>
+              {app.status === 'Applied' || app.status === 'Mandate Approved' ? (
+                <>
+                  <View style={styles.dataColFirst}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      QUANTITY
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {app.quantity || 1} Shares
+                    </Text>
+                  </View>
 
-              {/* Column 2: SELL PRICE / HOLDING PRICE (All Caps) */}
-              <View style={styles.gridCellLeft}>
-                <Text style={[styles.gridLabel, { color: colors.mutedForeground }]}>
-                  {app.status === 'Sold' ? 'SELL PRICE' : app.status === 'Holding' ? 'HOLDING PRICE' : 'BID PRICE'}
-                </Text>
-                <Text style={[styles.gridValue, { color: colors.foreground }]}>
-                  {app.status === 'Sold'
-                    ? formatCurrency(app.sell_price || 0)
-                    : app.status === 'Holding'
-                    ? formatCurrency(holdingPrice)
-                    : formatCurrency(app.buy_price || 0)}
-                </Text>
-              </View>
+                  <View style={styles.dataColMiddle}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      BID PRICE
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {formatCurrency(app.buy_price || 0)}
+                    </Text>
+                  </View>
 
-              {/* Column 3: BUY VALUE */}
-              <View style={styles.gridCellLeft}>
-                <Text style={[styles.gridLabel, { color: colors.mutedForeground }]}>BUY VALUE</Text>
-                <Text style={[styles.gridValue, { color: colors.foreground }]}>
-                  {formatCurrency(buyValue)}
-                </Text>
-              </View>
+                  <View style={styles.dataColMiddle}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      AMOUNT
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {formatCurrency(buyValue)}
+                    </Text>
+                  </View>
 
-              {/* Column 4: NET PROFIT / CURRENT PROFIT (All Caps) */}
-              <View style={styles.gridCellLeft}>
-                <Text style={[styles.gridLabel, { color: colors.mutedForeground }]}>
-                  {app.status === 'Sold' ? 'NET PROFIT' : app.status === 'Holding' ? 'CURRENT PROFIT' : 'QTY'}
-                </Text>
-                {app.status === 'Sold' ? (
-                  <Text style={[styles.gridValue, { color: isProfit ? colors.positive : colors.negative, fontFamily: 'GoogleSansFlex_700Bold' }]}>
-                    {(netProfit ?? 0) >= 0 ? '+' : ''}{formatCurrency(netProfit || 0)}
-                  </Text>
-                ) : app.status === 'Holding' ? (
-                  <Text style={[styles.gridValue, { color: currentProfit >= 0 ? colors.positive : colors.negative, fontFamily: 'GoogleSansFlex_700Bold' }]}>
-                    {currentProfit >= 0 ? '+' : ''}{formatCurrency(currentProfit)}
-                  </Text>
-                ) : (
-                  <Text style={[styles.gridValue, { color: colors.foreground }]}>
-                    {app.quantity || 1}
-                  </Text>
-                )}
-              </View>
+                  <View style={styles.dataColLast}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      CATEGORY
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {app.category === 'SHAREHOLDER' ? 'Shareholder' : app.category || 'Retail'}
+                    </Text>
+                  </View>
+                </>
+              ) : app.status === 'Allotted' || app.status === 'Partially Allotted' ? (
+                <>
+                  <View style={styles.dataColFirst}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      ALLOTTED QTY
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {effectiveQty} Shares
+                    </Text>
+                  </View>
+
+                  <View style={styles.dataColMiddle}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      ISSUE PRICE
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {formatCurrency(app.buy_price || 0)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.dataColMiddle}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      INVESTED
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {formatCurrency(buyValue)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.dataColLast}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      STATUS
+                    </Text>
+                    <Text
+                      style={[
+                        styles.dataVal,
+                        { color: app.status === 'Partially Allotted' ? '#D97706' : '#10B981' },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {app.status === 'Partially Allotted' ? 'Partial' : 'Allotted'}
+                    </Text>
+                  </View>
+                </>
+              ) : app.status === 'Holding' ? (
+                <>
+                  <View style={styles.dataColFirst}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      BUY PRICE
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {formatCurrency(app.buy_price || 0)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.dataColMiddle}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      EST. PRICE
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {formatCurrency(holdingPrice)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.dataColMiddle}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      INVESTED
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {formatCurrency(buyValue)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.dataColLast}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      EST. P&L
+                    </Text>
+                    <Text
+                      style={[
+                        styles.dataVal,
+                        { color: currentProfit >= 0 ? '#10B981' : '#EF4444' },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {currentProfit >= 0 ? '+' : ''}{formatCurrency(currentProfit)}
+                    </Text>
+                  </View>
+                </>
+              ) : app.status === 'Sold' ? (
+                <>
+                  <View style={styles.dataColFirst}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      BUY PRICE
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {formatCurrency(app.buy_price || 0)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.dataColMiddle}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      SELL PRICE
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {formatCurrency(app.sell_price || 0)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.dataColMiddle}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      INVESTED
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {formatCurrency(buyValue)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.dataColLast}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      NET PROFIT
+                    </Text>
+                    <Text
+                      style={[
+                        styles.dataVal,
+                        { color: (netProfit ?? 0) >= 0 ? '#10B981' : '#EF4444' },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {(netProfit ?? 0) >= 0 ? '+' : ''}{formatCurrency(netProfit || 0)}
+                    </Text>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View style={styles.dataColFirst}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      BID QTY
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {app.quantity || 1} Shares
+                    </Text>
+                  </View>
+
+                  <View style={styles.dataColMiddle}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      BID PRICE
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {formatCurrency(app.buy_price || 0)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.dataColMiddle}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      REFUND AMT
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {formatCurrency(buyValue)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.dataColLast}>
+                    <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      CATEGORY
+                    </Text>
+                    <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
+                      {app.category === 'SHAREHOLDER' ? 'Shareholder' : app.category || 'Retail'}
+                    </Text>
+                  </View>
+                </>
+              )}
             </View>
-          )}
+          </View>
         </TouchableOpacity>
       </Animated.View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   outerWrapper: {
     marginHorizontal: 16,
-    marginBottom: 10,
-    borderRadius: 16,
+    marginBottom: 12,
+    borderRadius: 18,
     overflow: 'hidden',
     position: 'relative',
   },
@@ -420,7 +622,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     paddingLeft: 20,
     gap: 8,
-    borderRadius: 16,
+    borderRadius: 18,
   },
   swipeBgLeft: {
     ...StyleSheet.absoluteFillObject,
@@ -429,7 +631,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     paddingRight: 20,
     gap: 8,
-    borderRadius: 16,
+    borderRadius: 18,
   },
   swipeText: {
     color: '#FFFFFF',
@@ -438,123 +640,160 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
-  // Outer Container
+  // Outer Card
   cardContainer: {
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
-    padding: 5,
-  },
-
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
-    paddingTop: 4,
+    paddingTop: 12,
+    paddingHorizontal: 6,
     paddingBottom: 6,
   },
-  ipoTitle: {
-    fontSize: 14,
-    fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: -0.2,
-  },
 
-  selectionCheckboxTouch: {
-    padding: 2,
-  },
-  selectedCircle: {
-    width: 15,
-    height: 15,
-    borderRadius: 7.5,
+  // Header Row: Avatar + Title/Sub on Left, Badges on Right
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: 8,
+    marginBottom: 10,
+    minHeight: 40,
   },
-  unselectedCircle: {
-    width: 15,
-    height: 15,
-    borderRadius: 7.5,
-    borderWidth: 1.5,
-  },
-
-  innerSurface: {
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 10,
-  },
-
-  userRow: {
+  headerLeftWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    flex: 1,
+    marginRight: 8,
   },
-
-  avatarGradientCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+  logoWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginRight: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
+    padding: 0,
+    margin: 0,
+    position: 'relative',
   },
-  avatarImage: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+  logoImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    resizeMode: 'contain',
   },
-  avatarInitial: {
+  avatarGradient: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
-
-  userMetaCol: {
+  titleAndPriceWrap: {
     flex: 1,
-    gap: 2,
+    justifyContent: 'center',
   },
-  userNameText: {
-    fontSize: 14,
+  companyTitle: {
+    fontSize: 15,
     fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.2,
+    marginBottom: 2,
   },
-  subtextDetails: {
-    fontSize: 11,
+  subDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  subDetailText: {
+    fontSize: 11.5,
     fontFamily: 'GoogleSansFlex_400Regular',
   },
 
-  statusPillWrapper: {
+  // Right Badges Row
+  badgesRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
   },
-  statusBadgePill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3.5,
-    borderRadius: 10,
+  categoryPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  statusBadgeText: {
-    fontSize: 10.5,
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeTextWhite: {
+    color: '#FFFFFF',
+    fontSize: 10,
     fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 0.1,
+  },
+  actionIconTouch: {
+    padding: 2,
+    marginLeft: 2,
+  },
+  selectedCircle: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unselectedCircle: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
   },
 
-  expandedMetricsGrid: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    paddingTop: 10,
-    marginTop: 8,
-    paddingHorizontal: 2,
+  // Inner Data Card
+  innerDataCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
-  gridCellLeft: {
+  dataRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  dataColFirst: {
+    flex: 1.1,
+    alignItems: 'flex-start',
+  },
+  dataColMiddle: {
     flex: 1,
     alignItems: 'flex-start',
-    gap: 2,
   },
-  gridLabel: {
-    fontSize: 9,
+  dataColLast: {
+    flex: 1.1,
+    alignItems: 'flex-end',
+  },
+  dataLabel: {
+    fontSize: 9.5,
     fontFamily: 'GoogleSansFlex_700Bold',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
+    marginBottom: 2,
+    textTransform: 'uppercase',
   },
-  gridValue: {
-    fontSize: 13,
+  dataVal: {
+    fontSize: 12.5,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
 });

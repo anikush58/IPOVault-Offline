@@ -55,6 +55,9 @@ export const AdProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     // 3. Subscribe to consent updates
     const unsubscribeConsent = adConsentService.subscribe((allowed) => {
       setCanRequestAds(allowed);
+      if (allowed) {
+        adInitializationService.initialize().catch(() => {});
+      }
     });
 
     // 4. Initialize consent in background (non-blocking)

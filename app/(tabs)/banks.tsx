@@ -2,16 +2,11 @@ import React, { useState, useRef } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  FlatList,
-  KeyboardAvoidingView,
-  Modal,
   Platform,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -24,10 +19,12 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useDialog } from '@/context/DialogContext';
 import { useTheme } from '@/context/ThemeContext';
+import { useAppExperience } from '@/context/AppExperienceContext';
 import { IconButton } from '@/components/ui/IconButton';
 import { useDB, type BankAccount } from '@/context/DBContext';
 import { BanksOverviewCard } from '@/components/BanksOverviewCard';
 import { BankSheet } from '@/components/BankSheet';
+import { BanksSkeleton } from '@/components/banks/BanksSkeleton';
 import { formatCurrency } from '@/utils/formatters';
 import { calcBankSlots } from '@/utils/calculations';
 
@@ -157,11 +154,12 @@ function BankCard({
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
-export default function BanksScreen() {
+function BanksScreenContent() {
   const colors = useColors();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
   const router = useRouter();
+
   const { from } = useLocalSearchParams<{ from?: string }>();
   const { bankAccounts, ipos, applications, isLoading, refresh, addBankAccount, updateBankBalance, deleteBankAccount } = useDB();
   const { showConfirm, showError } = useDialog();
@@ -217,6 +215,23 @@ export default function BanksScreen() {
 
   const handleDelete = (bank: BankAccount) => {
     if (deletingBankId) return;
+    const targetKey = (bank.bank_name || '').trim().toLowerCase();
+    const referencedApps = applications.filter(
+      (a) =>
+        ((a.user_bank_name || '').trim().toLowerCase() === targetKey ||
+          ((a as any).bank_name || '').trim().toLowerCase() === targetKey) &&
+        a.status !== 'Cancelled'
+    );
+    if (referencedApps.length > 0) {
+      showError(
+        'Cannot Delete Bank',
+        `"${bank.bank_name}" is currently referenced by ${referencedApps.length} active IPO ${
+          referencedApps.length === 1 ? 'application' : 'applications'
+        }. Please reassign or update those applications before deleting this bank.`
+      );
+      return;
+    }
+
     showConfirm({
       title: 'Delete Bank Account',
       message: `Remove "${bank.bank_name}" from your tracked accounts?`,
@@ -245,6 +260,7 @@ export default function BanksScreen() {
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setModalVisible(false);
+      setEditingBank(null);
     } catch (e: any) {
       showError('Error', e?.message?.includes('UNIQUE') ? 'A bank with that name already exists.' : 'Failed to save.');
     }
@@ -297,7 +313,7 @@ export default function BanksScreen() {
             }}
           />
 
-          <View style={{ flex: 1, alignItems: 'center' }}>
+          <View style={styles.headerCenter} pointerEvents="none">
             <Text style={[styles.headerEyebrow, { color: colors.primary }]}>CAPITAL</Text>
             <Text style={[styles.headerTitle, { color: colors.foreground }]}>Banks</Text>
           </View>
@@ -311,9 +327,21 @@ export default function BanksScreen() {
         </View>
       </View>
 
-      <Animated.FlatList
-        data={bankAccounts}
-        keyExtractor={(b) => b.id.toString()}
+      {isLoading && bankAccounts.length === 0 ? (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingTop: topPad + 60 + 8,
+            paddingBottom: insets.bottom + 90,
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          <BanksSkeleton />
+        </ScrollView>
+      ) : (
+        <Animated.FlatList
+          data={bankAccounts}
+          keyExtractor={(b) => b.id.toString()}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: true }
@@ -376,6 +404,7 @@ export default function BanksScreen() {
           </View>
         )}
       />
+      )}
 
       <BankSheet
         visible={modalVisible}
@@ -405,14 +434,34 @@ const styles = StyleSheet.create({
   header: {
     height: 56,
     paddingHorizontal: 16,
-    overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    position: 'relative',
   },
-  headerGlow: { position: 'absolute', right: 0, top: 0, width: 200, height: 130 },
-  headerEyebrow: { fontSize: 11, fontFamily: 'GoogleSansFlex_600SemiBold', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 2, textAlign: 'center' },
-  headerTitle: { fontSize: 28, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.6, lineHeight: 32, textAlign: 'center' },
+  headerCenter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    paddingHorizontal: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerEyebrow: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+    textAlign: 'center',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.3,
+    lineHeight: 24,
+    textAlign: 'center',
+  },
   backBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
   addBtn: {
     width: 40,
@@ -473,3 +522,24 @@ const styles = StyleSheet.create({
   emptyBtn: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 13, borderRadius: 14 },
   emptyBtnText: { color: '#fff', fontSize: 15, fontFamily: 'GoogleSansFlex_600SemiBold' },
 });
+
+export default function BanksScreen() {
+  const { isNonPro, isLoading: isExperienceLoading } = useAppExperience();
+  const router = useRouter();
+
+  React.useEffect(() => {
+    if (!isExperienceLoading && isNonPro) {
+      if (typeof (router as any).navigate === 'function') {
+        (router as any).navigate('/(tabs)/ipos');
+      } else {
+        router.replace('/(tabs)/ipos');
+      }
+    }
+  }, [isNonPro, isExperienceLoading, router]);
+
+  if (isNonPro) {
+    return null;
+  }
+
+  return <BanksScreenContent />;
+}

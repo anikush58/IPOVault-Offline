@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import Svg, { Circle, G } from 'react-native-svg';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/ui/Icon';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import type { ApplicationWithDetails } from '@/context/DBContext';
@@ -18,6 +18,8 @@ export function ApplicationsOverviewCard({
   onPeriodChange,
 }: Props) {
   const colors = useColors();
+  const { width: windowWidth } = useWindowDimensions();
+  const donutSize = windowWidth < 360 ? 124 : (windowWidth < 390 ? 140 : 155);
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
 
@@ -128,21 +130,29 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
   const holdingPct = calcAllottedPct(holdingCount);
   const currentlyAllottedPct = calcAllottedPct(currentlyAllottedCount);
 
+  // Status-aligned colors for consistent visual hierarchy matching status badges
+  const COLOR_WAITING = colors.statusAppliedBg;
+  const COLOR_ALLOTTED = colors.statusAllottedBg;
+  const COLOR_NOT_ALLOTTED = colors.statusNotAllottedBg;
+  const COLOR_SOLD = colors.statusSoldBg;
+  const COLOR_HOLDING = colors.statusHoldingBg;
+  const COLOR_NEWLY_ALLOTTED = colors.statusAllottedBg;
+
   // Main 3 Legend Rows: Waiting Allotment, Allotted, Not Allotted
   const mainStats = useMemo(() => {
     return [
-      { key: 'Waiting Allotment', label: 'Waiting Allotment', count: waitingCount,       pct: waitingPct,       color: colors.statusApplied },
-      { key: 'Allotted',          label: 'Allotted',          count: allottedTotalCount, pct: allottedTotalPct, color: colors.statusAllotted },
-      { key: 'Not Allotted',      label: 'Not Allotted',      count: notAllottedCount,   pct: notAllottedPct,   color: colors.statusNotAllotted },
+      { key: 'Waiting Allotment', label: 'Waiting Allotment', count: waitingCount,       pct: waitingPct,       color: COLOR_WAITING },
+      { key: 'Allotted',          label: 'Allotted',          count: allottedTotalCount, pct: allottedTotalPct, color: COLOR_ALLOTTED },
+      { key: 'Not Allotted',      label: 'Not Allotted',      count: notAllottedCount,   pct: notAllottedPct,   color: COLOR_NOT_ALLOTTED },
     ];
-  }, [waitingCount, allottedTotalCount, notAllottedCount, waitingPct, allottedTotalPct, notAllottedPct, colors]);
+  }, [waitingCount, allottedTotalCount, notAllottedCount, waitingPct, allottedTotalPct, notAllottedPct]);
 
   // Main SVG Donut Chart Math (3 Slices: Applied, Allotted, Not Allotted)
   const mainDonutSegments = useMemo(() => {
     const slices = [
-      { key: 'applied', count: waitingCount, color: colors.statusApplied },
-      { key: 'allotted', count: allottedTotalCount, color: colors.statusAllotted },
-      { key: 'notAllotted', count: notAllottedCount, color: colors.statusNotAllotted },
+      { key: 'applied', count: waitingCount, color: COLOR_WAITING },
+      { key: 'allotted', count: allottedTotalCount, color: COLOR_ALLOTTED },
+      { key: 'notAllotted', count: notAllottedCount, color: COLOR_NOT_ALLOTTED },
     ];
 
     const R = 62;
@@ -174,9 +184,9 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
   // Mini Donut Chart Math (Allotted Portfolio Breakdown: Sold, Holding, Currently Allotted)
   const allottedDonutSegments = useMemo(() => {
     const slices = [
-      { key: 'sold', count: soldCount, color: colors.statusSold },
-      { key: 'holding', count: holdingCount, color: colors.statusHolding },
-      { key: 'currentlyAllotted', count: currentlyAllottedCount, color: colors.statusAllotted },
+      { key: 'sold', count: soldCount, color: COLOR_SOLD },
+      { key: 'holding', count: holdingCount, color: COLOR_HOLDING },
+      { key: 'currentlyAllotted', count: currentlyAllottedCount, color: COLOR_NEWLY_ALLOTTED },
     ];
 
     const R = 30;
@@ -221,19 +231,19 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
 
         <TouchableOpacity
           onPress={() => setShowPeriodModal(true)}
-          style={[styles.periodPill, { borderColor: colors.border, backgroundColor: isDark ? '#27272A' : '#F8FAFC' }]}
+          style={[styles.periodPill, { borderColor: colors.border, backgroundColor: isDark ? colors.surfaceElevated : '#F8FAFC' }]}
           activeOpacity={0.8}
         >
           <Text style={[styles.periodPillText, { color: colors.foreground }]}>{period}</Text>
-          <Feather name="chevron-down" size={13} color={colors.mutedForeground} />
+          <Icon name="chevron-down" size={13} color={colors.mutedForeground} strokeWidth={2} />
         </TouchableOpacity>
       </View>
 
       {/* Main Top Section: Left Donut + Right 3 Legends */}
       <View style={styles.topSectionRow}>
         {/* Left Side: Main Donut Chart */}
-        <View style={styles.donutWrap}>
-          <Svg width="155" height="155" viewBox="0 0 155 155">
+        <View style={[styles.donutWrap, { width: donutSize, height: donutSize }]}>
+          <Svg width={donutSize} height={donutSize} viewBox="0 0 155 155">
             <G rotation="-90" origin="77.5, 77.5">
               {mainDonutSegments.map((seg) => (
                 <Circle
@@ -255,7 +265,15 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
           {/* Center Text Overlay */}
           <View style={styles.centerOverlay} pointerEvents="none">
             <Text style={[styles.centerTopLabel, { color: colors.mutedForeground }]}>TOTAL</Text>
-            <Text style={[styles.centerBigVal, { color: colors.foreground }]}>{totalApps}</Text>
+            <Text
+              style={[styles.centerBigVal, { color: colors.foreground }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+              maxFontSizeMultiplier={1.2}
+            >
+              {totalApps}
+            </Text>
             <Text style={[styles.centerSubLabel, { color: colors.mutedForeground }]}>applications</Text>
           </View>
         </View>
@@ -266,12 +284,18 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
             <View key={item.key} style={styles.legendRow}>
               <View style={styles.legendLeft}>
                 <View style={[styles.legendDot, { backgroundColor: item.color }]} />
-                <Text style={[styles.legendLabel, { color: colors.foreground }]}>{item.label}</Text>
+                <Text style={[styles.legendLabel, { color: colors.foreground }]} numberOfLines={1}>
+                  {item.label}
+                </Text>
               </View>
 
               <View style={styles.legendRight}>
-                <Text style={[styles.legendCount, { color: colors.foreground }]}>{item.count}</Text>
-                <Text style={[styles.legendPct, { color: item.color }]}>({item.pct}%)</Text>
+                <Text style={[styles.legendCount, { color: colors.foreground }]} numberOfLines={1}>
+                  {item.count}
+                </Text>
+                <Text style={[styles.legendPct, { color: item.color }]} numberOfLines={1}>
+                  ({item.pct}%)
+                </Text>
               </View>
             </View>
           ))}
@@ -283,7 +307,7 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
         style={[
           styles.allottedCard,
           {
-            backgroundColor: isDark ? '#161B22' : '#FFFFFF',
+            backgroundColor: colors.cardAlt,
             borderColor: colors.border,
           },
         ]}
@@ -297,33 +321,51 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
         <View style={styles.allottedBarLegendRow}>
           {/* Sold */}
           <View style={styles.barLegendItem}>
-            <View style={[styles.vertAccentBar, { backgroundColor: colors.statusSold }]} />
-            <View>
-              <Text style={[styles.barLegendTitle, { color: colors.mutedForeground }]}>Sold</Text>
-              <Text style={[styles.barLegendVal, { color: colors.foreground }]}>
-                {soldCount} <Text style={{ color: colors.statusSold, fontSize: 11 }}>({soldPct}%)</Text>
+            <View style={[styles.vertAccentBar, { backgroundColor: COLOR_SOLD }]} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.barLegendTitle, { color: colors.mutedForeground }]} numberOfLines={1}>Sold</Text>
+              <Text
+                style={[styles.barLegendVal, { color: colors.foreground }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+                maxFontSizeMultiplier={1.2}
+              >
+                {soldCount} <Text style={{ color: COLOR_SOLD, fontSize: 11 }}>({soldPct}%)</Text>
               </Text>
             </View>
           </View>
 
           {/* Holding */}
           <View style={styles.barLegendItem}>
-            <View style={[styles.vertAccentBar, { backgroundColor: colors.statusHolding }]} />
-            <View>
-              <Text style={[styles.barLegendTitle, { color: colors.mutedForeground }]}>Holding</Text>
-              <Text style={[styles.barLegendVal, { color: colors.foreground }]}>
-                {holdingCount} <Text style={{ color: colors.statusHolding, fontSize: 11 }}>({holdingPct}%)</Text>
+            <View style={[styles.vertAccentBar, { backgroundColor: COLOR_HOLDING }]} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.barLegendTitle, { color: colors.mutedForeground }]} numberOfLines={1}>Holding</Text>
+              <Text
+                style={[styles.barLegendVal, { color: colors.foreground }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+                maxFontSizeMultiplier={1.2}
+              >
+                {holdingCount} <Text style={{ color: COLOR_HOLDING, fontSize: 11 }}>({holdingPct}%)</Text>
               </Text>
             </View>
           </View>
 
           {/* Newly Allotted */}
           <View style={styles.barLegendItem}>
-            <View style={[styles.vertAccentBar, { backgroundColor: colors.statusAllotted }]} />
-            <View>
-              <Text style={[styles.barLegendTitle, { color: colors.mutedForeground }]}>Newly Allotted</Text>
-              <Text style={[styles.barLegendVal, { color: colors.foreground }]}>
-                {currentlyAllottedCount} <Text style={{ color: colors.statusAllotted, fontSize: 11 }}>({currentlyAllottedPct}%)</Text>
+            <View style={[styles.vertAccentBar, { backgroundColor: COLOR_NEWLY_ALLOTTED }]} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.barLegendTitle, { color: colors.mutedForeground }]} numberOfLines={1}>Newly Allotted</Text>
+              <Text
+                style={[styles.barLegendVal, { color: colors.foreground }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+                maxFontSizeMultiplier={1.2}
+              >
+                {currentlyAllottedCount} <Text style={{ color: COLOR_NEWLY_ALLOTTED, fontSize: 11 }}>({currentlyAllottedPct}%)</Text>
               </Text>
             </View>
           </View>
@@ -339,7 +381,7 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
                 <View
                   style={[
                     styles.segmentedBarSlice,
-                    { flex: soldCount, backgroundColor: colors.statusSold },
+                    { flex: soldCount, backgroundColor: colors.statusSoldBg },
                   ]}
                 />
               )}
@@ -347,7 +389,7 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
                 <View
                   style={[
                     styles.segmentedBarSlice,
-                    { flex: holdingCount, backgroundColor: colors.statusHolding },
+                    { flex: holdingCount, backgroundColor: colors.statusHoldingBg },
                   ]}
                 />
               )}
@@ -355,7 +397,7 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
                 <View
                   style={[
                     styles.segmentedBarSlice,
-                    { flex: currentlyAllottedCount, backgroundColor: colors.statusAllotted },
+                    { flex: currentlyAllottedCount, backgroundColor: colors.statusAllottedBg },
                   ]}
                 />
               )}
@@ -371,7 +413,7 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
             <View style={[styles.pickerModalHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Select Period</Text>
               <TouchableOpacity onPress={() => setShowPeriodModal(false)} style={styles.closeBtn} hitSlop={8}>
-                <Feather name="x" size={18} color={colors.mutedForeground} />
+                <Icon name="x" size={18} color={colors.mutedForeground} strokeWidth={2} />
               </TouchableOpacity>
             </View>
 
@@ -391,7 +433,7 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
                       styles.modalOption,
                       {
                         borderBottomColor: colors.border,
-                        backgroundColor: isSelected ? (isDark ? '#27272A' : '#F1F5F9') : 'transparent',
+                        backgroundColor: isSelected ? (isDark ? colors.surfaceElevated : '#F1F5F9') : 'transparent',
                       },
                     ]}
                   >
@@ -402,7 +444,7 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
                           { backgroundColor: isSelected ? (isDark ? '#374151' : '#E2E8F0') : colors.surface },
                         ]}
                       >
-                        <Feather name={opt.icon as any} size={16} color={colors.foreground} />
+                        <Icon name={opt.icon as any} size={16} color={colors.foreground} strokeWidth={1.8} />
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.modalOptionTitle, { color: colors.foreground }]}>
@@ -413,7 +455,7 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
                         </Text>
                       </View>
                     </View>
-                    {isSelected && <Feather name="check" size={18} color={colors.foreground} />}
+                    {isSelected && <Icon name="check" size={18} color={colors.foreground} strokeWidth={2} />}
                   </TouchableOpacity>
                 );
               })}
@@ -450,9 +492,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 5,
-    borderRadius: 10,
+    borderRadius: 9999,
     borderWidth: 1,
   },
   periodPillText: {
@@ -505,11 +547,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 6,
   },
   legendLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flex: 1,
+    minWidth: 0,
   },
   legendDot: {
     width: 8,
@@ -519,11 +564,13 @@ const styles = StyleSheet.create({
   legendLabel: {
     fontSize: 12.5,
     fontFamily: 'GoogleSansFlex_500Medium',
+    flexShrink: 1,
   },
   legendRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexShrink: 0,
   },
   legendCount: {
     fontSize: 13.5,
@@ -609,6 +656,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
     marginTop: 4,
     marginBottom: 10,
   },
@@ -616,6 +665,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flex: 1,
+    minWidth: 80,
   },
   vertAccentBar: {
     width: 3.5,

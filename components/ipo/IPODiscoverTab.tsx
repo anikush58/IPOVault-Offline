@@ -17,6 +17,7 @@ import { useColors } from '@/hooks/useColors';
 import { IPOMasterRecord } from '@/services/ipo/types';
 import { useCompare } from '@/context/CompareContext';
 import { SegmentedTabControl } from '@/components/ui/SegmentedTabControl';
+import { Icon } from '@/components/ui/Icon';
 import { getResolvedLogoUrl } from '@/utils/formatters';
 
 const AVATAR_PALETTES: [string, string][] = [
@@ -200,6 +201,7 @@ export function IPOExploreTab({
                     <Image
                       source={{ uri: resolvedLogo }}
                       style={styles.logoImageSmall}
+                      resizeMode="contain"
                     />
                   ) : (
                     <LinearGradient
@@ -306,7 +308,7 @@ export function IPOExploreTab({
             activeOpacity={0.8}
           >
             <View style={[styles.toolIconWrap, { backgroundColor: '#10B9811A' }]}>
-              <Feather name="check-square" size={20} color="#10B981" />
+              <Icon name="ticket-rupee" size={20} color="#10B981" strokeWidth={1.8} />
             </View>
             <Text style={[styles.toolCardTitle, { color: colors.foreground }]}>Allotment Checker</Text>
             <Text style={[styles.toolCardSub, { color: colors.mutedForeground }]}>Verify status</Text>
@@ -477,6 +479,10 @@ const styles = StyleSheet.create({
     height: 32,
     borderRadius: 10,
     resizeMode: 'contain',
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   avatarSmall: {
     width: 32,

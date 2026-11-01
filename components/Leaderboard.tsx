@@ -47,34 +47,34 @@ function computeRankings(applications: ApplicationWithDetails[]): LeaderEntry[] 
 function RankBadge({ rank, isDark, colors }: { rank: number; isDark: boolean; colors: ReturnType<typeof useColors> }) {
   if (rank === 1) {
     return (
-      <View style={[badge.wrap, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.18)' : '#FEF3C7', borderColor: isDark ? 'rgba(245, 158, 11, 0.4)' : '#FDE68A' }]}>
-        <Text style={[badge.text, { color: isDark ? '#FBBF24' : '#D97706' }]}>1</Text>
+      <View style={[badge.wrap, { backgroundColor: '#F59E0B' }]}>
+        <Text style={[badge.text, { color: '#FFFFFF' }]}>1</Text>
       </View>
     );
   }
   if (rank === 2) {
     return (
-      <View style={[badge.wrap, { backgroundColor: isDark ? 'rgba(148, 163, 184, 0.18)' : '#F1F5F9', borderColor: isDark ? 'rgba(148, 163, 184, 0.4)' : '#E2E8F0' }]}>
-        <Text style={[badge.text, { color: isDark ? '#CBD5E1' : '#475569' }]}>2</Text>
+      <View style={[badge.wrap, { backgroundColor: '#64748B' }]}>
+        <Text style={[badge.text, { color: '#FFFFFF' }]}>2</Text>
       </View>
     );
   }
   if (rank === 3) {
     return (
-      <View style={[badge.wrap, { backgroundColor: isDark ? 'rgba(217, 119, 6, 0.18)' : '#FFEDD5', borderColor: isDark ? 'rgba(217, 119, 6, 0.4)' : '#FED7AA' }]}>
-        <Text style={[badge.text, { color: isDark ? '#F97316' : '#C2410C' }]}>3</Text>
+      <View style={[badge.wrap, { backgroundColor: '#D97706' }]}>
+        <Text style={[badge.text, { color: '#FFFFFF' }]}>3</Text>
       </View>
     );
   }
   return (
-    <View style={[badge.wrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <Text style={[badge.text, { color: colors.mutedForeground }]}>{rank}</Text>
+    <View style={[badge.wrap, { backgroundColor: isDark ? colors.surfaceElevated : '#E2E8F0' }]}>
+      <Text style={[badge.text, { color: colors.foreground }]}>{rank}</Text>
     </View>
   );
 }
 
 const badge = StyleSheet.create({
-  wrap: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  wrap: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   text: { fontSize: 12, fontFamily: 'GoogleSansFlex_700Bold' },
 });
 
@@ -148,7 +148,7 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
   const hasData = filteredRankings.length > 0;
 
   return (
-    <View style={[styles.card, { backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderColor: colors.border }]}>
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
 
       {/* Header with View More matching Design System */}
       <View style={styles.header}>
@@ -159,8 +159,8 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
           style={[
             styles.viewMoreBtn,
             {
-              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
-              borderColor: isDark ? '#374151' : '#E5E7EB',
+              backgroundColor: isDark ? colors.surfaceElevated : '#FFFFFF',
+              borderColor: colors.border,
             },
           ]}
           activeOpacity={0.7}
@@ -168,7 +168,6 @@ export function Leaderboard({ applications, searchQuery = '' }: Props) {
           <Text style={[styles.viewMoreText, { color: colors.foreground }]}>
             View More
           </Text>
-          <Feather name="chevron-right" size={13} color={colors.mutedForeground} />
         </TouchableOpacity>
       </View>
 
@@ -227,9 +226,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 5,
-    borderRadius: 10,
+    borderRadius: 9999,
     borderWidth: 1,
   },
   viewMoreText: {

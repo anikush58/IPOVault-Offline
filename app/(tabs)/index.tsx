@@ -1,6 +1,5 @@
 import React, { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   Image,
   Platform,
@@ -10,6 +9,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -24,13 +24,12 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDB } from '@/context/DBContext';
+import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { AnimatedEntrance } from '@/components/ui/AnimatedEntrance';
-import { KPICard } from '@/components/KPICard';
 import { PerformanceChart } from '@/components/PerformanceChart';
 import { Leaderboard } from '@/components/Leaderboard';
 import { FilterSheet } from '@/components/FilterSheet';
-import { BulkApplySheet } from '@/components/BulkApplySheet';
 import { formatCurrency, formatDayMonth, getResolvedLogoUrl } from '@/utils/formatters';
 import { calculateNormalizedIPOStatus } from '@/services/ipo/statusNormalizer';
 import { IPORepository } from '@/services/ipo/ipoRepository';
@@ -42,7 +41,10 @@ import { AllotmentSuccessModal } from '@/components/allotment/AllotmentSuccessMo
 import { useAllotmentResultModal } from '@/hooks/useAllotmentResultModal';
 import { useNotifications } from '@/context/NotificationContext';
 import { useDialog } from '@/context/DialogContext';
+import { useAppExperience } from '@/context/AppExperienceContext';
 import { concurrencyTelemetry } from '@/utils/concurrencyTelemetry';
+import { DashboardSkeleton } from '@/components/dashboard/DashboardSkeleton';
+import { BannerAdView } from '@/components/ads/BannerAdView';
 
 const AVATAR_PALETTES: [string, string][] = [
   ['#8B5CF6', '#6D28D9'], // Purple
@@ -85,25 +87,23 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
   return null;
 }
 
-const heroBgLight = require('@/assets/images/dashboard-hero-bg.png');
-const graphicLeftLight = require('@/assets/images/dashboard-graphic-left.png');
-const graphicRightLight = require('@/assets/images/dashboard-graphic-right.png');
-
+const heroBg = require('@/assets/images/dashboard-hero-bg.png');
 const heroBgDark = require('@/assets/images/dashboard-hero-bg-dark.png');
+const graphicLeft = require('@/assets/images/dashboard-graphic-left.png');
 const graphicLeftDark = require('@/assets/images/dashboard-graphic-left-dark.png');
+const graphicRight = require('@/assets/images/dashboard-graphic-right.png');
 const graphicRightDark = require('@/assets/images/dashboard-graphic-right-dark.png');
 
-export default function DashboardScreen() {
+function DashboardScreenContent() {
   const colors = useColors();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
-  const heroBg = isDark ? heroBgDark : heroBgLight;
-  const graphicLeft = isDark ? graphicLeftDark : graphicLeftLight;
-  const graphicRight = isDark ? graphicRightDark : graphicRightLight;
-
   const { applications, ipos, users, isLoading, refresh } = useDB();
   const { user: authUser } = useAuth();
+  const { width: windowWidth } = useWindowDimensions();
+  const isNarrow = windowWidth < 360;
+  const cellOffset = isNarrow ? -4 : (windowWidth < 390 ? -8 : -15);
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { unreadCount } = useNotifications();
@@ -117,16 +117,7 @@ export default function DashboardScreen() {
     visible: showAllotmentModal,
     modalState: allotmentModalState,
     dismissModal: dismissAllotmentModal,
-    recheckUnviewed: recheckAllotmentModal,
   } = useAllotmentResultModal();
-
-  useFocusEffect(
-    useCallback(() => {
-      recheckAllotmentModal();
-    }, [recheckAllotmentModal])
-  );
-
-  const [isHoldingsExpanded, setIsHoldingsExpanded] = useState<boolean>(true);
 
   const db = useSQLiteContext();
   const [ipoHubItems, setIpoHubItems] = useState<any[]>([]);
@@ -640,7 +631,7 @@ export default function DashboardScreen() {
           pointerEvents={showSearch ? 'auto' : 'none'}
         >
           <View style={[styles.searchInner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Feather name="search" size={14} color={colors.mutedForeground} />
+            <Icon name="search" size={14} color={colors.mutedForeground} />
             <TextInput
               ref={searchRef}
               value={searchQuery}
@@ -653,7 +644,7 @@ export default function DashboardScreen() {
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={8}>
-                <Feather name="x-circle" size={14} color={colors.mutedForeground} />
+                <Icon name="x-circle" size={14} color={colors.mutedForeground} />
               </TouchableOpacity>
             )}
           </View>
@@ -680,55 +671,61 @@ export default function DashboardScreen() {
           paddingBottom: insets.bottom + 90,
         }}
       >
-        {/* Active filter chip */}
-        {hasFilter && (
-          <View
-            style={[
-              styles.filterBar,
-              { backgroundColor: isDark ? '#3D3011' : colors.primary + '15', borderColor: colors.primary + '30' },
-            ]}
-          >
-            <Feather name="filter" size={12} color={colors.primary} />
-            <Text style={[styles.filterBarText, { color: colors.primary }]}>{filterChipLabel}</Text>
-            <TouchableOpacity
-              onPress={() => { setFilterUserIds([]); setFilterIpoNames([]); setFilterYear(null); }}
-              hitSlop={8}
-            >
-              <Feather name="x" size={14} color={colors.primary} />
-            </TouchableOpacity>
+        {isLoading ? (
+          <DashboardSkeleton />
+        ) : (
+          <>
+            {/* Active filter chip */}
+            {hasFilter && (
+              <View
+                style={[
+                  styles.filterBar,
+                  { backgroundColor: isDark ? '#3D3011' : colors.primary + '15', borderColor: colors.primary + '30' },
+                ]}
+              >
+                <Feather name="filter" size={12} color={colors.primary} />
+                <Text style={[styles.filterBarText, { color: colors.primary }]}>{filterChipLabel}</Text>
+                <TouchableOpacity
+                  onPress={() => { setFilterUserIds([]); setFilterIpoNames([]); setFilterYear(null); }}
+                  hitSlop={8}
+                >
+                  <Feather name="x" size={14} color={colors.primary} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* ── Net Profit Hero Section ── */}
+            <Animated.View style={[styles.heroSection, { opacity: fadeAnim, transform: [{ translateY: translateYAnim }] }]}>
+          {/* Seamless Background Graphics in 3 Parts */}
+          <View style={StyleSheet.absoluteFill} pointerEvents="none">
+            <View style={styles.graphicsRow}>
+              <View style={styles.graphicColLeft}>
+                <Image
+                  source={isDark ? graphicLeftDark : graphicLeft}
+                  style={styles.fullGraphicImage}
+                  resizeMode="stretch"
+                />
+              </View>
+
+              <View style={styles.graphicColCenter}>
+                <Image
+                  source={isDark ? heroBgDark : heroBg}
+                  style={styles.fullGraphicImage}
+                  resizeMode="stretch"
+                />
+              </View>
+
+              <View style={styles.graphicColRight}>
+                <Image
+                  source={isDark ? graphicRightDark : graphicRight}
+                  style={styles.fullGraphicImage}
+                  resizeMode="stretch"
+                />
+              </View>
+            </View>
           </View>
-        )}
 
-        {/* ── Net Profit Hero Section ── */}
-        <Animated.View style={[styles.heroSection, { opacity: fadeAnim, transform: [{ translateY: translateYAnim }] }]}>
-          {/* 3-Part Seamless Background Graphics (20% | 60% | 20%) */}
-          <View style={styles.graphicsRow} pointerEvents="none">
-            <View style={styles.graphicColLeft}>
-              <Image
-                source={graphicLeft}
-                style={styles.fullGraphicImage}
-                resizeMode="stretch"
-              />
-            </View>
-
-            <View style={styles.graphicColCenter}>
-              <Image
-                source={heroBg}
-                style={styles.fullGraphicImage}
-                resizeMode="stretch"
-              />
-            </View>
-
-            <View style={styles.graphicColRight}>
-              <Image
-                source={graphicRight}
-                style={styles.fullGraphicImage}
-                resizeMode="stretch"
-              />
-            </View>
-          </View>
-
-          {/* Left-Aligned Rearranged Content */}
+          {/* Left-Aligned Hero Text Content */}
           <View style={styles.heroContentLeft}>
             <View style={styles.eyebrowRow}>
               <Text style={[styles.heroEyebrow, { color: colors.mutedForeground }]}>
@@ -794,7 +791,7 @@ export default function DashboardScreen() {
             tint={isDark ? 'dark' : 'light'}
             style={[
               styles.portfolioCard,
-              { backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderColor: colors.border },
+              { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
             {/* Card Header with View Report */}
@@ -807,8 +804,8 @@ export default function DashboardScreen() {
                 style={[
                   styles.viewReportBtn,
                   {
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
-                    borderColor: isDark ? '#374151' : '#E5E7EB',
+                    backgroundColor: isDark ? colors.surfaceElevated : '#FFFFFF',
+                    borderColor: colors.border,
                   },
                 ]}
                 activeOpacity={0.7}
@@ -816,14 +813,13 @@ export default function DashboardScreen() {
                 <Text style={[styles.viewReportText, { color: colors.foreground }]}>
                   View Report
                 </Text>
-                <Feather name="chevron-right" size={13} color={colors.mutedForeground} />
               </TouchableOpacity>
             </View>
 
             {/* 3 Columns Row with Dividers */}
             <View style={styles.portfolioMetricsRow}>
-              {/* Column 1: Gross Profit (shifted 15px left) */}
-              <View style={[styles.portfolioCell, styles.portfolioCellLeft]}>
+              {/* Column 1: Gross Profit (shifted left responsively) */}
+              <View style={[styles.portfolioCell, { marginLeft: cellOffset }]}>
                 <View
                   style={[
                     styles.portfolioIconWrap,
@@ -838,10 +834,16 @@ export default function DashboardScreen() {
                     color={isDark ? '#34D399' : '#059669'}
                   />
                 </View>
-                <Text style={[styles.portfolioVal, { color: colors.foreground }]}>
+                <Text
+                  style={[styles.portfolioVal, { color: colors.foreground }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                  maxFontSizeMultiplier={1.2}
+                >
                   {formatCurrency(totalPL).replace(/,/g, '')}
                 </Text>
-                <Text style={[styles.portfolioLabel, { color: colors.mutedForeground }]}>
+                <Text style={[styles.portfolioLabel, { color: colors.mutedForeground }]} numberOfLines={1}>
                   Gross Profit
                 </Text>
               </View>
@@ -864,18 +866,24 @@ export default function DashboardScreen() {
                     color={isDark ? '#818CF8' : '#4F46E5'}
                   />
                 </View>
-                <Text style={[styles.portfolioVal, { color: colors.foreground }]}>
+                <Text
+                  style={[styles.portfolioVal, { color: colors.foreground }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                  maxFontSizeMultiplier={1.2}
+                >
                   {formatCurrency(totalHoldingNet).replace(/,/g, '')}
                 </Text>
-                <Text style={[styles.portfolioLabel, { color: colors.mutedForeground }]}>
+                <Text style={[styles.portfolioLabel, { color: colors.mutedForeground }]} numberOfLines={1}>
                   Holding Profit
                 </Text>
               </View>
 
               <View style={[styles.portfolioDivider, { backgroundColor: colors.border }]} />
 
-              {/* Column 3: Charges (shifted 15px right) */}
-              <View style={[styles.portfolioCell, styles.portfolioCellRight]}>
+              {/* Column 3: Charges (shifted right responsively) */}
+              <View style={[styles.portfolioCell, { marginRight: cellOffset }]}>
                 <View
                   style={[
                     styles.portfolioIconWrap,
@@ -890,196 +898,20 @@ export default function DashboardScreen() {
                     color={isDark ? '#FBBF24' : '#D97706'}
                   />
                 </View>
-                <Text style={[styles.portfolioVal, { color: colors.foreground }]}>
+                <Text
+                  style={[styles.portfolioVal, { color: colors.foreground }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                  maxFontSizeMultiplier={1.2}
+                >
                   {formatCurrency(totalTax + totalUserCut).replace(/,/g, '')}
                 </Text>
-                <Text style={[styles.portfolioLabel, { color: colors.mutedForeground }]}>
+                <Text style={[styles.portfolioLabel, { color: colors.mutedForeground }]} numberOfLines={1}>
                   Charges
                 </Text>
               </View>
             </View>
-
-            {/* ── IPO Holdings Section ── */}
-            {holdingApplications.length > 0 && (
-              <View style={[styles.dashboardHoldingsSection, { borderTopColor: colors.border }]}>
-                {/* Holdings Header with Expand/Collapse Toggle */}
-                <View style={styles.dashboardHoldingsHeader}>
-                  <TouchableOpacity
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}
-                    activeOpacity={0.7}
-                    onPress={() => setIsHoldingsExpanded((prev) => !prev)}
-                  >
-                    <Feather name="layers" size={13} color={colors.mutedForeground} />
-                    <Text style={[styles.dashboardHoldingsTitle, { color: colors.mutedForeground }]}>
-                      IPO HOLDINGS ({holdingApplications.length})
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-                    activeOpacity={0.7}
-                    onPress={() => setIsHoldingsExpanded((prev) => !prev)}
-                  >
-                    {holdingApplications.length > 0 && (
-                      <Text style={[styles.dashboardHoldingsTotalVal, { color: colors.foreground }]}>
-                        Total: {formatCurrency(totalHoldingCurrentValue)}
-                      </Text>
-                    )}
-                    <Feather
-                      name={isHoldingsExpanded ? 'chevron-up' : 'chevron-down'}
-                      size={14}
-                      color={colors.mutedForeground}
-                    />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Holdings Compact Cards (Expandable) */}
-                {isHoldingsExpanded && (
-                  holdingApplications.length === 0 ? (
-                    <View style={{ paddingVertical: 8, alignItems: 'center' }}>
-                      <Text style={[styles.dashboardHoldingsEmptyText, { color: colors.mutedForeground }]}>
-                        No active IPO shares currently held.
-                      </Text>
-                    </View>
-                  ) : (
-                    <View style={styles.dashboardHoldingsCardsContainer}>
-                      {holdingApplications.map((app, idx) => {
-                        const qty = app.shares_count ?? app.quantity;
-                        const currentPrice = app.sell_price ?? app.buy_price;
-                        const buyVal = calcBuyValue(app.buy_price, qty);
-                        const holdingVal = currentPrice * qty;
-                        const grossPL = holdingVal - buyVal;
-                        const gainPct = buyVal > 0 ? (grossPL / buyVal) * 100 : 0;
-                        const isPos = grossPL >= 0;
-                        const pnlColor = isPos
-                          ? isDark
-                            ? '#34D399'
-                            : '#10B981'
-                          : isDark
-                          ? '#F87171'
-                          : '#EF4444';
-
-                        return (
-                          <View
-                            key={app.id || `${app.ipo_id}-${idx}`}
-                            style={[
-                              styles.dashboardHoldingCard,
-                              {
-                                backgroundColor: isDark
-                                  ? 'rgba(255, 255, 255, 0.04)'
-                                  : '#F8FAFC',
-                                borderColor: isDark
-                                  ? 'rgba(255, 255, 255, 0.08)'
-                                  : '#E2E8F0',
-                              },
-                            ]}
-                          >
-                            {/* Left: Company Name & Qty/LTP metadata */}
-                            <View style={styles.dashboardHoldingCardLeft}>
-                              <Text
-                                style={[
-                                  styles.dashboardHoldingCardName,
-                                  { color: colors.foreground },
-                                ]}
-                                numberOfLines={1}
-                              >
-                                {app.ipo_name}
-                              </Text>
-                              <View style={styles.dashboardHoldingCardMetaRow}>
-                                <Text
-                                  style={[
-                                    styles.dashboardHoldingCardMetaLabel,
-                                    { color: colors.mutedForeground },
-                                  ]}
-                                >
-                                  Qty:{' '}
-                                  <Text
-                                    style={[
-                                      styles.dashboardHoldingCardMetaValue,
-                                      { color: colors.foreground },
-                                    ]}
-                                  >
-                                    {qty}
-                                  </Text>
-                                </Text>
-                                <Text
-                                  style={[
-                                    styles.dashboardHoldingCardMetaDivider,
-                                    { color: colors.mutedForeground },
-                                  ]}
-                                >
-                                  ·
-                                </Text>
-                                <Text
-                                  style={[
-                                    styles.dashboardHoldingCardMetaLabel,
-                                    { color: colors.mutedForeground },
-                                  ]}
-                                >
-                                  Price:{' '}
-                                  <Text
-                                    style={[
-                                      styles.dashboardHoldingCardMetaValue,
-                                      { color: colors.foreground },
-                                    ]}
-                                  >
-                                    {currentPrice > 0
-                                      ? `₹${currentPrice.toFixed(2)}`
-                                      : '—'}
-                                  </Text>
-                                </Text>
-                              </View>
-                            </View>
-
-                            {/* Right: Holding Value & Unrealized P&L Badge */}
-                            <View style={styles.dashboardHoldingCardRight}>
-                              <Text
-                                style={[
-                                  styles.dashboardHoldingCardValue,
-                                  { color: colors.foreground },
-                                ]}
-                              >
-                                {formatCurrency(holdingVal)}
-                              </Text>
-                              <View
-                                style={[
-                                  styles.dashboardHoldingCardPnlBadge,
-                                  {
-                                    backgroundColor: isPos
-                                      ? isDark
-                                        ? 'rgba(16, 185, 129, 0.12)'
-                                        : 'rgba(220, 252, 231, 0.7)'
-                                      : isDark
-                                      ? 'rgba(239, 68, 68, 0.12)'
-                                      : 'rgba(254, 226, 226, 0.7)',
-                                  },
-                                ]}
-                              >
-                                <Feather
-                                  name={isPos ? 'arrow-up-right' : 'arrow-down-right'}
-                                  size={10.5}
-                                  color={pnlColor}
-                                />
-                                <Text
-                                  style={[
-                                    styles.dashboardHoldingCardPnlText,
-                                    { color: pnlColor },
-                                  ]}
-                                >
-                                  {isPos ? '+' : ''}
-                                  {formatCurrency(grossPL)} ({isPos ? '+' : ''}
-                                  {gainPct.toFixed(1)}%)
-                                </Text>
-                              </View>
-                            </View>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  )
-                )}
-              </View>
-            )}
           </BlurView>
         </Animated.View>
 
@@ -1097,29 +929,21 @@ export default function DashboardScreen() {
                 onPress={() => router.push('/allotment-checker')}
                 style={styles.quickActionItem}
               >
-                <BlurView
-                  intensity={Platform.OS === 'web' ? 0 : 35}
-                  tint={isDark ? 'dark' : 'light'}
+                <View
                   style={[
                     styles.quickActionIconWrap,
                     {
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
-                      borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.08)',
+                      backgroundColor: isDark ? '#161B28' : '#FFFFFF',
+                      borderColor: isDark ? '#2D354B' : '#E2E8F0',
                     },
                   ]}
                 >
-                  <View style={{ width: 22, height: 24, justifyContent: 'center', alignItems: 'center' }}>
-                    <MaterialCommunityIcons name="file-document-outline" size={20} color={colors.foreground} />
-                    <View style={{ position: 'absolute', bottom: -3, right: -4, backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderRadius: 7 }}>
-                      <MaterialCommunityIcons name="check-circle" size={13} color={colors.foreground} />
-                    </View>
-                  </View>
-                </BlurView>
+                  <Icon name="ticket-rupee" size={20} color={isDark ? '#FFFFFF' : '#111827'} strokeWidth={2} />
+                </View>
                 <Text style={[styles.quickActionLabel, { color: colors.foreground }]} numberOfLines={1}>
                   Allotment
                 </Text>
               </TouchableOpacity>
-
 
               {/* 2. Users */}
               <TouchableOpacity
@@ -1127,19 +951,17 @@ export default function DashboardScreen() {
                 onPress={() => router.push({ pathname: '/users', params: { from: 'dashboard' } })}
                 style={styles.quickActionItem}
               >
-                <BlurView
-                  intensity={Platform.OS === 'web' ? 0 : 35}
-                  tint={isDark ? 'dark' : 'light'}
+                <View
                   style={[
                     styles.quickActionIconWrap,
                     {
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
-                      borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.08)',
+                      backgroundColor: isDark ? '#161B28' : '#FFFFFF',
+                      borderColor: isDark ? '#2D354B' : '#E2E8F0',
                     },
                   ]}
                 >
-                  <Feather name="users" size={20} color={colors.foreground} />
-                </BlurView>
+                  <Feather name="users" size={20} color={isDark ? '#FFFFFF' : '#111827'} />
+                </View>
                 <Text style={[styles.quickActionLabel, { color: colors.foreground }]} numberOfLines={1}>
                   Manage Users
                 </Text>
@@ -1151,19 +973,17 @@ export default function DashboardScreen() {
                 onPress={() => router.push({ pathname: '/banks', params: { from: 'dashboard' } })}
                 style={styles.quickActionItem}
               >
-                <BlurView
-                  intensity={Platform.OS === 'web' ? 0 : 35}
-                  tint={isDark ? 'dark' : 'light'}
+                <View
                   style={[
                     styles.quickActionIconWrap,
                     {
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
-                      borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.08)',
+                      backgroundColor: isDark ? '#161B28' : '#FFFFFF',
+                      borderColor: isDark ? '#2D354B' : '#E2E8F0',
                     },
                   ]}
                 >
-                  <MaterialCommunityIcons name="bank-outline" size={20} color={colors.foreground} />
-                </BlurView>
+                  <MaterialCommunityIcons name="bank-outline" size={20} color={isDark ? '#FFFFFF' : '#111827'} />
+                </View>
                 <Text style={[styles.quickActionLabel, { color: colors.foreground }]} numberOfLines={1}>
                   Manage Banks
                 </Text>
@@ -1175,19 +995,17 @@ export default function DashboardScreen() {
                 onPress={() => router.push('/leaderboard')}
                 style={styles.quickActionItem}
               >
-                <BlurView
-                  intensity={Platform.OS === 'web' ? 0 : 35}
-                  tint={isDark ? 'dark' : 'light'}
+                <View
                   style={[
                     styles.quickActionIconWrap,
                     {
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF',
-                      borderColor: isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.08)',
+                      backgroundColor: isDark ? '#161B28' : '#FFFFFF',
+                      borderColor: isDark ? '#2D354B' : '#E2E8F0',
                     },
                   ]}
                 >
-                  <MaterialCommunityIcons name="trophy-outline" size={20} color={colors.foreground} />
-                </BlurView>
+                  <MaterialCommunityIcons name="trophy-outline" size={20} color={isDark ? '#FFFFFF' : '#111827'} />
+                </View>
                 <Text style={[styles.quickActionLabel, { color: colors.foreground }]} numberOfLines={1}>
                   Leaderboard
                 </Text>
@@ -1205,6 +1023,11 @@ export default function DashboardScreen() {
         <AnimatedEntrance delay={220} distance={14}>
           <Leaderboard applications={baseFilteredApps} searchQuery={searchQuery} />
         </AnimatedEntrance>
+
+        {/* AdMob Banner Ad */}
+        <BannerAdView style={{ marginHorizontal: 16, marginTop: 12, marginBottom: 8 }} />
+          </>
+        )}
       </Animated.ScrollView>
 
       <FilterSheet
@@ -1397,7 +1220,7 @@ const styles = StyleSheet.create({
   },
   heroValue: {
     fontSize: 38,
-    fontFamily: 'SpaceMono_700Bold',
+    fontFamily: 'SpaceGrotesk_700Bold',
     letterSpacing: -1.2,
     lineHeight: 44,
   },
@@ -1589,7 +1412,7 @@ const styles = StyleSheet.create({
   },
   dashboardHoldingsTotalVal: {
     fontSize: 11,
-    fontFamily: 'SpaceMono_700Bold',
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   dashboardHoldingsEmptyText: {
     fontSize: 12,
@@ -1621,11 +1444,11 @@ const styles = StyleSheet.create({
   },
   dashboardHoldingValue: {
     fontSize: 13,
-    fontFamily: 'SpaceMono_700Bold',
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   dashboardHoldingPnl: {
     fontSize: 10.5,
-    fontFamily: 'SpaceMono_700Bold',
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   dashboardHoldingsRefreshBtn: {
     padding: 3,
@@ -1688,7 +1511,7 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_400Regular',
   },
   dashboardHoldingCardMetaValue: {
-    fontFamily: 'SpaceMono_700Bold',
+    fontFamily: 'GoogleSansFlex_700Bold',
     fontSize: 11,
   },
   dashboardHoldingCardMetaDivider: {
@@ -1701,7 +1524,7 @@ const styles = StyleSheet.create({
   },
   dashboardHoldingCardValue: {
     fontSize: 13,
-    fontFamily: 'SpaceMono_700Bold',
+    fontFamily: 'GoogleSansFlex_700Bold',
     marginBottom: 2,
   },
   dashboardHoldingCardPnlBadge: {
@@ -1714,7 +1537,7 @@ const styles = StyleSheet.create({
   },
   dashboardHoldingCardPnlText: {
     fontSize: 10.5,
-    fontFamily: 'SpaceMono_700Bold',
+    fontFamily: 'GoogleSansFlex_700Bold',
   },
   notificationBadgeDot: {
     position: 'absolute',
@@ -1725,3 +1548,24 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
 });
+
+export default function DashboardScreen() {
+  const { isNonPro, isLoading: isExperienceLoading } = useAppExperience();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isExperienceLoading && isNonPro) {
+      if (typeof (router as any).navigate === 'function') {
+        (router as any).navigate('/(tabs)/ipos');
+      } else {
+        router.replace('/(tabs)/ipos');
+      }
+    }
+  }, [isNonPro, isExperienceLoading, router]);
+
+  if (isNonPro) {
+    return null;
+  }
+
+  return <DashboardScreenContent />;
+}

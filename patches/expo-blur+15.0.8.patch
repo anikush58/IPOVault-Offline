@@ -1,0 +1,109 @@
+diff --git a/node_modules/expo-blur/build/BlurView.android.d.ts b/node_modules/expo-blur/build/BlurView.android.d.ts
+new file mode 100644
+index 0000000..a598180
+--- /dev/null
++++ b/node_modules/expo-blur/build/BlurView.android.d.ts
+@@ -0,0 +1,8 @@
++import React from 'react';
++import { BlurViewProps } from './BlurView.types';
++
++export default class BlurView extends React.Component<BlurViewProps> {
++    blurViewRef?: React.RefObject<any>;
++    getAnimatableRef(): any;
++    render(): React.JSX.Element;
++}
+diff --git a/node_modules/expo-blur/build/BlurView.android.js b/node_modules/expo-blur/build/BlurView.android.js
+new file mode 100644
+index 0000000..0e7ded9
+--- /dev/null
++++ b/node_modules/expo-blur/build/BlurView.android.js
+@@ -0,0 +1,26 @@
++// Copyright © 2024 650 Industries.
++'use client';
++import React from 'react';
++import { View } from 'react-native';
++import getBackgroundColor from './getBackgroundColor';
++
++export default class BlurView extends React.Component {
++    blurViewRef = React.createRef();
++    getAnimatableRef() {
++        return this.blurViewRef?.current;
++    }
++    render() {
++        const { tint = 'default', intensity = 50, blurReductionFactor = 4, experimentalBlurMethod = 'none', style, children, ...props } = this.props;
++        const backgroundColor = getBackgroundColor(intensity, tint);
++        return (
++            <View
++                {...props}
++                ref={this.blurViewRef}
++                style={[{ backgroundColor }, style]}
++            >
++                {children}
++            </View>
++        );
++    }
++}
++export { BlurView };
+diff --git a/node_modules/expo-blur/build/BlurView.js b/node_modules/expo-blur/build/BlurView.js
+index f84e56b..6785fe9 100644
+--- a/node_modules/expo-blur/build/BlurView.js
++++ b/node_modules/expo-blur/build/BlurView.js
+@@ -2,8 +2,11 @@
+ 'use client';
+ import { requireNativeViewManager } from 'expo-modules-core';
+ import React from 'react';
+-import { View, StyleSheet } from 'react-native';
+-const NativeBlurView = requireNativeViewManager('ExpoBlurView');
++import { View, StyleSheet, Platform } from 'react-native';
++import getBackgroundColor from './getBackgroundColor';
++
++const NativeBlurView = Platform.OS === 'ios' ? requireNativeViewManager('ExpoBlurView') : null;
++
+ // TODO: Class components are not supported with React Server Components.
+ export default class BlurView extends React.Component {
+     blurViewRef = React.createRef();
+@@ -17,13 +20,37 @@ export default class BlurView extends React.Component {
+     }
+     render() {
+         const { tint = 'default', intensity = 50, blurReductionFactor = 4, experimentalBlurMethod = 'none', style, children, ...props } = this.props;
+-        return (<View {...props} style={[styles.container, style]}>
+-        <NativeBlurView ref={this.blurViewRef} tint={tint} intensity={intensity} blurReductionFactor={blurReductionFactor} experimentalBlurMethod={experimentalBlurMethod} style={StyleSheet.absoluteFill}/>
+-        {children}
+-      </View>);
++        if (Platform.OS === 'android') {
++            const backgroundColor = getBackgroundColor(intensity, tint);
++            return (
++                <View
++                    {...props}
++                    ref={this.blurViewRef}
++                    style={[{ backgroundColor }, style]}
++                >
++                    {children}
++                </View>
++            );
++        }
++        return (
++            <View {...props} style={[styles.container, style]}>
++                {NativeBlurView && (
++                    <NativeBlurView
++                        ref={this.blurViewRef}
++                        tint={tint}
++                        intensity={intensity}
++                        blurReductionFactor={blurReductionFactor}
++                        experimentalBlurMethod={experimentalBlurMethod}
++                        style={StyleSheet.absoluteFill}
++                    />
++                )}
++                {children}
++            </View>
++        );
+     }
+ }
++export { BlurView };
++
+ const styles = StyleSheet.create({
+     container: { backgroundColor: 'transparent' },
+ });
+\ No newline at end of file
+-//# sourceMappingURL=BlurView.js.map
+\ No newline at end of file

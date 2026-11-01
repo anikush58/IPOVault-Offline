@@ -5,12 +5,16 @@ import {
   signOut,
   sendPasswordResetEmail,
   updateProfile,
+  deleteUser,
   onAuthStateChanged,
   GoogleAuthProvider,
   User as FirebaseUser,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { firebaseAuth, firestore } from './firebaseConfig';
+import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
+import { API_BASE_URL } from '@/constants/apiConfig';
+import { ENDPOINTS } from '../api/Endpoints';
 
 export interface AuthUserProfile {
   id: string;
@@ -324,6 +328,8 @@ export interface CloudUserProfile {
   photoURL?: string | null;
   email?: string | null;
   updatedAt?: string | null;
+  isPro?: boolean;
+  tier?: string | null;
 }
 
 /**
@@ -515,6 +521,15 @@ export async function fetchUserProfileCloud(
 
     const email = mergedData.email || (isTargetCurrentUser ? currentUser.email : null);
     const updatedAt = mergedData.updated_at || null;
+    const isPro = Boolean(
+      mergedData.is_pro ||
+        mergedData.isPro ||
+        mergedData.pro ||
+        mergedData.tier === 'PRO' ||
+        mergedData.plan === 'pro' ||
+        mergedData.plan === 'PRO'
+    );
+    const tier = isPro ? 'PRO' : (mergedData.tier || 'NON_PRO');
 
     return {
       displayName,
@@ -523,10 +538,93 @@ export async function fetchUserProfileCloud(
       photoURL: avatarUrl,
       email,
       updatedAt,
+      isPro,
+      tier,
     };
   } catch (err) {
     console.warn('[firebaseAuthService] fetchUserProfileCloud error:', err);
     return null;
+  }
+}
+
+/**
+ * Permanently deletes the currently authenticated user account from Firebase Auth,
+ * purges all backend server records (saved PANs, broker accounts, push tokens, entitlements),
+ * and cleans up cloud profile records and local auth caches.
+ * Google Play Policy Compliance: In-app account deletion.
+ */
+export async function deleteCurrentUserAccount(): Promise<{ success: boolean; error: string | null }> {
+  try {
+    const user = firebaseAuth.currentUser;
+    if (!user) {
+      return { success: false, error: 'No authenticated user found to delete.' };
+    }
+    const uid = user.uid;
+
+    // 1. Authenticate with server and execute backend deletion transaction FIRST
+    try {
+      const idToken = await user.getIdToken();
+      if (idToken) {
+        const resp = await fetch(`${API_BASE_URL}${ENDPOINTS.USER_ACCOUNT}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${idToken}`,
+          },
+        });
+
+        // 404 is acceptable (user might have no records on backend yet)
+        if (!resp.ok && resp.status !== 404) {
+          const errBody = await resp.json().catch(() => ({}));
+          const errMsg = errBody?.message || `Server account deletion failed (HTTP ${resp.status})`;
+          return {
+            success: false,
+            error: `${errMsg}. Your account credentials were not deleted. Please try again.`,
+          };
+        }
+      }
+    } catch (backendErr: any) {
+      // Network failure or connection refused: do NOT delete Firebase user, do NOT claim success!
+      return {
+        success: false,
+        error: `Unable to communicate with the server to delete your account records (${backendErr?.message || 'Network error'}). Account deletion was aborted. Please check your internet connection and try again.`,
+      };
+    }
+
+    // 2. Purge cloud user document if accessible
+    try {
+      const userDocRef = doc(firestore, 'users', uid);
+      await deleteDoc(userDocRef);
+    } catch (e) {
+      // Non-fatal: firestore deletion may be constrained by rules or offline state
+    }
+
+    // 3. Record pending deletion UID for crash recovery prior to credential destruction
+    await safeAsyncStorage.setItem('@ipovault_pending_account_deletion_uid', uid);
+
+    // 4. Delete the user from Firebase Authentication
+    await deleteUser(user);
+
+    // 5. Clear local storage caches
+    await Promise.all([
+      safeAsyncStorage.removeItem('@ipovault_username'),
+      safeAsyncStorage.removeItem('@ipovault_avatar_uri'),
+      safeAsyncStorage.removeItem('@ipovault_cached_user'),
+      safeAsyncStorage.removeItem('@ipovault_pending_account_deletion_uid'),
+    ]);
+
+    return { success: true, error: null };
+  } catch (error: any) {
+    if (error?.code === 'auth/requires-recent-login') {
+      return {
+        success: false,
+        error: 'For security reasons, this operation requires recent authentication. Please sign out, log back in, and tap Delete Account to finalize.',
+      };
+    }
+    return {
+      success: false,
+      error: formatAuthError(error),
+    };
   }
 }
 

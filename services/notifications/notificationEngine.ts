@@ -4,6 +4,9 @@ import { evaluateIPORadarScore } from '@/services/ipo/radarScoringEngine';
 import { safeRunAsync, safeGetFirstAsync, safeGetAllAsync } from '@/utils/sqliteDebug';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { concurrencyTelemetry } from '@/utils/concurrencyTelemetry';
+import { ApiClient } from '@/services/api/ApiClient';
+import { ENDPOINTS } from '@/services/api/Endpoints';
+import { getAuthHeaders } from '@/services/api/authHeaders';
 
 function generateUUID(): string {
   try {
@@ -174,6 +177,7 @@ export async function requestNotificationPermission(userInitiated = false): Prom
     const isGranted = !!(requested.granted || requested.status === 'granted');
     if (isGranted) {
       await setupNotificationChannels();
+      registerDevicePushTokenAsync().catch(() => {});
     }
     return isGranted;
   } catch (err) {
@@ -246,7 +250,8 @@ export async function scheduleLocalNotification(
   title: string,
   body: string,
   data?: Record<string, any>,
-  trigger?: Date | number | null
+  trigger?: Date | number | null,
+  identifier?: string
 ): Promise<string | null> {
   try {
     // 1. Check user notification category preferences
@@ -292,11 +297,18 @@ export async function scheduleLocalNotification(
       if (trigger) {
         const targetMs = trigger instanceof Date ? trigger.getTime() : typeof trigger === 'number' ? trigger : 0;
         if (targetMs > Date.now()) {
-          triggerConfig = { date: targetMs };
+          triggerConfig = {
+            type: Notifications.SchedulableTriggerInputTypes?.DATE ?? 'date',
+            date: targetMs,
+            ...(rnPlatform === 'android' ? { channelId: DEFAULT_NOTIFICATION_CHANNEL_ID } : {}),
+          };
+        } else {
+          // Trigger time has already elapsed; skip scheduling past notification
+          return null;
         }
       }
 
-      const notificationId = await Notifications.scheduleNotificationAsync({
+      const requestPayload: any = {
         content: {
           title,
           body,
@@ -305,7 +317,13 @@ export async function scheduleLocalNotification(
           ...(rnPlatform === 'android' ? { channelId: DEFAULT_NOTIFICATION_CHANNEL_ID } : {}),
         },
         trigger: triggerConfig,
-      });
+      };
+
+      if (identifier) {
+        requestPayload.identifier = identifier;
+      }
+
+      const notificationId = await Notifications.scheduleNotificationAsync(requestPayload);
 
       return notificationId;
     }
@@ -326,6 +344,8 @@ export async function createDeduplicatedNotification(
     body: string;
     dedupe_key: string;
     trigger?: Date | number | null;
+    skipNativeAlert?: boolean;
+    identifier?: string;
   },
   existingDedupeKeys?: Set<string>
 ): Promise<NotificationRecord | null> {
@@ -371,13 +391,16 @@ export async function createDeduplicatedNotification(
     existingDedupeKeys.add(params.dedupe_key);
   }
 
-  // Trigger local device alert
-  await scheduleLocalNotification(
-    params.title,
-    params.body,
-    { ipoId: params.ipo_id, type: params.type },
-    params.trigger
-  );
+  // Trigger local device alert unless explicitly skipped (e.g. pre-scheduled native alarm)
+  if (!params.skipNativeAlert) {
+    await scheduleLocalNotification(
+      params.title,
+      params.body,
+      { ipoId: params.ipo_id, type: params.type },
+      params.trigger,
+      params.identifier
+    );
+  }
 
   return {
     id,
@@ -419,6 +442,301 @@ export async function purgeStaleNotifications(db: SQLiteDatabase): Promise<numbe
   }
 }
 
+/**
+ * Schedules upcoming lifecycle milestone notifications in advance with the native OS.
+ * Deterministically schedules:
+ * - IPO Open (10:00 AM IST on open_date)
+ * - IPO Closing Soon (10:00 AM IST 1 day before close_date)
+ * - IPO Closing Today (09:30 AM IST on close_date)
+ * - Allotment Expected (11:00 AM IST on allotment_date)
+ * - Listing Today (09:45 AM IST on listing_date)
+ */
+export async function scheduleAdvanceIPONotifications(
+  db: SQLiteDatabase,
+  ipos: Array<{
+    id?: string;
+    ipo_name?: string;
+    company_name?: string;
+    open_date?: string | null;
+    close_date?: string | null;
+    allotment_date?: string | null;
+    listing_date?: string | null;
+  }>,
+  existingDedupeKeys?: Set<string>
+): Promise<number> {
+  if (!ipos || ipos.length === 0) return 0;
+
+  const permStatus = await getNotificationPermissionStatus();
+  if (!permStatus.granted) {
+    return 0;
+  }
+
+  let keysSet = existingDedupeKeys;
+  let storedScheduledKeys: string[] = [];
+  if (!keysSet) {
+    try {
+      const raw = await safeAsyncStorage.getItem(SCHEDULED_KEYS_STORAGE_KEY);
+      if (raw) storedScheduledKeys = JSON.parse(raw);
+    } catch {}
+    keysSet = new Set(storedScheduledKeys);
+  }
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+  const newlyScheduledKeys: string[] = [];
+  let scheduledCount = 0;
+
+  for (const ipo of ipos) {
+    if (!ipo || !ipo.id) continue;
+    const ipoName = ipo.company_name || ipo.ipo_name || 'IPO';
+
+    // 1. Advance schedule for IPO OPEN (10:00 AM IST on open_date)
+    if (ipo.open_date && ipo.open_date > todayStr) {
+      const openSchedDedupe = `sched_open_${ipo.id}_${ipo.open_date}`;
+      if (!keysSet.has(openSchedDedupe)) {
+        const targetOpenDate = new Date(`${ipo.open_date}T10:00:00+05:30`);
+        if (targetOpenDate.getTime() > Date.now()) {
+          const schedId = await scheduleLocalNotification(
+            'IPO Open for Bidding',
+            `${ipoName} is now open for subscription.`,
+            { ipoId: ipo.id, type: 'IPO_OPEN' },
+            targetOpenDate,
+            openSchedDedupe
+          );
+          if (schedId) {
+            keysSet.add(openSchedDedupe);
+            newlyScheduledKeys.push(openSchedDedupe);
+            scheduledCount++;
+          }
+        }
+      }
+    }
+
+    // 2. Advance schedule for IPO CLOSING SOON (10:00 AM IST on day before close_date)
+    if (ipo.close_date && ipo.close_date > tomorrowStr) {
+      const closeSoonSchedDedupe = `sched_close_soon_${ipo.id}_${ipo.close_date}`;
+      if (!keysSet.has(closeSoonSchedDedupe)) {
+        const closeDateObj = new Date(`${ipo.close_date}T10:00:00+05:30`);
+        const oneDayBefore = new Date(closeDateObj.getTime() - 24 * 60 * 60 * 1000);
+        if (oneDayBefore.getTime() > Date.now()) {
+          const schedId = await scheduleLocalNotification(
+            'IPO Closing Soon',
+            `${ipoName} closes tomorrow. Make sure to place your bids.`,
+            { ipoId: ipo.id, type: 'IPO_CLOSING_SOON' },
+            oneDayBefore,
+            closeSoonSchedDedupe
+          );
+          if (schedId) {
+            keysSet.add(closeSoonSchedDedupe);
+            newlyScheduledKeys.push(closeSoonSchedDedupe);
+            scheduledCount++;
+          }
+        }
+      }
+    }
+
+    // 3. Advance schedule for IPO CLOSING TODAY (09:30 AM IST on close_date)
+    if (ipo.close_date && ipo.close_date > todayStr) {
+      const closeTodaySchedDedupe = `sched_close_today_${ipo.id}_${ipo.close_date}`;
+      if (!keysSet.has(closeTodaySchedDedupe)) {
+        const targetCloseDate = new Date(`${ipo.close_date}T09:30:00+05:30`);
+        if (targetCloseDate.getTime() > Date.now()) {
+          const schedId = await scheduleLocalNotification(
+            'Final Day to Apply',
+            `${ipoName} closes today for subscription.`,
+            { ipoId: ipo.id, type: 'IPO_CLOSING_TODAY' },
+            targetCloseDate,
+            closeTodaySchedDedupe
+          );
+          if (schedId) {
+            keysSet.add(closeTodaySchedDedupe);
+            newlyScheduledKeys.push(closeTodaySchedDedupe);
+            scheduledCount++;
+          }
+        }
+      }
+    }
+
+    // 4. Advance schedule for ALLOTMENT EXPECTED (11:00 AM IST on allotment_date)
+    if (ipo.allotment_date && ipo.allotment_date > todayStr) {
+      const allotmentSchedDedupe = `sched_allotment_${ipo.id}_${ipo.allotment_date}`;
+      if (!keysSet.has(allotmentSchedDedupe)) {
+        const targetAllotmentDate = new Date(`${ipo.allotment_date}T11:00:00+05:30`);
+        if (targetAllotmentDate.getTime() > Date.now()) {
+          const schedId = await scheduleLocalNotification(
+            'IPO Allotment Expected',
+            `${ipoName} allotment status is expected today.`,
+            { ipoId: ipo.id, type: 'ALLOTTED' },
+            targetAllotmentDate,
+            allotmentSchedDedupe
+          );
+          if (schedId) {
+            keysSet.add(allotmentSchedDedupe);
+            newlyScheduledKeys.push(allotmentSchedDedupe);
+            scheduledCount++;
+          }
+        }
+      }
+    }
+
+    // 5. Advance schedule for LISTING DATE (09:45 AM IST on listing_date)
+    if (ipo.listing_date && ipo.listing_date > todayStr) {
+      const listingSchedDedupe = `sched_listing_${ipo.id}_${ipo.listing_date}`;
+      if (!keysSet.has(listingSchedDedupe)) {
+        const targetListingDate = new Date(`${ipo.listing_date}T09:45:00+05:30`);
+        if (targetListingDate.getTime() > Date.now()) {
+          const schedId = await scheduleLocalNotification(
+            'IPO Listing Today',
+            `${ipoName} lists on exchanges today. Check opening performance.`,
+            { ipoId: ipo.id, type: 'NEW_IPO' },
+            targetListingDate,
+            listingSchedDedupe
+          );
+          if (schedId) {
+            keysSet.add(listingSchedDedupe);
+            newlyScheduledKeys.push(listingSchedDedupe);
+            scheduledCount++;
+          }
+        }
+      }
+    }
+  }
+
+  if (newlyScheduledKeys.length > 0) {
+    try {
+      const updatedKeys = Array.from(new Set([...storedScheduledKeys, ...newlyScheduledKeys]))
+        .filter((k) => {
+          const m = k.match(/(\d{4}-\d{2}-\d{2})$/);
+          return m ? m[1] >= todayStr : true;
+        })
+        .slice(-300);
+      await safeAsyncStorage.setItem(SCHEDULED_KEYS_STORAGE_KEY, JSON.stringify(updatedKeys));
+    } catch {}
+  }
+
+  return scheduledCount;
+}
+
+/**
+ * Cancels all scheduled OS notifications associated with a specific IPO (e.g. on deletion or date extension).
+ */
+export async function cancelIPONotifications(ipoId: string): Promise<void> {
+  if (!ipoId) return;
+  try {
+    const Notifications = getNotificationsModule();
+    if (Notifications) {
+      if (typeof Notifications.getAllScheduledNotificationsAsync === 'function' &&
+          typeof Notifications.cancelScheduledNotificationAsync === 'function') {
+        const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+        for (const item of scheduled || []) {
+          const id = item.identifier;
+          const dataIpoId = (item as any)?.content?.data?.ipoId;
+          const dedupeKey = (item as any)?.content?.data?.dedupeKey;
+          const matches =
+            (id && id.includes(`_${ipoId}_`)) ||
+            dataIpoId === ipoId ||
+            (typeof dedupeKey === 'string' && dedupeKey.includes(`_${ipoId}_`));
+          if (matches && id) {
+            await Notifications.cancelScheduledNotificationAsync(id).catch(() => {});
+          }
+        }
+      }
+    }
+
+    const raw = await safeAsyncStorage.getItem(SCHEDULED_KEYS_STORAGE_KEY);
+    if (raw) {
+      const keys: string[] = JSON.parse(raw);
+      const filtered = keys.filter((k) => !k.includes(`_${ipoId}_`));
+      await safeAsyncStorage.setItem(SCHEDULED_KEYS_STORAGE_KEY, JSON.stringify(filtered));
+    }
+  } catch (err) {
+    if (__DEV__) console.warn('[Notifications] cancelIPONotifications error:', err);
+  }
+}
+
+/**
+ * Reconciles the OS scheduled notification queue against current SQLite database state.
+ * Reschedules missing future notifications after device restart, app update, or permission grant.
+ */
+export async function reconcileScheduledNotifications(db: SQLiteDatabase): Promise<number> {
+  if (!db) return 0;
+  try {
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const [upcomingListings, upcomingMaster] = await Promise.all([
+      safeGetAllAsync<{
+        id: string;
+        ipo_name: string;
+        company_name?: string;
+        open_date: string;
+        close_date: string;
+        allotment_date?: string;
+        listing_date?: string;
+      }>(
+        db,
+        `SELECT id, ipo_name, company_name, open_date, close_date, allotment_date, listing_date
+         FROM ipo_listings
+         WHERE deleted_at IS NULL AND archived = 0
+           AND (close_date >= ? OR open_date >= ? OR listing_date >= ?)`,
+        [todayStr, todayStr, todayStr],
+        'reconcileScheduledNotifications.listings'
+      ),
+      safeGetAllAsync<{
+        id: string;
+        ipo_name: string;
+        company_name?: string;
+        open_date: string;
+        close_date: string;
+        allotment_date?: string;
+        listing_date?: string;
+      }>(
+        db,
+        `SELECT id, ipo_name, company_name, open_date, close_date, allotment_date, listing_date
+         FROM ipo_master
+         WHERE deleted_at IS NULL
+           AND (close_date >= ? OR open_date >= ? OR listing_date >= ?)`,
+        [todayStr, todayStr, todayStr],
+        'reconcileScheduledNotifications.master'
+      ),
+    ]);
+
+    const mergedMap = new Map<string, any>();
+    for (const item of upcomingMaster || []) {
+      if (item && item.id) mergedMap.set(item.id, item);
+    }
+    for (const item of upcomingListings || []) {
+      if (item && item.id) mergedMap.set(item.id, item);
+    }
+
+    const mergedList = Array.from(mergedMap.values());
+    if (mergedList.length === 0) return 0;
+
+    const Notifications = getNotificationsModule();
+    if (Notifications && typeof Notifications.getAllScheduledNotificationsAsync === 'function') {
+      try {
+        const osScheduled = await Notifications.getAllScheduledNotificationsAsync();
+        const activeIdentifiers = new Set(
+          (osScheduled || []).map((s: any) => s.identifier).filter(Boolean)
+        );
+        let storedScheduledKeys: string[] = [];
+        const raw = await safeAsyncStorage.getItem(SCHEDULED_KEYS_STORAGE_KEY);
+        if (raw) storedScheduledKeys = JSON.parse(raw);
+
+        const reconciledKeys = storedScheduledKeys.filter((k) => activeIdentifiers.has(k));
+        await safeAsyncStorage.setItem(SCHEDULED_KEYS_STORAGE_KEY, JSON.stringify(reconciledKeys));
+      } catch {}
+    }
+
+    return await scheduleAdvanceIPONotifications(db, mergedList);
+  } catch (err) {
+    if (__DEV__) console.warn('[Notifications] reconcileScheduledNotifications error:', err);
+    return 0;
+  }
+}
+
 // Main Notification Engine Runner (Called after Automatic Background Sync)
 export async function runNotificationEngine(
   db: SQLiteDatabase,
@@ -439,6 +757,17 @@ export async function runNotificationEngine(
     'runNotificationEngine.preloadDedupeKeys'
   );
   const existingDedupeKeys = new Set((existingNotifRows || []).map((r) => r.dedupe_key));
+
+  // Load persisted scheduled notification dedupe keys
+  let storedScheduledKeys: string[] = [];
+  try {
+    const raw = await safeAsyncStorage.getItem(SCHEDULED_KEYS_STORAGE_KEY);
+    if (raw) storedScheduledKeys = JSON.parse(raw);
+  } catch {}
+  for (const k of storedScheduledKeys) {
+    existingDedupeKeys.add(k);
+  }
+  const newlyScheduledKeys: string[] = [];
 
   // Pre-load all existing tracker records in ONE single query (avoids 80+ separate queries in the loop)
   const trackerRows = await safeGetAllAsync<{
@@ -531,14 +860,22 @@ export async function runNotificationEngine(
 
     // 2. EVENT: IPO OPENING
     if (ipo.open_date === todayStr) {
+      const openSchedDedupe = `sched_open_${ipo.id}_${todayStr}`;
       const openDedupe = `ipo_open_${ipo.id}_${todayStr}`;
-      const notifOpen = await createDeduplicatedNotification(db, {
-        type: 'IPO_OPEN',
-        ipo_id: ipo.id,
-        title: 'IPO Open for Bidding',
-        body: `${ipoName} is now open for subscription.`,
-        dedupe_key: openDedupe,
-      }, existingDedupeKeys);
+      const wasPreScheduled = existingDedupeKeys.has(openSchedDedupe);
+
+      const notifOpen = await createDeduplicatedNotification(
+        db,
+        {
+          type: 'IPO_OPEN',
+          ipo_id: ipo.id,
+          title: 'IPO Open for Bidding',
+          body: `${ipoName} is now open for subscription.`,
+          dedupe_key: openDedupe,
+          skipNativeAlert: wasPreScheduled,
+        },
+        existingDedupeKeys
+      );
       if (notifOpen) generatedCount++;
     } else if (hasPermission && ipo.open_date && ipo.open_date > todayStr) {
       // Advance native OS schedule for 10:00 AM IST on open_date (deduplicated)
@@ -546,27 +883,39 @@ export async function runNotificationEngine(
       if (!existingDedupeKeys.has(openSchedDedupe)) {
         const targetOpenDate = new Date(`${ipo.open_date}T10:00:00+05:30`);
         if (targetOpenDate.getTime() > Date.now()) {
-          await scheduleLocalNotification(
+          const schedId = await scheduleLocalNotification(
             'IPO Open for Bidding',
             `${ipoName} is now open for subscription.`,
             { ipoId: ipo.id, type: 'IPO_OPEN' },
-            targetOpenDate
+            targetOpenDate,
+            openSchedDedupe
           );
-          existingDedupeKeys.add(openSchedDedupe);
+          if (schedId) {
+            existingDedupeKeys.add(openSchedDedupe);
+            newlyScheduledKeys.push(openSchedDedupe);
+          }
         }
       }
     }
 
     // 3. EVENT: IPO CLOSING SOON (1 Day Before)
     if (ipo.close_date === tomorrowStr) {
+      const closeSoonSchedDedupe = `sched_close_soon_${ipo.id}_${ipo.close_date}`;
       const closeSoonDedupe = `ipo_closing_soon_${ipo.id}_${tomorrowStr}`;
-      const notifCloseSoon = await createDeduplicatedNotification(db, {
-        type: 'IPO_CLOSING_SOON',
-        ipo_id: ipo.id,
-        title: 'IPO Closing Soon',
-        body: `${ipoName} closes tomorrow. Make sure to place your bids.`,
-        dedupe_key: closeSoonDedupe,
-      }, existingDedupeKeys);
+      const wasPreScheduled = existingDedupeKeys.has(closeSoonSchedDedupe);
+
+      const notifCloseSoon = await createDeduplicatedNotification(
+        db,
+        {
+          type: 'IPO_CLOSING_SOON',
+          ipo_id: ipo.id,
+          title: 'IPO Closing Soon',
+          body: `${ipoName} closes tomorrow. Make sure to place your bids.`,
+          dedupe_key: closeSoonDedupe,
+          skipNativeAlert: wasPreScheduled,
+        },
+        existingDedupeKeys
+      );
       if (notifCloseSoon) generatedCount++;
     } else if (hasPermission && ipo.close_date && ipo.close_date > tomorrowStr) {
       // Advance native OS schedule for 10:00 AM IST on day before close_date (deduplicated)
@@ -575,27 +924,39 @@ export async function runNotificationEngine(
         const closeDateObj = new Date(`${ipo.close_date}T10:00:00+05:30`);
         const oneDayBefore = new Date(closeDateObj.getTime() - 24 * 60 * 60 * 1000);
         if (oneDayBefore.getTime() > Date.now()) {
-          await scheduleLocalNotification(
+          const schedId = await scheduleLocalNotification(
             'IPO Closing Soon',
             `${ipoName} closes tomorrow. Make sure to place your bids.`,
             { ipoId: ipo.id, type: 'IPO_CLOSING_SOON' },
-            oneDayBefore
+            oneDayBefore,
+            closeSoonSchedDedupe
           );
-          existingDedupeKeys.add(closeSoonSchedDedupe);
+          if (schedId) {
+            existingDedupeKeys.add(closeSoonSchedDedupe);
+            newlyScheduledKeys.push(closeSoonSchedDedupe);
+          }
         }
       }
     }
 
     // 4. EVENT: IPO CLOSING TODAY
     if (ipo.close_date === todayStr) {
+      const closeTodaySchedDedupe = `sched_close_today_${ipo.id}_${ipo.close_date}`;
       const closeTodayDedupe = `ipo_closing_today_${ipo.id}_${todayStr}`;
-      const notifCloseToday = await createDeduplicatedNotification(db, {
-        type: 'IPO_CLOSING_TODAY',
-        ipo_id: ipo.id,
-        title: 'Final Day to Apply',
-        body: `${ipoName} closes today for subscription.`,
-        dedupe_key: closeTodayDedupe,
-      }, existingDedupeKeys);
+      const wasPreScheduled = existingDedupeKeys.has(closeTodaySchedDedupe);
+
+      const notifCloseToday = await createDeduplicatedNotification(
+        db,
+        {
+          type: 'IPO_CLOSING_TODAY',
+          ipo_id: ipo.id,
+          title: 'Final Day to Apply',
+          body: `${ipoName} closes today for subscription.`,
+          dedupe_key: closeTodayDedupe,
+          skipNativeAlert: wasPreScheduled,
+        },
+        existingDedupeKeys
+      );
       if (notifCloseToday) generatedCount++;
     } else if (hasPermission && ipo.close_date && ipo.close_date > todayStr) {
       // Advance native OS schedule for 09:30 AM IST on close_date (deduplicated)
@@ -603,13 +964,17 @@ export async function runNotificationEngine(
       if (!existingDedupeKeys.has(closeTodaySchedDedupe)) {
         const targetCloseDate = new Date(`${ipo.close_date}T09:30:00+05:30`);
         if (targetCloseDate.getTime() > Date.now()) {
-          await scheduleLocalNotification(
+          const schedId = await scheduleLocalNotification(
             'Final Day to Apply',
             `${ipoName} closes today for subscription.`,
             { ipoId: ipo.id, type: 'IPO_CLOSING_TODAY' },
-            targetCloseDate
+            targetCloseDate,
+            closeTodaySchedDedupe
           );
-          existingDedupeKeys.add(closeTodaySchedDedupe);
+          if (schedId) {
+            existingDedupeKeys.add(closeTodaySchedDedupe);
+            newlyScheduledKeys.push(closeTodaySchedDedupe);
+          }
         }
       }
     }
@@ -808,6 +1173,21 @@ export async function runNotificationEngine(
     }
   }
 
+  // Advance schedule all future calendar milestones for all synced IPOs (open, close soon, close today, allotment, listing)
+  await scheduleAdvanceIPONotifications(db, syncedIPOs, existingDedupeKeys);
+
+    if (newlyScheduledKeys.length > 0) {
+      try {
+        const updatedKeys = Array.from(new Set([...storedScheduledKeys, ...newlyScheduledKeys]))
+          .filter((k) => {
+            const m = k.match(/(\d{4}-\d{2}-\d{2})$/);
+            return m ? m[1] >= todayStr : true;
+          })
+          .slice(-200);
+        await safeAsyncStorage.setItem(SCHEDULED_KEYS_STORAGE_KEY, JSON.stringify(updatedKeys));
+      } catch {}
+    }
+
     probe.finish();
     return generatedCount;
   } catch (err) {
@@ -889,13 +1269,144 @@ export function setupNotificationPresentation() {
   }
 }
 
+export const SCHEDULED_KEYS_STORAGE_KEY = '@ipovault_scheduled_dedupe_keys';
+export const PUSH_TOKEN_CACHE_KEY_PREFIX = '@ipovault_registered_push_token_';
+
 /**
- * Push notification token registration is stubbed out.
- * Per project specifications, remote push notifications and backend token registration
- * are not enabled; IPOVault operates strictly with local native notifications.
+ * Registers the device push token with the IPOVault backend.
+ * - Guards against web, test environments, and non-granted permissions
+ * - Requests Expo push token using configured EAS project ID
+ * - Caches registered token to avoid redundant network registrations
+ * - Transmits to backend POST /api/v1/notifications/push-token with Bearer auth
+ * - Gracefully handles failures without throwing
  */
-export async function registerDevicePushTokenAsync(_userId: string): Promise<string | null> {
+export async function registerDevicePushTokenAsync(
+  userId?: string,
+  forceRefresh = false
+): Promise<string | null> {
+  try {
+    const rnPlatform = getPlatform();
+    if (rnPlatform === 'web') return null;
+
+    // Check permission status
+    const permStatus = await getNotificationPermissionStatus();
+    if (!permStatus.granted) {
+      if (__DEV__) console.log('[Notifications] Push token skipped (permission not granted)');
+      return null;
+    }
+
+    const Notifications = getNotificationsModule();
+    if (!Notifications || typeof Notifications.getExpoPushTokenAsync !== 'function') {
+      return null;
+    }
+
+    const cacheKey = `${PUSH_TOKEN_CACHE_KEY_PREFIX}${userId || 'anonymous'}`;
+    if (!forceRefresh) {
+      const cached = await safeAsyncStorage.getItem(cacheKey);
+      if (cached) {
+        return cached; // Token already registered for this user session
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    let projectId = 'cee9106f-87cd-4458-86d2-46d6341a959d';
+    try {
+      const Constants = require('expo-constants').default;
+      projectId =
+        Constants?.expoConfig?.extra?.eas?.projectId ||
+        Constants?.easConfig?.projectId ||
+        projectId;
+    } catch {}
+
+    let pushTokenData: any = null;
+    try {
+      pushTokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+    } catch (tokenErr) {
+      if (__DEV__) console.warn('[Notifications] getExpoPushTokenAsync failed:', tokenErr);
+      return null;
+    }
+
+    const token = typeof pushTokenData === 'string' ? pushTokenData : pushTokenData?.data || null;
+    if (!token) return null;
+
+    // Register with backend if user session is active
+    const authHeaders = await getAuthHeaders();
+    if (authHeaders.Authorization) {
+      try {
+        const apiClient = new ApiClient({
+          baseUrl: process.env.EXPO_PUBLIC_BACKEND_URL || 'https://api.getipovault.in',
+        });
+        await apiClient.post(
+          ENDPOINTS.PUSH_TOKEN,
+          { token, platform: rnPlatform },
+          authHeaders
+        );
+      } catch (apiErr) {
+        if (__DEV__) console.warn('[Notifications] Push token backend registration error:', apiErr);
+        // Do not cache token if backend transmission failed for authenticated user so it retries
+        return token;
+      }
+    }
+
+    await safeAsyncStorage.setItem(cacheKey, token);
+    return token;
+  } catch (err) {
+    if (__DEV__) console.warn('[Notifications] registerDevicePushTokenAsync error:', err);
+    return null;
+  }
+}
+
+/**
+ * Attaches a listener for native Expo/FCM push token rotation events.
+ * Automatically synchronizes updated token with backend.
+ */
+export function setupPushTokenRefreshListener(userId?: string) {
+  try {
+    const Notifications = getNotificationsModule();
+    if (Notifications && typeof Notifications.addPushTokenListener === 'function') {
+      const subscription = Notifications.addPushTokenListener((tokenData: any) => {
+        const token = typeof tokenData === 'string' ? tokenData : tokenData?.data;
+        if (token) {
+          registerDevicePushTokenAsync(userId, true).catch(() => {});
+        }
+      });
+      return subscription;
+    }
+  } catch (err) {
+    if (__DEV__) console.warn('[Notifications] setupPushTokenRefreshListener error:', err);
+  }
   return null;
+}
+
+/**
+ * Unregisters the device push token on logout / account switch.
+ * - Deactivates the token mapping on the backend for this user
+ * - Clears the local storage cache key
+ */
+export async function unregisterDevicePushTokenAsync(userId?: string): Promise<boolean> {
+  try {
+    const cacheKey = `${PUSH_TOKEN_CACHE_KEY_PREFIX}${userId || 'anonymous'}`;
+    const token = await safeAsyncStorage.getItem(cacheKey);
+    if (!token) return true;
+
+    const authHeaders = await getAuthHeaders();
+    if (authHeaders.Authorization) {
+      const apiClient = new ApiClient({
+        baseUrl: process.env.EXPO_PUBLIC_BACKEND_URL || 'https://api.getipovault.in',
+      });
+      await apiClient.delete(
+        `${ENDPOINTS.PUSH_TOKEN}/${encodeURIComponent(token)}`,
+        undefined,
+        authHeaders
+      );
+    }
+
+    await safeAsyncStorage.removeItem(cacheKey);
+    return true;
+  } catch (err) {
+    if (__DEV__) console.warn('[Notifications] unregisterDevicePushTokenAsync error:', err);
+    return false;
+  }
 }
 
 // ── Deep Linking & Notification Tap Routing ───────────────────────────────────

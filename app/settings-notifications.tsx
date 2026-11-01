@@ -9,13 +9,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/ui/Icon';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
-import { IconButton } from '@/components/ui/IconButton';
+import { DesignSystem } from '@/constants/DesignSystem';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { IOSToggle } from '@/components/ui/IOSToggle';
 import {
@@ -27,7 +28,6 @@ const DAYS_OF_WEEK = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 export default function SettingsNotificationsScreen() {
   const colors = useColors();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
@@ -80,6 +80,7 @@ export default function SettingsNotificationsScreen() {
         title="Notifications"
         centerTitle
         showBack
+        transparent
       />
 
       <ScrollView
@@ -99,7 +100,7 @@ export default function SettingsNotificationsScreen() {
           {/* IPO Updates */}
           <View style={[styles.row, { borderBottomColor: colors.border }]}>
             <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="bar-chart-2" size={17} color={settingIconColor} />
+              <Icon name="bar-chart-2" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>IPO Updates</Text>
@@ -119,7 +120,7 @@ export default function SettingsNotificationsScreen() {
           {/* Allotment Results */}
           <View style={[styles.row, { borderBottomColor: colors.border }]}>
             <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="award" size={17} color={settingIconColor} />
+              <Icon name="award" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>Allotment Results</Text>
@@ -139,7 +140,7 @@ export default function SettingsNotificationsScreen() {
           {/* Price Alerts */}
           <View style={[styles.row, { borderBottomColor: colors.border }]}>
             <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="trending-up" size={17} color={settingIconColor} />
+              <Icon name="trending-up" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>Price Alerts</Text>
@@ -159,7 +160,7 @@ export default function SettingsNotificationsScreen() {
           {/* App Updates */}
           <View style={[styles.row, { borderBottomWidth: 0 }]}>
             <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="bell" size={17} color={settingIconColor} />
+              <Icon name="bell" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>App Updates</Text>
@@ -185,7 +186,7 @@ export default function SettingsNotificationsScreen() {
             onPress={() => setShowQuietHoursModal(true)}
           >
             <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="moon" size={17} color={settingIconColor} />
+              <Icon name="moon" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>Quiet Hours</Text>
@@ -193,7 +194,7 @@ export default function SettingsNotificationsScreen() {
                 {quietHoursEnabled ? `Active: ${startTime} - ${endTime}` : 'Pause notifications during specific hours'}
               </Text>
             </View>
-            <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+            <Icon name="chevron-right" size={16} color={colors.mutedForeground} />
           </TouchableOpacity>
         </View>
 
@@ -201,7 +202,7 @@ export default function SettingsNotificationsScreen() {
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 14 }]}>
           <View style={styles.row}>
             <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="volume-2" size={17} color={settingIconColor} />
+              <Icon name="volume-2" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>Notification Sound</Text>
@@ -230,7 +231,7 @@ export default function SettingsNotificationsScreen() {
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setShowQuietHoursModal(false)} hitSlop={8}>
-                <Feather name="x" size={18} color={colors.mutedForeground} />
+                <Icon name="x" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             </View>
 
@@ -246,7 +247,7 @@ export default function SettingsNotificationsScreen() {
             {/* Time Rows */}
             <View style={[styles.timeRow, { borderBottomColor: colors.border }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Feather name="clock" size={15} color={colors.mutedForeground} />
+                <Icon name="clock" size={15} color={colors.mutedForeground} />
                 <Text style={[styles.timeLabel, { color: colors.foreground }]}>Start Time</Text>
               </View>
               <Text style={[styles.timeVal, { color: colors.accentColor }]}>{startTime}</Text>
@@ -254,7 +255,7 @@ export default function SettingsNotificationsScreen() {
 
             <View style={[styles.timeRow, { borderBottomColor: colors.border }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Feather name="clock" size={15} color={colors.mutedForeground} />
+                <Icon name="clock" size={15} color={colors.mutedForeground} />
                 <Text style={[styles.timeLabel, { color: colors.foreground }]}>End Time</Text>
               </View>
               <Text style={[styles.timeVal, { color: colors.accentColor }]}>{endTime}</Text>
@@ -299,10 +300,10 @@ export default function SettingsNotificationsScreen() {
 
             {/* Save Button */}
             <TouchableOpacity
-              style={[styles.saveBtn, { backgroundColor: colors.accentColor }]}
+              style={[styles.saveBtn, { backgroundColor: colors.primary }]}
               onPress={handleSaveQuietHours}
             >
-              <Text style={styles.saveBtnText}>Save</Text>
+              <Text style={[styles.saveBtnText, { color: colors.primaryForeground }]}>Save</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>

@@ -23,6 +23,7 @@ import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDialog } from '@/context/DialogContext';
 import { useDB, type IPOListing } from '@/context/DBContext';
+import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { formatCurrency, getResolvedLogoUrl } from '@/utils/formatters';
 import { Tabs } from '@/components/ui/Tabs';
@@ -244,7 +245,7 @@ export default function IPOManagementScreen() {
         {showSearch && (
           <View style={styles.searchWrap}>
             <View style={[styles.searchInner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Feather name="search" size={15} color={colors.mutedForeground} />
+              <Icon name="search" size={15} color={colors.mutedForeground} />
               <TextInput
                 ref={searchRef}
                 value={searchQuery}
@@ -256,7 +257,7 @@ export default function IPOManagementScreen() {
               />
               {searchQuery.length > 0 && (
                 <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10}>
-                  <Feather name="x-circle" size={18} color={colors.mutedForeground} />
+                  <Icon name="x-circle" size={18} color={colors.mutedForeground} />
                 </TouchableOpacity>
               )}
             </View>
@@ -385,7 +386,7 @@ export default function IPOManagementScreen() {
                     <Image
                       source={{ uri: logoUrl }}
                       style={styles.logoImage}
-                      resizeMode="contain"
+                      resizeMode="cover"
                       onError={() => setLogoErrors((prev) => ({ ...prev, [ipo.id]: true }))}
                     />
                   ) : (
@@ -702,7 +703,8 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 12,
-    resizeMode: 'contain',
+    resizeMode: 'cover',
+    overflow: 'hidden',
   },
   avatar: {
     width: 38,

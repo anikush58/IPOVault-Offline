@@ -1,7 +1,7 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { IPOMasterRecord } from './types';
 import { evaluateIPORadarScore, RadarScoreBreakdown, RadarCategory } from './radarScoringEngine';
-import { safeRunAsync, safeGetAllAsync, safeGetFirstAsync } from '@/utils/sqliteDebug';
+import { safeRunAsync, safeGetAllAsync, safeGetFirstAsync, isClosedResourceError } from '@/utils/sqliteDebug';
 
 export interface RadarSnapshotRecord {
   id: string;
@@ -25,27 +25,75 @@ export interface RadarSnapshotRecord {
 }
 
 /**
+ * Safely parses any value into a finite number or null.
+ * Rejects NaN, Infinity, -Infinity, '--', 'N/A', empty strings, etc.
+ */
+export function safeNumber(val: any): number | null {
+  if (val == null) return null;
+  if (typeof val === 'number') {
+    return Number.isNaN(val) || !Number.isFinite(val) ? null : val;
+  }
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed || trimmed === '--' || trimmed === 'N/A' || trimmed === 'null' || trimmed === 'undefined') {
+      return null;
+    }
+    const cleaned = trimmed.replace(/[₹$,%]/g, '').trim();
+    const parsed = Number(cleaned);
+    return Number.isNaN(parsed) || !Number.isFinite(parsed) ? null : parsed;
+  }
+  return null;
+}
+
+let lastLoggedErrorTime = 0;
+let lastErrorMessage = '';
+const isDev = typeof __DEV__ !== 'undefined' && __DEV__;
+const THROTTLE_MS = 10000;
+
+function logRadarSnapshotError(context: string, err: any) {
+  const isClosed = isClosedResourceError(err);
+  const now = Date.now();
+  if (isClosed) {
+    if (now - lastLoggedErrorTime > THROTTLE_MS || lastErrorMessage !== 'closed_resource') {
+      lastLoggedErrorTime = now;
+      lastErrorMessage = 'closed_resource';
+      if (isDev) {
+        console.warn(`[RadarSnapshot] Database closed during ${context}. Operation skipped safely.`);
+      }
+    }
+    return;
+  }
+
+  const msg = err?.message || String(err);
+  if (now - lastLoggedErrorTime > THROTTLE_MS || lastErrorMessage !== msg) {
+    lastLoggedErrorTime = now;
+    lastErrorMessage = msg;
+    console.error(`[RadarSnapshot] Error in ${context}:`, err);
+  }
+}
+
+/**
  * Builds a snapshot record object from an IPO and optional previous snapshot.
  */
 export function buildSnapshotFromIPO(ipo: IPOMasterRecord, prev?: RadarSnapshotRecord | null): RadarSnapshotRecord {
   const radar = evaluateIPORadarScore(ipo, prev || null);
   return {
     id: `snap_${ipo.id}_${Date.now()}`,
-    ipo_id: ipo.id,
+    ipo_id: String(ipo.id),
     category: radar.category,
-    score: radar.score,
-    confidence: radar.confidence,
-    gmp_amount: ipo.gmp_amount != null ? Number(ipo.gmp_amount) : null,
-    gmp_percent: ipo.gmp_percent != null ? Number(ipo.gmp_percent) : null,
-    total_subscription: ipo.total_sub != null ? Number(ipo.total_sub) : null,
-    retail_subscription: ipo.retail_sub != null ? Number(ipo.retail_sub) : null,
-    qib_subscription: ipo.qib_sub != null ? Number(ipo.qib_sub) : null,
-    nii_subscription: ipo.nii_sub != null ? Number(ipo.nii_sub) : null,
-    quality_score: ipo.score?.total_score != null ? Number(ipo.score.total_score) : null,
-    risk_score: radar.signals?.riskPenalty != null ? Number(radar.signals.riskPenalty) : null,
-    decision_readiness_score: radar.v4Predictive?.decisionReadinessScore,
-    reversal_risk: radar.v4Predictive?.reversalRisk,
-    primary_action_label: radar.v4Predictive?.primaryActionLabel,
+    score: safeNumber(radar.score) ?? 0,
+    confidence: safeNumber(radar.confidence) ?? 0,
+    gmp_amount: safeNumber(ipo.gmp_amount),
+    gmp_percent: safeNumber(ipo.gmp_percent),
+    total_subscription: safeNumber(ipo.total_sub),
+    retail_subscription: safeNumber(ipo.retail_sub),
+    qib_subscription: safeNumber(ipo.qib_sub),
+    nii_subscription: safeNumber(ipo.nii_sub),
+    quality_score: safeNumber(ipo.score?.total_score),
+    risk_score: safeNumber(radar.signals?.riskPenalty),
+    decision_readiness_score: safeNumber(radar.v4Predictive?.decisionReadinessScore),
+    reversal_risk: radar.v4Predictive?.reversalRisk || null,
+    primary_action_label: radar.v4Predictive?.primaryActionLabel || null,
     is_final_pre_listing: (ipo.status || '').toLowerCase() === 'closed' ? 1 : 0,
     created_at: new Date().toISOString(),
   };
@@ -87,17 +135,19 @@ export function shouldPersistSnapshot(
   }
 
   // Score delta >= 5 points triggers snapshot
-  const scoreDiff = Math.abs(curr.score - prev.score);
+  const prevScore = safeNumber(prev.score) ?? 0;
+  const currScore = safeNumber(curr.score) ?? 0;
+  const scoreDiff = Math.abs(currScore - prevScore);
   if (scoreDiff >= 5) return true;
 
   // GMP % delta >= 5% triggers snapshot
-  const prevGmp = prev.gmp_percent ?? 0;
-  const currGmp = curr.gmp_percent ?? 0;
+  const prevGmp = safeNumber(prev.gmp_percent) ?? 0;
+  const currGmp = safeNumber(curr.gmp_percent) ?? 0;
   if (Math.abs(currGmp - prevGmp) >= 5) return true;
 
   // Subscription delta >= 2x triggers snapshot
-  const prevSub = prev.total_subscription ?? 0;
-  const currSub = curr.total_subscription ?? 0;
+  const prevSub = safeNumber(prev.total_subscription) ?? 0;
+  const currSub = safeNumber(curr.total_subscription) ?? 0;
   if (Math.abs(currSub - prevSub) >= 2) return true;
 
   // Bidding stage transition to Closed or Listed triggers snapshot
@@ -116,16 +166,18 @@ export async function getIPORadarSnapshots(
   ipoId: string,
   limit: number = 10
 ): Promise<RadarSnapshotRecord[]> {
+  if (!db || !ipoId) return [];
+  const safeLimit = Math.max(1, safeNumber(limit) ?? 10);
   try {
     const rows = await safeGetAllAsync<RadarSnapshotRecord>(
       db,
       'SELECT * FROM radar_snapshots WHERE ipo_id = ? ORDER BY created_at DESC LIMIT ?',
-      [ipoId, limit],
+      [String(ipoId), safeLimit],
       'RadarSnapshot.getIPORadarSnapshots'
     );
     return rows || [];
-  } catch (err) {
-    console.error('[RadarSnapshot] Error fetching snapshots:', err);
+  } catch (err: any) {
+    logRadarSnapshotError('getIPORadarSnapshots', err);
     return [];
   }
 }
@@ -137,16 +189,21 @@ export async function getLatestRadarSnapshot(
   db: SQLiteDatabase,
   ipoId: string
 ): Promise<RadarSnapshotRecord | null> {
+  if (!db || !ipoId) return null;
   try {
     const row = await safeGetFirstAsync<RadarSnapshotRecord>(
       db,
       'SELECT * FROM radar_snapshots WHERE ipo_id = ? ORDER BY created_at DESC LIMIT 1',
-      [ipoId],
+      [String(ipoId)],
       'RadarSnapshot.getLatestRadarSnapshot'
     );
     return row || null;
-  } catch (err) {
-    console.error('[RadarSnapshot] Error fetching latest snapshot:', err);
+  } catch (err: any) {
+    if (isClosedResourceError(err)) {
+      logRadarSnapshotError('getLatestRadarSnapshot', err);
+      throw err;
+    }
+    logRadarSnapshotError('getLatestRadarSnapshot', err);
     return null;
   }
 }
@@ -159,16 +216,20 @@ export async function persistRadarSnapshotIfChanged(
   ipo: IPOMasterRecord,
   radar: RadarScoreBreakdown
 ): Promise<boolean> {
+  if (!db || !ipo || !ipo.id) {
+    return false;
+  }
+
   try {
     const prev = await getLatestRadarSnapshot(db, ipo.id);
     const checkState = {
       category: radar.category,
-      score: radar.score,
-      gmp_percent: ipo.gmp_percent != null ? Number(ipo.gmp_percent) : null,
-      total_subscription: ipo.total_sub != null ? Number(ipo.total_sub) : null,
+      score: safeNumber(radar.score) ?? 0,
+      gmp_percent: safeNumber(ipo.gmp_percent),
+      total_subscription: safeNumber(ipo.total_sub),
       primaryAction: radar.v4Predictive?.primaryAction,
       reversalRisk: radar.v4Predictive?.reversalRisk,
-      decisionReadinessScore: radar.v4Predictive?.decisionReadinessScore,
+      decisionReadinessScore: safeNumber(radar.v4Predictive?.decisionReadinessScore) ?? undefined,
       status: ipo.status,
     };
 
@@ -189,18 +250,18 @@ export async function persistRadarSnapshotIfChanged(
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
-        ipo.id,
-        radar.category,
-        radar.score,
-        radar.confidence,
-        ipo.gmp_amount != null ? Number(ipo.gmp_amount) : null,
-        ipo.gmp_percent != null ? Number(ipo.gmp_percent) : null,
-        ipo.total_sub != null ? Number(ipo.total_sub) : null,
-        ipo.retail_sub != null ? Number(ipo.retail_sub) : null,
-        ipo.qib_sub != null ? Number(ipo.qib_sub) : null,
-        ipo.nii_sub != null ? Number(ipo.nii_sub) : null,
-        ipo.score?.total_score != null ? Number(ipo.score.total_score) : null,
-        radar.signals?.riskPenalty != null ? Number(radar.signals.riskPenalty) : null,
+        String(ipo.id),
+        String(radar.category || 'AVOID'),
+        safeNumber(radar.score) ?? 0,
+        safeNumber(radar.confidence) ?? 0,
+        safeNumber(ipo.gmp_amount),
+        safeNumber(ipo.gmp_percent),
+        safeNumber(ipo.total_sub),
+        safeNumber(ipo.retail_sub),
+        safeNumber(ipo.qib_sub),
+        safeNumber(ipo.nii_sub),
+        safeNumber(ipo.score?.total_score),
+        safeNumber(radar.signals?.riskPenalty),
         isClosed ? 1 : 0,
         createdAt,
       ],
@@ -208,8 +269,12 @@ export async function persistRadarSnapshotIfChanged(
     );
 
     return true;
-  } catch (err) {
-    console.error('[RadarSnapshot] Error persisting snapshot:', err);
+  } catch (err: any) {
+    if (isClosedResourceError(err)) {
+      logRadarSnapshotError('persistRadarSnapshotIfChanged', err);
+      throw err;
+    }
+    logRadarSnapshotError('persistRadarSnapshotIfChanged', err);
     return false;
   }
 }
@@ -221,6 +286,7 @@ export async function markFinalPreListingSnapshot(
   db: SQLiteDatabase,
   ipoId: string
 ): Promise<boolean> {
+  if (!db || !ipoId) return false;
   try {
     const latest = await getLatestRadarSnapshot(db, ipoId);
     if (!latest) return false;
@@ -232,8 +298,12 @@ export async function markFinalPreListingSnapshot(
       'RadarSnapshot.markFinalPreListingSnapshot'
     );
     return true;
-  } catch (err) {
-    console.error('[RadarSnapshot] Error marking final pre-listing snapshot:', err);
+  } catch (err: any) {
+    if (isClosedResourceError(err)) {
+      logRadarSnapshotError('markFinalPreListingSnapshot', err);
+      throw err;
+    }
+    logRadarSnapshotError('markFinalPreListingSnapshot', err);
     return false;
   }
 }
@@ -245,16 +315,17 @@ export async function getFinalPreListingSnapshot(
   db: SQLiteDatabase,
   ipoId: string
 ): Promise<RadarSnapshotRecord | null> {
+  if (!db || !ipoId) return null;
   try {
     const row = await safeGetFirstAsync<RadarSnapshotRecord>(
       db,
       'SELECT * FROM radar_snapshots WHERE ipo_id = ? AND is_final_pre_listing = 1 ORDER BY created_at DESC LIMIT 1',
-      [ipoId],
+      [String(ipoId)],
       'RadarSnapshot.getFinalPreListingSnapshot'
     );
     return row || null;
-  } catch (err) {
-    console.error('[RadarSnapshot] Error fetching final pre-listing snapshot:', err);
+  } catch (err: any) {
+    logRadarSnapshotError('getFinalPreListingSnapshot', err);
     return null;
   }
 }

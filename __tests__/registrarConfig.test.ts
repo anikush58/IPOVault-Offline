@@ -2,9 +2,12 @@ import {
   detectBigshareCaptcha,
   checkBigshareCaptchaPresence,
   getRegistrarConfig,
+  getRegistrarShortName,
+  getRegistrarDomain,
+  getRegistrarWebsite,
   isAutomatedCheckSupported,
 } from '../services/allotment/registrarConfig';
-import { resolveRegistrarCode } from '../constants/ipoControls';
+import { resolveRegistrarCode, getRegistrarLabel } from '../constants/ipoControls';
 
 function assert(condition: boolean, testName: string, detail: string) {
   if (condition) {
@@ -337,6 +340,118 @@ export async function runRegistrarConfigTestSuite() {
       resolvedCode === 'BIGSHARE',
     'Test 11e',
     '"Bigshare Services Pvt Ltd" resolves to supported Bigshare adapter and controlled code BIGSHARE'
+  );
+
+  
+  // =========================================================================
+  // Test 12: Verify all known Indian IPO registrars resolve properly with official portal URLs
+  // =========================================================================
+  const knownRegistrars = [
+    { input: 'Link Intime India Pvt Ltd', expectedShort: 'Link Intime', expectedHost: 'mufg.com' },
+    { input: 'MUFG Intime India', expectedShort: 'Link Intime', expectedHost: 'mufg.com' },
+    { input: 'KFin Technologies Limited', expectedShort: 'KFintech', expectedHost: 'kfintech.com' },
+    { input: 'Karvy Fintech', expectedShort: 'KFintech', expectedHost: 'kfintech.com' },
+    { input: 'Bigshare Services Pvt Ltd', expectedShort: 'Bigshare', expectedHost: 'bigshareonline.com' },
+    { input: 'Cameo Corporate Services Limited', expectedShort: 'Cameo', expectedHost: 'cameoindia.com' },
+    { input: 'Maashitla Securities Private Limited', expectedShort: 'Maashitla', expectedHost: 'maashitla.com' },
+    { input: 'Skyline Financial Services Private Ltd', expectedShort: 'Skyline', expectedHost: 'skylinerta.com' },
+    { input: 'Purva Sharegistry India Pvt Ltd', expectedShort: 'Purva', expectedHost: 'purvashare.com' },
+    { input: 'Integrated Registry Management Services', expectedShort: 'Integrated', expectedHost: 'integratedregistry.in' },
+    { input: 'MAS Services Limited', expectedShort: 'MAS Services', expectedHost: 'masserv.com' },
+    { input: 'Mudra RTA Private Limited', expectedShort: 'Mudra RTA', expectedHost: 'mudrarta.com' },
+    { input: 'Alankit Assignments Limited', expectedShort: 'Alankit', expectedHost: 'alankit.com' },
+    { input: 'Beetal Financial & Computer Services Pvt Ltd', expectedShort: 'Beetal', expectedHost: 'beetalfinancial.com' },
+    { input: 'Datamatics Business Solutions Limited', expectedShort: 'Datamatics', expectedHost: 'datamaticsbpm.com' },
+    { input: 'Venture Capital and Corporate Investments Private Limited', expectedShort: 'VCCIPL', expectedHost: 'vccipl.com' },
+    { input: 'Ankit Consultancy Private Limited', expectedShort: 'Ankit', expectedHost: 'ankitonline.com' },
+    { input: 'S.K. Info Solutions Private Limited', expectedShort: 'SK Info', expectedHost: 'skinfo.in' },
+    { input: 'Sharex Dynamic (India) Private Limited', expectedShort: 'Sharex', expectedHost: 'sharexindia.com' },
+    { input: 'MCS Share Transfer Agent Limited', expectedShort: 'MCS', expectedHost: 'mcsregistrars.com' },
+    { input: 'Niche Technologies Private Limited', expectedShort: 'Niche', expectedHost: 'nichetechpl.com' },
+    { input: 'Maheshwari Datamatics Private Limited', expectedShort: 'Maheshwari', expectedHost: 'mdpl.in' },
+    { input: 'BSE India', expectedShort: 'BSE', expectedHost: 'bseindia.com' },
+    { input: 'NSE India', expectedShort: 'NSE', expectedHost: 'nseindia.com' },
+  ];
+
+  for (const reg of knownRegistrars) {
+    const cfg = getRegistrarConfig(reg.input);
+    const shortName = getRegistrarShortName(reg.input);
+    const domain = getRegistrarDomain(cfg.url);
+    const website = getRegistrarWebsite(reg.input);
+
+    assert(
+      shortName === reg.expectedShort,
+      `Test 12 ShortName [${reg.input}]`,
+      `Expected ${reg.expectedShort}, got ${shortName}`
+    );
+    assert(
+      domain.includes(reg.expectedHost),
+      `Test 12 Domain [${reg.input}]`,
+      `Expected domain to contain ${reg.expectedHost}, got ${domain}`
+    );
+    assert(
+      website.startsWith('http://') || website.startsWith('https://'),
+      `Test 12 Website [${reg.input}]`,
+      `Expected valid URL, got ${website}`
+    );
+  }
+
+  // =========================================================================
+  // Test 13: Null and empty fallbacks
+  // =========================================================================
+  assert(
+    getRegistrarShortName(null) === 'Registrar',
+    'Test 13a',
+    'getRegistrarShortName(null) returns "Registrar"'
+  );
+  assert(
+    getRegistrarShortName('') === 'Registrar',
+    'Test 13b',
+    'getRegistrarShortName("") returns "Registrar"'
+  );
+  assert(
+    getRegistrarWebsite(null) === 'https://www.bseindia.com/investors/appli_check.aspx',
+    'Test 13c',
+    'getRegistrarWebsite(null) falls back to BSE portal'
+  );
+  assert(
+    getRegistrarDomain(null) === 'bseindia.com',
+    'Test 13d',
+    'getRegistrarDomain(null) falls back to bseindia.com'
+  );
+
+  // =========================================================================
+  // Test 14: Controlled Registrars sync
+  // =========================================================================
+  assert(
+    resolveRegistrarCode('Beetal Financial') === 'BEETAL',
+    'Test 14a',
+    'resolveRegistrarCode("Beetal Financial") resolves BEETAL'
+  );
+  assert(
+    resolveRegistrarCode('Datamatics Business Solutions') === 'DATAMATICS',
+    'Test 14b',
+    'resolveRegistrarCode("Datamatics Business Solutions") resolves DATAMATICS'
+  );
+  assert(
+    resolveRegistrarCode('VCCIPL') === 'VCCIPL',
+    'Test 14c',
+    'resolveRegistrarCode("VCCIPL") resolves VCCIPL'
+  );
+  assert(
+    resolveRegistrarCode('Ankit Consultancy') === 'ANKIT',
+    'Test 14d',
+    'resolveRegistrarCode("Ankit Consultancy") resolves ANKIT'
+  );
+  assert(
+    getRegistrarLabel('BEETAL') === 'Beetal Financial',
+    'Test 14e',
+    'getRegistrarLabel("BEETAL") resolves "Beetal Financial"'
+  );
+  assert(
+    getRegistrarLabel('DATAMATICS') === 'Datamatics',
+    'Test 14f',
+    'getRegistrarLabel("DATAMATICS") resolves "Datamatics"'
   );
 
   console.log('==================================================');

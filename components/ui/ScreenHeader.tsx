@@ -31,6 +31,7 @@ export interface ScreenHeaderProps {
   contentStyle?: StyleProp<ViewStyle>;
   scrollY?: Animated.Value;
   blurOpacity?: Animated.AnimatedInterpolation<number> | Animated.Value | number;
+  transparent?: boolean;
 }
 
 export function ScreenHeader({
@@ -48,6 +49,7 @@ export function ScreenHeader({
   contentStyle,
   scrollY,
   blurOpacity,
+  transparent = false,
 }: ScreenHeaderProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -81,27 +83,29 @@ export function ScreenHeader({
     <View
       style={[
         styles.container,
-        { height: barHeight },
+        { height: barHeight, backgroundColor: 'transparent' },
         style,
       ]}
       pointerEvents="box-none"
     >
-      <Animated.View style={[StyleSheet.absoluteFill, { opacity: computedBlurOpacity }]}>
-        <BlurView
-          intensity={Platform.OS === 'ios' ? 90 : 75}
-          tint={isDark ? 'dark' : 'light'}
-          style={StyleSheet.absoluteFill}
-        />
-        <LinearGradient
-          colors={
-            isDark
-              ? ['rgba(14, 17, 23, 0.96)', 'rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.35)']
-              : ['rgba(248, 249, 250, 0.96)', 'rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.35)']
-          }
-          locations={[0, 0.75, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-      </Animated.View>
+      {!transparent && (
+        <Animated.View style={[StyleSheet.absoluteFill, { opacity: computedBlurOpacity }]}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 90 : 75}
+            tint={isDark ? 'dark' : 'light'}
+            style={StyleSheet.absoluteFill}
+          />
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(9, 10, 15, 0.96)', 'rgba(9, 10, 15, 0.88)', 'rgba(9, 10, 15, 0.35)']
+                : ['rgba(248, 249, 250, 0.96)', 'rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.35)']
+            }
+            locations={[0, 0.75, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+      )}
 
       {children ? (
         <View style={[{ paddingTop: topPad, flex: 1 }, contentStyle]} pointerEvents="box-none">
@@ -151,6 +155,8 @@ export function ScreenHeader({
                     { color: colors.foreground },
                   ]}
                   numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
                 >
                   {title}
                 </Text>
@@ -163,6 +169,8 @@ export function ScreenHeader({
                     { color: colors.mutedForeground },
                   ]}
                   numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
                 >
                   {subtitle}
                 </Text>

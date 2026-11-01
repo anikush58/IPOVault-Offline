@@ -11,44 +11,40 @@ import {
   KeyboardAvoidingView,
   Modal,
   Image,
+  useWindowDimensions,
 } from 'react-native';
 import Svg, { Path, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useColors } from '@/hooks/useColors';
-import { useTheme } from '@/context/ThemeContext';
+import defaultColors from '@/constants/colors';
 import { useAuth } from '@/context/AuthContext';
-import { useDB } from '@/context/DBContext';
 import { useDialog } from '@/context/DialogContext';
 import { IconButton } from '@/components/ui/IconButton';
-import { Tabs } from '@/components/ui/Tabs';
-import { Feather, Ionicons } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import * as SplashScreen from 'expo-splash-screen';
-
-import { ThemeToggle } from '@/components/onboarding/ThemeToggle';
+import { useAppExperience } from '@/context/AppExperienceContext';
+import {
+  userEntitlementService,
+  UserEntitlementState,
+} from '@/services/user/userEntitlementService';
+import { appExperienceService } from '@/services/experience/appExperienceService';
+import { AutoStatusBar } from '@/components/ui/AutoStatusBar';
 
 /**
  * IPOVault Brand Logo Icon (Uses app icon image asset)
  */
-function IPOVaultBrandLogo({ isDark }: { isDark: boolean }) {
+function IPOVaultBrandLogo({ isSmallScreen }: { isSmallScreen?: boolean }) {
+  const logoSize = isSmallScreen ? 108 : 136;
+  const logoRadius = isSmallScreen ? 28 : 36;
   return (
-    <View style={styles.brandContainer}>
+    <View style={[styles.brandContainer, isSmallScreen && { marginTop: -25, marginBottom: 14 }]}>
       <Image
-        source={
-          isDark
-            ? require('@/assets/images/auth-brand-logo-dark.png')
-            : require('@/assets/images/auth-brand-logo.png')
-        }
-        style={styles.brandIconImage}
+        source={require('@/assets/images/auth-brand-logo.png')}
+        style={[styles.brandIconImage, { width: logoSize, height: logoSize, borderRadius: logoRadius }]}
         resizeMode="contain"
       />
-      <Text
-        style={[
-          styles.brandLabel,
-          { color: isDark ? 'rgba(255, 255, 255, 0.9)' : '#0F172A' },
-        ]}
-      >
+      <Text style={[styles.brandLabel, { color: '#0F172A' }]}>
         IPOVAULT
       </Text>
     </View>
@@ -109,18 +105,17 @@ function GoogleLogoSvg({ size = 20 }: { size?: number }) {
 }
 
 export default function AuthScreen() {
-  const colors = useColors();
-  const { resolvedScheme } = useTheme();
-  const isDark = resolvedScheme === 'dark';
+  const isDark = false;
+  const colors = defaultColors.light;
   const router = useRouter();
   const params = useLocalSearchParams<{ returnTo?: string }>();
   const { user, signInWithEmail, signUpWithEmail, signInWithGoogle, resetPassword } = useAuth();
-  const { restoreCloudData } = useDB();
   const insets = useSafeAreaInsets();
   const { showError, showSuccess } = useDialog();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const isSmallScreen = windowHeight < 720;
+  const isNarrow = windowWidth < 360;
 
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
-  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -140,28 +135,54 @@ export default function AuthScreen() {
 
   const topPad = Platform.OS === 'web' ? 24 : insets.top;
   const hasNavigatedRef = React.useRef(false);
+  const { isNonPro } = useAppExperience();
 
-  const handleNavigateReturn = React.useCallback(() => {
-    if (hasNavigatedRef.current) return;
-    hasNavigatedRef.current = true;
-    const target = (params.returnTo as string) || '/(tabs)';
-    router.replace(target as any);
-  }, [params.returnTo, router]);
+  const handleNavigateReturn = React.useCallback(
+    async (overrideEnt?: UserEntitlementState) => {
+      if (hasNavigatedRef.current) return;
+      hasNavigatedRef.current = true;
+      if (params.returnTo) {
+        router.replace(params.returnTo as any);
+        return;
+      }
+      try {
+        let ent = overrideEnt;
+        if (!ent) {
+          ent = await userEntitlementService.resolveEntitlementForLogin({
+            uid: user?.uid,
+            email: user?.email || email.trim() || null,
+            username: user?.displayName || null,
+          });
+        }
+        if (ent.isPro) {
+          await appExperienceService.setExperienceMode('pro').catch(() => {});
+          router.replace('/(tabs)' as any);
+        } else {
+          await appExperienceService.setExperienceMode('non_pro').catch(() => {});
+          router.replace('/(tabs)/ipos' as any);
+        }
+      } catch {
+        if (isNonPro) {
+          router.replace('/(tabs)/ipos' as any);
+        } else {
+          router.replace('/(tabs)' as any);
+        }
+      }
+    },
+    [params.returnTo, router, isNonPro, user, email]
+  );
 
   useEffect(() => {
     if (!user || hasNavigatedRef.current) return;
+    if (loadingAction) return; // Allow manual action to finish resolving entitlement
     try {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {}
     handleNavigateReturn();
-  }, [user, handleNavigateReturn]);
+  }, [user, handleNavigateReturn, loadingAction]);
 
-  const handleEmailAuth = async () => {
+  const handleSignIn = async () => {
     setErrorMessage(null);
-    if (mode === 'signup' && !fullName.trim()) {
-      setErrorMessage('Please enter your full name.');
-      return;
-    }
     if (!email.trim()) {
       setErrorMessage('Please enter your email address.');
       return;
@@ -170,7 +191,45 @@ export default function AuthScreen() {
       setErrorMessage('Please enter your password.');
       return;
     }
-    if (mode === 'signup' && password.length < 6) {
+
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+
+    setLoadingAction('Signing in…');
+    try {
+      const res = await signInWithEmail(email.trim(), password);
+      if (res.error) {
+        setErrorMessage(res.error);
+        showError('Sign In Failed', res.error);
+      } else {
+        const resolvedEnt = await userEntitlementService.resolveEntitlementForLogin({
+          uid: res.user?.uid,
+          email: email.trim(),
+          username: res.user?.displayName,
+        });
+        await handleNavigateReturn(resolvedEnt);
+      }
+    } catch (err: any) {
+      const msg = err?.message || 'Authentication failed. Please try again.';
+      setErrorMessage(msg);
+      showError('Authentication Error', msg);
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleCreateAccount = async () => {
+    setErrorMessage(null);
+    if (!email.trim()) {
+      setErrorMessage('Please enter your email address.');
+      return;
+    }
+    if (!password) {
+      setErrorMessage('Please enter your password.');
+      return;
+    }
+    if (password.length < 6) {
       setErrorMessage('Password must be at least 6 characters long.');
       return;
     }
@@ -179,18 +238,19 @@ export default function AuthScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {}
 
-    setLoadingAction(mode === 'signin' ? 'Signing in…' : 'Creating account…');
+    setLoadingAction('Creating account…');
     try {
-      const res =
-        mode === 'signin'
-          ? await signInWithEmail(email.trim(), password)
-          : await signUpWithEmail(email.trim(), password, fullName.trim());
-
+      const res = await signUpWithEmail(email.trim(), password);
       if (res.error) {
         setErrorMessage(res.error);
-        showError(mode === 'signin' ? 'Sign In Failed' : 'Registration Failed', res.error);
+        showError('Registration Failed', res.error);
       } else {
-        handleNavigateReturn();
+        const resolvedEnt = await userEntitlementService.resolveEntitlementForLogin({
+          uid: res.user?.uid,
+          email: email.trim(),
+          username: res.user?.displayName,
+        });
+        await handleNavigateReturn(resolvedEnt);
       }
     } catch (err: any) {
       const msg = err?.message || 'Authentication failed. Please try again.';
@@ -216,7 +276,12 @@ export default function AuthScreen() {
           showError('Google Sign-In Failed', res.error);
         }
       } else {
-        handleNavigateReturn();
+        const resolvedEnt = await userEntitlementService.resolveEntitlementForLogin({
+          uid: res.user?.uid,
+          email: res.user?.email,
+          username: res.user?.displayName,
+        });
+        await handleNavigateReturn(resolvedEnt);
       }
     } catch (err: any) {
       const msg = err?.message || 'Google Sign-In failed.';
@@ -257,18 +322,17 @@ export default function AuthScreen() {
       style={[styles.container, { backgroundColor: colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+      {/* Auto-adjusting Status Bar: Automatically detects light background and applies dark content */}
+      <AutoStatusBar backgroundColor="#F9FBFE" />
+
       {/* Full-Screen Ambient Background Asset */}
       <Image
-        source={
-          isDark
-            ? require('@/assets/images/auth-bg-dark.png')
-            : require('@/assets/images/auth-bg.png')
-        }
+        source={require('@/assets/images/auth-bg.png')}
         style={StyleSheet.absoluteFillObject}
         resizeMode="cover"
       />
 
-      {/* Top Bar for Back Navigation & Theme Toggle */}
+      {/* Top Bar for Back Navigation */}
       <View style={[styles.topBar, { top: topPad + 8 }]}>
         {params.returnTo ? (
           <IconButton
@@ -281,48 +345,46 @@ export default function AuthScreen() {
         ) : (
           <View />
         )}
-        <ThemeToggle />
       </View>
 
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: Math.max(topPad + 16, 36) + 100 },
+          {
+            paddingTop: Math.max(topPad + 12, isSmallScreen ? 20 : 36) + (isSmallScreen ? 20 : 50),
+            paddingHorizontal: isNarrow ? 16 : 24,
+            paddingBottom: Math.max(insets.bottom + 24, 48),
+          },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.formContainer}>
           {/* Brand Header */}
-          <IPOVaultBrandLogo isDark={isDark} />
+          <IPOVaultBrandLogo isSmallScreen={isSmallScreen} />
 
-          <View style={styles.titleContainer}>
-            <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-              {mode === 'signin' ? 'Welcome Back' : 'Create Account'}
-            </Text>
-            <Text style={[styles.headerSubtitle, { color: colors.mutedForeground }]}>
-              {mode === 'signin'
-                ? 'Sign in to manage your IPO portfolio,\ntrack applications and more.'
-                : 'Sign up to manage your IPO portfolio,\ntrack applications and more.'}
-            </Text>
-          </View>
-
-          {/* Mode Switcher Tabs (Matches App Tab Style) */}
-          <View style={styles.tabWrapper}>
-            <Tabs<'signin' | 'signup'>
-              variant="pills"
-              height={38}
-              tabs={[
-                { key: 'signin', label: 'Sign In' },
-                { key: 'signup', label: 'Create Account' },
+          <View style={[styles.titleContainer, isSmallScreen && { marginBottom: 24 }]}>
+            <Text
+              style={[
+                styles.headerTitle,
+                { color: colors.foreground },
+                isSmallScreen && { fontSize: 23, lineHeight: 29 },
               ]}
-              activeTab={mode}
-              onChange={(newMode) => {
-                setMode(newMode);
-                setErrorMessage(null);
-              }}
-              textStyle={{ fontSize: 13 }}
-            />
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}
+            >
+              Welcome to IPOVault
+            </Text>
+            <Text
+              style={[
+                styles.headerSubtitle,
+                { color: colors.mutedForeground },
+                isSmallScreen && { fontSize: 12.5, lineHeight: 17 },
+              ]}
+            >
+              Sign in or create an account to manage your IPO portfolio, track applications and more.
+            </Text>
           </View>
 
           {/* Error Message Banner */}
@@ -340,35 +402,6 @@ export default function AuthScreen() {
               <Text style={[styles.errorBannerText, { color: '#EF4444' }]}>{errorMessage}</Text>
             </View>
           ) : null}
-
-          {/* Full Name Field (Sign Up) */}
-          {mode === 'signup' && (
-            <View style={styles.fieldGroup}>
-              <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
-                FULL NAME
-              </Text>
-              <View
-                style={[
-                  styles.inputWrap,
-                  {
-                    backgroundColor: isDark ? '#1A202C' : '#FFFFFF',
-                    borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : '#E2E8F0',
-                  },
-                ]}
-              >
-                <Feather name="user" size={18} color={colors.mutedForeground} style={styles.inputIcon} />
-                <TextInput
-                  style={[styles.textInput, { color: colors.foreground }]}
-                  placeholder="Enter your full name"
-                  placeholderTextColor={colors.mutedForeground}
-                  value={fullName}
-                  onChangeText={setFullName}
-                  autoCapitalize="words"
-                  autoComplete="name"
-                />
-              </View>
-            </View>
-          )}
 
           {/* Email Address Field */}
           <View style={styles.fieldGroup}>
@@ -404,19 +437,17 @@ export default function AuthScreen() {
               <Text style={[styles.fieldLabel, { color: colors.mutedForeground, marginBottom: 0 }]}>
                 PASSWORD
               </Text>
-              {mode === 'signin' && (
-                <TouchableOpacity
-                  onPress={() => {
-                    setResetEmail(email);
-                    setShowForgotModal(true);
-                  }}
-                  hitSlop={8}
-                >
-                  <Text style={[styles.forgotText, { color: colors.primary }]}>
-                    Forgot Password?
-                  </Text>
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity
+                onPress={() => {
+                  setResetEmail(email);
+                  setShowForgotModal(true);
+                }}
+                hitSlop={8}
+              >
+                <Text style={[styles.forgotText, { color: colors.primary }]}>
+                  Forgot Password?
+                </Text>
+              </TouchableOpacity>
             </View>
             <View
               style={[
@@ -430,7 +461,7 @@ export default function AuthScreen() {
               <Feather name="lock" size={18} color={colors.mutedForeground} style={styles.inputIcon} />
               <TextInput
                 style={[styles.textInput, { color: colors.foreground }]}
-                placeholder={mode === 'signup' ? 'Minimum 6 characters' : 'Enter your password'}
+                placeholder="Enter your password"
                 placeholderTextColor={colors.mutedForeground}
                 value={password}
                 onChangeText={setPassword}
@@ -451,40 +482,76 @@ export default function AuthScreen() {
             </View>
           </View>
 
-          {/* Submit Action Button */}
-          <TouchableOpacity
-            style={[
-              styles.submitButton,
-              {
-                backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
-              },
-            ]}
-            onPress={handleEmailAuth}
-            disabled={loadingAction !== null}
-            activeOpacity={0.88}
-          >
-            {loadingAction && loadingAction !== 'Connecting with Google…' ? (
-              <ActivityIndicator
-                size="small"
-                color={isDark ? '#000000' : '#FFFFFF'}
-              />
-            ) : (
-              <Text
-                style={[
-                  styles.submitButtonText,
-                  { color: isDark ? '#000000' : '#FFFFFF' },
-                ]}
-              >
-                {mode === 'signin' ? 'Sign In' : 'Create Account'}
-              </Text>
-            )}
-          </TouchableOpacity>
+          {/* Dual Action Buttons: Create Account (First) & Sign In (Second), side by side, half half */}
+          <View style={[styles.ctaRow, isNarrow && { gap: 8 }, isSmallScreen && { marginTop: 14, marginBottom: 24 }]}>
+            <TouchableOpacity
+              style={[
+                styles.ctaButton,
+                styles.createAccountButton,
+                isNarrow && { paddingHorizontal: 6 },
+                {
+                  borderColor: isDark ? 'rgba(255, 255, 255, 0.5)' : 'rgba(15, 23, 42, 0.5)',
+                },
+              ]}
+              onPress={handleCreateAccount}
+              disabled={loadingAction !== null}
+              activeOpacity={0.85}
+            >
+              {loadingAction === 'Creating account…' ? (
+                <ActivityIndicator size="small" color={isDark ? '#FFFFFF' : '#0F172A'} />
+              ) : (
+                <Text
+                  style={[
+                    styles.createAccountButtonText,
+                    { color: isDark ? '#FFFFFF' : '#0F172A' },
+                    isNarrow && { fontSize: 13.5 },
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                >
+                  Create Account
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.ctaButton,
+                styles.signInButton,
+                isNarrow && { paddingHorizontal: 6 },
+                {
+                  backgroundColor: isDark ? '#FFFFFF' : '#0F172A',
+                },
+              ]}
+              onPress={handleSignIn}
+              disabled={loadingAction !== null}
+              activeOpacity={0.88}
+            >
+              {loadingAction === 'Signing in…' ? (
+                <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
+              ) : (
+                <Text
+                  style={[
+                    styles.signInButtonText,
+                    { color: isDark ? '#000000' : '#FFFFFF' },
+                    isNarrow && { fontSize: 13.5 },
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                >
+                  Sign In
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
 
           {/* Or Divider */}
           <View style={styles.dividerRow}>
             <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0' }]} />
             <Text style={[styles.dividerText, { color: colors.mutedForeground }]}>
-              {mode === 'signin' ? 'OR CONTINUE WITH GOOGLE' : 'OR SIGN UP WITH GOOGLE'}
+              OR CONTINUE WITH GOOGLE
             </Text>
             <View style={[styles.dividerLine, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0' }]} />
           </View>
@@ -507,7 +574,16 @@ export default function AuthScreen() {
             ) : (
               <>
                 <GoogleLogoSvg size={20} />
-                <Text style={[styles.googleButtonText, { color: colors.foreground }]}>
+                <Text
+                  style={[
+                    styles.googleButtonText,
+                    { color: colors.foreground },
+                    isNarrow && { fontSize: 13.5 },
+                  ]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                >
                   Continue with Google
                 </Text>
               </>
@@ -578,7 +654,7 @@ export default function AuthScreen() {
               {resetLoading ? (
                 <ActivityIndicator size="small" color={colors.primaryForeground} />
               ) : (
-                <Text style={[styles.submitButtonText, { color: colors.primaryForeground }]}>
+                <Text style={[styles.resetSubmitButtonText, { color: colors.primaryForeground }]}>
                   Send Reset Link
                 </Text>
               )}
@@ -605,7 +681,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 24,
-    paddingBottom: 40,
+    paddingBottom: 60,
     alignItems: 'center',
   },
   formContainer: {
@@ -632,7 +708,7 @@ const styles = StyleSheet.create({
   },
   titleContainer: {
     alignItems: 'center',
-    marginBottom: 54,
+    marginBottom: 42,
   },
   headerTitle: {
     fontSize: 27,
@@ -649,10 +725,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 12,
   },
-  tabWrapper: {
-    marginBottom: 20,
-    width: '100%',
-  },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -668,6 +740,39 @@ const styles = StyleSheet.create({
     flex: 1,
     lineHeight: 18,
   },
+  ctaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    width: '100%',
+    marginTop: 20,
+    marginBottom: 33,
+  },
+  ctaButton: {
+    flex: 1,
+    height: 52,
+    borderRadius: 9999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  createAccountButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+  },
+  createAccountButtonText: {
+    fontFamily: 'GoogleSansFlex_700Bold',
+    fontSize: 15,
+    letterSpacing: -0.2,
+  },
+  signInButton: {
+    borderWidth: 0,
+  },
+  signInButtonText: {
+    fontFamily: 'GoogleSansFlex_700Bold',
+    fontSize: 15,
+    letterSpacing: -0.2,
+  },
   googleButton: {
     flexDirection: 'row',
     height: 52,
@@ -677,7 +782,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
-    marginBottom: 22,
+    marginBottom: 33,
   },
   googleButtonText: {
     fontFamily: 'GoogleSansFlex_600SemiBold',
@@ -686,7 +791,7 @@ const styles = StyleSheet.create({
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 30,
   },
   dividerLine: {
     flex: 1,
@@ -720,7 +825,7 @@ const styles = StyleSheet.create({
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 50,
+    height: 52,
     borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 14,
@@ -736,19 +841,6 @@ const styles = StyleSheet.create({
   },
   eyeButton: {
     padding: 6,
-  },
-  submitButton: {
-    height: 52,
-    width: '100%',
-    borderRadius: 9999,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-    marginBottom: 22,
-  },
-  submitButtonText: {
-    fontFamily: 'GoogleSansFlex_700Bold',
-    fontSize: 15.5,
   },
   securityRow: {
     flexDirection: 'row',
@@ -814,5 +906,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 16,
+  },
+  resetSubmitButtonText: {
+    fontFamily: 'GoogleSansFlex_700Bold',
+    fontSize: 15,
   },
 });

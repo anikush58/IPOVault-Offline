@@ -80,8 +80,8 @@ export function UpcomingEventsWidget() {
               style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
               activeOpacity={0.8}
             >
-              <View style={[styles.badge, { backgroundColor: color + '18' }]}>
-                <Text style={[styles.badgeText, { color }]}>{label}</Text>
+              <View style={[styles.badge, { backgroundColor: color }]}>
+                <Text style={[styles.badgeText, { color: '#FFFFFF' }]}>{label}</Text>
               </View>
               <Text style={[styles.name, { color: colors.foreground }]} numberOfLines={1}>
                 {ipo.company_name || ipo.ipo_name}
@@ -131,7 +131,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: 5,
     alignSelf: 'flex-start',
     marginBottom: 8,
   },

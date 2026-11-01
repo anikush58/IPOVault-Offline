@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { useDB } from '@/context/DBContext';
+import { useDB, CloudSyncStatus } from '@/context/DBContext';
 import {
   syncUserDataToFirestore,
   fetchUserDataFromFirestore,
@@ -17,6 +17,9 @@ export interface UseFirestoreSyncReturn {
   userId: string | null;
   isSyncing: boolean;
   isRestoring: boolean;
+  cloudSyncStatus: CloudSyncStatus;
+  cloudSyncError: string | null;
+  retryCloudSync: () => Promise<boolean>;
   lastSyncTime: string | null;
   latestMetadata: CloudSyncMetadata | null;
   syncNow: () => Promise<{ success: boolean; error?: string }>;
@@ -34,7 +37,7 @@ export interface UseFirestoreSyncReturn {
 
 export function useFirestoreSync(): UseFirestoreSyncReturn {
   const { user } = useAuth();
-  const { exportJSON, importJSON, refresh } = useDB();
+  const { exportJSON, importJSON, refresh, cloudSyncStatus, cloudSyncError, retryCloudSync, isRestoring: dbRestoring } = useDB();
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
@@ -138,7 +141,10 @@ export function useFirestoreSync(): UseFirestoreSyncReturn {
     userEmail: user?.email || null,
     userId: uid,
     isSyncing,
-    isRestoring,
+    isRestoring: isRestoring || dbRestoring || cloudSyncStatus === 'syncing' || cloudSyncStatus === 'restoring',
+    cloudSyncStatus,
+    cloudSyncError,
+    retryCloudSync,
     lastSyncTime,
     latestMetadata,
     syncNow,

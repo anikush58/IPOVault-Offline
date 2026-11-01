@@ -20,10 +20,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
+import { useAppExperience } from '@/context/AppExperienceContext';
 
+import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { ProfitSummaryDonutCard } from '@/components/ProfitSummaryDonutCard';
 import { FilterSheet } from '@/components/FilterSheet';
+import { AnalyticsSkeleton } from '@/components/analytics/AnalyticsSkeleton';
 import { Tabs } from '@/components/ui/Tabs';
 import { calculateAppTaxAndNet, calcBuyValue } from '@/utils/calculations';
 import { formatCurrency, getResolvedLogoUrl } from '@/utils/formatters';
@@ -121,7 +124,7 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
   return null;
 }
 
-export default function PortfolioReportScreen() {
+function PortfolioReportScreenContent() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -445,7 +448,7 @@ export default function PortfolioReportScreen() {
           pointerEvents={showSearch ? 'auto' : 'none'}
         >
           <View style={[styles.searchInner, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Feather name="search" size={14} color={colors.mutedForeground} />
+            <Icon name="search" size={14} color={colors.mutedForeground} />
             <TextInput
               ref={searchRef}
               value={searchQuery}
@@ -457,7 +460,7 @@ export default function PortfolioReportScreen() {
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10}>
-                <Feather name="x-circle" size={18} color={colors.mutedForeground} />
+                <Icon name="x-circle" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             )}
           </View>
@@ -465,11 +468,22 @@ export default function PortfolioReportScreen() {
       </View>
 
       {/* SectionList with Sticky Tab Pills Header */}
-      <SectionList
-        style={{ flex: 1 }}
-        sections={[{ title: 'Report', data: filteredApps }]}
-        keyExtractor={(item: any) => item.id.toString()}
-        stickySectionHeadersEnabled={true}
+      {isLoading && applications.length === 0 ? (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingBottom: insets.bottom + 90,
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          <AnalyticsSkeleton />
+        </ScrollView>
+      ) : (
+        <SectionList
+          style={{ flex: 1 }}
+          sections={[{ title: 'Report', data: filteredApps }]}
+          keyExtractor={(item: any) => item.id.toString()}
+          stickySectionHeadersEnabled={true}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
           paddingBottom: insets.bottom + 90,
@@ -519,12 +533,16 @@ export default function PortfolioReportScreen() {
               variant="pills"
               height={36}
               tabs={[
-                { key: 'profits', label: 'All Profits', count: tabCounts.profits },
-                { key: 'holding', label: 'Holding Profits', count: tabCounts.holding },
-                { key: 'charges', label: 'All Charges', count: tabCounts.charges },
+                { key: 'profits', label: 'Profits', count: tabCounts.profits },
+                { key: 'holding', label: 'Holding', count: tabCounts.holding },
+                { key: 'charges', label: 'Charges', count: tabCounts.charges },
               ]}
               activeTab={activeTab}
               onChange={(key) => setActiveTab(key as TabType)}
+              activeTabStyle={{
+                elevation: 0,
+                shadowOpacity: 0.03,
+              }}
             />
           </View>
         )}
@@ -544,8 +562,8 @@ export default function PortfolioReportScreen() {
               style={[
                 styles.reportCard,
                 {
-                  backgroundColor: isDark ? '#1E293B' : '#F4F5F7',
-                  borderColor: isDark ? '#334155' : '#E5E7EB',
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
                 },
               ]}
             >
@@ -580,21 +598,16 @@ export default function PortfolioReportScreen() {
                   <View
                     style={[
                       styles.issueTypePill,
-                      isSme
-                        ? {
-                            backgroundColor: isDark ? 'rgba(236,72,153,0.12)' : '#FDF2F8',
-                            borderColor: isDark ? 'rgba(244,114,182,0.4)' : '#FBCFE8',
-                          }
-                        : {
-                            backgroundColor: isDark ? 'rgba(99,102,241,0.12)' : '#EEF2FF',
-                            borderColor: isDark ? 'rgba(199,210,254,0.4)' : '#C7D2FE',
-                          },
+                      {
+                        backgroundColor: isSme ? '#EC4899' : '#4F46E5',
+                        borderColor: isSme ? '#EC4899' : '#4F46E5',
+                      },
                     ]}
                   >
                     <Text
                       style={[
                         styles.issueTypeText,
-                        { color: isSme ? (isDark ? '#F472B6' : '#BE185D') : (isDark ? '#818CF8' : '#4F46E5') },
+                        { color: '#FFFFFF' },
                       ]}
                     >
                       {issueTypeLabel}
@@ -607,17 +620,17 @@ export default function PortfolioReportScreen() {
                       styles.statusPill,
                       item.status === 'Sold'
                         ? {
-                            backgroundColor: isDark ? 'rgba(34,197,94,0.12)' : '#F0FDF4',
-                            borderColor: isDark ? 'rgba(134,239,172,0.4)' : '#86EFAC',
+                            backgroundColor: '#10B981',
+                            borderColor: '#10B981',
                           }
                         : item.status === 'Holding'
                         ? {
-                            backgroundColor: isDark ? 'rgba(59,130,246,0.12)' : '#EFF6FF',
-                            borderColor: isDark ? 'rgba(147,197,253,0.4)' : '#93C5FD',
+                            backgroundColor: '#8B5CF6',
+                            borderColor: '#8B5CF6',
                           }
                         : {
-                            backgroundColor: isDark ? 'rgba(245,158,11,0.12)' : '#FFFBEB',
-                            borderColor: isDark ? 'rgba(251,191,36,0.4)' : '#FDE68A',
+                            backgroundColor: '#F59E0B',
+                            borderColor: '#F59E0B',
                           },
                     ]}
                   >
@@ -625,12 +638,7 @@ export default function PortfolioReportScreen() {
                       style={[
                         styles.statusText,
                         {
-                          color:
-                            item.status === 'Sold'
-                              ? (isDark ? '#4ADE80' : '#15803D')
-                              : item.status === 'Holding'
-                              ? (isDark ? '#60A5FA' : '#1D4ED8')
-                              : (isDark ? '#FBBF24' : '#D97706'),
+                          color: '#FFFFFF',
                         },
                       ]}
                     >
@@ -645,8 +653,8 @@ export default function PortfolioReportScreen() {
                 style={[
                   styles.innerDataCard,
                   {
-                    backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
-                    borderColor: isDark ? '#334155' : '#E5E7EB',
+                    backgroundColor: colors.cardAlt,
+                    borderColor: colors.border,
                   },
                 ]}
               >
@@ -822,7 +830,7 @@ export default function PortfolioReportScreen() {
         }}
         ListEmptyComponent={() => (
           <View style={styles.emptyContainer}>
-            <View style={[styles.emptyCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E5E7EB' }]}>
+            <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Feather name="inbox" size={32} color={colors.mutedForeground} />
               <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No Records Found</Text>
               <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
@@ -836,6 +844,7 @@ export default function PortfolioReportScreen() {
           </View>
         )}
       />
+      )}
 
       <FilterSheet
         visible={showFilter}
@@ -930,7 +939,7 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_600SemiBold',
   },
   chartSection: { paddingHorizontal: 16, paddingTop: 14 },
-  chipTabContainer: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10, zIndex: 10 },
+  chipTabContainer: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12, zIndex: 10 },
   emptyContainer: { paddingHorizontal: 16, paddingTop: 14 },
 
   // Outer Card matching IPOCard style
@@ -964,14 +973,15 @@ const styles = StyleSheet.create({
   avatarWrap: {
     width: 42,
     height: 42,
-    borderRadius: 21,
+    borderRadius: 12,
     borderWidth: 1,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
+    backgroundColor: '#FFFFFF',
   },
-  avatarImage: { width: '100%', height: '100%' },
+  avatarImage: { width: '100%', height: '100%', resizeMode: 'contain' },
   avatarCircle: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#FFFFFF', fontSize: 14, fontFamily: 'GoogleSansFlex_700Bold' },
 
@@ -998,28 +1008,28 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   issueTypePill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3.5,
-    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   issueTypeText: {
-    fontSize: 10.5,
+    fontSize: 9.5,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 3.5,
-    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
     borderWidth: 1,
   },
   statusText: {
-    fontSize: 10.5,
+    fontSize: 9.5,
     fontFamily: 'GoogleSansFlex_700Bold',
   },
 
@@ -1073,3 +1083,24 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 15, fontFamily: 'GoogleSansFlex_700Bold' },
   emptyText: { fontSize: 13, fontFamily: 'GoogleSansFlex_400Regular', textAlign: 'center' },
 });
+
+export default function PortfolioReportScreen() {
+  const { isNonPro, isLoading: isExperienceLoading } = useAppExperience();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isExperienceLoading && isNonPro) {
+      if (typeof (router as any).navigate === 'function') {
+        (router as any).navigate('/(tabs)/ipos');
+      } else {
+        router.replace('/(tabs)/ipos');
+      }
+    }
+  }, [isNonPro, isExperienceLoading, router]);
+
+  if (isNonPro) {
+    return null;
+  }
+
+  return <PortfolioReportScreenContent />;
+}

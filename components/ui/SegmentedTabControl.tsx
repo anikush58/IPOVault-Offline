@@ -10,6 +10,7 @@ interface SegmentedTabControlProps<T extends string = string> {
   activeTab: T;
   onChange: (key: T) => void;
   style?: any;
+  activeTabStyle?: any;
 }
 
 export function SegmentedTabControl<T extends string = string>({
@@ -18,6 +19,7 @@ export function SegmentedTabControl<T extends string = string>({
   activeTab,
   onChange,
   style,
+  activeTabStyle,
 }: SegmentedTabControlProps<T>) {
   return (
     <Tabs
@@ -26,6 +28,7 @@ export function SegmentedTabControl<T extends string = string>({
       activeTab={activeTab}
       onChange={onChange}
       style={style}
+      activeTabStyle={activeTabStyle}
     />
   );
 }

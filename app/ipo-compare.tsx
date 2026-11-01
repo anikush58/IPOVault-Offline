@@ -5,11 +5,9 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
   useWindowDimensions,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useColors } from '@/hooks/useColors';
@@ -21,6 +19,7 @@ import { CompareCard } from '@/components/compare/CompareCard';
 import { CompareRow } from '@/components/compare/CompareRow';
 import { MetricBadge } from '@/components/compare/MetricBadge';
 import { EmptyCompareState } from '@/components/compare/EmptyCompareState';
+import { CompareSkeleton } from '@/components/compare/CompareSkeleton';
 import { formatCurrency, formatDate } from '@/utils/formatters';
 
 const REC_WEIGHTS: Record<string, number> = {
@@ -32,7 +31,6 @@ const REC_WEIGHTS: Record<string, number> = {
 
 export default function IPOCompareScreen() {
   const colors = useColors();
-  const router = useRouter();
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 20 : insets.top;
@@ -123,8 +121,9 @@ export default function IPOCompareScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.centerContainer, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <CompareHeader title="IPO Compare" />
+        <CompareSkeleton />
       </View>
     );
   }

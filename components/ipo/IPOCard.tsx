@@ -337,8 +337,8 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
       style={[
         styles.card,
         {
-          backgroundColor: isDark ? '#1E293B' : '#F4F5F7',
-          borderColor: isCompared ? colors.primary : (isDark ? '#334155' : '#E5E7EB'),
+          backgroundColor: colors.card,
+          borderColor: isCompared ? colors.primary : colors.border,
         },
         isCompared && { borderWidth: 1.5 },
       ]}
@@ -351,7 +351,7 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
               styles.logoWrap,
               {
                 backgroundColor: '#FFFFFF',
-                borderColor: isDark ? '#334155' : '#E5E7EB',
+                borderColor: isDark ? '#334155' : '#E2E8F0',
               },
             ]}
           >
@@ -517,13 +517,13 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
         </View>
       </View>
 
-      {/* Inner White Data Card */}
+      {/* Inner Data Card */}
       <View
         style={[
           styles.innerDataCard,
           {
-            backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
-            borderColor: isDark ? '#334155' : '#E5E7EB',
+            backgroundColor: colors.cardAlt,
+            borderColor: colors.border,
           },
         ]}
       >
@@ -604,14 +604,14 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
               style={[
                 styles.applyBtn,
                 {
-                  backgroundColor: isDark ? '#38BDF8' : '#0F172A',
+                  backgroundColor: isDark ? colors.primary : '#0F172A',
                 },
               ]}
             >
               <Text
                 style={[
                   styles.applyBtnText,
-                  { color: isDark ? '#0F172A' : '#FFFFFF' },
+                  { color: isDark ? colors.primaryForeground : '#FFFFFF' },
                 ]}
               >
                 {buttonLabel}
@@ -651,16 +651,20 @@ const styles = StyleSheet.create({
   logoWrap: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: 12,
     borderWidth: 1,
     overflow: 'hidden',
+    padding: 0,
+    margin: 0,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
+    position: 'relative',
   },
   logoImage: {
-    width: '100%',
-    height: '100%',
+    ...StyleSheet.absoluteFillObject,
+    width: 44,
+    height: 44,
     resizeMode: 'contain',
   },
   avatar: {

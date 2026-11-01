@@ -20,10 +20,11 @@
  */
 
 import { safeAsyncStorage } from '../../utils/safeAsyncStorage';
+import { userEntitlementService } from '../user/userEntitlementService';
 
 const ENTITLEMENT_STORAGE_KEY = '@ipovault_ad_entitlement_v1';
 
-export type EntitlementSource = 'none' | 'dev_mock' | 'google_play_billing';
+export type EntitlementSource = 'none' | 'dev_mock' | 'google_play_billing' | 'user_entitlement';
 
 export interface AdEntitlementState {
   /**
@@ -57,18 +58,95 @@ const DEFAULT_ENTITLEMENT_STATE: AdEntitlementState = {
   updatedAt: Date.now(),
 };
 
+const isDevMockAllowed = (): boolean => {
+  if (typeof __DEV__ !== 'undefined' && __DEV__) {
+    return true;
+  }
+  if (typeof process !== 'undefined') {
+    if (
+      process.env.NODE_ENV === 'test' ||
+      process.env.JEST_WORKER_ID !== undefined ||
+      process.env.VITEST !== undefined ||
+      (Array.isArray(process.argv) &&
+        process.argv.some((arg) => arg.includes('__tests__') || arg.includes('.test.')))
+    ) {
+      return true;
+    }
+  }
+  return false;
+};
+
 type EntitlementListener = (state: AdEntitlementState) => void;
 
 class AdEntitlementService {
   private currentState: AdEntitlementState = { ...DEFAULT_ENTITLEMENT_STATE };
   private initialized = false;
   private listeners: Set<EntitlementListener> = new Set();
+  private mockPremiumEnabled = false;
+
+  constructor() {
+    // Reactively sync with user Pro entitlement
+    userEntitlementService.subscribe((userState) => {
+      this.syncWithUserEntitlement(userState.isPro);
+    });
+  }
+
+  private syncWithUserEntitlement(isPro: boolean) {
+    if (isPro) {
+      this.currentState = {
+        isPremium: true,
+        isDevMock: false,
+        tier: 'ad_free_premium',
+        source: 'user_entitlement',
+        updatedAt: Date.now(),
+      };
+    } else if (isDevMockAllowed() && this.mockPremiumEnabled) {
+      this.currentState = {
+        isPremium: true,
+        isDevMock: true,
+        tier: 'ad_free_premium',
+        source: 'dev_mock',
+        updatedAt: Date.now(),
+      };
+    } else {
+      this.currentState = {
+        ...DEFAULT_ENTITLEMENT_STATE,
+        updatedAt: Date.now(),
+      };
+    }
+    this.notifyListeners();
+  }
 
   /**
    * Initializes and loads the stored mock entitlement state.
+   * In production builds, dev mock storage is strictly ignored.
    */
   public async getEntitlementState(): Promise<AdEntitlementState> {
     if (this.initialized) {
+      return this.currentState;
+    }
+
+    // Check user Pro entitlement first
+    await userEntitlementService.getEntitlementState();
+    if (userEntitlementService.isPro) {
+      this.currentState = {
+        isPremium: true,
+        isDevMock: false,
+        tier: 'ad_free_premium',
+        source: 'user_entitlement',
+        updatedAt: Date.now(),
+      };
+      this.initialized = true;
+      return this.currentState;
+    }
+
+    // Dev mock storage is strictly prohibited from granting entitlements in production
+    if (!isDevMockAllowed()) {
+      this.currentState = {
+        ...DEFAULT_ENTITLEMENT_STATE,
+        updatedAt: Date.now(),
+      };
+      this.initialized = true;
       return this.currentState;
     }
 
@@ -76,8 +154,9 @@ class AdEntitlementService {
       const raw = await safeAsyncStorage.getItem(ENTITLEMENT_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        // Only accept dev_mock states from storage during foundation phase
+        // Only accept dev_mock states from storage during foundation/dev phase
         if (parsed && typeof parsed.isPremium === 'boolean') {
+          this.mockPremiumEnabled = parsed.isPremium;
           this.currentState = {
             isPremium: parsed.isPremium,
             isDevMock: true,
@@ -98,8 +177,15 @@ class AdEntitlementService {
   /**
    * Sets the development mock premium state.
    * Enables immediate UI/testing verification of ad suppression without purchases.
+   * In production builds, this is strictly a no-op.
    */
   public async setDevMockPremium(enabled: boolean): Promise<AdEntitlementState> {
+    if (!isDevMockAllowed()) {
+      console.warn('[AdEntitlementService] Dev mock premium is strictly disabled in production builds');
+      return this.currentState;
+    }
+
+    this.mockPremiumEnabled = enabled;
     this.currentState = {
       isPremium: enabled,
       isDevMock: true,
@@ -123,8 +209,12 @@ class AdEntitlementService {
 
   /**
    * Toggles the development mock premium state.
+   * In production builds, this is strictly a no-op.
    */
   public async toggleDevMockPremium(): Promise<AdEntitlementState> {
+    if (!isDevMockAllowed()) {
+      return this.currentState;
+    }
     return this.setDevMockPremium(!this.currentState.isPremium);
   }
 

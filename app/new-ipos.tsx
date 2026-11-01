@@ -38,7 +38,7 @@ import { backendIpoApiService } from '@/services/ipo/BackendIpoApiService';
 import { BackendIpo } from '@/types/backend-ipo';
 import { useAppExperience } from '@/context/AppExperienceContext';
 import { useDB } from '@/context/DBContext';
-import { formatCurrency, formatIssueSize } from '@/utils/formatters';
+import { formatCurrency, formatIssueSize, getResolvedLogoUrl } from '@/utils/formatters';
 import { backendSyncEmitter } from '@/services/ipo/BackendSyncEmitter';
 import { triggerCentralizedIPOSync } from '@/services/ipo/centralizedSync';
 import { getISTDateTime } from '@/services/ipo/statusNormalizer';
@@ -65,14 +65,28 @@ function parseIpoDateToTimestamp(str?: string | null): number {
   if (!str) return Infinity;
   const clean = str.trim();
   if (!clean || clean.toUpperCase() === 'TBA' || clean.toUpperCase() === 'N/A') return Infinity;
+
+  // DD-MM-YYYY or DD/MM/YYYY
   if (/^\d{1,2}[-/]\d{1,2}[-/]\d{4}$/.test(clean)) {
     const parts = clean.split(/[-/]/);
     const day = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10) - 1;
     const year = parseInt(parts[2], 10);
-    const d = new Date(year, month, day);
+    const d = new Date(Date.UTC(year, month, day));
     return isNaN(d.getTime()) ? Infinity : d.getTime();
   }
+
+  // YYYY-MM-DD or ISO string
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(clean)) {
+    const datePart = clean.split('T')[0];
+    const parts = datePart.split(/[-/]/);
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    const d = new Date(Date.UTC(year, month, day));
+    return isNaN(d.getTime()) ? Infinity : d.getTime();
+  }
+
   const d = new Date(clean);
   return isNaN(d.getTime()) ? Infinity : d.getTime();
 }
@@ -504,8 +518,8 @@ const NewIpoCardItem = React.memo(
         style={[
           styles.itemCard,
           {
-            backgroundColor: isDark ? '#1E293B' : '#F4F5F7',
-            borderColor: isDark ? '#334155' : '#E5E7EB',
+            backgroundColor: colors.card,
+            borderColor: colors.border,
           },
         ]}
       >
@@ -522,7 +536,7 @@ const NewIpoCardItem = React.memo(
               ]}
             >
               {logoUrl ? (
-                <Image source={{ uri: logoUrl }} style={styles.logoImage} resizeMode="contain" />
+                <Image source={{ uri: getResolvedLogoUrl(logoUrl) || logoUrl }} style={styles.logoImage} resizeMode="contain" />
               ) : (
                 <LinearGradient
                   colors={getAvatarGradient(companyName)}
@@ -675,8 +689,8 @@ const NewIpoCardItem = React.memo(
           style={[
             styles.innerDataCardBox,
             {
-              backgroundColor: isDark ? '#0F172A' : '#FFFFFF',
-              borderColor: isDark ? '#334155' : '#E5E7EB',
+              backgroundColor: colors.cardAlt,
+              borderColor: colors.border,
             },
           ]}
         >
@@ -946,6 +960,44 @@ export default function NewIposScreen() {
         hasHydratedCacheRef.current = true;
         setRawIpos(cached);
         setLoading(false);
+
+        // Pre-resolve default tab from cached data if user hasn't manually selected yet
+        if (!userSelectedTabRef.current && !hasAutoSelectedTabRef.current) {
+          const liveCount = cached.filter((item) => {
+            const st = (item.status || '').toUpperCase().trim();
+            return st === 'OPEN' || st === 'ACTIVE' || st === 'LIVE' || st === 'CLOSING_TODAY';
+          }).length;
+          const upcomingCount = cached.filter((item) => (item.status || '').toUpperCase().trim() === 'UPCOMING').length;
+          const closedCount = cached.filter((item) => {
+            const st = (item.status || '').toUpperCase().trim();
+            return (
+              (st === 'CLOSED' || st.includes('ALLOT') || st.includes('AWAIT') || st === 'LISTING_PENDING') &&
+              st !== 'CLOSING_TODAY'
+            );
+          }).length;
+          const listedCount = cached.filter((item) => {
+            const st = (item.status || '').toUpperCase().trim();
+            return st === 'LISTED' || st === 'LISTING_PENDING';
+          }).length;
+
+          const targetTab = getFirstAvailableIpoHubTab({
+            live: liveCount,
+            upcoming: upcomingCount,
+            closed: closedCount,
+            listed: listedCount,
+          });
+          hasAutoSelectedTabRef.current = true;
+          if (targetTab !== activeTab) {
+            setActiveTab(targetTab);
+            const index = TABS.indexOf(targetTab);
+            if (index > 0) {
+              requestAnimationFrame(() => {
+                horizontalScrollViewRef.current?.scrollTo({ x: index * screenWidth, animated: false });
+              });
+            }
+          }
+        }
+
         if (!firstCardRenderLoggedRef.current) {
           firstCardRenderLoggedRef.current = true;
           const elapsed = Date.now() - mountTimeRef.current;
@@ -957,19 +1009,7 @@ export default function NewIposScreen() {
       if (__DEV__) console.warn('[IPO Hub] Cache hydration error:', err);
       return [];
     }
-  }, [db, searchQuery]);
-
-  useEffect(() => {
-    let isMounted = true;
-    hydrateFromCache().then((cached) => {
-      if (isMounted && cached && cached.length > 0) {
-        setLoading(false);
-      }
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, [hydrateFromCache]);
+  }, [db, searchQuery, activeTab, screenWidth]);
 
   const fetchBackendIpos = useCallback(async (isUserRefresh = false) => {
     const trimmedQuery = searchQuery.trim();
@@ -1066,46 +1106,46 @@ export default function NewIposScreen() {
     }
   }, [searchQuery, db]);
 
+  // Initial load: instantly display SQLite cache; only fetch from network if cache is completely empty
   useEffect(() => {
-    // Fetch on mount or when searchQuery changes
-    fetchBackendIpos();
-  }, [fetchBackendIpos]);
-
-  // Screen Focus Auto-Refresh with 60-second debounce / cooldown
-  useFocusEffect(
-    useCallback(() => {
-      const now = Date.now();
-      if (now - lastFetchedAtRef.current >= 60000 && !isFetchingRef.current) {
-        fetchBackendIpos();
+    let isMounted = true;
+    hydrateFromCache().then((cached) => {
+      if (isMounted) {
+        if (cached && cached.length > 0) {
+          setLoading(false);
+        } else {
+          // Local cache is empty (e.g. cold start on clean install) -> fetch initial catalog
+          fetchBackendIpos();
+        }
       }
-    }, [fetchBackendIpos])
-  );
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [hydrateFromCache, fetchBackendIpos]);
 
-  // 60-Second Periodic Polling & Global Event Sync Auto-Refresh
+  // Query change listener: fetch search results when user searches
   useEffect(() => {
-    const timer = setInterval(() => {
-      const now = Date.now();
-      if (now - lastFetchedAtRef.current >= 60000 && !isFetchingRef.current) {
-        fetchBackendIpos();
-      }
-    }, 60000);
+    if (searchQuery.trim()) {
+      fetchBackendIpos();
+    }
+  }, [searchQuery, fetchBackendIpos]);
 
+  // Global Event Sync: only refresh when there is an actual update to IPOs
+  useEffect(() => {
     const unsubscribe = backendSyncEmitter.subscribe(async (event) => {
       if (event === 'applications') {
         // Application mutations don't alter IPO listings catalog; skip network fetch
         return;
       }
-      // 1. Re-hydrate immediately from local SQLite cache so newly synced IPOs are visible instantly
+      // Re-hydrate immediately from local SQLite cache so newly synced IPOs are visible instantly
       await hydrateFromCache();
-      // 2. Trigger background reconciliation fetch
-      fetchBackendIpos();
     });
 
     return () => {
-      clearInterval(timer);
       unsubscribe();
     };
-  }, [fetchBackendIpos, hydrateFromCache]);
+  }, [hydrateFromCache]);
 
   const onRefresh = useCallback(async () => {
     try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
@@ -1210,20 +1250,13 @@ export default function NewIposScreen() {
           });
         default:
           return arr.sort((a, b) => {
-            // Timeline default: open_date DESC, then created_at DESC, then company name ASC, then id ASC
+            // Timeline default: open_date DESC, then company name ASC, then id ASC
             const tA = parseIpoDateToTimestamp(a.openDate || a.lifecycle?.openDate);
             const tB = parseIpoDateToTimestamp(b.openDate || b.lifecycle?.openDate);
             if (tA !== tB) {
               if (tA === Infinity) return 1;
               if (tB === Infinity) return -1;
               return tB - tA; // DESC: newest open dates first
-            }
-            const cA = parseIpoDateToTimestamp(a.createdAt);
-            const cB = parseIpoDateToTimestamp(b.createdAt);
-            if (cA !== cB) {
-              if (cA === Infinity) return 1;
-              if (cB === Infinity) return -1;
-              return cB - cA; // DESC
             }
             const nameA = (a.company?.displayName || a.companyName || a.symbol || '').toLowerCase();
             const nameB = (b.company?.displayName || b.companyName || b.symbol || '').toLowerCase();
@@ -1280,7 +1313,17 @@ export default function NewIposScreen() {
   const renderItemForTab = useCallback(
     (tab: NewIpoTab) => {
       const TabIpoCard = ({ item, index }: { item: BackendIpo; index: number }) => {
-        const showNativeAd = index === 2;
+        const getTabCount = () => {
+          switch (tab) {
+            case 'live': return liveList.length;
+            case 'upcoming': return upcomingList.length;
+            case 'closed': return closedList.length;
+            case 'listed': return listedList.length;
+            default: return 0;
+          }
+        };
+        const count = getTabCount();
+        const showNativeAd = index === 2 || (count < 3 && index === count - 1);
         return (
           <View key={item.id}>
             <NewIpoCardItem
@@ -1296,7 +1339,7 @@ export default function NewIposScreen() {
       };
       return TabIpoCard;
     },
-    [colors, isDark, handleCardPress]
+    [colors, isDark, handleCardPress, liveList.length, upcomingList.length, closedList.length, listedList.length]
   );
 
   const renderLiveItem = useMemo(() => renderItemForTab('live'), [renderItemForTab]);
@@ -1466,7 +1509,7 @@ export default function NewIposScreen() {
           <Text style={[styles.errorTitle, { color: colors.foreground }]}>Connection Error</Text>
           <Text style={[styles.errorSub, { color: colors.mutedForeground }]}>{error}</Text>
           <TouchableOpacity onPress={onRefresh} style={[styles.retryBtn, { backgroundColor: colors.primary }]}>
-            <Text style={styles.retryBtnText}>Retry</Text>
+            <Text style={[styles.retryBtnText, { color: colors.primaryForeground }]}>Retry</Text>
           </TouchableOpacity>
         </ScrollView>
       ) : (
@@ -1576,9 +1619,6 @@ export default function NewIposScreen() {
             {/* Modal Header */}
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
               <View style={styles.modalHeaderTitleGroup}>
-                <View style={[styles.modalHeaderIconWrap, { backgroundColor: colors.primary + '18' }]}>
-                  <Icon name="filter" size={16} color={colors.primary} />
-                </View>
                 <View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Text style={[styles.modalTitle, { color: colors.foreground }]}>Filter & Sort</Text>
@@ -1972,16 +2012,20 @@ const styles = StyleSheet.create({
   logoWrap: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: 12,
     borderWidth: 1,
     overflow: 'hidden',
+    padding: 0,
+    margin: 0,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
+    position: 'relative',
   },
   logoImage: {
-    width: '100%',
-    height: '100%',
+    ...StyleSheet.absoluteFillObject,
+    width: 44,
+    height: 44,
     resizeMode: 'contain',
   },
   avatar: {

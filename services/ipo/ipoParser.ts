@@ -15,6 +15,10 @@ export class IPOParser {
       listing_date: raw.listing_date,
     });
 
+    const status = (raw.status && raw.status !== 'Unknown' && raw.status !== 'UNKNOWN')
+      ? raw.status
+      : normalizedStatus;
+
     const record: IPOMasterRecord = {
       id: raw.id || crypto.randomUUID(),
       company_name: raw.company_name || '',
@@ -34,7 +38,7 @@ export class IPOParser {
       demat_credit_date: raw.demat_credit_date || null,
       registrar: raw.registrar || '',
       lead_manager: raw.lead_manager || '',
-      status: normalizedStatus,
+      status,
       logo_url: raw.logo_url || '',
       sector: raw.sector || '',
       description: raw.description || '',

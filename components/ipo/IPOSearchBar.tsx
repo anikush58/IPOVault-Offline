@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/ui/Icon';
 import { useColors } from '@/hooks/useColors';
 
 type Props = {
@@ -34,7 +34,7 @@ export function IPOSearchBar({
   return (
     <View style={styles.container}>
       <View style={[styles.wrapper, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Feather name="search" size={16} color={colors.mutedForeground} />
+        <Icon name="search" size={16} color={colors.mutedForeground} />
         <TextInput
           ref={inputRef}
           style={[styles.input, { color: colors.foreground }]}
@@ -52,7 +52,7 @@ export function IPOSearchBar({
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             style={styles.clearBtn}
           >
-            <Feather name="x-circle" size={16} color={colors.mutedForeground} />
+            <Icon name="x-circle" size={16} color={colors.mutedForeground} />
           </TouchableOpacity>
         ) : null}
       </View>
@@ -68,7 +68,7 @@ export function IPOSearchBar({
                 onPress={() => onSelectRecent(term)}
                 style={[styles.recentPill, { backgroundColor: colors.surface, borderColor: colors.border }]}
               >
-                <Feather name="clock" size={11} color={colors.mutedForeground} />
+                <Icon name="clock" size={11} color={colors.mutedForeground} />
                 <Text style={[styles.recentText, { color: colors.foreground }]}>{term}</Text>
               </TouchableOpacity>
             ))}

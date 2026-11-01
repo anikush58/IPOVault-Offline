@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Icon } from '@/components/ui/Icon';
 import { Feather } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,15 +24,20 @@ import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
 import { useDialog } from '@/context/DialogContext';
 import { useDB } from '@/context/DBContext';
-import { ThemeToggleSwitch } from '@/components/ui/ThemeToggleSwitch';
 import { IOSToggle } from '@/components/ui/IOSToggle';
 import { AnimatedEntrance } from '@/components/ui/AnimatedEntrance';
 import { ScoopedBottomSheet } from '@/components/ui/ScoopedBottomSheet';
 import { useAdContext } from '@/context/AdContext';
+import { useAppExperience } from '@/context/AppExperienceContext';
+import {
+  userEntitlementService,
+  UserEntitlementState,
+} from '@/services/user/userEntitlementService';
 import {
   getNotificationPreferences,
   setNotificationPreference,
 } from '@/services/notifications/notificationEngine';
+import { isCustomAvatarUrl } from '@/utils/avatarUtils';
 
 export interface SettingRowProps {
   icon: string;
@@ -95,7 +101,7 @@ export function SettingRow({
       ]}
     >
       <View style={[styles.navItemIconWrap, { backgroundColor: resolvedIconBg }]}>
-        <Feather name={icon as any} size={17} color={resolvedIconColor} />
+        <Icon name={icon as any} size={17} color={resolvedIconColor} strokeWidth={1.8} />
       </View>
 
       <View style={styles.navItemTextWrap}>
@@ -122,7 +128,7 @@ export function SettingRow({
 
       {rightElement || (
         <View style={styles.chevronWrap}>
-          <Feather name="chevron-right" size={17} color={colors.mutedForeground} />
+          <Icon name="chevron-right" size={17} color={colors.mutedForeground} strokeWidth={1.8} />
         </View>
       )}
     </TouchableOpacity>
@@ -133,13 +139,13 @@ export default function SettingsScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { resolvedScheme } = useTheme();
+  const { resolvedScheme, preference, setPreference } = useTheme();
   const isDark = resolvedScheme === 'dark';
 
   const settingIconColor = isDark ? '#FFFFFF' : '#111827';
   const settingIconBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)';
 
-  const { user: authUser, signOut, resetPassword, updateProfile } = useAuth();
+  const { user: authUser, signOut, resetPassword, updateProfile, deleteAccount } = useAuth();
   const { applications, users, bankAccounts, clearAllData } = useDB();
   const { showConfirm, showSuccess, showError } = useDialog();
 
@@ -152,10 +158,30 @@ export default function SettingsScreen() {
   const [showPrivacySheet, setShowPrivacySheet] = useState(false);
   const [showTermsSheet, setShowTermsSheet] = useState(false);
   const [showLicensesSheet, setShowLicensesSheet] = useState(false);
-  const [showPremiumSheet, setShowPremiumSheet] = useState(false);
 
-  // Ad Context & Monetization
-  const { isPremium, toggleDevMockPremium, showPrivacyOptions } = useAdContext();
+  // App Experience & Entitlement
+  const { isPro, isNonPro, isLoading: isExperienceLoading } = useAppExperience();
+  const { showPrivacyOptions } = useAdContext();
+  const [userEntitlement, setUserEntitlement] = useState<UserEntitlementState>(
+    userEntitlementService.getCurrentState()
+  );
+
+  const isUserPro = Boolean(userEntitlement.isPro || isPro);
+  const isEntitlementLoading = Boolean(isExperienceLoading || userEntitlement.status === 'loading');
+  const showProCard = Boolean(authUser);
+  const proCardSubtitle = isUserPro
+    ? 'Your account has full access'
+    : isEntitlementLoading
+      ? 'Checking access...'
+      : 'Unlock the full IPOVault experience';
+
+  useEffect(() => {
+    userEntitlementService.getEntitlementState().then(setUserEntitlement);
+    const unsub = userEntitlementService.subscribe((state) => {
+      setUserEntitlement(state);
+    });
+    return () => unsub();
+  }, []);
 
   // Notification Toggle States
   const [ipoUpdates, setIpoUpdates] = useState(true);
@@ -182,8 +208,10 @@ export default function SettingsScreen() {
       setUsernameStr(name);
       setEditNameInput(name);
     }
-    if (authUser?.photoURL && authUser.photoURL.trim()) {
+    if (authUser?.photoURL && isCustomAvatarUrl(authUser.photoURL)) {
       setAvatarUri(authUser.photoURL.trim());
+    } else {
+      setAvatarUri(null);
     }
   }, [authUser?.displayName, authUser?.photoURL]);
 
@@ -203,9 +231,9 @@ export default function SettingsScreen() {
       });
       safeAsyncStorage.getItem('@ipovault_avatar_uri').then((stored) => {
         if (!isMounted) return;
-        if (stored && stored.trim()) {
+        if (stored && isCustomAvatarUrl(stored)) {
           setAvatarUri(stored.trim());
-        } else if (authUser?.photoURL && authUser.photoURL.trim()) {
+        } else if (authUser?.photoURL && isCustomAvatarUrl(authUser.photoURL)) {
           setAvatarUri(authUser.photoURL.trim());
         } else {
           setAvatarUri(null);
@@ -221,6 +249,12 @@ export default function SettingsScreen() {
       });
       return () => {
         isMounted = false;
+        setShowNotificationsSheet(false);
+        setShowWhatsNewSheet(false);
+        setShowPrivacySheet(false);
+        setShowTermsSheet(false);
+        setShowLicensesSheet(false);
+        setShowEditProfileModal(false);
       };
     }, [defaultDisplayName, authUser?.displayName, authUser?.photoURL])
   );
@@ -344,6 +378,44 @@ export default function SettingsScreen() {
     });
   };
 
+  const handleDeleteAccount = () => {
+    if (!authUser) {
+      showError('Authentication Required', 'You must be signed in to delete an account.');
+      return;
+    }
+    showConfirm({
+      title: 'Delete Account',
+      message:
+        'Are you sure you want to permanently delete your IPOVault account?\n\nThis will permanently delete your authentication credentials, cloud sync profile, and all locally stored Demat, PAN, and IPO application records. This action is irreversible.',
+      confirmText: 'Delete Account',
+      cancelText: 'Cancel',
+      isDanger: true,
+      onConfirm: async () => {
+        setBusy(true);
+        const targetUid = authUser?.uid || null;
+        try {
+          const res = await deleteAccount();
+          if (!res.success) {
+            showError('Account Deletion Failed', res.error || 'Failed to delete account. Please try again.');
+          } else {
+            await clearAllData(targetUid || undefined, { skipCloudFlush: true });
+            setShowEditProfileModal(false);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            showSuccess(
+              'Account Deleted',
+              'Your account and associated cloud data have been permanently deleted.'
+            );
+            router.replace('/auth');
+          }
+        } catch (e: any) {
+          showError('Error', e?.message || 'Failed to delete account.');
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+  };
+
   const scrollY = useRef(new Animated.Value(0)).current;
   const headerBlurOpacity = scrollY.interpolate({
     inputRange: [0, 24],
@@ -370,7 +442,7 @@ export default function SettingsScreen() {
           <LinearGradient
             colors={
               isDark
-                ? ['rgba(14, 17, 23, 0.96)', 'rgba(14, 17, 23, 0.88)', 'rgba(14, 17, 23, 0.35)']
+                ? ['rgba(9, 10, 15, 0.96)', 'rgba(9, 10, 15, 0.88)', 'rgba(9, 10, 15, 0.35)']
                 : ['rgba(248, 249, 250, 0.96)', 'rgba(248, 249, 250, 0.88)', 'rgba(248, 249, 250, 0.35)']
             }
             locations={[0, 0.75, 1]}
@@ -383,8 +455,6 @@ export default function SettingsScreen() {
             <Text style={[styles.headerEyebrow, { color: colors.primary }]}>PREFERENCES</Text>
             <Text style={[styles.headerTitle, { color: colors.foreground }]}>Settings</Text>
           </View>
-
-          <ThemeToggleSwitch />
         </View>
       </View>
 
@@ -412,7 +482,7 @@ export default function SettingsScreen() {
               },
             ]}
           >
-            <View style={styles.heroProfileTopRow}>
+            <View style={[styles.heroProfileTopRow, isNonPro && { marginBottom: 0 }]}>
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={() => setShowEditProfileModal(true)}
@@ -422,15 +492,15 @@ export default function SettingsScreen() {
                   style={[
                     styles.heroAvatarCircle,
                     {
-                      backgroundColor: isDark ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF',
-                      borderColor: isDark ? 'rgba(99, 102, 241, 0.4)' : '#C7D2FE',
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+                      borderColor: colors.border,
                     },
                   ]}
                 >
-                  {avatarUri ? (
+                  {avatarUri && isCustomAvatarUrl(avatarUri) ? (
                     <Image source={{ uri: avatarUri }} style={styles.heroAvatarImage} resizeMode="cover" />
                   ) : (
-                    <Text style={[styles.heroAvatarText, { color: colors.primary }]}>{initial}</Text>
+                    <Text style={[styles.heroAvatarText, { color: colors.foreground }]}>{initial}</Text>
                   )}
                 </View>
               </TouchableOpacity>
@@ -440,9 +510,31 @@ export default function SettingsScreen() {
                   <Text style={[styles.heroName, { color: colors.foreground }]} numberOfLines={1}>
                     {usernameStr}
                   </Text>
-                  <View style={[styles.statusBadge, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.16)' : '#ECFDF5' }]}>
-                    <View style={styles.statusDotGreen} />
-                    <Text style={styles.statusBadgeText}>PRO</Text>
+                  <View
+                    style={[
+                      styles.statusBadge,
+                      {
+                        backgroundColor: isUserPro
+                          ? '#10B981'
+                          : (isDark ? '#475569' : '#64748B'),
+                      },
+                    ]}
+                  >
+                    {isUserPro ? (
+                      <Icon name="diamond" size={9} color="#FFFFFF" strokeWidth={2} fill="#FFFFFF" />
+                    ) : (
+                      <View style={[styles.statusDotGreen, { backgroundColor: '#FFFFFF' }]} />
+                    )}
+                    <Text
+                      style={[
+                        styles.statusBadgeText,
+                        {
+                          color: '#FFFFFF',
+                        },
+                      ]}
+                    >
+                      {isUserPro ? 'PRO TIER' : 'NON-PRO'}
+                    </Text>
                   </View>
                 </View>
                 <Text style={[styles.heroEmail, { color: colors.mutedForeground }]} numberOfLines={1}>
@@ -455,111 +547,199 @@ export default function SettingsScreen() {
                 <TouchableOpacity
                   activeOpacity={0.8}
                   onPress={() => setShowEditProfileModal(true)}
-                  style={styles.topEditProfileBtn}
+                  style={[
+                    styles.topEditProfileBtn,
+                    {
+                      backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                      borderColor: isDark ? '#FFFFFF' : '#000000',
+                      borderWidth: 1,
+                    },
+                  ]}
                   accessibilityLabel="Edit Profile"
                 >
-                  <Feather name="edit-2" size={11} color="#FFFFFF" />
-                  <Text style={styles.topEditProfileText}>Edit</Text>
+                  <Icon name="edit-2" size={11} color={isDark ? '#000000' : '#FFFFFF'} strokeWidth={2} />
+                  <Text style={[styles.topEditProfileText, { color: isDark ? '#000000' : '#FFFFFF' }]}>Edit</Text>
                 </TouchableOpacity>
               </View>
             </View>
 
-            {/* Compact KPI Cards (White Background) */}
-            <View style={[styles.compactKpiGrid, { borderTopColor: colors.border }]}>
-              {/* Bids */}
-              <View
-                style={[
-                  styles.compactKpiTile,
-                  {
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#FFFFFF',
-                    borderColor: isDark ? 'rgba(255, 255, 255, 0.09)' : '#E2E8F0',
-                  },
-                ]}
-              >
-                <View style={[styles.compactKpiIconWrap, { backgroundColor: settingIconBg }]}>
-                  <Feather name="layers" size={12.5} color={settingIconColor} />
+            {/* Compact KPI Cards (Pro mode only) */}
+            {!isNonPro && (
+              <View style={[styles.compactKpiGrid, { borderTopColor: colors.border }]}>
+                {/* Bids */}
+                <View
+                  style={[
+                    styles.compactKpiTile,
+                    {
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <View style={[styles.compactKpiIconWrap, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#EEF2F6' }]}>
+                    <Icon name="layers" size={12.5} color={colors.foreground} strokeWidth={1.8} />
+                  </View>
+                  <View style={styles.compactKpiTextWrap}>
+                    <Text style={[styles.compactKpiValue, { color: colors.foreground }]}>{applications.length}</Text>
+                    <Text style={[styles.compactKpiLabel, { color: colors.mutedForeground }]}>BIDS</Text>
+                  </View>
                 </View>
-                <View style={styles.compactKpiTextWrap}>
-                  <Text style={[styles.compactKpiValue, { color: colors.foreground }]}>{applications.length}</Text>
-                  <Text style={[styles.compactKpiLabel, { color: colors.mutedForeground }]}>BIDS</Text>
-                </View>
-              </View>
 
-              {/* Profiles */}
-              <View
-                style={[
-                  styles.compactKpiTile,
-                  {
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#FFFFFF',
-                    borderColor: isDark ? 'rgba(255, 255, 255, 0.09)' : '#E2E8F0',
-                  },
-                ]}
-              >
-                <View style={[styles.compactKpiIconWrap, { backgroundColor: settingIconBg }]}>
-                  <Feather name="users" size={12.5} color={settingIconColor} />
+                {/* Profiles */}
+                <View
+                  style={[
+                    styles.compactKpiTile,
+                    {
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <View style={[styles.compactKpiIconWrap, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#EEF2F6' }]}>
+                    <Icon name="users" size={12.5} color={colors.foreground} strokeWidth={1.8} />
+                  </View>
+                  <View style={styles.compactKpiTextWrap}>
+                    <Text style={[styles.compactKpiValue, { color: colors.foreground }]}>{users.length}</Text>
+                    <Text style={[styles.compactKpiLabel, { color: colors.mutedForeground }]}>PROFILES</Text>
+                  </View>
                 </View>
-                <View style={styles.compactKpiTextWrap}>
-                  <Text style={[styles.compactKpiValue, { color: colors.foreground }]}>{users.length}</Text>
-                  <Text style={[styles.compactKpiLabel, { color: colors.mutedForeground }]}>PROFILES</Text>
-                </View>
-              </View>
 
-              {/* Banks */}
-              <View
-                style={[
-                  styles.compactKpiTile,
-                  {
-                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : '#FFFFFF',
-                    borderColor: isDark ? 'rgba(255, 255, 255, 0.09)' : '#E2E8F0',
-                  },
-                ]}
-              >
-                <View style={[styles.compactKpiIconWrap, { backgroundColor: settingIconBg }]}>
-                  <Feather name="credit-card" size={12.5} color={settingIconColor} />
-                </View>
-                <View style={styles.compactKpiTextWrap}>
-                  <Text style={[styles.compactKpiValue, { color: colors.foreground }]}>{bankAccounts.length}</Text>
-                  <Text style={[styles.compactKpiLabel, { color: colors.mutedForeground }]}>BANKS</Text>
+                {/* Banks */}
+                <View
+                  style={[
+                    styles.compactKpiTile,
+                    {
+                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#F8FAFC',
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <View style={[styles.compactKpiIconWrap, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#EEF2F6' }]}>
+                    <Icon name="credit-card" size={12.5} color={colors.foreground} strokeWidth={1.8} />
+                  </View>
+                  <View style={styles.compactKpiTextWrap}>
+                    <Text style={[styles.compactKpiValue, { color: colors.foreground }]}>{bankAccounts.length}</Text>
+                    <Text style={[styles.compactKpiLabel, { color: colors.mutedForeground }]}>BANKS</Text>
+                  </View>
                 </View>
               </View>
-            </View>
+            )}
           </View>
         </AnimatedEntrance>
 
-        {/* ── MEMBERSHIP & MONETIZATION ── */}
-        <AnimatedEntrance delay={100} distance={12}>
-          <View style={styles.sectionWrap}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>MEMBERSHIP & AD-FREE</Text>
-            </View>
-            <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <SettingRow
-                icon="zap"
-                iconColor={settingIconColor}
-                iconBg={settingIconBg}
-                title="Ad-Free Premium"
-                subtitle={isPremium ? 'Active (All advertisements suppressed)' : 'Enjoy IPOVault without advertisements'}
-                badge={{
-                  text: isPremium ? 'Active' : 'Free Tier',
-                  color: isPremium ? '#10B981' : '#8B5CF6',
-                  bg: isPremium
-                    ? (isDark ? 'rgba(16, 185, 129, 0.15)' : '#D1FAE5')
-                    : (isDark ? 'rgba(139, 92, 246, 0.15)' : '#F5F3FF'),
-                }}
-                isLast
-                onPress={() => setShowPremiumSheet(true)}
-              />
-            </View>
-          </View>
-        </AnimatedEntrance>
+        {/* ── MEMBERSHIP (AUTHENTICATED ONLY) ── */}
+        {showProCard && (
+          <AnimatedEntrance delay={90} distance={12}>
+            <View style={styles.sectionWrap}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>MEMBERSHIP</Text>
+              </View>
 
-        {/* ── PREFERENCES & ALERTS ── */}
+              <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <SettingRow
+                  icon="award"
+                  iconColor={settingIconColor}
+                  iconBg={settingIconBg}
+                  title="IPOVault Pro"
+                  subtitle={proCardSubtitle}
+                  isLast
+                  onPress={() => navigateTo('/pro-details')}
+                />
+              </View>
+            </View>
+          </AnimatedEntrance>
+        )}
+
+        {/* ── PREFERENCES & APPEARANCE ── */}
         <AnimatedEntrance delay={110} distance={12}>
           <View style={styles.sectionWrap}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>PREFERENCES & ALERTS</Text>
+              <Text style={[styles.sectionHeading, { color: colors.mutedForeground }]}>PREFERENCES & APPEARANCE</Text>
             </View>
             <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {/* Appearance Mode Switcher */}
+              <View style={[styles.appearanceContainer, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
+                <View style={styles.appearanceHeaderRow}>
+                  <View style={[styles.navItemIconWrap, { backgroundColor: settingIconBg }]}>
+                    <Feather
+                      name={resolvedScheme === 'dark' ? 'moon' : 'sun'}
+                      size={17}
+                      color={settingIconColor}
+                    />
+                  </View>
+                  <View style={styles.navItemTextWrap}>
+                    <Text style={[styles.navItemTitle, { color: colors.foreground }]}>Appearance</Text>
+                    <Text style={[styles.navItemSubtitle, { color: colors.mutedForeground }]}>
+                      {preference === 'system'
+                        ? `System Default (${resolvedScheme === 'dark' ? 'Dark' : 'Light'})`
+                        : preference === 'dark'
+                        ? 'Obsidian Dark'
+                        : 'Pure Light'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Segmented Control matching reference screenshots */}
+                <View style={[styles.segmentedControl, { backgroundColor: isDark ? '#0C0E14' : '#F1F3F5', borderColor: colors.border }]}>
+                  {(
+                    [
+                      { key: 'light', label: 'Light', icon: 'sun' },
+                      { key: 'dark', label: 'Dark', icon: 'moon' },
+                      { key: 'system', label: 'System', icon: 'smartphone' },
+                    ] as const
+                  ).map((opt) => {
+                    const isSelected = preference === opt.key;
+                    return (
+                      <TouchableOpacity
+                        key={opt.key}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          if (preference !== opt.key) {
+                            try {
+                              Haptics.selectionAsync();
+                            } catch {}
+                            setPreference(opt.key);
+                          }
+                        }}
+                        style={[
+                          styles.segmentButton,
+                          isSelected && [
+                            styles.segmentButtonActive,
+                            {
+                              backgroundColor: colors.pillActiveBg,
+                              shadowColor: '#000',
+                              shadowOffset: { width: 0, height: 2 },
+                              shadowOpacity: isDark ? 0.35 : 0.08,
+                              shadowRadius: 4,
+                              elevation: 2,
+                            },
+                          ],
+                        ]}
+                      >
+                        <Feather
+                          name={opt.icon as any}
+                          size={14}
+                          color={isSelected ? colors.pillActiveText : colors.mutedForeground}
+                          style={{ marginRight: 6 }}
+                        />
+                        <Text
+                          style={[
+                            styles.segmentButtonText,
+                            {
+                              color: isSelected ? colors.pillActiveText : colors.mutedForeground,
+                              fontFamily: isSelected ? 'GoogleSansFlex_600SemiBold' : 'GoogleSansFlex_500Medium',
+                            },
+                          ]}
+                        >
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Notifications & Alerts */}
               <SettingRow
                 icon="bell"
                 iconColor={settingIconColor}
@@ -588,9 +768,9 @@ export default function SettingsScreen() {
                 subtitle="Local SQLite and encrypted Firestore sync"
                 badge={{
                   text: 'Encrypted',
-                  color: '#06B6D4',
-                  bg: isDark ? 'rgba(6, 182, 212, 0.18)' : '#E0F7FA',
-                  dotColor: '#06B6D4',
+                  color: '#FFFFFF',
+                  bg: '#06B6D4',
+                  dotColor: '#FFFFFF',
                 }}
                 isLast
                 onPress={() => navigateTo('/settings-data-backup')}
@@ -630,8 +810,8 @@ export default function SettingsScreen() {
                 subtitle="Recent performance & feature upgrades"
                 badge={{
                   text: 'New',
-                  color: '#EC4899',
-                  bg: isDark ? 'rgba(236, 72, 153, 0.18)' : '#FCE7F3',
+                  color: '#FFFFFF',
+                  bg: '#EC4899',
                 }}
                 isLast
                 onPress={() => setShowWhatsNewSheet(true)}
@@ -689,7 +869,7 @@ export default function SettingsScreen() {
           </View>
         </AnimatedEntrance>
 
-        {/* ── BOTTOM LOG OUT BUTTON ── */}
+        {/* ── BOTTOM ACTIONS ── */}
         <AnimatedEntrance delay={290} distance={12}>
           <View style={styles.logoutSectionWrap}>
             <TouchableOpacity
@@ -698,7 +878,7 @@ export default function SettingsScreen() {
               disabled={busy}
               style={styles.bottomLogoutBtn}
             >
-              <Feather name="log-out" size={16} color="#FFFFFF" />
+              <Icon name="log-out" size={16} color="#FFFFFF" strokeWidth={2} />
               <Text style={styles.bottomLogoutText}>Log Out</Text>
             </TouchableOpacity>
           </View>
@@ -713,9 +893,6 @@ export default function SettingsScreen() {
       >
         <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
           <View style={styles.sheetHeaderTitleGroup}>
-            <View style={[styles.sheetIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="user" size={19} color={settingIconColor} />
-            </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Edit Profile</Text>
               <Text style={[styles.sheetSubtitle, { color: colors.mutedForeground }]}>
@@ -726,7 +903,7 @@ export default function SettingsScreen() {
         </View>
 
         <ScrollView
-          style={{ flex: 1 }}
+          style={{ flexShrink: 1, flexGrow: 0 }}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.editProfileSheetContent}
           keyboardShouldPersistTaps="handled"
@@ -753,7 +930,7 @@ export default function SettingsScreen() {
                   },
                 ]}
               >
-                {avatarUri ? (
+                {avatarUri && isCustomAvatarUrl(avatarUri) ? (
                   <Image source={{ uri: avatarUri }} style={styles.editAvatarLargeImage} resizeMode="cover" />
                 ) : (
                   <Text style={[styles.editAvatarLargeInitial, { color: colors.primary }]}>{initial}</Text>
@@ -774,7 +951,7 @@ export default function SettingsScreen() {
                   },
                 ]}
               >
-                <Feather name="upload" size={12} color={colors.foreground} />
+                <Icon name="upload" size={12} color={colors.foreground} strokeWidth={2} />
                 <Text style={[styles.editPillBtnText, { color: colors.foreground }]}>
                   {avatarUri ? 'Change Photo' : 'Upload Photo'}
                 </Text>
@@ -796,7 +973,7 @@ export default function SettingsScreen() {
                     },
                   ]}
                 >
-                  <Feather name="trash-2" size={12} color="#EF4444" />
+                  <Icon name="trash-2" size={12} color="#EF4444" strokeWidth={2} />
                   <Text style={[styles.editPillBtnText, { color: '#EF4444' }]}>Remove</Text>
                 </TouchableOpacity>
               ) : null}
@@ -812,7 +989,7 @@ export default function SettingsScreen() {
                 },
               ]}
             >
-              <Feather name="shield" size={11} color="#10B981" />
+              <Icon name="shield" size={11} color="#10B981" strokeWidth={2} />
               <Text style={[styles.editEmailBadgeText, { color: colors.mutedForeground }]} numberOfLines={1}>
                 {emailStr}
               </Text>
@@ -838,7 +1015,7 @@ export default function SettingsScreen() {
                     { backgroundColor: settingIconBg },
                   ]}
                 >
-                  <Feather name="user" size={14} color={settingIconColor} />
+                  <Icon name="user" size={14} color={settingIconColor} strokeWidth={1.8} />
                 </View>
                 <TextInput
                   style={[styles.editTextInput, { color: colors.foreground }]}
@@ -857,7 +1034,7 @@ export default function SettingsScreen() {
                     hitSlop={8}
                     style={{ padding: 4 }}
                   >
-                    <Feather name="x-circle" size={15} color={colors.mutedForeground} />
+                    <Icon name="x-circle" size={15} color={colors.mutedForeground} strokeWidth={1.8} />
                   </TouchableOpacity>
                 ) : null}
               </View>
@@ -885,7 +1062,7 @@ export default function SettingsScreen() {
                     { backgroundColor: settingIconBg },
                   ]}
                 >
-                  <Feather name="lock" size={17} color={settingIconColor} />
+                  <Icon name="lock" size={17} color={settingIconColor} strokeWidth={1.8} />
                 </View>
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={[styles.changePasswordTitle, { color: colors.foreground }]}>Change Password</Text>
@@ -896,15 +1073,61 @@ export default function SettingsScreen() {
                 <View
                   style={[
                     styles.changePasswordActionBadge,
-                    { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.12)' : '#FEF3C7' },
+                    { backgroundColor: '#F59E0B' },
                   ]}
                 >
-                  <Text style={styles.changePasswordActionText}>Reset</Text>
-                  <Feather name="arrow-right" size={11} color="#F59E0B" />
+                  <Text style={[styles.changePasswordActionText, { color: '#FFFFFF' }]}>Reset</Text>
                 </View>
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* 4. Danger Zone (Delete Account) */}
+          {!!authUser && (
+            <View style={styles.editSectionGroup}>
+              <Text style={[styles.editSectionTitle, { color: '#EF4444' }]}>DANGER ZONE</Text>
+              <View
+                style={[
+                  styles.editInputCard,
+                  {
+                    backgroundColor: isDark ? 'rgba(239, 68, 68, 0.06)' : '#FEF2F2',
+                    borderColor: isDark ? 'rgba(239, 68, 68, 0.25)' : '#FEE2E2',
+                  },
+                ]}
+              >
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={handleDeleteAccount}
+                  disabled={busy}
+                  style={styles.changePasswordRow}
+                  accessibilityLabel="Delete Account"
+                >
+                  <View
+                    style={[
+                      styles.changePasswordIconWrap,
+                      { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.18)' : '#FEE2E2' },
+                    ]}
+                  >
+                    <Icon name="trash-2" size={17} color="#EF4444" strokeWidth={1.8} />
+                  </View>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={[styles.changePasswordTitle, { color: '#EF4444' }]}>Delete Account</Text>
+                    <Text style={[styles.changePasswordSub, { color: colors.mutedForeground }]} numberOfLines={2}>
+                      Permanently delete account, cloud sync, and all records
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.changePasswordActionBadge,
+                      { backgroundColor: '#EF4444' },
+                    ]}
+                  >
+                    <Text style={[styles.changePasswordActionText, { color: '#FFFFFF' }]}>Delete</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </ScrollView>
 
         {/* Footer CTA */}
@@ -939,9 +1162,6 @@ export default function SettingsScreen() {
       >
         <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
           <View style={styles.sheetHeaderTitleGroup}>
-            <View style={[styles.sheetIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="bell" size={18} color={settingIconColor} />
-            </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Notification Preferences</Text>
               <Text style={[styles.sheetSubtitle, { color: colors.mutedForeground }]}>
@@ -956,7 +1176,7 @@ export default function SettingsScreen() {
             {/* IPO Updates */}
             <View style={[styles.sheetRow, { borderBottomColor: colors.border }]}>
               <View style={[styles.sheetRowIcon, { backgroundColor: settingIconBg }]}>
-                <Feather name="bar-chart-2" size={16} color={settingIconColor} />
+                <Icon name="bar-chart-2" size={16} color={settingIconColor} strokeWidth={1.8} />
               </View>
               <View style={styles.sheetRowText}>
                 <Text style={[styles.sheetRowTitle, { color: colors.foreground }]}>IPO Updates</Text>
@@ -974,7 +1194,7 @@ export default function SettingsScreen() {
             {/* Allotment Results */}
             <View style={[styles.sheetRow, { borderBottomColor: colors.border }]}>
               <View style={[styles.sheetRowIcon, { backgroundColor: settingIconBg }]}>
-                <Feather name="award" size={16} color={settingIconColor} />
+                <Icon name="award" size={16} color={settingIconColor} strokeWidth={1.8} />
               </View>
               <View style={styles.sheetRowText}>
                 <Text style={[styles.sheetRowTitle, { color: colors.foreground }]}>Allotment Results</Text>
@@ -992,7 +1212,7 @@ export default function SettingsScreen() {
             {/* Price Alerts */}
             <View style={[styles.sheetRow, { borderBottomColor: colors.border }]}>
               <View style={[styles.sheetRowIcon, { backgroundColor: settingIconBg }]}>
-                <Feather name="trending-up" size={16} color={settingIconColor} />
+                <Icon name="trending-up" size={16} color={settingIconColor} strokeWidth={1.8} />
               </View>
               <View style={styles.sheetRowText}>
                 <Text style={[styles.sheetRowTitle, { color: colors.foreground }]}>Price Alerts</Text>
@@ -1010,7 +1230,7 @@ export default function SettingsScreen() {
             {/* App Updates */}
             <View style={[styles.sheetRow, { borderBottomColor: colors.border }]}>
               <View style={[styles.sheetRowIcon, { backgroundColor: settingIconBg }]}>
-                <Feather name="bell" size={16} color={settingIconColor} />
+                <Icon name="bell" size={16} color={settingIconColor} strokeWidth={1.8} />
               </View>
               <View style={styles.sheetRowText}>
                 <Text style={[styles.sheetRowTitle, { color: colors.foreground }]}>App Updates</Text>
@@ -1028,7 +1248,7 @@ export default function SettingsScreen() {
             {/* Notification Sound */}
             <View style={[styles.sheetRow, { borderBottomWidth: 0 }]}>
               <View style={[styles.sheetRowIcon, { backgroundColor: settingIconBg }]}>
-                <Feather name="volume-2" size={16} color={settingIconColor} />
+                <Icon name="volume-2" size={16} color={settingIconColor} strokeWidth={1.8} />
               </View>
               <View style={styles.sheetRowText}>
                 <Text style={[styles.sheetRowTitle, { color: colors.foreground }]}>Notification Sound</Text>
@@ -1069,11 +1289,8 @@ export default function SettingsScreen() {
       >
         <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
           <View style={styles.sheetHeaderTitleGroup}>
-            <View style={[styles.sheetIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="zap" size={18} color={settingIconColor} />
-            </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.sheetTitle, { color: colors.foreground }]}>What's New in v2.3.0</Text>
+              <Text style={[styles.sheetTitle, { color: colors.foreground }]}>{"What's New in v2.3.0"}</Text>
               <Text style={[styles.sheetSubtitle, { color: colors.mutedForeground }]}>
                 Performance upgrades & sleek new interface
               </Text>
@@ -1085,7 +1302,7 @@ export default function SettingsScreen() {
           <View style={{ gap: 12 }}>
             <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={[styles.featureIconBadge, { backgroundColor: settingIconBg }]}>
-                <Feather name="layout" size={18} color={settingIconColor} />
+                <Icon name="layout" size={18} color={settingIconColor} strokeWidth={1.8} />
               </View>
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={[styles.featureTitle, { color: colors.foreground }]}>Bespoke Bottom Sheets</Text>
@@ -1097,19 +1314,19 @@ export default function SettingsScreen() {
 
             <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={[styles.featureIconBadge, { backgroundColor: settingIconBg }]}>
-                <Feather name="credit-card" size={18} color={settingIconColor} />
+                <Icon name="credit-card" size={18} color={settingIconColor} strokeWidth={1.8} />
               </View>
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={[styles.featureTitle, { color: colors.foreground }]}>Default UPI App Auto-Binding</Text>
                 <Text style={[styles.featureDesc, { color: colors.mutedForeground }]}>
-                  Bind default payment apps directly to your bank accounts for one-tap automated bulk IPO bidding.
+                  Bind default payment apps directly to your bank accounts for fast reference during application recording.
                 </Text>
               </View>
             </View>
 
             <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={[styles.featureIconBadge, { backgroundColor: settingIconBg }]}>
-                <Feather name="trending-up" size={18} color={settingIconColor} />
+                <Icon name="trending-up" size={18} color={settingIconColor} strokeWidth={1.8} />
               </View>
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={[styles.featureTitle, { color: colors.foreground }]}>Live Broker LTP Sync</Text>
@@ -1140,9 +1357,6 @@ export default function SettingsScreen() {
       >
         <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
           <View style={styles.sheetHeaderTitleGroup}>
-            <View style={[styles.sheetIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="shield" size={18} color={settingIconColor} />
-            </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Privacy Policy</Text>
               <Text style={[styles.sheetSubtitle, { color: colors.mutedForeground }]}>
@@ -1196,9 +1410,6 @@ export default function SettingsScreen() {
       >
         <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
           <View style={styles.sheetHeaderTitleGroup}>
-            <View style={[styles.sheetIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="file-text" size={18} color={settingIconColor} />
-            </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Terms of Service</Text>
               <Text style={[styles.sheetSubtitle, { color: colors.mutedForeground }]}>
@@ -1252,9 +1463,6 @@ export default function SettingsScreen() {
       >
         <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
           <View style={styles.sheetHeaderTitleGroup}>
-            <View style={[styles.sheetIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="code" size={18} color={settingIconColor} />
-            </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Open Source Software</Text>
               <Text style={[styles.sheetSubtitle, { color: colors.mutedForeground }]}>
@@ -1285,101 +1493,9 @@ export default function SettingsScreen() {
         </View>
       </ScoopedBottomSheet>
 
-      {/* ── AD-FREE PREMIUM & MONETIZATION SHEET ── */}
-      <ScoopedBottomSheet
-        visible={showPremiumSheet}
-        onClose={() => setShowPremiumSheet(false)}
-        maxHeight="86%"
-      >
-        <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
-          <View style={styles.sheetHeaderTitleGroup}>
-            <View style={[styles.sheetIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="zap" size={18} color={settingIconColor} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.sheetTitle, { color: colors.foreground }]}>IPOVault Ad-Free</Text>
-              <Text style={[styles.sheetSubtitle, { color: colors.mutedForeground }]}>
-                {isPremium ? 'Active Subscription (Ad-Free Mode)' : 'Uninterrupted IPO tracking experience'}
-              </Text>
-            </View>
-          </View>
-        </View>
 
-        <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false}>
-          <View style={{ gap: 14 }}>
-            {/* Feature Highlights */}
-            <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={[styles.featureIconBadge, { backgroundColor: settingIconBg }]}>
-                <Feather name="shield" size={18} color={settingIconColor} />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[styles.featureTitle, { color: colors.foreground }]}>Zero Advertisements</Text>
-                <Text style={[styles.featureDesc, { color: colors.mutedForeground }]}>
-                  All banner ads and sponsored native cards are suppressed throughout IPO Hub and IPO browsing lists.
-                </Text>
-              </View>
-            </View>
 
-            <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={[styles.featureIconBadge, { backgroundColor: settingIconBg }]}>
-                <Feather name="cpu" size={18} color={settingIconColor} />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[styles.featureTitle, { color: colors.foreground }]}>Preserved Offline Performance</Text>
-                <Text style={[styles.featureDesc, { color: colors.mutedForeground }]}>
-                  Offline SQLite operations, Firestore sync, and broker LTP monitoring run cleanly without ad request latency.
-                </Text>
-              </View>
-            </View>
 
-            {/* Development Mock Entitlement Toggle */}
-            <View style={[styles.featureCard, { backgroundColor: colors.card, borderColor: '#8B5CF6' }]}>
-              <View style={[styles.featureIconBadge, { backgroundColor: settingIconBg }]}>
-                <Feather name="toggle-right" size={18} color={settingIconColor} />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[styles.featureTitle, { color: colors.foreground }]}>Development Mock State</Text>
-                <Text style={[styles.featureDesc, { color: colors.mutedForeground }]}>
-                  Toggle ad-free suppression on/off for instant UI validation. No fake purchases are processed.
-                </Text>
-              </View>
-              <IOSToggle
-                value={isPremium}
-                onValueChange={async () => {
-                  try {
-                    Haptics.selectionAsync();
-                  } catch {}
-                  await toggleDevMockPremium();
-                }}
-                activeColor="#10B981"
-              />
-            </View>
-
-            {/* Future Google Play Billing Architecture Notice */}
-            <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={[styles.featureIconBadge, { backgroundColor: settingIconBg }]}>
-                <Feather name="shopping-bag" size={18} color={settingIconColor} />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[styles.featureTitle, { color: colors.foreground }]}>Google Play Billing (Upcoming)</Text>
-                <Text style={[styles.featureDesc, { color: colors.mutedForeground }]}>
-                  Official in-app purchases and auto-renewing subscriptions will be wired up via Google Play Developer API in a future release.
-                </Text>
-              </View>
-            </View>
-          </View>
-        </ScrollView>
-
-        <View style={[styles.sheetFooter, { borderTopColor: colors.border }]}>
-          <TouchableOpacity
-            style={[styles.solidCTA, { backgroundColor: colors.primary }]}
-            activeOpacity={0.85}
-            onPress={() => setShowPremiumSheet(false)}
-          >
-            <Text style={[styles.solidCTAText, { color: colors.primaryForeground }]}>Done</Text>
-          </TouchableOpacity>
-        </View>
-      </ScoopedBottomSheet>
     </View>
   );
 }
@@ -1485,9 +1601,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 7,
-    paddingVertical: 2.5,
-    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
   },
   statusDotGreen: {
     width: 5,
@@ -1496,7 +1612,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#10B981',
   },
   statusBadgeText: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontFamily: 'GoogleSansFlex_700Bold',
     color: '#10B981',
     letterSpacing: 0.5,
@@ -1519,12 +1635,10 @@ const styles = StyleSheet.create({
     height: 28,
     paddingHorizontal: 13,
     borderRadius: 9999,
-    backgroundColor: '#000000',
   },
   topEditProfileText: {
     fontSize: 12,
     fontFamily: 'GoogleSansFlex_700Bold',
-    color: '#FFFFFF',
     letterSpacing: -0.1,
   },
 
@@ -1701,12 +1815,12 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 10,
+    borderRadius: 5,
   },
   changePasswordActionText: {
     fontSize: 11.5,
     fontFamily: 'GoogleSansFlex_700Bold',
-    color: '#F59E0B',
+    color: '#FFFFFF',
   },
 
   // ── Compact KPI Grid ──
@@ -1810,9 +1924,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
   },
   badgeDot: {
     width: 5,
@@ -1820,13 +1934,43 @@ const styles = StyleSheet.create({
     borderRadius: 2.5,
   },
   badgeText: {
-    fontSize: 10.5,
+    fontSize: 9.5,
     fontFamily: 'GoogleSansFlex_700Bold',
     letterSpacing: 0.3,
   },
   chevronWrap: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  appearanceContainer: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  appearanceHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 13,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 3,
+    gap: 4,
+  },
+  segmentButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8.5,
+    borderRadius: 11,
+  },
+  segmentButtonActive: {},
+  segmentButtonText: {
+    fontSize: 13,
+    letterSpacing: -0.1,
   },
 
   // ── Sheet Components ──
@@ -1863,7 +2007,8 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   sheetScroll: {
-    flex: 1,
+    flexShrink: 1,
+    flexGrow: 0,
     paddingHorizontal: 20,
     paddingTop: 16,
   },
@@ -1959,4 +2104,33 @@ const styles = StyleSheet.create({
     fontFamily: 'GoogleSansFlex_400Regular',
     lineHeight: 18,
   },
+  experienceOptionCard: {
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 14,
+  },
+  experienceCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  experienceCardTitle: {
+    fontSize: 14.5,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
+  experienceCardDesc: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_400Regular',
+    marginTop: 3,
+    lineHeight: 17,
+  },
+  activeCheckCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+
 });

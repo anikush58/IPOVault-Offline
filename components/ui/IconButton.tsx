@@ -5,17 +5,16 @@ import {
   ViewStyle,
   PressableStateCallbackType,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon, IconName } from '@/components/ui/Icon';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
-import { useTheme } from '@/context/ThemeContext';
 import { DesignSystem } from '@/constants/DesignSystem';
 
 export type IconButtonVariant = 'surface' | 'primary' | 'ghost' | 'destructive';
 export type IconButtonSize = 'lg' | 'md' | 'sm';
 
 export interface IconButtonProps {
-  name: keyof typeof Feather.glyphMap;
+  name: IconName | (string & {});
   variant?: IconButtonVariant;
   size?: IconButtonSize;
   iconSize?: number;
@@ -44,8 +43,6 @@ export function IconButton({
   testID,
 }: IconButtonProps) {
   const colors = useColors();
-  const { resolvedScheme } = useTheme();
-  const isDark = resolvedScheme === 'dark';
 
   const handlePress = () => {
     if (disabled) return;
@@ -121,7 +118,7 @@ export function IconButton({
         typeof style === 'function' ? style(state) : style,
       ]}
     >
-      <Feather name={name} size={specs.iconSize} color={specs.iconColor} />
+      <Icon name={name as any} size={specs.iconSize} color={specs.iconColor} strokeWidth={2} />
     </Pressable>
   );
 }

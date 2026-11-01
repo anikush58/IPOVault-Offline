@@ -13,7 +13,7 @@ import {
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { firestore } from '../auth/firebaseConfig';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
-import { safeRunAsync, runWithTransaction } from '@/utils/sqliteDebug';
+import { safeRunAsync, safeGetFirstAsync, runWithTransaction, isClosedResourceError, markDatabaseOpen } from '@/utils/sqliteDebug';
 import { saveBase64ToLocalImage } from '@/utils/imageUtils';
 import { concurrencyTelemetry } from '@/utils/concurrencyTelemetry';
 
@@ -553,7 +553,7 @@ export async function syncUserDataToFirestore(
       addBatchOp(() =>
         batches[currentBatchIndex].set(
           dRef,
-          { ...b, owner_id: uid, updated_at: nowIso, deleted_at: null },
+          { ...b, upi_app: b.upi_app || '', owner_id: uid, updated_at: nowIso, deleted_at: null },
           { merge: true }
         )
       );
@@ -991,7 +991,7 @@ export async function applyCriticalDeltaToSQLite(
 
       // 3. Applications
       for (const app of delta.applications || []) {
-        if (!app?.id) continue;
+        if (!app?.id || !app.user_id || !app.ipo_id) continue;
         if (app.deleted_at) {
           await safeRunAsync(
             db,
@@ -1000,15 +1000,83 @@ export async function applyCriticalDeltaToSQLite(
             'applyCriticalDelta.deleteApp'
           );
         } else {
-          const local = await db.getFirstAsync<{ updated_at: string; sync_status: string }>(
-            'SELECT updated_at, sync_status FROM ipo_applications WHERE id = ?',
+          // Verify or auto-create parent user to guarantee foreign key constraint
+          let userExists = false;
+          try {
+            const uCheck = await safeGetFirstAsync<{ id: string }>(
+              db,
+              'SELECT id FROM users_table WHERE id = ?',
+              [app.user_id],
+              'applyCriticalDelta.checkUser'
+            );
+            if (uCheck) {
+              userExists = true;
+            } else {
+              const fallbackName = (app as any).user_name || 'Applicant';
+              await safeRunAsync(
+                db,
+                'INSERT OR IGNORE INTO users_table (id, name, pan_number, owner_id, created_at, updated_at) VALUES (?, ?, "", ?, ?, ?)',
+                [app.user_id, fallbackName, uid, nowIso, nowIso],
+                'applyCriticalDelta.autoCreateUser'
+              );
+              userExists = true;
+            }
+          } catch (uErr) {
+            if (isDev) console.warn('[applyCriticalDeltaToSQLite] uCheck failed:', uErr);
+            userExists = false;
+          }
+
+          // Verify or auto-create parent listing in ipo_listings to guarantee foreign key constraint
+          let listingExists = false;
+          try {
+            const lCheck = await safeGetFirstAsync<{ id: string }>(
+              db,
+              'SELECT id FROM ipo_listings WHERE id = ?',
+              [app.ipo_id],
+              'applyCriticalDelta.checkListing'
+            );
+            if (lCheck) {
+              listingExists = true;
+            } else {
+              const mRow = await safeGetFirstAsync<{ id: string; ipo_name: string; company_name: string }>(
+                db,
+                'SELECT id, ipo_name, company_name FROM ipo_master WHERE id = ?',
+                [app.ipo_id],
+                'applyCriticalDelta.checkMaster'
+              );
+              const resolvedName = mRow?.ipo_name || mRow?.company_name || (app as any).ipo_name || 'IPO';
+              await safeRunAsync(
+                db,
+                'INSERT OR IGNORE INTO ipo_listings (id, ipo_name, company_name, buy_price, quantity, owner_id, created_at, updated_at) VALUES (?, ?, ?, 100, 1, ?, ?, ?)',
+                [app.ipo_id, resolvedName, resolvedName, uid, nowIso, nowIso],
+                'applyCriticalDelta.autoCreateShadowListing'
+              );
+              listingExists = true;
+            }
+          } catch {
+            listingExists = false;
+          }
+
+          if (!userExists || !listingExists) {
+            if (isDev) {
+              console.warn(`[applyCriticalDeltaToSQLite] Skipping app ${app.id}: parent user (${app.user_id}) or listing (${app.ipo_id}) missing.`);
+            }
+            continue;
+          }
+
+          const local = await db.getFirstAsync<{ updated_at: string; sync_status: string; deleted_at?: string | null }>(
+            'SELECT updated_at, sync_status, deleted_at FROM ipo_applications WHERE id = ?',
             [app.id]
           );
           if (local) {
             const localTs = local.updated_at ? new Date(local.updated_at).getTime() : 0;
             const cloudTs = app.updated_at ? new Date(app.updated_at).getTime() : 0;
             const isLocalPending = local.sync_status === 'PENDING';
-            if (
+            // If local was marked deleted but cloud record is active and not pending local deletion,
+            // resurrect and apply cloud state!
+            if (!isLocalPending && local.deleted_at && !app.deleted_at) {
+              // Proceed to restore active cloud application
+            } else if (
               (localTs > 0 && cloudTs > 0 && localTs > cloudTs) ||
               (isLocalPending && (cloudTs === 0 || localTs >= cloudTs))
             ) {
@@ -1018,12 +1086,13 @@ export async function applyCriticalDeltaToSQLite(
           await safeRunAsync(
             db,
             `INSERT INTO ipo_applications (
-              id, user_id, ipo_id, status, shares_count, sell_price, sale_date, tax,
-              user_cut, is_favorite, bank_name, upi_app, broker_account_id, owner_id, created_at, updated_at, deleted_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)
+              id, user_id, ipo_id, category, status, shares_count, sell_price, sale_date, tax,
+              user_cut, is_favorite, bank_name, upi_app, broker_account_id, sync_status, last_synced_at, owner_id, created_at, updated_at, deleted_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'SYNCED',?,?,?,?,NULL)
             ON CONFLICT(id) DO UPDATE SET
               user_id=excluded.user_id,
               ipo_id=excluded.ipo_id,
+              category=COALESCE(excluded.category, ipo_applications.category, 'RETAIL'),
               status=excluded.status,
               shares_count=excluded.shares_count,
               sell_price=excluded.sell_price,
@@ -1034,6 +1103,8 @@ export async function applyCriticalDeltaToSQLite(
               bank_name=excluded.bank_name,
               upi_app=excluded.upi_app,
               broker_account_id=COALESCE(excluded.broker_account_id, ipo_applications.broker_account_id),
+              sync_status='SYNCED',
+              last_synced_at=excluded.last_synced_at,
               owner_id=excluded.owner_id,
               updated_at=excluded.updated_at,
               deleted_at=NULL`,
@@ -1041,6 +1112,7 @@ export async function applyCriticalDeltaToSQLite(
               app.id,
               app.user_id,
               app.ipo_id,
+              app.category || 'RETAIL',
               app.status || 'Applied',
               app.shares_count ?? app.quantity ?? null,
               app.sell_price ?? null,
@@ -1051,6 +1123,7 @@ export async function applyCriticalDeltaToSQLite(
               app.bank_name || '',
               app.upi_app || '',
               app.broker_account_id || app.brokerAccountId || null,
+              nowIso,
               uid,
               app.created_at || nowIso,
               app.updated_at || nowIso,
@@ -1130,7 +1203,10 @@ export async function applySecondaryDeltaToSQLite(
             ON CONFLICT(id) DO UPDATE SET
               bank_name=excluded.bank_name,
               balance=excluded.balance,
-              upi_app=excluded.upi_app,
+              upi_app=CASE
+                WHEN excluded.upi_app IS NOT NULL AND TRIM(excluded.upi_app) != '' THEN excluded.upi_app
+                ELSE bank_accounts.upi_app
+              END,
               owner_id=excluded.owner_id,
               updated_at=excluded.updated_at,
               deleted_at=NULL`,
@@ -1151,7 +1227,7 @@ export async function applySecondaryDeltaToSQLite(
 
       // 2. Allotments
       for (const alt of delta.allotments || []) {
-        if (!alt?.id) continue;
+        if (!alt?.id || !alt.application_id) continue;
         if (alt.deleted_at) {
           await safeRunAsync(
             db,
@@ -1160,6 +1236,27 @@ export async function applySecondaryDeltaToSQLite(
             'applySecondaryDelta.deleteAllotment'
           );
         } else {
+          // Verify parent application exists in ipo_applications to satisfy foreign key
+          let parentAppExists = false;
+          try {
+            const parentApp = await safeGetFirstAsync<{ id: string }>(
+              db,
+              'SELECT id FROM ipo_applications WHERE id = ?',
+              [alt.application_id],
+              'applySecondaryDelta.checkParentApp'
+            );
+            parentAppExists = !!parentApp;
+          } catch {
+            parentAppExists = false;
+          }
+
+          if (!parentAppExists) {
+            if (isDev) {
+              console.warn(`[applySecondaryDeltaToSQLite] Skipping allotment ${alt.id}: parent application ${alt.application_id} not found.`);
+            }
+            continue;
+          }
+
           await safeRunAsync(
             db,
             `INSERT INTO ipo_allotments (
@@ -1382,6 +1479,9 @@ export async function syncDeltaFromFirestore(
       : callbacks || {};
 
   try {
+    if (db) {
+      markDatabaseOpen(db);
+    }
     // 1. Check local sync cursor & inspect local SQLite active records
     const localCursor = await getLocalSyncCursor(uid);
     let hasLocalData = false;
@@ -1537,13 +1637,20 @@ export async function syncDeltaFromFirestore(
       stage1DeltaRes.changes.applications.length;
 
     if (stage1Changed > 0) {
-      await applyCriticalDeltaToSQLite(db, stage1DeltaRes.changes, uid);
       if (stagedCallbacks.onCriticalDataReady) {
         await stagedCallbacks.onCriticalDataReady({
           users: stage1DeltaRes.changes.profiles,
           ipos: stage1DeltaRes.changes.ipos,
           applications: stage1DeltaRes.changes.applications,
         });
+      } else if (stagedCallbacks.importJSONFallback) {
+        await stagedCallbacks.importJSONFallback({
+          users: stage1DeltaRes.changes.profiles,
+          ipos: stage1DeltaRes.changes.ipos,
+          applications: stage1DeltaRes.changes.applications,
+        });
+      } else {
+        await applyCriticalDeltaToSQLite(db, stage1DeltaRes.changes, uid);
       }
     }
 
@@ -1558,12 +1665,18 @@ export async function syncDeltaFromFirestore(
         stage2DeltaRes.changes.allotments.length;
 
       if (stage2Changed > 0) {
-        await applySecondaryDeltaToSQLite(db, stage2DeltaRes.changes, uid);
         if (stagedCallbacks.onSecondaryDataReady) {
           await stagedCallbacks.onSecondaryDataReady({
             banks: stage2DeltaRes.changes.bankAccounts,
             allotments: stage2DeltaRes.changes.allotments,
           });
+        } else if (stagedCallbacks.importJSONFallback) {
+          await stagedCallbacks.importJSONFallback({
+            banks: stage2DeltaRes.changes.bankAccounts,
+            allotments: stage2DeltaRes.changes.allotments,
+          });
+        } else {
+          await applySecondaryDeltaToSQLite(db, stage2DeltaRes.changes, uid);
         }
       }
     }
@@ -1592,6 +1705,10 @@ export async function syncDeltaFromFirestore(
     };
   } catch (err: any) {
     deltaProbe.finish(err);
+    if (isClosedResourceError(err)) {
+      if (isDev) console.log('[firestoreSyncService] Sync aborted cleanly: Database closed during sync.');
+      return { success: false, error: 'Database closed during sync.' };
+    }
     if (isDev) console.error('[firestoreSyncService] syncDeltaFromFirestore error:', err);
     return { success: false, error: err?.message || 'Delta sync error.' };
   } finally {
@@ -1603,6 +1720,60 @@ export async function syncDeltaFromFirestore(
 }
 
 // ── Real-Time Single Document Synchronization ────────────────────────────────
+
+/**
+ * Atomic batch upsert for multiple applications to Firestore (up to 450 per batch).
+ * Ensures instant, reliable synchronization for bulk applied applications.
+ */
+export async function syncApplicationsBatch(
+  uid: string,
+  apps: Array<Record<string, any>>
+): Promise<void> {
+  if (!uid || !apps || apps.length === 0) return;
+  if (isSuppressingCloudSync()) return;
+
+  try {
+    const nowIso = new Date().toISOString();
+    const MAX_PER_BATCH = 450;
+    for (let i = 0; i < apps.length; i += MAX_PER_BATCH) {
+      const chunk = apps.slice(i, i + MAX_PER_BATCH);
+      const batch = writeBatch(firestore);
+      for (const app of chunk) {
+        if (!app?.id) continue;
+        const dRef = doc(firestore, `users/${uid}/applications/${app.id}`);
+        batch.set(
+          dRef,
+          {
+            ...app,
+            id: app.id,
+            category: app.category || 'RETAIL',
+            owner_id: uid,
+            updated_at: app.updated_at || nowIso,
+            deleted_at: null,
+          },
+          { merge: true }
+        );
+      }
+      await batch.commit();
+    }
+
+    // Update metadata sync_state
+    const metaRef = doc(firestore, `users/${uid}/metadata/sync_state`);
+    await setDoc(
+      metaRef,
+      {
+        last_synced_at: nowIso,
+        owner_id: uid,
+      },
+      { merge: true }
+    );
+
+    // Advance local cursor
+    await setLocalSyncCursor(uid, nowIso);
+  } catch (err) {
+    if (isDev) console.warn('[firestoreSyncService] syncApplicationsBatch failed:', err);
+  }
+}
 
 /**
  * Single document upsert for live offline/online synchronization

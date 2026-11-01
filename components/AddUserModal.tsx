@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -13,15 +12,20 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/ui/Icon';
+import { Image } from 'expo-image';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { useDialog } from '@/context/DialogContext';
 import { useDB, type User } from '@/context/DBContext';
+import { DesignSystem } from '@/constants/DesignSystem';
 import { ScoopedBottomSheet } from '@/components/ui/ScoopedBottomSheet';
 import { uploadImageToCloudinary } from '@/services/media/cloudinaryService';
+import { isCustomAvatarUrl } from '@/utils/avatarUtils';
 
 const BROKERS = [
   'Groww',
@@ -59,12 +63,12 @@ type Props = {
   onClose: () => void;
 };
 
-export function AddUserModal({ visible, user, onClose }: Props) {
+export const AddUserModal = React.memo(function AddUserModal({ visible, user, onClose }: Props) {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
-  const { addUser, updateUser } = useDB();
+  const { users, addUser, updateUser } = useDB();
   const { showError } = useDialog();
 
   const isEditing = !!user;
@@ -80,6 +84,7 @@ export function AddUserModal({ visible, user, onClose }: Props) {
   const [brokerSearch, setBrokerSearch] = useState('');
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [saving, setSaving] = useState(false);
+  const isSavingRef = React.useRef(false);
 
   useEffect(() => {
     if (visible) {
@@ -89,10 +94,11 @@ export function AddUserModal({ visible, user, onClose }: Props) {
       setUpiId(user?.upi_id ?? '');
       setTpin(user?.tpin ?? '');
       setBroker(user?.broker ?? '');
-      setAvatarUrl(user?.avatar_url ?? '');
+      setAvatarUrl(isCustomAvatarUrl(user?.avatar_url) ? (user?.avatar_url ?? '') : '');
       setShowBrokerModal(false);
       setBrokerSearch('');
       setIsUploadingAvatar(false);
+      isSavingRef.current = false;
     }
   }, [user, visible]);
 
@@ -143,19 +149,52 @@ export function AddUserModal({ visible, user, onClose }: Props) {
   };
 
   const handleSave = async () => {
-    if (!name.trim()) {
+    if (saving || isSavingRef.current) return;
+    const trimmedName = name.trim();
+    if (!trimmedName) {
       showError('Required', 'Please enter a full name.');
       return;
     }
+
+    const trimmedPan = pan.trim().toUpperCase();
+    if (trimmedPan.length > 0) {
+      if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(trimmedPan)) {
+        showError('Invalid PAN', 'PAN must be exactly 10 characters (e.g. ABCDE1234F).');
+        return;
+      }
+      const duplicatePanUser = users.find(
+        (u) =>
+          u.id !== user?.id &&
+          u.archived !== 1 &&
+          !(u as any).deleted_at &&
+          u.pan_number &&
+          u.pan_number.trim().toUpperCase() === trimmedPan
+      );
+      if (duplicatePanUser) {
+        showError(
+          'Duplicate PAN',
+          `A family member with PAN ${trimmedPan} already exists (${duplicatePanUser.name}).`
+        );
+        return;
+      }
+    }
+
+    const trimmedUpi = upiId.trim().toLowerCase();
+    if (trimmedUpi.length > 0 && !trimmedUpi.includes('@')) {
+      showError('Invalid UPI ID', 'Please enter a valid UPI ID format (e.g. name@okhdfcbank).');
+      return;
+    }
+
+    isSavingRef.current = true;
     setSaving(true);
     try {
       const trimmedAvatarUrl = avatarUrl ? avatarUrl.trim() : '';
 
       const data = {
-        name: name.trim(),
-        pan_number: pan.trim().toUpperCase(),
+        name: trimmedName,
+        pan_number: trimmedPan,
         client_id: clientId.trim(),
-        upi_id: upiId.trim().toLowerCase(),
+        upi_id: trimmedUpi,
         tpin: tpin.trim(),
         broker: broker.trim(),
         upi_app: user?.upi_app ?? '',
@@ -178,6 +217,7 @@ export function AddUserModal({ visible, user, onClose }: Props) {
       if (__DEV__) console.error('[AddUserModal] Save user error:', err);
       showError('Error', 'Failed to save user. Please try again.');
     } finally {
+      isSavingRef.current = false;
       setSaving(false);
     }
   };
@@ -190,13 +230,6 @@ export function AddUserModal({ visible, user, onClose }: Props) {
         {/* Sheet Header */}
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <View style={styles.headerTitleGroup}>
-            <View style={[styles.headerIconWrap, { backgroundColor: colors.primary + '18' }]}>
-              <Feather
-                name={isEditing ? 'user-check' : 'user-plus'}
-                size={18}
-                color={colors.primary}
-              />
-            </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.title, { color: colors.foreground }]}>
                 {isEditing ? 'Edit User Profile' : 'Add New User'}
@@ -210,9 +243,9 @@ export function AddUserModal({ visible, user, onClose }: Props) {
           </View>
         </View>
 
-        <View style={{ flex: 1, minHeight: 0 }}>
+        <View style={{ flexShrink: 1, flexGrow: 0, minHeight: 0 }}>
           <ScrollView
-            style={{ flex: 1 }}
+            style={{ flexShrink: 1, flexGrow: 0 }}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -220,10 +253,12 @@ export function AddUserModal({ visible, user, onClose }: Props) {
             {/* User Avatar Section */}
             <View style={styles.avatarSection}>
               <View style={styles.avatarWrap}>
-                {avatarUrl ? (
+                {isCustomAvatarUrl(avatarUrl) ? (
                   <Image
                     source={{ uri: avatarUrl }}
                     style={[styles.avatarImage, { borderColor: colors.border }]}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
                   />
                 ) : (
                   <View
@@ -235,7 +270,13 @@ export function AddUserModal({ visible, user, onClose }: Props) {
                       },
                     ]}
                   >
-                    <Feather name="user" size={24} color={colors.mutedForeground} />
+                    {name.trim().length > 0 ? (
+                      <Text style={[styles.avatarPlaceholderInitial, { color: colors.primary }]}>
+                        {name.trim().charAt(0).toUpperCase()}
+                      </Text>
+                    ) : (
+                      <Feather name="user" size={24} color={colors.mutedForeground} />
+                    )}
                   </View>
                 )}
               </View>
@@ -256,9 +297,7 @@ export function AddUserModal({ visible, user, onClose }: Props) {
                 >
                   {isUploadingAvatar ? (
                     <ActivityIndicator size="small" color={colors.primary} />
-                  ) : (
-                    <Feather name="camera" size={14} color={colors.primary} />
-                  )}
+                  ) : null}
                   <Text style={[styles.avatarBtnText, { color: colors.foreground }]}>
                     {isUploadingAvatar
                       ? 'Uploading...'
@@ -274,7 +313,6 @@ export function AddUserModal({ visible, user, onClose }: Props) {
                     style={[styles.avatarRemoveBtn, { backgroundColor: colors.destructiveBg }]}
                     activeOpacity={0.8}
                   >
-                    <Feather name="trash-2" size={13} color={colors.destructive} />
                     <Text style={[styles.avatarRemoveText, { color: colors.destructive }]}>
                       Remove
                     </Text>
@@ -526,7 +564,7 @@ export function AddUserModal({ visible, user, onClose }: Props) {
                   { borderColor: colors.border, backgroundColor: colors.surface },
                 ]}
               >
-                <Feather name="search" size={15} color={colors.mutedForeground} />
+                <Icon name="search" size={15} color={colors.mutedForeground} />
                 <TextInput
                   placeholder="Search broker name..."
                   placeholderTextColor={colors.mutedForeground}
@@ -604,7 +642,7 @@ export function AddUserModal({ visible, user, onClose }: Props) {
       </Modal>
     </>
   );
-}
+});
 
 const styles = StyleSheet.create({
   header: {
@@ -671,6 +709,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  avatarPlaceholderInitial: {
+    fontSize: 22,
+    fontFamily: 'GoogleSansFlex_700Bold',
+  },
   avatarActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -724,7 +766,7 @@ const styles = StyleSheet.create({
     minHeight: 46,
   },
   monoInput: {
-    fontFamily: 'SpaceMono',
+    fontFamily: 'GoogleSansFlex_500Medium',
     letterSpacing: 0.5,
   },
   pickerButton: {

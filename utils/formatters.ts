@@ -160,7 +160,15 @@ export function getResolvedLogoUrl(
   companyName?: string | null
 ): string | null {
   if (rawLogoUrl && typeof rawLogoUrl === 'string' && rawLogoUrl.trim().length > 0) {
-    return rawLogoUrl.trim();
+    let url = rawLogoUrl.trim();
+    // Return the uploaded logo directly without altering or transforming the 512x512 artboard
+    if (url.includes('res.cloudinary.com') && url.includes('/image/upload/')) {
+      if (url.includes('/image/upload/e_trim/')) {
+        url = url.replace(/\/image\/upload\/e_trim\/(?:(?:b_|c_|w_|h_|q_)[^/]+\/)?/, '/image/upload/');
+        url = url.replace('/image/upload/e_trim/', '/image/upload/');
+      }
+    }
+    return url;
   }
   return null;
 }
@@ -172,3 +180,29 @@ export function formatIssueSize(val?: number | string | null): string {
   const cr = num >= 1000000 ? num / 10000000 : num;
   return `₹${cr.toLocaleString('en-IN', { maximumFractionDigits: 2 })} Cr`;
 }
+
+export function maskPAN(pan?: string | null): string {
+  if (!pan || typeof pan !== 'string') return '';
+  const trimmed = pan.trim();
+  if (trimmed.length !== 10) return trimmed;
+  return `XXXXX${trimmed.slice(5)}`;
+}
+
+export const MASK_APPLICANT_NAMES_KEY = 'ipovault_mask_applicant_names';
+
+/**
+ * Masks applicant name for privacy in allotment checker result displays
+ * e.g., "Rahul Sharma" -> "R•••• S•••••"
+ */
+export function maskApplicantName(name?: string | null): string {
+  if (!name || typeof name !== 'string' || !name.trim()) return '';
+  return name
+    .trim()
+    .split(/\s+/)
+    .map((word) => {
+      if (word.length <= 1) return word;
+      return word.charAt(0) + '•'.repeat(word.length - 1);
+    })
+    .join(' ');
+}
+

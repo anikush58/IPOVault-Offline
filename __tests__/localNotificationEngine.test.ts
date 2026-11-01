@@ -30,6 +30,10 @@ import {
   handleColdStartNotificationResponse,
   setupNotificationResponseListener,
   __resetProcessedNotificationResponsesForTest,
+  registerDevicePushTokenAsync,
+  SCHEDULED_KEYS_STORAGE_KEY,
+  PUSH_TOKEN_CACHE_KEY_PREFIX,
+  unregisterDevicePushTokenAsync,
 } from '../services/notifications/notificationEngine';
 import { safeAsyncStorage } from '../utils/safeAsyncStorage';
 
@@ -542,6 +546,173 @@ export async function runLocalNotificationEngineTestSuite() {
       subscription.remove();
     }
     assert(subscriptionTracker.removed === true, 'Subscription Cleaned Up', 'Subscription unmounts cleanly');
+  }
+
+  // --- SECTION 7: Future Timeline Scheduling & Expo DateTriggerInput Syntax ---
+  console.log('\n--- TEST 7: Future Timeline Scheduling & DateTriggerInput ---');
+  {
+    memoryStore.clear();
+    let scheduledPayload: any = null;
+
+    const mockExpo = {
+      AndroidImportance: { HIGH: 4 },
+      getPermissionsAsync: async () => ({ granted: true, status: 'granted' }),
+      setNotificationChannelAsync: async () => ({}),
+      scheduleNotificationAsync: async (payload: any) => {
+        // Enforce Expo DateTriggerInput validation rules
+        if (payload.trigger) {
+          if (!payload.trigger.type || !payload.trigger.channelId) {
+            throw new TypeError('The trigger object you provided is invalid. It needs to contain a type or channelId entry.');
+          }
+          if (payload.trigger.type !== 'date' || typeof payload.trigger.date !== 'number') {
+            throw new TypeError('Invalid date trigger');
+          }
+        }
+        scheduledPayload = payload;
+        return 'sched-notif-uuid-1';
+      },
+    };
+    __setMockNotificationsModule(mockExpo);
+
+    // 7.1 Future date trigger formatting
+    const futureMs = Date.now() + 86400000; // Tomorrow
+    const schedId = await scheduleLocalNotification(
+      'Future IPO Opening',
+      'Opens tomorrow at 10:00 AM',
+      { type: 'IPO_OPEN', ipoId: 'ipo-future-1' },
+      new Date(futureMs),
+      'sched_open_ipo-future-1_2026-10-17'
+    );
+
+    assert(schedId === 'sched-notif-uuid-1', 'Future Schedule Succeeded', 'Future notification scheduled successfully');
+    assert(
+      scheduledPayload !== null &&
+      scheduledPayload.trigger !== null &&
+      scheduledPayload.trigger.type === 'date' &&
+      scheduledPayload.trigger.date === futureMs,
+      'Valid DateTriggerInput Type',
+      'Trigger contains type="date" and target date matching expo-notifications specification'
+    );
+    assert(
+      scheduledPayload.trigger.channelId === DEFAULT_NOTIFICATION_CHANNEL_ID,
+      'DateTriggerInput Channel',
+      'Trigger contains channelId matching default notification channel'
+    );
+    assert(
+      scheduledPayload.identifier === 'sched_open_ipo-future-1_2026-10-17',
+      'OS Identifier Forwarded',
+      'Identifier is passed to scheduleNotificationAsync for exact OS alarm deduplication'
+    );
+
+    // 7.2 Past date trigger suppression
+    scheduledPayload = null;
+    const pastMs = Date.now() - 10000;
+    const pastSchedId = await scheduleLocalNotification(
+      'Expired Event',
+      'This was in the past',
+      { type: 'IPO_OPEN', ipoId: 'ipo-past-1' },
+      new Date(pastMs)
+    );
+    assert(pastSchedId === null && scheduledPayload === null, 'Past Trigger Suppressed', 'Past triggers return null and do not schedule alarms');
+  }
+
+  // --- SECTION 8: Pre-Scheduled Notification Deduplication on App Launch ---
+  console.log('\n--- TEST 8: Pre-Scheduled Notification Deduplication ---');
+  {
+    memoryStore.clear();
+    const mockDb = createMockDb();
+    let scheduleCalls = 0;
+
+    const mockExpo = {
+      AndroidImportance: { HIGH: 4 },
+      getPermissionsAsync: async () => ({ granted: true, status: 'granted' }),
+      setNotificationChannelAsync: async () => ({}),
+      scheduleNotificationAsync: async () => {
+        scheduleCalls++;
+        return 'mock-sched-id-' + scheduleCalls;
+      },
+    };
+    __setMockNotificationsModule(mockExpo);
+
+    // When an alert was already scheduled in advance, opening app records it in SQLite
+    // but skips triggering a redundant duplicate native alert banner
+    const result = await createDeduplicatedNotification(mockDb, {
+      type: 'IPO_OPEN',
+      ipo_id: 'ipo-today-1',
+      title: 'IPO Open for Bidding',
+      body: 'Today is opening day',
+      dedupe_key: 'ipo_open_ipo-today-1_2026-10-16',
+      skipNativeAlert: true,
+    });
+
+    assert(result !== null, 'In-App Notification Created', 'Notification created for in-app notification center');
+    assert(mockDb.records.length === 1, 'SQLite Record Stored', 'Stored in SQLite notifications table');
+    assert(scheduleCalls === 0, 'Redundant Alert Skipped', 'Native alert schedule was skipped to prevent duplicate pop-up on app open');
+
+    // When not pre-scheduled, native alert schedule executes
+    const result2 = await createDeduplicatedNotification(mockDb, {
+      type: 'IPO_OPEN',
+      ipo_id: 'ipo-today-2',
+      title: 'IPO Open for Bidding 2',
+      body: 'New unscheduled opening',
+      dedupe_key: 'ipo_open_ipo-today-2_2026-10-16',
+      skipNativeAlert: false,
+    });
+
+    assert(result2 !== null, 'Unscheduled Notification Created', 'Unscheduled notification created');
+    assert(scheduleCalls === 1, 'Native Alert Triggered', 'Native alert scheduled for unscheduled opening');
+  }
+
+  // --- SECTION 9: Device Push Token Registration ---
+  console.log('\n--- TEST 9: Device Push Token Registration ---');
+  {
+    memoryStore.clear();
+
+    // 9.1 When permission not granted, returns null
+    const mockExpoNoPerm = {
+      getPermissionsAsync: async () => ({ granted: false, status: 'denied' }),
+      getExpoPushTokenAsync: async () => ({ data: 'ExponentPushToken[mock-token-123]' }),
+    };
+    __setMockNotificationsModule(mockExpoNoPerm);
+
+    const noPermToken = await registerDevicePushTokenAsync('user-101');
+    assert(noPermToken === null, 'Push Token Permission Gate', 'Returns null when permission is not granted');
+
+    // 9.2 When permission granted, fetches token and caches
+    let pushTokenCalls = 0;
+    const mockExpoPerm = {
+      getPermissionsAsync: async () => ({ granted: true, status: 'granted' }),
+      getExpoPushTokenAsync: async () => {
+        pushTokenCalls++;
+        return { data: 'ExponentPushToken[mock-token-xyz]' };
+      },
+    };
+    __setMockNotificationsModule(mockExpoPerm);
+
+    const token = await registerDevicePushTokenAsync('user-101');
+    assert(token === 'ExponentPushToken[mock-token-xyz]', 'Push Token Acquired', 'Returns valid Expo push token');
+    assert(pushTokenCalls === 1, 'Token API Called', 'Calls getExpoPushTokenAsync once');
+
+    // 9.3 Subsequent call uses cache
+    const cachedToken = await registerDevicePushTokenAsync('user-101');
+    assert(cachedToken === 'ExponentPushToken[mock-token-xyz]', 'Cached Token Returned', 'Returns cached token');
+    assert(pushTokenCalls === 1, 'Backend Spam Prevented', 'Does not invoke push token retrieval twice for same cached session');
+
+    // 9.4 Force refresh bypasses cache
+    const refreshedToken = await registerDevicePushTokenAsync('user-101', true);
+    assert(refreshedToken === 'ExponentPushToken[mock-token-xyz]', 'Token Refreshed', 'Force refresh returns token');
+    assert(pushTokenCalls === 2, 'Force Refresh Invoked API', 'Calls API when forceRefresh is requested');
+
+    // 9.5 Account switching produces independent tokens
+    const user2Token = await registerDevicePushTokenAsync('user-202');
+    assert(user2Token === 'ExponentPushToken[mock-token-xyz]', 'User 2 Token Registered', 'Registers token for user 2');
+    assert(pushTokenCalls === 3, 'User 2 Not Using User 1 Cache', 'New user triggers registration without cache collision');
+
+    // 9.6 Logout deactivates and clears cache
+    const unregisterSuccess = await unregisterDevicePushTokenAsync('user-101');
+    assert(unregisterSuccess === true, 'Token Unregistered', 'Successfully unregisters token on logout');
+    const clearedCache = await safeAsyncStorage.getItem(`${PUSH_TOKEN_CACHE_KEY_PREFIX}user-101`);
+    assert(clearedCache === null, 'Cache Cleared', 'Removes user token cache on logout');
   }
 
   console.log('\n====================================================');

@@ -29,6 +29,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useAppExperience } from '@/context/AppExperienceContext';
 import { calculateNormalizedIPOStatus } from '@/services/ipo/statusNormalizer';
 import { getRegistrarConfig } from '@/services/allotment/registrarConfig';
+import { getResolvedLogoUrl } from '@/utils/formatters';
 
 const TIMELINE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -326,7 +327,8 @@ export function IPODetailsLayout({
     : 'UPCOMING';
 
   // Logo, Avatar Gradient & Initials
-  const logoUri = ipo.company?.logoUrl || ipo.logoUrl || ipo.logo_url || null;
+  const rawLogo = ipo.company?.logoUrl || ipo.logoUrl || ipo.logo_url || null;
+  const logoUri = getResolvedLogoUrl(rawLogo) || rawLogo;
   const avatarGradient = useMemo(() => getAvatarGradient(companyName), [companyName]);
   const initials = companyName
     .replace(/[^a-zA-Z0-9\s]/g, '')
@@ -1382,8 +1384,8 @@ export function IPODetailsLayout({
                       style={[
                         styles.timelineCircle,
                         {
-                          backgroundColor: isDone ? '#10B981' : (isDark ? '#1E293B' : '#F1F5F9'),
-                          borderColor: isDone ? '#10B981' : (isDark ? '#334155' : '#CBD5E1'),
+                          backgroundColor: isDone ? '#10B981' : (isDark ? colors.surfaceElevated : '#F1F5F9'),
+                          borderColor: isDone ? '#10B981' : (isDark ? colors.border : '#CBD5E1'),
                         },
                       ]}
                     >
@@ -1907,7 +1909,7 @@ export function IPODetailsLayout({
                     styles.docItemRow,
                     {
                       borderColor: colors.border,
-                      backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
+                      backgroundColor: isDark ? colors.cardAlt : '#F8FAFC',
                     },
                   ]}
                   activeOpacity={0.7}
@@ -2213,7 +2215,7 @@ export function IPODetailsLayout({
                           style={[
                             styles.leadManagerItem,
                             {
-                              backgroundColor: isDark ? '#1E293B' : '#F8FAFC',
+                              backgroundColor: isDark ? colors.cardAlt : '#F8FAFC',
                               borderColor: colors.border,
                             },
                           ]}
@@ -2283,15 +2285,20 @@ const styles = StyleSheet.create({
   logoCircle: {
     width: 48,
     height: 48,
-    borderRadius: 24,
+    borderRadius: 14,
     borderWidth: 1,
     overflow: 'hidden',
+    padding: 0,
+    margin: 0,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
   logoImg: {
-    width: '100%',
-    height: '100%',
+    ...StyleSheet.absoluteFillObject,
+    width: 48,
+    height: 48,
+    resizeMode: 'contain',
   },
   avatarGradient: {
     width: '100%',

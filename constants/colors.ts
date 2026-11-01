@@ -8,9 +8,8 @@
  * Positive: deep forest green. Negative: deep crimson.
  */
 
-const colors = {
-  light: {
-    // Base surfaces — crisp premium white and soft grey
+const lightPalette = {
+    // Base surfaces — crisp white cards (#FFFFFF) on soft light canvas (#F8F9FA)
     background: '#F8F9FA',
     surface: '#F1F3F5',
     surfaceElevated: '#FFFFFF',
@@ -25,7 +24,7 @@ const colors = {
 
     // Borders & Dividers
     border: '#E5E7EB',
-    borderStrong: '#D1D5DB',
+    borderStrong: '#CBD5E1',
     borderSubtle: '#F1F5F9',
     divider: '#E5E7EB',
 
@@ -68,7 +67,7 @@ const colors = {
     tableBorder: '#E2E8F0',
 
     // Tabs & Filter Pills
-    pillActiveBg: '#111827',
+    pillActiveBg: '#000000',
     pillActiveText: '#FFFFFF',
     pillInactiveBg: '#F1F5F9',
     pillInactiveBorder: '#E5E7EB',
@@ -89,120 +88,139 @@ const colors = {
     modalBg: '#FFFFFF',
     modalOverlay: 'rgba(0, 0, 0, 0.55)',
 
-    // Status badges (Consistent everywhere)
-    statusApplied: '#2563EB',
-    statusAppliedBg: '#EFF6FF',
-    statusAllotted: '#10B981',
-    statusAllottedBg: 'rgba(16, 185, 129, 0.15)',
-    statusHolding: '#8B5CF6',
-    statusHoldingBg: '#F5F3FF',
-    statusNotAllotted: '#EF4444',
-    statusNotAllottedBg: '#FEF2F2',
-    statusPending: '#F59E0B',
-    statusPendingBg: '#FFFBEB',
-    statusListed: '#8B5CF6',
-    statusListedBg: '#F5F3FF',
-    statusRefund: '#6B7280',
-    statusRefundBg: '#F3F4F6',
-    statusSold: '#F59E0B',
-    statusSoldBg: 'rgba(245, 158, 11, 0.15)',
+    // Status badges (Consistent everywhere - full fill)
+    statusApplied: '#FFFFFF',
+    statusAppliedBg: '#2563EB',
+    statusAllotted: '#FFFFFF',
+    statusAllottedBg: '#10B981',
+    statusHolding: '#FFFFFF',
+    statusHoldingBg: '#8B5CF6',
+    statusNotAllotted: '#FFFFFF',
+    statusNotAllottedBg: '#EF4444',
+    statusPending: '#FFFFFF',
+    statusPendingBg: '#F59E0B',
+    statusListed: '#FFFFFF',
+    statusListedBg: '#8B5CF6',
+    statusRefund: '#FFFFFF',
+    statusRefundBg: '#64748B',
+    statusSold: '#FFFFFF',
+    statusSoldBg: '#0284C7',
 
     // Shadow helper
     shadowCard: '0 1px 3px rgba(0,0,0,0.04), 0 4px 14px rgba(0,0,0,0.03)',
     shadowModal: '0 8px 30px rgba(0,0,0,0.12)',
 
     radius: 16,
-  },
+};
 
-  dark: {
-    // Layered obsidian dark — smooth depth, zero eye strain, avoiding pure black
-    background: '#0E1117',
-    surface: '#161B22',
-    surfaceElevated: '#252B37',
-    card: '#1F242D',
-    cardAlt: '#282E39',
-    cardBorder: '#2E3545',
+const darkPalette = {
+    // Base surfaces — Rich obsidian void canvas with elevated dark-slate cards
+    background: '#090A0F',
+    surface: '#161B28',
+    surfaceElevated: '#212738',
+    card: '#161B28',
+    cardAlt: '#212738',
+    cardBorder: '#2D354B',
 
-    foreground: '#F3F4F6',
-    secondaryForeground: '#D1D5DB',
-    mutedForeground: '#9CA3AF',
+    // Text — High-contrast pure white and cool slate (maximum legibility)
+    foreground: '#FFFFFF',
+    secondaryForeground: '#E2E8F0',
+    mutedForeground: '#94A3B8',
 
-    border: '#2E3545',
-    borderStrong: '#3E4659',
-    borderSubtle: '#252B37',
-    divider: '#2E3545',
+    // Borders & Dividers — Crisp outlines giving cards clear definition
+    border: '#2D354B',
+    borderStrong: '#434E6D',
+    borderSubtle: '#1C2233',
+    divider: '#2D354B',
 
+    // Primary & Accent — Crisp high-contrast white action surfaces (matching "Schedule", "Save policy" in references)
     primary: '#FFFFFF',
-    primaryLight: '#E5E7EB',
-    primaryForeground: '#000000',
+    primaryLight: '#E2E8F0',
+    primaryForeground: '#090A0F',
 
     accent: '#FFFFFF',
-    accentForeground: '#000000',
+    accentForeground: '#090A0F',
 
+    // Legacy tint alias
     tint: '#FFFFFF',
 
-    destructive: '#F87171',
+    // Destructive
+    destructive: '#F43F5E',
     destructiveForeground: '#FFFFFF',
-    destructiveBg: '#3F1718',
+    destructiveBg: 'rgba(244, 63, 94, 0.16)',
 
-    muted: '#1F242D',
+    // Muted fill
+    muted: '#212738',
 
-    positive: '#34D399',
-    positiveBg: 'rgba(16, 185, 129, 0.15)',
-    positiveDim: 'rgba(16, 185, 129, 0.30)',
+    // Finance — profit (emerald/mint)
+    positive: '#10B981',
+    positiveBg: 'rgba(16, 185, 129, 0.16)',
+    positiveDim: 'rgba(16, 185, 129, 0.28)',
 
-    negative: '#F87171',
-    negativeBg: 'rgba(239, 68, 68, 0.15)',
-    negativeDim: 'rgba(239, 68, 68, 0.30)',
+    // Finance — loss (coral rose)
+    negative: '#F43F5E',
+    negativeBg: 'rgba(244, 63, 94, 0.16)',
+    negativeDim: 'rgba(244, 63, 94, 0.28)',
 
-    amber: '#FBBF24',
-    amberBg: 'rgba(245, 158, 11, 0.15)',
+    // Amber / Warning
+    amber: '#F59E0B',
+    amberBg: 'rgba(245, 158, 11, 0.16)',
 
-    tableHeaderBg: '#37271E',
-    tableHeaderForeground: '#F3F4F6',
-    tableBorder: '#2E3545',
+    // Tables
+    tableHeaderBg: '#212738',
+    tableHeaderForeground: '#FFFFFF',
+    tableBorder: '#2D354B',
 
-    pillActiveBg: '#F3F4F6',
-    pillActiveText: '#0E1117',
-    pillInactiveBg: '#1F242D',
-    pillInactiveBorder: '#2E3545',
-    pillInactiveText: '#9CA3AF',
+    // Tabs & Filter Pills
+    pillActiveBg: '#FFFFFF',
+    pillActiveText: '#090A0F',
+    pillInactiveBg: '#212738',
+    pillInactiveBorder: '#2D354B',
+    pillInactiveText: '#94A3B8',
 
-    badgeBg: '#282E39',
-    softBtnBg: 'rgba(255, 255, 255, 0.08)',
+    // Badges & Soft Buttons
+    badgeBg: '#212738',
+    softBtnBg: '#212738',
 
-    inputBg: '#161B22',
-    inputBorder: '#2E3545',
-    inputPlaceholder: '#6B7280',
+    // Inputs & Controls
+    inputBg: '#1B2131',
+    inputBorder: '#2D354B',
+    inputPlaceholder: '#94A3B8',
 
-    navBackground: '#161B22',
-    navBorder: '#2E3545',
-    modalBg: '#1F242D',
+    // Navigation & Modals
+    navBackground: '#090A0F',
+    navBorder: '#1C2233',
+    modalBg: '#161B28',
     modalOverlay: 'rgba(0, 0, 0, 0.75)',
 
-    statusApplied: '#60A5FA',
-    statusAppliedBg: 'rgba(37, 99, 235, 0.20)',
-    statusAllotted: '#34D399',
-    statusAllottedBg: 'rgba(16, 185, 129, 0.20)',
-    statusHolding: '#A78BFA',
-    statusHoldingBg: 'rgba(139, 92, 246, 0.20)',
-    statusNotAllotted: '#F87171',
-    statusNotAllottedBg: 'rgba(239, 68, 68, 0.20)',
-    statusPending: '#FBBF24',
-    statusPendingBg: 'rgba(245, 158, 11, 0.20)',
-    statusListed: '#A78BFA',
-    statusListedBg: 'rgba(139, 92, 246, 0.20)',
-    statusRefund: '#9CA3AF',
-    statusRefundBg: 'rgba(107, 114, 128, 0.20)',
-    statusSold: '#F59E0B',
-    statusSoldBg: 'rgba(245, 158, 11, 0.20)',
+    // Status badges (Solid full-fill vibrant style)
+    statusApplied: '#FFFFFF',
+    statusAppliedBg: '#2563EB',
+    statusAllotted: '#FFFFFF',
+    statusAllottedBg: '#10B981',
+    statusHolding: '#FFFFFF',
+    statusHoldingBg: '#8B5CF6',
+    statusNotAllotted: '#FFFFFF',
+    statusNotAllottedBg: '#EF4444',
+    statusPending: '#FFFFFF',
+    statusPendingBg: '#F59E0B',
+    statusListed: '#FFFFFF',
+    statusListedBg: '#8B5CF6',
+    statusRefund: '#FFFFFF',
+    statusRefundBg: '#64748B',
+    statusSold: '#FFFFFF',
+    statusSoldBg: '#0284C7',
 
-    shadowCard: '0 2px 8px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.3)',
-    shadowModal: '0 12px 48px rgba(0,0,0,0.65)',
+    // Shadow helper
+    shadowCard: '0 2px 8px rgba(0,0,0,0.4)',
+    shadowModal: '0 12px 40px rgba(0,0,0,0.6)',
 
     radius: 16,
-  },
+};
 
+const colors = {
+  light: lightPalette,
+  dark: darkPalette,
   radius: 16,
 };
 

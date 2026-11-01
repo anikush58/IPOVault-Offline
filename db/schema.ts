@@ -81,6 +81,7 @@ export async function initDB(db: SQLiteDatabase) {
       is_favorite INTEGER DEFAULT 0,
       bank_name TEXT DEFAULT '',
       upi_app TEXT DEFAULT '',
+      category TEXT DEFAULT 'RETAIL',
       broker_account_id TEXT DEFAULT NULL,
       sync_version INTEGER DEFAULT 0,
       sync_status TEXT NOT NULL DEFAULT 'SYNCED',
@@ -271,22 +272,24 @@ export async function initDB(db: SQLiteDatabase) {
     );
 
     CREATE INDEX IF NOT EXISTS idx_radar_snapshots_ipo ON radar_snapshots(ipo_id, created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_ipo_listings_backend_id ON ipo_listings(backend_ipo_id);
     CREATE INDEX IF NOT EXISTS idx_ipo_master_status ON ipo_master(status);
     CREATE INDEX IF NOT EXISTS idx_ipo_master_symbol ON ipo_master(symbol);
     CREATE INDEX IF NOT EXISTS idx_ipo_master_dates ON ipo_master(open_date, close_date, listing_date);
-    CREATE INDEX IF NOT EXISTS idx_ipo_master_favorite ON ipo_master(is_favorite);
     CREATE INDEX IF NOT EXISTS idx_ipo_allotments_app ON ipo_allotments(application_id);
-
-    -- Performance indexes for high-frequency Bulk Apply, refreshCritical, and JOIN queries
+    CREATE INDEX IF NOT EXISTS idx_ipo_allotments_checked_at ON ipo_allotments(checked_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications(type, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ipo_app_user_id ON ipo_applications(user_id);
     CREATE INDEX IF NOT EXISTS idx_ipo_app_ipo_status ON ipo_applications(ipo_id, status, deleted_at);
     CREATE INDEX IF NOT EXISTS idx_ipo_app_lookup ON ipo_applications(ipo_id, user_id, deleted_at);
+    CREATE INDEX IF NOT EXISTS idx_ipo_app_category ON ipo_applications(ipo_id, user_id, category, deleted_at);
     CREATE INDEX IF NOT EXISTS idx_ipo_app_owner_deleted ON ipo_applications(owner_id, deleted_at, id DESC);
-    CREATE INDEX IF NOT EXISTS idx_ipo_app_user_id ON ipo_applications(user_id);
     CREATE INDEX IF NOT EXISTS idx_users_owner_deleted ON users_table(owner_id, deleted_at, name);
     CREATE INDEX IF NOT EXISTS idx_bank_accounts_owner_deleted ON bank_accounts(owner_id, deleted_at, bank_name);
     CREATE INDEX IF NOT EXISTS idx_bank_accounts_name ON bank_accounts(bank_name);
     CREATE INDEX IF NOT EXISTS idx_ipo_listings_owner_deleted ON ipo_listings(owner_id, deleted_at, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_ipo_listings_backend_id ON ipo_listings(backend_ipo_id);
+    CREATE INDEX IF NOT EXISTS idx_ipo_master_favorite ON ipo_master(is_favorite);
   `));
 
   // 2. Check schema version to only run incremental migrations once
@@ -349,6 +352,7 @@ export async function initDB(db: SQLiteDatabase) {
       await addColumnIfNotExists('ipo_applications', 'is_favorite INTEGER DEFAULT 0');
       await addColumnIfNotExists('ipo_applications', 'bank_name TEXT DEFAULT ""');
       await addColumnIfNotExists('ipo_applications', 'upi_app TEXT DEFAULT ""');
+      await addColumnIfNotExists('ipo_applications', 'category TEXT DEFAULT "RETAIL"');
       await addColumnIfNotExists('ipo_applications', 'broker_account_id TEXT DEFAULT NULL');
       await addColumnIfNotExists('ipo_applications', 'shares_count INTEGER DEFAULT NULL');
       await addColumnIfNotExists('ipo_applications', 'sync_version INTEGER DEFAULT 0');
@@ -417,7 +421,7 @@ export async function initDB(db: SQLiteDatabase) {
             'ipo-swiggy', 'ipo-hyundai-motor'
           ) OR id LIKE 'ipo-%' OR LOWER(company_name) LIKE '%test%' OR LOWER(ipo_name) LIKE '%test%' OR id LIKE '%test%' OR LOWER(TRIM(ipo_name)) = 'ipo';
 
-          DELETE FROM ipo_listings WHERE symbol = 'TESTENT' OR LOWER(company_name) LIKE '%test enterprise%' OR LOWER(ipo_name) LIKE '%test enterprise%' OR LOWER(TRIM(ipo_name)) = 'ipo' OR (TRIM(ipo_name) = '' AND TRIM(company_name) = '');
+          DELETE FROM ipo_listings WHERE (symbol = 'TESTENT' OR LOWER(company_name) LIKE '%test enterprise%' OR LOWER(ipo_name) LIKE '%test enterprise%' OR LOWER(TRIM(ipo_name)) = 'ipo' OR (TRIM(ipo_name) = '' AND TRIM(company_name) = '')) AND id NOT IN (SELECT ipo_id FROM ipo_applications);
         `));
       } catch {}
 
@@ -440,14 +444,20 @@ export async function initDB(db: SQLiteDatabase) {
 
         // Ensure performance indexes exist on existing databases
         await retryOnLock(() => db.execAsync(`
+          CREATE INDEX IF NOT EXISTS idx_ipo_listings_backend_id ON ipo_listings(backend_ipo_id);
+          CREATE INDEX IF NOT EXISTS idx_ipo_master_favorite ON ipo_master(is_favorite);
           CREATE INDEX IF NOT EXISTS idx_ipo_app_ipo_status ON ipo_applications(ipo_id, status, deleted_at);
           CREATE INDEX IF NOT EXISTS idx_ipo_app_lookup ON ipo_applications(ipo_id, user_id, deleted_at);
+          CREATE INDEX IF NOT EXISTS idx_ipo_app_category ON ipo_applications(ipo_id, user_id, category, deleted_at);
           CREATE INDEX IF NOT EXISTS idx_ipo_app_owner_deleted ON ipo_applications(owner_id, deleted_at, id DESC);
           CREATE INDEX IF NOT EXISTS idx_ipo_app_user_id ON ipo_applications(user_id);
           CREATE INDEX IF NOT EXISTS idx_users_owner_deleted ON users_table(owner_id, deleted_at, name);
           CREATE INDEX IF NOT EXISTS idx_bank_accounts_owner_deleted ON bank_accounts(owner_id, deleted_at, bank_name);
           CREATE INDEX IF NOT EXISTS idx_bank_accounts_name ON bank_accounts(bank_name);
           CREATE INDEX IF NOT EXISTS idx_ipo_listings_owner_deleted ON ipo_listings(owner_id, deleted_at, id DESC);
+          CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
+          CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications(type, created_at DESC);
+          CREATE INDEX IF NOT EXISTS idx_ipo_allotments_checked_at ON ipo_allotments(checked_at DESC);
         `));
 
         // Mark user_version as fully migrated

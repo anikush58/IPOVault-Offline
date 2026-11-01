@@ -77,7 +77,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const resolvedScheme: 'light' | 'dark' =
-    preference === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : preference;
+    preference === 'system'
+      ? (systemScheme === 'dark' ? 'dark' : 'light')
+      : preference === 'dark'
+      ? 'dark'
+      : 'light';
 
   const accentColor = ACCENT_COLOR_MAP[accentKey] || ACCENT_COLOR_MAP.blue;
 

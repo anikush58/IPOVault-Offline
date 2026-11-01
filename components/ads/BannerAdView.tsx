@@ -12,7 +12,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, Platform, ViewStyle, StyleProp } from 'react-native';
 import { useAdContext } from '@/context/AdContext';
-import { getBannerAdUnitId, buildSanitizedAdRequestOptions } from '@/services/ads/adConfig';
+import { getBannerAdUnitId, isAdConfigurationValid, buildSanitizedAdRequestOptions } from '@/services/ads/adConfig';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { DesignSystem } from '@/constants/DesignSystem';
@@ -22,7 +22,7 @@ export interface BannerAdViewProps {
   testID?: string;
 }
 
-export const BannerAdView: React.FC<BannerAdViewProps> = ({ style, testID = 'banner-ad-view' }) => {
+export const BannerAdView: React.FC<BannerAdViewProps> = React.memo(({ style, testID = 'banner-ad-view' }) => {
   const { adsEnabled, canRequestAds, isNativeAdMobSupported } = useAdContext();
   const colors = useColors();
   const { resolvedScheme } = useTheme();
@@ -47,6 +47,12 @@ export const BannerAdView: React.FC<BannerAdViewProps> = ({ style, testID = 'ban
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { BannerAd, BannerAdSize } = require('react-native-google-mobile-ads');
       const adUnitId = getBannerAdUnitId();
+
+      // Strict validation: collapse cleanly if ad unit configuration is missing/invalid
+      if (!isAdConfigurationValid(adUnitId)) {
+        return null;
+      }
+
       const requestOptions = buildSanitizedAdRequestOptions();
 
       return (
@@ -58,11 +64,13 @@ export const BannerAdView: React.FC<BannerAdViewProps> = ({ style, testID = 'ban
             style,
           ]}
         >
-          <View style={styles.adLabelRow}>
-            <View style={[styles.adBadge, { borderColor: colors.border }]}>
-              <Text style={[styles.adBadgeText, { color: colors.mutedForeground }]}>Ad</Text>
+          {isLoaded && (
+            <View style={styles.adLabelRow}>
+              <View style={[styles.adBadge, { borderColor: colors.border }]}>
+                <Text style={[styles.adBadgeText, { color: colors.mutedForeground }]}>Ad</Text>
+              </View>
             </View>
-          </View>
+          )}
           <BannerAd
             unitId={adUnitId}
             size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
@@ -112,7 +120,9 @@ export const BannerAdView: React.FC<BannerAdViewProps> = ({ style, testID = 'ban
 
   // In production non-native environments (e.g. web fallback), collapse cleanly
   return null;
-};
+});
+
+BannerAdView.displayName = 'BannerAdView';
 
 const styles = StyleSheet.create({
   container: {

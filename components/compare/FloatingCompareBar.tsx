@@ -37,7 +37,6 @@ export const FloatingCompareBar = React.memo(function FloatingCompareBar() {
             activeOpacity={0.85}
           >
             <Text style={[styles.compareBtnText, { color: colors.primaryForeground }]}>Compare ({selectedIds.length})</Text>
-            <Feather name="arrow-right" size={14} color={colors.primaryForeground} />
           </TouchableOpacity>
         </View>
       </View>

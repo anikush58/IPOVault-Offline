@@ -84,7 +84,6 @@ export function BrokerConnectSuccessModal({
             <Text style={[styles.actionButtonText, { color: colors.primaryForeground }]}>
               Continue
             </Text>
-            <Feather name="arrow-right" size={16} color={colors.primaryForeground} />
           </TouchableOpacity>
         </Pressable>
       </Pressable>

@@ -13,7 +13,8 @@ import {
 import Svg, { Path, Circle, Line, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import * as Application from 'expo-application';
+import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { useColors } from '@/hooks/useColors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { type ApplicationWithDetails } from '@/context/DBContext';
@@ -207,15 +208,59 @@ export function PerformanceChart({ applications }: Props) {
   const isDark = colorScheme === 'dark';
 
   const [filterMode, setFilterMode] = useState<FilterMode>('monthly');
-  const [customDate, setCustomDate] = useState<Date>(new Date());
   const [selectedRefDate, setSelectedRefDate] = useState<Date | undefined>(undefined);
   const [selectedLabel, setSelectedLabel] = useState<string | null>(null);
 
   const [showHeaderDropdown, setShowHeaderDropdown] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+  const [installYear, setInstallYear] = useState<number>(() => new Date().getFullYear());
 
-  const cfgCount = filterMode === 'weekly' || filterMode === 'custom_date' ? 7 : filterMode === 'monthly' ? 12 : 5;
+  useEffect(() => {
+    let isMounted = true;
+    safeAsyncStorage.getItem('@ipovault_install_year').then((stored) => {
+      if (stored && isMounted) {
+        const parsed = parseInt(stored, 10);
+        if (!isNaN(parsed)) {
+          setInstallYear(parsed);
+          return;
+        }
+      }
+      Application.getInstallationTimeAsync()
+        .then((date) => {
+          if (date && isMounted) {
+            const yr = date.getFullYear();
+            setInstallYear(yr);
+            safeAsyncStorage.setItem('@ipovault_install_year', String(yr));
+          }
+        })
+        .catch(() => {
+          const curr = new Date().getFullYear();
+          if (isMounted) setInstallYear(curr);
+          safeAsyncStorage.setItem('@ipovault_install_year', String(curr));
+        });
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const earliestDataYear = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    let minYr = currentYear;
+    for (const a of applications) {
+      const dateStr = a.sale_date || a.updated_at || a.created_at;
+      if (dateStr) {
+        const y = new Date(dateStr).getFullYear();
+        if (!isNaN(y) && y < minYr) {
+          minYr = y;
+        }
+      }
+    }
+    return minYr;
+  }, [applications]);
+
+  const effectiveStartYear = Math.min(installYear, earliestDataYear);
+  const cfgCount = filterMode === 'weekly' ? 7 : filterMode === 'monthly' ? 12 : 5;
 
   // Helper for formatting date strings
   const formatDateShort = (d: Date) => {
@@ -235,7 +280,13 @@ export function PerformanceChart({ applications }: Props) {
     const currentMonth = now.getMonth(); // 0-indexed, 3 is April
     const startFYYear = currentMonth >= 3 ? currentYear : currentYear - 1;
 
-    for (let i = 0; i < 4; i++) {
+    // When the user has installed this year and has no prior data, only show current FY
+    const maxFYs =
+      effectiveStartYear >= currentYear
+        ? 1
+        : Math.min(4, Math.max(1, startFYYear - effectiveStartYear + 1));
+
+    for (let i = 0; i < maxFYs; i++) {
       const yr = startFYYear - i;
       options.push({
         id: `fy_${yr}`,
@@ -285,27 +336,20 @@ export function PerformanceChart({ applications }: Props) {
       refDate: lastMonday,
     });
 
-    // 3. Yearly range (5 Years)
-    options.push({
-      id: 'yearly_5yr',
-      label: 'Yearly Trend',
-      sub: `Past 5 Years (${currentYear - 4} - ${currentYear})`,
-      mode: 'yearly',
-      type: 'range',
-      refDate: new Date(),
-    });
-
-    // 4. Particular Date
-    options.push({
-      id: 'particular_date',
-      label: 'Particular Date…',
-      sub: filterMode === 'custom_date' ? `Selected: ${formatDateShort(customDate)}` : 'Select a specific date from calendar',
-      mode: 'custom_date',
-      type: 'date',
-    });
+    // 3. Yearly range (only show when user has prior year history)
+    if (effectiveStartYear < currentYear) {
+      options.push({
+        id: 'yearly_5yr',
+        label: 'Yearly Trend',
+        sub: `Past 5 Years (${currentYear - 4} - ${currentYear})`,
+        mode: 'yearly',
+        type: 'range',
+        refDate: new Date(),
+      });
+    }
 
     return options;
-  }, [filterMode, customDate]);
+  }, [effectiveStartYear]);
 
   // ── Data ──────────────────────────────────────────────────────────────────
 
@@ -323,25 +367,13 @@ export function PerformanceChart({ applications }: Props) {
       agg[key].value += net;
       agg[key].count += 1;
     }
-    const targetRef = filterMode === 'custom_date' ? customDate : selectedRefDate;
+    const targetRef = selectedRefDate;
     return buildBuckets(filterMode, cfgCount, applications, targetRef).map(b => ({
       ...b,
       value: agg[b.key]?.value ?? 0,
       count: agg[b.key]?.count ?? 0,
     }));
-  }, [applications, filterMode, cfgCount, customDate, selectedRefDate]);
-
-
-
-  useEffect(() => {
-    if (filterMode === 'custom_date' && customDate && bars.length > 0) {
-      const targetKey = formatDateKey(customDate);
-      const idx = bars.findIndex(b => b.key === targetKey);
-      if (idx !== -1) {
-        setSelectedIdx(idx);
-      }
-    }
-  }, [filterMode, customDate, bars]);
+  }, [applications, filterMode, cfgCount, selectedRefDate]);
 
   // ── Scale ─────────────────────────────────────────────────────────────────
 
@@ -402,7 +434,7 @@ export function PerformanceChart({ applications }: Props) {
 
     frameId = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(frameId);
-  }, [filterMode, customDate, selectedRefDate]);
+  }, [filterMode, selectedRefDate]);
 
   const getSvgY = (v: number) => {
     const finalY = zeroBase - (v / totalRange) * plotHeight;
@@ -424,7 +456,6 @@ export function PerformanceChart({ applications }: Props) {
 
   const getHeaderDropdownLabel = () => {
     if (selectedLabel) return selectedLabel;
-    if (filterMode === 'custom_date') return formatDateShort(customDate);
 
     if (selectedIdx !== null && bars[selectedIdx]) {
       const item = bars[selectedIdx];
@@ -564,7 +595,7 @@ export function PerformanceChart({ applications }: Props) {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <View style={[styles.card, { backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderColor: colors.border }]}>
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
 
       {/* Header row with Title on Left & Small Dropdown on Top-Right */}
       <View style={styles.header}>
@@ -577,8 +608,8 @@ export function PerformanceChart({ applications }: Props) {
           style={[
             styles.headerDropdownBtn,
             {
-              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
-              borderColor: isDark ? '#374151' : '#E5E7EB',
+              backgroundColor: isDark ? colors.surfaceElevated : '#FFFFFF',
+              borderColor: colors.border,
             },
           ]}
           activeOpacity={0.7}
@@ -833,30 +864,23 @@ export function PerformanceChart({ applications }: Props) {
 
             <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 380 }}>
               {dropdownOptions.map((opt, idx) => {
-                const isParticularDate = opt.type === 'date';
-                const isSelected = isParticularDate
-                  ? filterMode === 'custom_date'
-                  : filterMode !== 'custom_date' && (selectedLabel ? selectedLabel === opt.label : idx === 0);
+                const isSelected = selectedLabel ? selectedLabel === opt.label : idx === 0;
 
                 return (
                   <TouchableOpacity
                     key={opt.id}
                     onPress={() => {
                       setShowHeaderDropdown(false);
-                      if (isParticularDate) {
-                        setTimeout(() => setShowDatePicker(true), 200);
-                      } else {
-                        setFilterMode(opt.mode);
-                        setSelectedRefDate(opt.refDate);
-                        setSelectedLabel(opt.label);
-                        setSelectedIdx(null);
-                      }
+                      setFilterMode(opt.mode);
+                      setSelectedRefDate(opt.refDate);
+                      setSelectedLabel(opt.label);
+                      setSelectedIdx(null);
                     }}
                     style={[
                       styles.modalOption,
                       {
                         borderBottomColor: colors.border,
-                        backgroundColor: isSelected ? (isDark ? '#27272A' : '#F1F5F9') : 'transparent',
+                        backgroundColor: isSelected ? (isDark ? colors.surfaceElevated : '#F1F5F9') : 'transparent',
                       },
                     ]}
                   >
@@ -864,11 +888,11 @@ export function PerformanceChart({ applications }: Props) {
                       <View
                         style={[
                           styles.modalOptionIcon,
-                          { backgroundColor: isSelected ? (isDark ? '#374151' : '#E2E8F0') : colors.surface },
+                          { backgroundColor: isSelected ? (isDark ? colors.surfaceElevated : '#E2E8F0') : colors.surface },
                         ]}
                       >
                         <Feather
-                          name={isParticularDate ? 'clock' : opt.mode === 'weekly' ? 'calendar' : opt.mode === 'monthly' ? 'bar-chart-2' : 'trending-up'}
+                          name={opt.mode === 'weekly' ? 'calendar' : opt.mode === 'monthly' ? 'bar-chart-2' : 'trending-up'}
                           size={16}
                           color={colors.foreground}
                         />
@@ -890,25 +914,6 @@ export function PerformanceChart({ applications }: Props) {
           </Pressable>
         </Pressable>
       </Modal>
-
-      {/* Native Date Picker for Particular Date */}
-      {showDatePicker && (
-        <DateTimePicker
-          value={customDate}
-          mode="date"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={(event: DateTimePickerEvent, selected?: Date) => {
-            setShowDatePicker(false);
-            if (selected) {
-              setCustomDate(selected);
-              setFilterMode('custom_date');
-              setSelectedRefDate(selected);
-              setSelectedLabel(formatDateShort(selected));
-              setSelectedIdx(null);
-            }
-          }}
-        />
-      )}
     </View>
   );
 }
@@ -938,9 +943,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 5,
-    borderRadius: 10,
+    borderRadius: 9999,
     borderWidth: 1,
   },
   headerDropdownText: {

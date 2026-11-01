@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useColors } from '@/hooks/useColors';
@@ -25,13 +25,10 @@ export const EmptyCompareState = React.memo(function EmptyCompareState() {
         activeOpacity={0.85}
       >
         <Text style={[styles.btnText, { color: colors.primaryForeground }]}>Browse IPOs</Text>
-        <Feather name="arrow-right" size={16} color={colors.primaryForeground} />
       </TouchableOpacity>
     </View>
   );
 });
-
-import { TouchableOpacity } from 'react-native';
 
 const styles = StyleSheet.create({
   container: {

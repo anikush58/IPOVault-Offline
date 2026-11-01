@@ -24,6 +24,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
 import { useDB, type ApplicationWithDetails } from '@/context/DBContext';
 import { Tabs } from '@/components/ui/Tabs';
+import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { calculateAppTaxAndNet } from '@/utils/calculations';
 import { formatCurrency } from '@/utils/formatters';
@@ -47,8 +48,11 @@ const LEADERBOARD_ASSETS = {
   rank2Badge: require('@/assets/images/leaderboard/rank-2-badge.png'),
   rank3Badge: require('@/assets/images/leaderboard/rank-3-badge.png'),
   rank1Card: require('@/assets/images/leaderboard/rank-1-card.png'),
+  rank1CardDark: require('@/assets/images/leaderboard/rank-1-card-dark.png'),
   rank2Card: require('@/assets/images/leaderboard/rank-2-card.png'),
+  rank2CardDark: require('@/assets/images/leaderboard/rank-2-card-dark.png'),
   rank3Card: require('@/assets/images/leaderboard/rank-3-card.png'),
+  rank3CardDark: require('@/assets/images/leaderboard/rank-3-card-dark.png'),
 };
 
 function computeRankings(
@@ -481,12 +485,17 @@ export function PodiumRankCard({
 }: PodiumRankCardProps) {
   const [imgError, setImgError] = useState(false);
 
-  const defaultAsset =
-    rank === 1
-      ? LEADERBOARD_ASSETS.rank1Card
+  const defaultAsset = isDark
+    ? rank === 1
+      ? LEADERBOARD_ASSETS.rank1CardDark
       : rank === 2
-      ? LEADERBOARD_ASSETS.rank2Card
-      : LEADERBOARD_ASSETS.rank3Card;
+      ? LEADERBOARD_ASSETS.rank2CardDark
+      : LEADERBOARD_ASSETS.rank3CardDark
+    : rank === 1
+    ? LEADERBOARD_ASSETS.rank1Card
+    : rank === 2
+    ? LEADERBOARD_ASSETS.rank2Card
+    : LEADERBOARD_ASSETS.rank3Card;
 
   const resolvedSource = cardSource !== undefined ? cardSource : defaultAsset;
   const hasImage = resolvedSource && !imgError;
@@ -1073,7 +1082,7 @@ export default function LeaderboardScreen() {
           ]}
         >
           <View style={[styles.searchBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Feather name="search" size={16} color={colors.mutedForeground} />
+            <Icon name="search" size={16} color={colors.mutedForeground} />
             <TextInput
               ref={searchRef}
               value={searchQuery}
@@ -1085,7 +1094,7 @@ export default function LeaderboardScreen() {
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={10}>
-                <Feather name="x-circle" size={18} color={colors.mutedForeground} />
+                <Icon name="x-circle" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             )}
           </View>

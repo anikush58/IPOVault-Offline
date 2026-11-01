@@ -16,6 +16,13 @@ import { DesignSystem } from '@/constants/DesignSystem';
 import { Button } from '@/components/ui/Button';
 import { AllotmentStatusBadge, AllotmentBadgeStatus } from './AllotmentStatusBadge';
 
+export interface CategoryBreakdownItem {
+  category: string;
+  status: 'ALLOTTED' | 'PARTIALLY_ALLOTTED' | 'NOT_ALLOTTED' | 'NO_RECORD' | 'PENDING';
+  sharesAllotted: number;
+  allottedLots?: number;
+}
+
 export interface ManagedAccountAllotmentResult {
   applicationId: string;
   userId: string;
@@ -24,6 +31,8 @@ export interface ManagedAccountAllotmentResult {
   sharesAllotted: number;
   allottedLots?: number;
   appliedQuantity?: number;
+  category?: string;
+  categories?: CategoryBreakdownItem[];
 }
 
 export interface AllotmentSuccessModalProps {
@@ -48,17 +57,111 @@ export const AllotmentSuccessModal: React.FC<AllotmentSuccessModalProps> = ({
   const colors = useColors();
   const insets = useSafeAreaInsets();
 
+  // Merge results by user while preserving category-level breakdowns and summing verified shares
+  const uniqueResults = React.useMemo(() => {
+    const map = new Map<string, ManagedAccountAllotmentResult>();
+    for (const res of results || []) {
+      const key = (res.userId || res.userName || res.applicationId || '').trim().toLowerCase();
+      const existing = map.get(key);
+      if (!existing) {
+        const initialCategories: CategoryBreakdownItem[] = res.categories
+          ? [...res.categories]
+          : res.category
+          ? [
+              {
+                category: res.category,
+                status: res.status,
+                sharesAllotted: res.sharesAllotted,
+                allottedLots: res.allottedLots,
+              },
+            ]
+          : [];
+
+        map.set(key, {
+          ...res,
+          categories: initialCategories.length > 0 ? initialCategories : undefined,
+        });
+      } else {
+        const isCurrentAllotted = res.status === 'ALLOTTED' || res.status === 'PARTIALLY_ALLOTTED';
+        const isExistingAllotted = existing.status === 'ALLOTTED' || existing.status === 'PARTIALLY_ALLOTTED';
+
+        const mergedStatus = isExistingAllotted || isCurrentAllotted ? 'ALLOTTED' : res.status;
+
+        const categoriesList = existing.categories ? [...existing.categories] : [];
+        if (existing.category && categoriesList.length === 0) {
+          categoriesList.push({
+            category: existing.category,
+            status: existing.status,
+            sharesAllotted: existing.sharesAllotted,
+            allottedLots: existing.allottedLots,
+          });
+        }
+
+        if (res.categories && res.categories.length > 0) {
+          for (const c of res.categories) {
+            const matchIdx = categoriesList.findIndex(
+              (item) => item.category.toUpperCase() === c.category.toUpperCase(),
+            );
+            if (matchIdx >= 0) {
+              categoriesList[matchIdx] = c;
+            } else {
+              categoriesList.push(c);
+            }
+          }
+        } else if (res.category) {
+          const matchIdx = categoriesList.findIndex(
+            (item) => item.category.toUpperCase() === res.category!.toUpperCase(),
+          );
+          if (matchIdx >= 0) {
+            categoriesList[matchIdx] = {
+              category: res.category,
+              status: res.status,
+              sharesAllotted: res.sharesAllotted,
+              allottedLots: res.allottedLots,
+            };
+          } else {
+            categoriesList.push({
+              category: res.category,
+              status: res.status,
+              sharesAllotted: res.sharesAllotted,
+              allottedLots: res.allottedLots,
+            });
+          }
+        }
+
+        const totalShares =
+          categoriesList.length > 0
+            ? categoriesList.reduce((sum, c) => sum + (c.sharesAllotted || 0), 0)
+            : Math.max(existing.sharesAllotted || 0, res.sharesAllotted || 0);
+
+        const totalLots =
+          categoriesList.length > 0
+            ? categoriesList.reduce((sum, c) => sum + (c.allottedLots || 0), 0)
+            : Math.max(existing.allottedLots || 0, res.allottedLots || 0);
+
+        map.set(key, {
+          ...existing,
+          status: mergedStatus,
+          sharesAllotted: totalShares,
+          allottedLots: totalLots,
+          categories: categoriesList.length > 0 ? categoriesList : undefined,
+        });
+      }
+    }
+    return Array.from(map.values());
+  }, [results]);
+
   if (!visible || !results || results.length === 0) return null;
 
   const displayName = companyName || ipoName || 'IPO';
-  const total = results.length;
+  const total = uniqueResults.length;
 
   let allottedCount = 0;
   let partialCount = 0;
   let notAllottedCount = 0;
   let totalSharesAllotted = 0;
 
-  results.forEach((res) => {
+  uniqueResults.forEach((res) => {
     const statusUpper = (res.status || '').toUpperCase();
     if (statusUpper === 'ALLOTTED') {
       allottedCount++;
@@ -162,7 +265,7 @@ export const AllotmentSuccessModal: React.FC<AllotmentSuccessModalProps> = ({
           </Text>
 
           <ScrollView style={styles.listContainer} showsVerticalScrollIndicator={false}>
-            {results.map((item) => {
+            {uniqueResults.map((item) => {
               const statusUpper = (item.status || 'PENDING').toUpperCase() as AllotmentBadgeStatus;
               const isAllotted = statusUpper === 'ALLOTTED' || statusUpper === 'PARTIALLY_ALLOTTED';
 
@@ -187,7 +290,15 @@ export const AllotmentSuccessModal: React.FC<AllotmentSuccessModalProps> = ({
                       <Text style={[styles.userName, { color: colors.foreground }]} numberOfLines={1}>
                         {item.userName}
                       </Text>
-                      {item.appliedQuantity ? (
+                      {item.categories && item.categories.length > 1 ? (
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
+                          {item.categories.map((c, idx) => (
+                            <Text key={idx} style={[styles.subText, { color: colors.mutedForeground, fontSize: 11 }]}>
+                              {c.category}: {c.sharesAllotted > 0 ? `${c.sharesAllotted} sh` : '0 sh'}{idx < item.categories!.length - 1 ? ' •' : ''}
+                            </Text>
+                          ))}
+                        </View>
+                      ) : item.appliedQuantity ? (
                         <Text style={[styles.subText, { color: colors.mutedForeground }]}>
                           Applied for {item.appliedQuantity} shares
                         </Text>

@@ -1,23 +1,25 @@
+import { resolveIpoLotSize } from '@/utils/ipoCategoryUtils';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { SQLiteProvider, useSQLiteContext } from 'expo-sqlite';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Crypto from 'expo-crypto';
-import { UserRepository, IPORepository, ApplicationRepository, BankRepository } from '@/db/repositories';
+import { UserRepository, IPORepository, ApplicationRepository, BankRepository, type BulkApplyResult } from '@/db/repositories';
+export type { BulkApplyResult };
 import { syncStore } from '@/services/sync/syncStatus';
-import { safeRunAsync, safeGetFirstAsync, safeGetAllAsync, runWithTransaction } from '@/utils/sqliteDebug';
+import { safeRunAsync, safeGetFirstAsync, safeGetAllAsync, runWithTransaction, isClosedResourceError, isDatabaseOpen, markDatabaseOpen } from '@/utils/sqliteDebug';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { ensureBase64DataUrl, extractBase64Payload, saveBase64ToLocalImage } from '@/utils/imageUtils';
-import { getEffectiveAvatarUrl } from '@/utils/avatarUtils';
+import { getEffectiveAvatarUrl, prefetchUserAvatars } from '@/utils/avatarUtils';
 import { getRegistrarConfig } from '@/services/allotment/registrarConfig';
 import { startPerfTimer } from '@/utils/performanceMetrics';
 import {
-  scheduleDebouncedFirestoreSync,
   cancelDebouncedFirestoreSync,
   syncUserDataToFirestore,
   fetchUserDataFromFirestore,
   syncDeltaFromFirestore,
+  syncApplicationsBatch,
   syncSingleDocUpsert,
   syncSingleDocDelete,
   clearLocalSyncCursor,
@@ -110,6 +112,10 @@ export type ApplicationWithDetails = {
   is_favorite: number; // 0 = no, 1 = yes
   broker_account_id?: string | null;
   brokerAccountId?: string | null;
+  category?: string;
+  allotted_shares?: number | null;
+  allotted_lots?: number | null;
+  allotment_status?: string | null;
 };
 
 export type BankAccount = {
@@ -154,6 +160,7 @@ export type SaveAllotmentParams = {
   refund_amount?: number;
   registrar?: string;
   verification_method?: 'AUTOMATED' | 'USER_VERIFIED';
+  checked_at?: string;
   error_code?: string;
 };
 
@@ -165,13 +172,19 @@ export type ImportResult = {
   allotments?: number;
 };
 
-type DBContextType = {
+export type CloudSyncStatus = 'idle' | 'syncing' | 'restoring' | 'success' | 'error';
+
+export type DBContextType = {
   users: User[];
   ipos: IPOListing[];
   applications: ApplicationWithDetails[];
   bankAccounts: BankAccount[];
+  allotments: IPOAllotmentRecord[];
   isLoading: boolean;
   isRestoring: boolean;
+  cloudSyncStatus: CloudSyncStatus;
+  cloudSyncError: string | null;
+  retryCloudSync: () => Promise<boolean>;
   restoreCloudData: (targetUid?: string) => Promise<boolean>;
   refresh: () => Promise<void>;
   refreshCritical: () => Promise<void>;
@@ -204,8 +217,9 @@ type DBContextType = {
     bankName?: string | Record<string, string>,
     upiApp?: string | Record<string, string>,
     lotCounts?: Record<string, number> | number,
-    ipoListingData?: any
-  ) => Promise<void>;
+    ipoListingData?: any,
+    categoryMap?: string | Record<string, string>
+  ) => Promise<BulkApplyResult>;
   updateApplication: (
     id: string,
     status: ApplicationStatus,
@@ -216,7 +230,8 @@ type DBContextType = {
     bankName?: string,
     upiApp?: string,
     brokerAccountId?: string | null,
-    sharesCount?: number | null
+    sharesCount?: number | null,
+    allottedShares?: number | null
   ) => Promise<void>;
   partialSellApplication: (
     id: string,
@@ -237,6 +252,9 @@ type DBContextType = {
       lots?: number;
       bid_price?: number;
       category?: string;
+  allotted_shares?: number | null;
+  allotted_lots?: number | null;
+  allotment_status?: string | null;
       bank_name?: string;
       upi_app?: string;
       mandate_status?: string;
@@ -261,7 +279,7 @@ type DBContextType = {
   deleteBankAccount: (id: string) => Promise<void>;
   // Data management
   loadSampleData: () => Promise<void>;
-  clearAllData: () => Promise<void>;
+  clearAllData: (targetUid?: string, options?: { skipCloudFlush?: boolean }) => Promise<void>;
   exportCSV: () => Promise<Record<string, string>>;
   importCSV: (csv: string) => Promise<ImportResult>;
   exportJSON: () => Promise<string>;
@@ -296,15 +314,31 @@ const DBContext = createContext<DBContextType | null>(null);
 
 function DBProviderInner({ children }: { children: React.ReactNode }) {
   const db = useSQLiteContext();
+  useEffect(() => {
+    if (db) {
+      markDatabaseOpen(db);
+    }
+  }, [db]);
   const { user: authUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [ipos, setIPOs] = useState<IPOListing[]>([]);
   const [applications, setApplications] = useState<ApplicationWithDetails[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [allotments, setAllotments] = useState<IPOAllotmentRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('idle');
+  const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
   const syncedUidRef = React.useRef<string | null>(null);
+  const activeSyncUidRef = React.useRef<string | null>(null);
+  const isSyncInProgressRef = React.useRef<boolean>(false);
   const deletingBankIdsRef = React.useRef<Set<string>>(new Set());
+
+  const authUserRef = React.useRef(authUser);
+  authUserRef.current = authUser;
+  const refreshCriticalRef = React.useRef<() => Promise<void>>(() => Promise.resolve());
+  const refreshSecondaryRef = React.useRef<() => Promise<void>>(() => Promise.resolve());
+  const refreshRef = React.useRef<() => Promise<void>>(() => Promise.resolve());
 
   const isDev = typeof __DEV__ !== 'undefined' ? Boolean(__DEV__) : process.env.NODE_ENV !== 'production';
 
@@ -312,32 +346,121 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     const t0 = Date.now();
     const currentUid = authUser?.uid || authUser?.id || null;
 
-    const userRows = currentUid
-      ? await db.getAllAsync<User>(
+    const userRowsPromise = (currentUid
+      ? safeGetAllAsync<User>(
+          db,
           'SELECT * FROM users_table WHERE owner_id = ? AND deleted_at IS NULL ORDER BY name',
-          [currentUid]
+          [currentUid],
+          'DBContext.refreshCritical.users'
         )
-      : await db.getAllAsync<User>(
-          'SELECT * FROM users_table WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL ORDER BY name'
-        );
-    setUsers(userRows);
+      : safeGetAllAsync<User>(
+          db,
+          'SELECT * FROM users_table WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL ORDER BY name',
+          [],
+          'DBContext.refreshCritical.users'
+        )
+    ).catch((err) => {
+      if (isClosedResourceError(err)) return [] as User[];
+      throw err;
+    });
 
-    const ipoRows = currentUid
-      ? await db.getAllAsync<IPOListing>(
+    const ipoRowsPromise = (currentUid
+      ? safeGetAllAsync<IPOListing>(
+          db,
           'SELECT * FROM ipo_listings WHERE (owner_id = ? OR owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL ORDER BY id DESC',
-          [currentUid]
+          [currentUid],
+          'DBContext.refreshCritical.ipos'
         )
-      : await db.getAllAsync<IPOListing>(
-          'SELECT * FROM ipo_listings WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL ORDER BY id DESC'
-        );
+      : safeGetAllAsync<IPOListing>(
+          db,
+          'SELECT * FROM ipo_listings WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL ORDER BY id DESC',
+          [],
+          'DBContext.refreshCritical.ipos'
+        )
+    ).catch((err) => {
+      if (isClosedResourceError(err)) return [] as IPOListing[];
+      throw err;
+    });
+
+    const masterIPOsPromise = safeGetAllAsync<any>(
+      db,
+      `SELECT *, price_band_max AS buy_price, lot_size AS quantity FROM ipo_master WHERE deleted_at IS NULL AND (status = 'OPEN' OR status = 'UPCOMING' OR is_favorite = 1)`,
+      [],
+      'DBContext.refreshCritical.master'
+    ).catch(() => [] as any[]);
+
+    const appRowsPromise = (currentUid
+      ? safeGetAllAsync<ApplicationWithDetails>(
+          db,
+          `SELECT a.id, a.user_id, a.ipo_id, a.category, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
+                 a.shares_count, a.is_favorite, a.broker_account_id, a.created_at, a.updated_at,
+                 u.name        AS user_name,
+                 u.broker      AS user_broker,
+                 u.client_id   AS user_client_id,
+                 u.pan_number  AS user_pan_number,
+                 u.avatar_url  AS user_avatar_url,
+                 COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
+                 COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
+                 COALESCE(NULLIF(i.ipo_name, ''), NULLIF(m.ipo_name, ''), NULLIF(m.company_name, ''), 'IPO') AS ipo_name,
+                 COALESCE(NULLIF(i.buy_price, 0), NULLIF(m.price_band_max, 0), NULLIF(m.price_band_min, 0), 100) AS buy_price,
+                 COALESCE(a.shares_count, NULLIF(i.quantity, 0), NULLIF(m.lot_size, 0), 1) AS quantity,
+                 COALESCE(NULLIF(i.open_date, ''), NULLIF(m.open_date, ''), '') AS open_date,
+                 COALESCE(NULLIF(i.logo_url, ''), NULLIF(m.logo_url, ''), '') AS ipo_logo_url
+          FROM   ipo_applications a
+          JOIN   users_table u ON a.user_id = u.id
+          LEFT JOIN ipo_listings i ON a.ipo_id = i.id
+          LEFT JOIN ipo_master m ON a.ipo_id = m.id
+          WHERE  (a.owner_id = ? OR a.owner_id IS NULL OR a.owner_id = '') AND a.deleted_at IS NULL AND u.deleted_at IS NULL AND (i.deleted_at IS NULL OR i.id IS NULL)
+          ORDER  BY a.id DESC`,
+          [currentUid],
+          'DBContext.refreshCritical.apps'
+        )
+      : safeGetAllAsync<ApplicationWithDetails>(
+          db,
+          `SELECT a.id, a.user_id, a.ipo_id, a.category, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
+                 a.shares_count, a.is_favorite, a.broker_account_id, a.created_at, a.updated_at,
+                 u.name        AS user_name,
+                 u.broker      AS user_broker,
+                 u.client_id   AS user_client_id,
+                 u.pan_number  AS user_pan_number,
+                 u.avatar_url  AS user_avatar_url,
+                 COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
+                 COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
+                 COALESCE(NULLIF(i.ipo_name, ''), NULLIF(m.ipo_name, ''), NULLIF(m.company_name, ''), 'IPO') AS ipo_name,
+                 COALESCE(NULLIF(i.buy_price, 0), NULLIF(m.price_band_max, 0), NULLIF(m.price_band_min, 0), 100) AS buy_price,
+                 COALESCE(a.shares_count, NULLIF(i.quantity, 0), NULLIF(m.lot_size, 0), 1) AS quantity,
+                 COALESCE(NULLIF(i.open_date, ''), NULLIF(m.open_date, ''), '') AS open_date,
+                 COALESCE(NULLIF(i.logo_url, ''), NULLIF(m.logo_url, ''), '') AS ipo_logo_url
+          FROM   ipo_applications a
+          JOIN   users_table u ON a.user_id = u.id
+          LEFT JOIN ipo_listings i ON a.ipo_id = i.id
+          LEFT JOIN ipo_master m ON a.ipo_id = m.id
+          WHERE  (a.owner_id IS NULL OR a.owner_id = '') AND a.deleted_at IS NULL AND u.deleted_at IS NULL AND (i.deleted_at IS NULL OR i.id IS NULL)
+          ORDER  BY a.id DESC`,
+          [],
+          'DBContext.refreshCritical.apps'
+        )
+    ).catch((err) => {
+      if (isClosedResourceError(err)) return [] as ApplicationWithDetails[];
+      throw err;
+    });
+
+    const [userRows, ipoRows, masterIPOs, appRows] = await Promise.all([
+      userRowsPromise,
+      ipoRowsPromise,
+      masterIPOsPromise,
+      appRowsPromise,
+    ]);
+
+    setUsers(userRows || []);
+    if (userRows && userRows.length > 0) {
+      prefetchUserAvatars(userRows);
+    }
 
     let masterRows: IPOListing[] = [];
     let masterById: Map<string, any> = new Map();
-    try {
-      const masterIPOs = await db.getAllAsync<any>(
-        `SELECT *, price_band_max AS buy_price, lot_size AS quantity FROM ipo_master WHERE deleted_at IS NULL AND (status = 'OPEN' OR status = 'UPCOMING' OR is_favorite = 1)`
-      );
-      const existingIds = new Set(ipoRows.map((r) => r.id));
+    if (masterIPOs && masterIPOs.length > 0) {
+      const existingIds = new Set((ipoRows || []).map((r) => r.id));
 
       for (const m of masterIPOs) {
         if (m && m.id) masterById.set(m.id, m);
@@ -369,11 +492,9 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           lot_size: m.lot_size ?? null,
           total_sub: m.total_sub ?? null,
         }));
-    } catch {
-      // master table optional
     }
 
-    const enrichedIpoRows = ipoRows.map((row) => {
+    const enrichedIpoRows = (ipoRows || []).map((row) => {
       const master = masterById.get(row.id);
       if (!master) return row;
       return {
@@ -399,62 +520,12 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     });
 
     setIPOs([...enrichedIpoRows, ...masterRows]);
-
-    const appRows = currentUid
-      ? await safeGetAllAsync<ApplicationWithDetails>(
-          db,
-          `SELECT a.id, a.user_id, a.ipo_id, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
-                 a.shares_count, a.is_favorite, a.broker_account_id, a.created_at, a.updated_at,
-                 u.name        AS user_name,
-                 u.broker      AS user_broker,
-                 u.client_id   AS user_client_id,
-                 u.pan_number  AS user_pan_number,
-                 u.avatar_url  AS user_avatar_url,
-                 COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
-                 COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
-                 i.ipo_name,
-                 i.buy_price,
-                 COALESCE(a.shares_count, i.quantity) AS quantity,
-                 i.open_date,
-                 i.logo_url AS ipo_logo_url
-          FROM   ipo_applications a
-          JOIN   users_table u ON a.user_id = u.id
-          JOIN   ipo_listings i ON a.ipo_id = i.id
-          WHERE  (a.owner_id = ? OR a.owner_id IS NULL OR a.owner_id = '') AND a.deleted_at IS NULL AND u.deleted_at IS NULL AND i.deleted_at IS NULL
-          ORDER  BY a.id DESC`,
-          [currentUid],
-          'DBContext.refreshCritical.apps'
-        )
-      : await safeGetAllAsync<ApplicationWithDetails>(
-          db,
-          `SELECT a.id, a.user_id, a.ipo_id, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
-                 a.shares_count, a.is_favorite, a.broker_account_id, a.created_at, a.updated_at,
-                 u.name        AS user_name,
-                 u.broker      AS user_broker,
-                 u.client_id   AS user_client_id,
-                 u.pan_number  AS user_pan_number,
-                 u.avatar_url  AS user_avatar_url,
-                 COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
-                 COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
-                 i.ipo_name,
-                 i.buy_price,
-                 COALESCE(a.shares_count, i.quantity) AS quantity,
-                 i.open_date,
-                 i.logo_url AS ipo_logo_url
-          FROM   ipo_applications a
-          JOIN   users_table u ON a.user_id = u.id
-          JOIN   ipo_listings i ON a.ipo_id = i.id
-          WHERE  (a.owner_id IS NULL OR a.owner_id = '') AND a.deleted_at IS NULL AND u.deleted_at IS NULL AND i.deleted_at IS NULL
-          ORDER  BY a.id DESC`,
-          [],
-          'DBContext.refreshCritical.apps'
-        );
-    setApplications(appRows);
+    setApplications(appRows || []);
 
     setIsLoading(false);
     const duration = Date.now() - t0;
     if (isDev) {
-      console.log(`[CloudSync Timing] Stage 1 critical refresh: ${duration}ms (users: ${userRows.length}, ipos: ${enrichedIpoRows.length + masterRows.length}, apps: ${appRows.length})`);
+      console.log(`[CloudSync Timing] Stage 1 critical refresh: ${duration}ms (users: ${(userRows || []).length}, ipos: ${enrichedIpoRows.length + masterRows.length}, apps: ${(appRows || []).length})`);
     }
   }, [db, authUser?.uid, authUser?.id]);
 
@@ -462,26 +533,72 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     const t0 = Date.now();
     const currentUid = authUser?.uid || authUser?.id || null;
 
-    const bankRows = currentUid
-      ? await safeGetAllAsync<BankAccount>(
+    const bankPromise = currentUid
+      ? safeGetAllAsync<BankAccount>(
           db,
           'SELECT * FROM bank_accounts WHERE (owner_id = ? OR owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL ORDER BY bank_name',
           [currentUid],
           'DBContext.refreshSecondary.banks'
         )
-      : await safeGetAllAsync<BankAccount>(
+      : safeGetAllAsync<BankAccount>(
           db,
           'SELECT * FROM bank_accounts WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL ORDER BY bank_name',
           [],
           'DBContext.refreshSecondary.banks'
         );
+
+    const altPromise = currentUid
+      ? safeGetAllAsync<IPOAllotmentRecord>(
+          db,
+          `SELECT alt.* FROM ipo_allotments alt
+           LEFT JOIN ipo_applications a ON alt.application_id = a.id
+           WHERE (a.owner_id = ? OR a.owner_id IS NULL OR a.owner_id = '')
+           ORDER BY alt.checked_at DESC`,
+          [currentUid],
+          'DBContext.refreshSecondary.allotments'
+        )
+      : safeGetAllAsync<IPOAllotmentRecord>(
+          db,
+          `SELECT alt.* FROM ipo_allotments alt
+           LEFT JOIN ipo_applications a ON alt.application_id = a.id
+           WHERE (a.owner_id IS NULL OR a.owner_id = '')
+           ORDER BY alt.checked_at DESC`,
+          [],
+          'DBContext.refreshSecondary.allotments'
+        );
+
+    const [bankRows, altRows] = await Promise.all([
+      bankPromise.catch((err) => {
+        if (isClosedResourceError(err)) return [] as BankAccount[];
+        throw err;
+      }),
+      altPromise.catch((err) => {
+        if (isClosedResourceError(err)) return [] as IPOAllotmentRecord[];
+        throw err;
+      }),
+    ]);
     const filteredBankRows = deletingBankIdsRef.current.size > 0
-      ? bankRows.filter((b) => !deletingBankIdsRef.current.has(b.id))
-      : bankRows;
-    setBankAccounts(filteredBankRows);
+      ? (bankRows || []).filter((b) => !deletingBankIdsRef.current.has(b.id))
+      : (bankRows || []);
+
+    // Guaranteed deduplication by normalized bank name for UI stability
+    const seenBankKeys = new Set<string>();
+    const deduplicatedBankRows: BankAccount[] = [];
+    for (const b of filteredBankRows) {
+      const key = (b.bank_name || '').trim().toLowerCase();
+      if (!key) continue;
+      if (!seenBankKeys.has(key)) {
+        seenBankKeys.add(key);
+        deduplicatedBankRows.push(b);
+      }
+    }
+
+    setBankAccounts(deduplicatedBankRows);
+    setAllotments(altRows || []);
+
     const duration = Date.now() - t0;
     if (isDev) {
-      console.log(`[CloudSync Timing] Stage 2 secondary refresh: ${duration}ms (banks: ${bankRows.length})`);
+      console.log(`[CloudSync Timing] Stage 2 secondary refresh: ${duration}ms (banks: ${filteredBankRows.length}, allotments: ${(altRows || []).length})`);
     }
   }, [db, authUser?.uid, authUser?.id]);
 
@@ -496,7 +613,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         db,
         `UPDATE ipo_applications
          SET status = 'Not Allotted', updated_at = ?
-         WHERE status IN ('Applied', 'Mandate Approved')
+         WHERE status IN ('Applied', 'Mandate Approved', 'Allotted')
            AND id IN (
              SELECT application_id FROM ipo_allotments
              WHERE UPPER(TRIM(allotment_status)) IN ('NOT_ALLOTTED', 'NOT ALLOTTED', 'REJECTED')
@@ -508,7 +625,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         db,
         `UPDATE ipo_applications
          SET status = 'Allotted', updated_at = ?
-         WHERE status IN ('Applied', 'Mandate Approved')
+         WHERE status IN ('Applied', 'Mandate Approved', 'Not Allotted')
            AND id IN (
              SELECT application_id FROM ipo_allotments
              WHERE UPPER(TRIM(allotment_status)) = 'ALLOTTED'
@@ -544,6 +661,163 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           'DBContext.reconcile.repairBank'
         );
       }
+
+      // Deduplicate active bank accounts: merge any duplicates with identical normalized bank names
+      const duplicateBankGroups = await safeGetAllAsync<{ norm_name: string; cnt: number }>(
+        db,
+        `SELECT LOWER(TRIM(bank_name)) as norm_name, COUNT(*) as cnt
+         FROM bank_accounts
+         WHERE deleted_at IS NULL
+         GROUP BY LOWER(TRIM(bank_name))
+         HAVING COUNT(*) > 1`,
+        [],
+        'DBContext.reconcile.findDuplicateBanks'
+      );
+
+      for (const group of duplicateBankGroups || []) {
+        if (!group?.norm_name) continue;
+        const candidates = await safeGetAllAsync<BankAccount>(
+          db,
+          `SELECT * FROM bank_accounts
+           WHERE LOWER(TRIM(bank_name)) = ? AND deleted_at IS NULL
+           ORDER BY
+             (CASE WHEN owner_id IS NOT NULL AND owner_id != '' THEN 1 ELSE 0 END) DESC,
+             balance DESC,
+             updated_at DESC`,
+          [group.norm_name],
+          'DBContext.reconcile.getDuplicateBankCandidates'
+        );
+
+        if (candidates && candidates.length > 1) {
+          const canonical = candidates[0];
+          const redundant = candidates.slice(1);
+          const bestUpi = (canonical.upi_app && canonical.upi_app.trim()) || (redundant.find((r) => r.upi_app && r.upi_app.trim())?.upi_app?.trim() || '');
+          if (bestUpi !== canonical.upi_app) {
+            await safeRunAsync(
+              db,
+              'UPDATE bank_accounts SET upi_app = ?, updated_at = ? WHERE id = ?',
+              [bestUpi, nowIso, canonical.id],
+              'DBContext.reconcile.updateCanonicalBankUpi'
+            );
+          }
+
+          for (const dup of redundant) {
+            await safeRunAsync(
+              db,
+              'DELETE FROM bank_accounts WHERE id = ?',
+              [dup.id],
+              'DBContext.reconcile.removeDuplicateBank'
+            );
+          }
+        }
+      }
+
+      // Resurrect valid applications that were erroneously soft-deleted by duplicate checks if they have distinct data or non-matching categories
+      await safeRunAsync(
+        db,
+        `UPDATE ipo_applications
+         SET deleted_at = NULL, updated_at = ?
+         WHERE deleted_at IS NOT NULL
+           AND (
+             category IN ('SHAREHOLDER', 'HNI', 'SME', 'EMPLOYEE')
+             OR id IN (SELECT application_id FROM ipo_allotments WHERE application_id IS NOT NULL)
+             OR NOT EXISTS (
+               SELECT 1 FROM ipo_applications active
+               WHERE active.deleted_at IS NULL
+                 AND active.id != ipo_applications.id
+                 AND active.user_id = ipo_applications.user_id
+                 AND active.ipo_id = ipo_applications.ipo_id
+                 AND COALESCE(NULLIF(active.category, ''), 'RETAIL') = COALESCE(NULLIF(ipo_applications.category, ''), 'RETAIL')
+             )
+           )`,
+        [nowIso],
+        'DBContext.reconcile.resurrectErroneouslyDeletedApps'
+      );
+
+      // Deduplicate applications and allotments: ensure at most 1 active application and 1 allotment per user per IPO per category
+      const duplicateAppGroups = await safeGetAllAsync<{ user_id: string; ipo_id: string; category: string; cnt: number }>(
+        db,
+        `SELECT user_id, ipo_id, COALESCE(NULLIF(category, ''), 'RETAIL') as category, COUNT(*) as cnt
+         FROM ipo_applications
+         WHERE deleted_at IS NULL OR deleted_at = ''
+         GROUP BY user_id, ipo_id, COALESCE(NULLIF(category, ''), 'RETAIL')
+         HAVING COUNT(*) > 1`,
+        [],
+        'DBContext.reconcile.findDuplicateApps'
+      );
+
+      for (const group of duplicateAppGroups || []) {
+        if (!group?.user_id || !group?.ipo_id) continue;
+        const candidates = await safeGetAllAsync<ApplicationWithDetails>(
+          db,
+          `SELECT * FROM ipo_applications
+           WHERE user_id = ? AND ipo_id = ? AND COALESCE(NULLIF(category, ''), 'RETAIL') = ? AND (deleted_at IS NULL OR deleted_at = '')
+           ORDER BY
+             (CASE WHEN status IN ('Allotted', 'Partially Allotted') THEN 2 WHEN status = 'Applied' THEN 1 ELSE 0 END) DESC,
+             (CASE WHEN shares_count IS NOT NULL AND shares_count > 0 THEN shares_count ELSE 0 END) DESC,
+             created_at ASC`,
+          [group.user_id, group.ipo_id, group.category],
+          'DBContext.reconcile.getDuplicateAppCandidates'
+        );
+
+        if (candidates && candidates.length > 1) {
+          const canonical = candidates[0];
+          // Guard: Never delete candidates if their raw categories differ, or if they have distinct bank accounts or shares count
+          const redundant = candidates.slice(1).filter((dup) => {
+            if (dup.category && canonical.category && dup.category !== canonical.category) return false;
+            if (dup.shares_count && canonical.shares_count && dup.shares_count !== canonical.shares_count) return false;
+            return true;
+          });
+
+          const bestStatus = candidates.find((c) => c.status === 'Allotted' || c.status === 'Partially Allotted')?.status || canonical.status;
+          const allottedCandidate = candidates.find((c) => c.status === 'Allotted' || c.status === 'Partially Allotted');
+          const bestShares = allottedCandidate?.shares_count && allottedCandidate.shares_count > 0
+            ? allottedCandidate.shares_count
+            : Math.max(...candidates.map((c) => c.shares_count || 0));
+
+          await safeRunAsync(
+            db,
+            'UPDATE ipo_applications SET status = ?, shares_count = ?, updated_at = ? WHERE id = ?',
+            [bestStatus, bestShares > 0 ? bestShares : canonical.shares_count, nowIso, canonical.id],
+            'DBContext.reconcile.updateCanonicalApp'
+          );
+
+          for (const dup of redundant) {
+            // Soft-delete redundant exact duplicates within the same category to never destroy records
+            await safeRunAsync(db, 'UPDATE ipo_allotments SET updated_at = ? WHERE application_id = ?', [nowIso, dup.id]);
+            await safeRunAsync(db, 'UPDATE ipo_applications SET deleted_at = ?, updated_at = ? WHERE id = ?', [nowIso, nowIso, dup.id]);
+          }
+        }
+      }
+
+      // Clean up any remaining duplicate allotments by (user_id, ipo_id, category)
+      await safeRunAsync(
+        db,
+        `DELETE FROM ipo_allotments
+         WHERE application_id NOT IN (
+           SELECT id FROM ipo_applications WHERE deleted_at IS NULL OR deleted_at = ''
+         )
+         OR id NOT IN (
+           SELECT MIN(alt.id)
+           FROM ipo_allotments alt
+           JOIN ipo_applications app ON alt.application_id = app.id
+           WHERE app.deleted_at IS NULL OR app.deleted_at = ''
+           GROUP BY alt.user_id, alt.ipo_id, COALESCE(NULLIF(app.category, ''), 'RETAIL')
+         )`,
+        [],
+        'DBContext.reconcile.cleanDuplicateAllotments'
+      );
+
+      // Clean up orphaned local data if previous session terminated during account deletion
+      const orphanDeletionUid = await safeAsyncStorage.getItem('@ipovault_pending_account_deletion_uid');
+      if (orphanDeletionUid) {
+        await safeRunAsync(db, 'DELETE FROM ipo_allotments WHERE application_id IN (SELECT id FROM ipo_applications WHERE owner_id = ?)', [orphanDeletionUid]);
+        await safeRunAsync(db, 'DELETE FROM ipo_applications WHERE owner_id = ?', [orphanDeletionUid]);
+        await safeRunAsync(db, 'DELETE FROM ipo_listings WHERE owner_id = ?', [orphanDeletionUid]);
+        await safeRunAsync(db, 'DELETE FROM users_table WHERE owner_id = ?', [orphanDeletionUid]);
+        await safeRunAsync(db, 'DELETE FROM bank_accounts WHERE owner_id = ?', [orphanDeletionUid]);
+        await safeAsyncStorage.removeItem('@ipovault_pending_account_deletion_uid');
+      }
     } catch {}
   }, [db]);
 
@@ -555,9 +829,12 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     const promise = (async () => {
       const timer = startPerfTimer('DBContext.refresh');
       try {
-        await refreshCritical();
-        await refreshSecondary();
+        await Promise.all([refreshCritical(), refreshSecondary()]);
         timer();
+      } catch (err) {
+        if (!isClosedResourceError(err)) {
+          throw err;
+        }
       } finally {
         inFlightRefreshRef.current = null;
       }
@@ -567,14 +844,43 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     return promise;
   }, [refreshCritical, refreshSecondary]);
 
+  refreshCriticalRef.current = refreshCritical;
+  refreshSecondaryRef.current = refreshSecondary;
+  refreshRef.current = refresh;
+
   // Initial self-healing reconciliation on mount / DB load
   useEffect(() => {
     reconcileAllotmentStatuses().catch(() => {});
   }, [reconcileAllotmentStatuses]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    let isMounted = true;
+    const timeout = setTimeout(() => {
+      if (isMounted) setIsLoading(false);
+    }, 2000);
+
+    refresh()
+      .catch((err) => {
+        if (isDev) console.warn('[DBContext] Initial refresh error:', err);
+      })
+      .finally(() => {
+        if (isMounted) {
+          clearTimeout(timeout);
+          setIsLoading(false);
+        }
+      });
+
+    // Reconcile and schedule advance notifications with OS
+    try {
+      const { reconcileScheduledNotifications } = require('@/services/notifications/notificationEngine');
+      reconcileScheduledNotifications(db).catch(() => {});
+    } catch {}
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timeout);
+    };
+  }, [refresh, isDev, db]);
 
   useEffect(() => {
     cancelDebouncedFirestoreSync();
@@ -594,34 +900,131 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
   // ── User CRUD ──────────────────────────────────────────────────────────────
 
   const addUser = async (user: Omit<User, 'id'>) => {
-    const repo = new UserRepository(db);
     const currentUid = authUser?.uid || authUser?.id || null;
-    await repo.add(user, currentUid);
-    await refresh();
+    let snapshotUsers: User[] = [];
+    setUsers((prev) => {
+      snapshotUsers = prev;
+      return prev;
+    });
+    try {
+      const repo = new UserRepository(db);
+      const newId = await repo.add(user, currentUid);
+      const createdUser: User = { ...user, id: newId, owner_id: currentUid || undefined };
+      setUsers((prev) => [...prev, createdUser].sort((a, b) => a.name.localeCompare(b.name)));
+      if (currentUid) {
+        syncSingleDocUpsert(currentUid, 'profiles', newId, createdUser).catch((err) => {
+          if (isDev) console.warn('[DBContext.addUser] Live cloud user sync notice:', err);
+        });
+      }
+    } catch (err) {
+      if (snapshotUsers.length > 0) setUsers(snapshotUsers);
+      throw err;
+    }
   };
 
   const updateUser = async (id: string, user: Omit<User, 'id'>) => {
-    const repo = new UserRepository(db);
-    await repo.update(id, user);
-    await refresh();
+    const currentUid = authUser?.uid || authUser?.id || null;
+    let snapshotUsers: User[] = [];
+    let snapshotApps: ApplicationWithDetails[] = [];
+    setUsers((prev) => {
+      snapshotUsers = prev;
+      return prev.map((u) => (u.id === id ? { ...u, ...user } : u));
+    });
+    setApplications((prev) => {
+      snapshotApps = prev;
+      return prev.map((a) =>
+        a.user_id === id
+          ? {
+              ...a,
+              user_name: user.name || a.user_name,
+              user_broker: user.broker || a.user_broker,
+              user_client_id: user.client_id !== undefined ? user.client_id : a.user_client_id,
+              user_pan_number: user.pan_number !== undefined ? user.pan_number : a.user_pan_number,
+              user_bank_name: user.bank_name || a.user_bank_name,
+              user_upi_app: user.upi_app || a.user_upi_app,
+              user_avatar_url: (user.avatar_url || (user as any).avatarUrl) !== undefined ? (user.avatar_url || (user as any).avatarUrl) : a.user_avatar_url,
+            }
+          : a
+      );
+    });
+    try {
+      const repo = new UserRepository(db);
+      await repo.update(id, user);
+      if (currentUid) {
+        syncSingleDocUpsert(currentUid, 'profiles', id, { ...user, id }).catch((err) => {
+          if (isDev) console.warn('[DBContext.updateUser] Live cloud user sync notice:', err);
+        });
+      }
+    } catch (err) {
+      if (snapshotUsers.length > 0) setUsers(snapshotUsers);
+      if (snapshotApps.length > 0) setApplications(snapshotApps);
+      throw err;
+    }
   };
 
   const archiveUser = async (id: string) => {
-    const repo = new UserRepository(db);
-    await repo.archive(id, true);
-    await refresh();
+    let snapshotUsers: User[] = [];
+    setUsers((prev) => {
+      snapshotUsers = prev;
+      return prev.map((u) => (u.id === id ? { ...u, archived: 1 } : u));
+    });
+    try {
+      const repo = new UserRepository(db);
+      await repo.archive(id, true);
+      const currentUid = authUser?.uid || authUser?.id || null;
+      if (currentUid) {
+        syncSingleDocUpsert(currentUid, 'profiles', id, { archived: 1, updated_at: new Date().toISOString() }).catch(() => {});
+      }
+    } catch (err) {
+      if (snapshotUsers.length > 0) setUsers(snapshotUsers);
+      throw err;
+    }
   };
 
   const unarchiveUser = async (id: string) => {
-    const repo = new UserRepository(db);
-    await repo.archive(id, false);
-    await refresh();
+    let snapshotUsers: User[] = [];
+    setUsers((prev) => {
+      snapshotUsers = prev;
+      return prev.map((u) => (u.id === id ? { ...u, archived: 0 } : u));
+    });
+    try {
+      const repo = new UserRepository(db);
+      await repo.archive(id, false);
+      const currentUid = authUser?.uid || authUser?.id || null;
+      if (currentUid) {
+        syncSingleDocUpsert(currentUid, 'profiles', id, { archived: 0, updated_at: new Date().toISOString() }).catch(() => {});
+      }
+    } catch (err) {
+      if (snapshotUsers.length > 0) setUsers(snapshotUsers);
+      throw err;
+    }
   };
 
   const deleteUser = async (id: string) => {
-    const repo = new UserRepository(db);
-    await repo.delete(id);
-    await refresh();
+    let snapshotUsers: User[] = [];
+    let snapshotApps: ApplicationWithDetails[] = [];
+    setUsers((prev) => {
+      snapshotUsers = prev;
+      return prev.filter((u) => u.id !== id);
+    });
+    setApplications((prev) => {
+      snapshotApps = prev;
+      return prev.filter((a) => a.user_id !== id);
+    });
+    try {
+      const repo = new UserRepository(db);
+      await repo.delete(id);
+      const currentUid = authUser?.uid || authUser?.id || null;
+      if (currentUid) {
+        syncSingleDocDelete(currentUid, 'profiles', id).catch((err) => {
+          if (isDev) console.warn('[DBContext.deleteUser] Live cloud delete user notice:', err);
+        });
+      }
+    } catch (err) {
+      if (snapshotUsers.length > 0) setUsers(snapshotUsers);
+      if (snapshotApps.length > 0) setApplications(snapshotApps);
+      throw err;
+    }
   };
 
   // ── IPO CRUD ───────────────────────────────────────────────────────────────
@@ -631,12 +1034,20 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     const currentUid = authUser?.uid || authUser?.id || null;
     await repo.add(ipo, currentUid);
     await refresh();
+    try {
+      const { scheduleAdvanceIPONotifications } = require('@/services/notifications/notificationEngine');
+      await scheduleAdvanceIPONotifications(db, [ipo as any]);
+    } catch {}
   };
 
   const updateIPO = async (id: string, ipo: Omit<IPOListing, 'id' | 'is_favorite'>) => {
     const repo = new IPORepository(db);
     await repo.update(id, ipo);
     await refresh();
+    try {
+      const { scheduleAdvanceIPONotifications } = require('@/services/notifications/notificationEngine');
+      await scheduleAdvanceIPONotifications(db, [{ ...ipo, id }]);
+    } catch {}
   };
 
   const archiveIPO = async (id: string) => {
@@ -661,23 +1072,40 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     const repo = new IPORepository(db);
     await repo.delete(id);
     await refresh();
+    try {
+      const { cancelIPONotifications } = require('@/services/notifications/notificationEngine');
+      await cancelIPONotifications(id);
+    } catch {}
   };
 
   // ── Applications ───────────────────────────────────────────────────────────
 
-  const addBulkApplications = async (
-    ipoId: string,
-    userIds: string[],
-    bankName?: string | Record<string, string>,
-    upiApp?: string | Record<string, string>,
-    lotCounts?: Record<string, number> | number,
-    ipoListingData?: any
-  ) => {
-    if (!ipoId) return;
-    const t0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-    const timer = startPerfTimer('DBContext.addBulkApplications', { applicantCount: userIds.length, ipoId });
-    const now = new Date().toISOString();
-    let resolvedId = ipoId;
+  const addBulkApplications = useCallback(
+    async (
+      ipoId: string,
+      userIds: string[],
+      bankName?: string | Record<string, string>,
+      upiApp?: string | Record<string, string>,
+      lotCounts?: Record<string, number> | number,
+      ipoListingData?: any,
+      categoryMap?: string | Record<string, string>
+    ): Promise<BulkApplyResult> => {
+      const emptyResult: BulkApplyResult = {
+        selectedCount: userIds?.length || 0,
+        createdCount: 0,
+        alreadyExistingCount: 0,
+        failedCount: 0,
+        createdAppIds: [],
+        skippedUserIds: [],
+        errors: [],
+      };
+      if (!ipoId) return emptyResult;
+
+      const t0 = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+      const timer = startPerfTimer('DBContext.addBulkApplications', { applicantCount: userIds.length, ipoId });
+      const now = new Date().toISOString();
+      const currentUid = authUserRef.current?.uid || authUserRef.current?.id || null;
+      let resolvedId = ipoId;
 
     if (ipoListingData) {
       // Upsert provided listing metadata directly in a single statement
@@ -686,14 +1114,15 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         `INSERT INTO ipo_listings (
           id, ipo_name, company_name, symbol, buy_price, quantity, open_date, close_date, listing_date, allotment_date,
           registrar, exchange, issue_type, archived, is_favorite, logo_url, created_at, updated_at,
-          sync_version, sync_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, 0, 'PENDING')
+          sync_version, sync_status, owner_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, 0, 'PENDING', ?)
         ON CONFLICT(id) DO UPDATE SET
           ipo_name = excluded.ipo_name, company_name = excluded.company_name, symbol = excluded.symbol,
           buy_price = excluded.buy_price, quantity = excluded.quantity, open_date = excluded.open_date,
           close_date = excluded.close_date, listing_date = excluded.listing_date, allotment_date = excluded.allotment_date,
           registrar = excluded.registrar, exchange = excluded.exchange, issue_type = excluded.issue_type,
-          logo_url = excluded.logo_url, updated_at = excluded.updated_at`,
+          logo_url = excluded.logo_url, updated_at = excluded.updated_at,
+          owner_id = COALESCE(excluded.owner_id, ipo_listings.owner_id)`,
         [
           ipoListingData.id || ipoId,
           ipoListingData.ipo_name || 'IPO',
@@ -711,10 +1140,27 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           ipoListingData.logo_url || '',
           now,
           now,
+          currentUid,
         ],
         'DBContext.addBulkApplications.upsertListing'
       );
       resolvedId = ipoListingData.id || ipoId;
+      setIPOs((prev) => {
+        const existingIdx = prev.findIndex((i) => i.id === resolvedId);
+        if (existingIdx >= 0) {
+          const copy = [...prev];
+          copy[existingIdx] = { ...copy[existingIdx], ...ipoListingData, id: resolvedId };
+          return copy;
+        }
+        return [{ ...ipoListingData, id: resolvedId, archived: 0, is_favorite: 0 }, ...prev];
+      });
+      if (currentUid) {
+        syncSingleDocUpsert(currentUid, 'ipos', resolvedId, {
+          ...ipoListingData,
+          id: resolvedId,
+          updated_at: now,
+        }).catch(() => {});
+      }
     } else {
       // 1. Check if record exists in ipo_listings by id, ipo_name, or company_name
       const existingInListings = await safeGetFirstAsync<{ id: string }>(
@@ -741,8 +1187,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
             db,
             `INSERT OR IGNORE INTO ipo_listings (
               id, ipo_name, company_name, symbol, buy_price, quantity, open_date, close_date, listing_date, allotment_date,
-              registrar, exchange, issue_type, archived, is_favorite, logo_url, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+              registrar, exchange, issue_type, archived, is_favorite, logo_url, owner_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
             [
               masterRecord.id,
               masterRecord.ipo_name || masterRecord.company_name || 'IPO',
@@ -759,6 +1205,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
               masterRecord.issue_type || 'Mainboard',
               masterRecord.is_favorite || 0,
               masterRecord.logo_url || '',
+              currentUid,
               now,
               now,
             ],
@@ -771,9 +1218,9 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
             db,
             `INSERT OR IGNORE INTO ipo_listings (
               id, ipo_name, company_name, buy_price, quantity, open_date, close_date, listing_date, allotment_date,
-              registrar, exchange, issue_type, archived, is_favorite, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, '', '', '', '', ?, 'NSE, BSE', 'Mainboard', 0, 0, ?, ?)`,
-            [ipoId, ipoId, ipoId, 100, 1, shadowRegistrar, now, now],
+              registrar, exchange, issue_type, archived, is_favorite, owner_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, '', '', '', '', ?, 'NSE, BSE', 'Mainboard', 0, 0, ?, ?, ?)`,
+            [ipoId, ipoId, ipoId, 100, 1, shadowRegistrar, currentUid, now, now],
             'DBContext.addBulkApplications.insertFallbackShadow'
           );
         }
@@ -781,18 +1228,85 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     }
 
     const repo = new ApplicationRepository(db);
-    const currentUid = authUser?.uid || authUser?.id || null;
-    await repo.addBulk(resolvedId, userIds, bankName, upiApp, lotCounts, currentUid);
+    const result = await repo.addBulk(resolvedId, userIds, bankName, upiApp, lotCounts, currentUid, categoryMap);
     const tCommit = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
     const durationCommit = tCommit - t0;
     timer({ status: 'committed', durationMs: durationCommit });
-    console.log(`[DBContext Trace] ApplicationRepository.addBulk transaction committed to SQLite in ${durationCommit.toFixed(1)}ms (${userIds.length} applicant(s))`);
+    console.log(`[DBContext Trace] ApplicationRepository.addBulk transaction committed to SQLite in ${durationCommit.toFixed(1)}ms (${result.createdCount} created, ${result.alreadyExistingCount} existing)`);
 
-    // Trigger state refresh off the critical path so sheet closure and user confirmation are immediate
-    refresh().catch((err) => {
-      console.warn('[DBContext Trace] Post-apply background refresh error:', err?.message || err);
-    });
-  };
+    // Targeted state update: fetch only the newly created rows instead of querying the full database
+    if (result.createdAppIds.length > 0) {
+      try {
+        const placeholders = result.createdAppIds.map(() => '?').join(',');
+        const newAppRows = await safeGetAllAsync<ApplicationWithDetails>(
+          db,
+          `SELECT a.id, a.user_id, a.ipo_id, a.category, a.status, a.sell_price, a.sale_date, a.tax, a.user_cut,
+                  a.shares_count, a.is_favorite, a.broker_account_id, a.created_at, a.updated_at,
+                  u.name        AS user_name,
+                  u.broker      AS user_broker,
+                  u.client_id   AS user_client_id,
+                  u.pan_number  AS user_pan_number,
+                  u.avatar_url  AS user_avatar_url,
+                  COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
+                  COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
+                  COALESCE(NULLIF(i.ipo_name, ''), NULLIF(m.ipo_name, ''), NULLIF(m.company_name, ''), 'IPO') AS ipo_name,
+                  COALESCE(NULLIF(i.buy_price, 0), NULLIF(m.price_band_max, 0), NULLIF(m.price_band_min, 0), 100) AS buy_price,
+                  COALESCE(a.shares_count, NULLIF(i.quantity, 0), NULLIF(m.lot_size, 0), 1) AS quantity,
+                  COALESCE(NULLIF(i.open_date, ''), NULLIF(m.open_date, ''), '') AS open_date,
+                  COALESCE(NULLIF(i.logo_url, ''), NULLIF(m.logo_url, ''), '') AS ipo_logo_url
+           FROM   ipo_applications a
+           JOIN   users_table u ON a.user_id = u.id
+           LEFT JOIN ipo_listings i ON a.ipo_id = i.id
+           LEFT JOIN ipo_master m ON a.ipo_id = m.id
+           WHERE  a.id IN (${placeholders})`,
+          result.createdAppIds,
+          'DBContext.addBulkApplications.fetchNewRows'
+        );
+
+        if (newAppRows && newAppRows.length > 0) {
+          const newIds = new Set(newAppRows.map((r) => r.id));
+          setApplications((prev) => [
+            ...newAppRows,
+            ...prev.filter((existing) => !newIds.has(existing.id) && existing.status !== 'Cancelled'),
+          ]);
+        }
+      } catch (err: any) {
+        console.warn('[DBContext Trace] Post-apply targeted fetch error, falling back to refreshCritical:', err?.message || err);
+        await refreshCritical();
+      }
+    }
+
+    // Secondary background refresh for allotments
+    refreshSecondary().catch(() => {});
+
+    // Instant atomic batch cloud sync for all created applications
+    if (currentUid && result.createdAppIds.length > 0) {
+      (async () => {
+        try {
+          const placeholders = result.createdAppIds.map(() => '?').join(',');
+          const createdRows = await safeGetAllAsync<any>(
+            db,
+            `SELECT * FROM ipo_applications WHERE id IN (${placeholders})`,
+            result.createdAppIds,
+            'DBContext.addBulkApplications.batchFetch'
+          );
+          if (createdRows && createdRows.length > 0) {
+            await syncApplicationsBatch(currentUid, createdRows);
+            await safeRunAsync(
+              db,
+              `UPDATE ipo_applications SET sync_status = 'SYNCED', last_synced_at = ? WHERE id IN (${placeholders})`,
+              [now, ...result.createdAppIds],
+              'DBContext.addBulkApplications.markSynced'
+            );
+          }
+        } catch (syncErr) {
+          console.warn('[addBulkApplications] Batch cloud sync failed:', syncErr);
+        }
+      })().catch(() => {});
+    }
+
+    return result;
+  }, [db, refreshCritical, refreshSecondary]);
 
   const handleBankAllotmentDebit = async (
     targetDb: any,
@@ -853,52 +1367,97 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateApplication = async (
-    id: string,
-    status: ApplicationStatus,
-    sellPrice?: number | null,
-    saleDate?: string | null,
-    tax?: number,
-    userCut?: number,
-    bankName?: string,
-    upiApp?: string,
-    brokerAccountId?: string | null,
-    sharesCount?: number | null,
-  ) => {
-    await handleBankAllotmentDebit(db, id, status, bankName ? { bank_name: bankName } : undefined);
-    const repo = new ApplicationRepository(db);
-    await repo.update(id, status, sellPrice, saleDate, tax, userCut);
-    if (bankName !== undefined || upiApp !== undefined || brokerAccountId !== undefined || sharesCount !== undefined) {
-      await db.runAsync(
-        `UPDATE ipo_applications SET
-          bank_name = COALESCE(?, bank_name),
-          upi_app = COALESCE(?, upi_app),
-          broker_account_id = CASE WHEN ? = 1 THEN ? ELSE broker_account_id END,
-          shares_count = CASE WHEN ? = 1 THEN ? ELSE shares_count END,
-          updated_at = ?
-         WHERE id = ?`,
-        [
-          bankName ?? null,
-          upiApp ?? null,
-          brokerAccountId !== undefined ? 1 : 0,
-          brokerAccountId ?? null,
-          sharesCount !== undefined ? 1 : 0,
-          sharesCount ?? null,
-          new Date().toISOString(),
-          id,
-        ]
-      );
-    }
-    await refresh();
-    const currentUid = authUser?.uid || authUser?.id || null;
-    if (currentUid) {
+  const updateApplication = useCallback(
+    async (
+      id: string,
+      status: ApplicationStatus,
+      sellPrice?: number | null,
+      saleDate?: string | null,
+      tax?: number,
+      userCut?: number,
+      bankName?: string,
+      upiApp?: string,
+      brokerAccountId?: string | null,
+      sharesCount?: number | null,
+      allottedShares?: number | null,
+    ) => {
+      let snapshot: ApplicationWithDetails[] = [];
+      setApplications((prev) => {
+        snapshot = prev;
+        return prev.map((app) => {
+          if (app.id !== id) return app;
+          const isAllottedState =
+            status === 'Allotted' ||
+            status === 'Partially Allotted' ||
+            status === 'Holding' ||
+            status === 'Sold';
+          const resolvedAllottedShares =
+            allottedShares !== undefined
+              ? allottedShares
+              : (isAllottedState && sharesCount !== undefined && sharesCount !== null && sharesCount > 0)
+              ? sharesCount
+              : status === 'Not Allotted'
+              ? 0
+              : app.allotted_shares;
+          const resolvedSharesCount =
+            sharesCount !== undefined && sharesCount !== null
+              ? (status === 'Not Allotted' && sharesCount === 0 ? app.shares_count : sharesCount)
+              : app.shares_count;
+
+          return {
+            ...app,
+            status,
+            sell_price: sellPrice !== undefined ? sellPrice : app.sell_price,
+            sale_date: saleDate !== undefined ? saleDate : app.sale_date,
+            tax: tax !== undefined ? tax : app.tax,
+            user_cut: userCut !== undefined ? userCut : app.user_cut,
+            user_bank_name: bankName !== undefined && bankName.trim() !== '' ? bankName.trim() : app.user_bank_name,
+            user_upi_app: upiApp !== undefined && upiApp.trim() !== '' ? upiApp.trim() : app.user_upi_app,
+            broker_account_id: brokerAccountId !== undefined ? brokerAccountId : app.broker_account_id,
+            shares_count: resolvedSharesCount,
+            allotted_shares: resolvedAllottedShares,
+            quantity:
+              isAllottedState
+                ? (typeof resolvedAllottedShares === 'number' && resolvedAllottedShares > 0
+                    ? resolvedAllottedShares
+                    : (resolvedSharesCount || app.quantity || 1))
+                : (resolvedSharesCount || app.quantity || 1),
+          };
+        });
+      });
+
       try {
-        scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
+        await handleBankAllotmentDebit(db, id, status, bankName ? { bank_name: bankName } : undefined);
+        const repo = new ApplicationRepository(db);
+        await repo.update(id, status, sellPrice, saleDate, tax, userCut, bankName, upiApp, brokerAccountId, sharesCount);
       } catch (err) {
-        console.warn('[updateApplication] scheduleDebouncedFirestoreSync failed:', err);
+        if (snapshot.length > 0) setApplications(snapshot);
+        throw err;
       }
-    }
-  };
+
+      const currentUid = authUserRef.current?.uid || authUserRef.current?.id || null;
+      if (currentUid) {
+        try {
+          const updateData: Record<string, any> = {
+            status,
+            updated_at: new Date().toISOString(),
+          };
+          if (sellPrice !== undefined) updateData.sell_price = sellPrice;
+          if (saleDate !== undefined) updateData.sale_date = saleDate;
+          if (tax !== undefined) updateData.tax = tax;
+          if (userCut !== undefined) updateData.user_cut = userCut;
+          if (bankName !== undefined && bankName.trim() !== '') updateData.bank_name = bankName.trim();
+          if (upiApp !== undefined && upiApp.trim() !== '') updateData.upi_app = upiApp.trim();
+          if (brokerAccountId !== undefined) updateData.broker_account_id = brokerAccountId;
+          if (sharesCount !== undefined) updateData.shares_count = sharesCount;
+          syncSingleDocUpsert(currentUid, 'applications', id, updateData).catch(() => {});
+        } catch (err) {
+          console.warn('[updateApplication] syncSingleDocUpsert failed:', err);
+        }
+      }
+    },
+    [db]
+  );
 
   const partialSellApplication = async (
     id: string,
@@ -930,118 +1489,192 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     await refresh();
     if (currentUid) {
       try {
-        scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
+        syncSingleDocUpsert(currentUid, 'applications', id, {
+          shares_count: totalShares - soldShares,
+          updated_at: new Date().toISOString(),
+        }).catch(() => {});
       } catch (err) {
-        console.warn('[partialSellApplication] scheduleDebouncedFirestoreSync failed:', err);
+        console.warn('[partialSellApplication] syncSingleDocUpsert failed:', err);
       }
     }
   };
 
-  const updateApplicationDetails = async (
-    id: string,
-    details: {
-      status: ApplicationStatus;
-      lots?: number;
-      bid_price?: number;
-      category?: string;
-      bank_name?: string;
-      upi_app?: string;
-      mandate_status?: string;
-      app_number?: string;
-      sellPrice?: number | null;
-      saleDate?: string | null;
-      tax?: number;
-      userCut?: number;
-      brokerAccountId?: string | null;
-    }
-  ) => {
-    await handleBankAllotmentDebit(db, id, details.status, details);
-    const repo = new ApplicationRepository(db);
-    await repo.update(id, details.status, details.sellPrice, details.saleDate, details.tax, details.userCut);
-    if (details.bank_name || details.upi_app || details.app_number || details.lots || details.bid_price || details.mandate_status || details.category || details.brokerAccountId !== undefined) {
-      await db.runAsync(
-        `UPDATE ipo_applications SET
-          bank_name = COALESCE(?, bank_name),
-          upi_app = COALESCE(?, upi_app),
-          app_number = COALESCE(?, app_number),
-          lots = COALESCE(?, lots),
-          bid_price = COALESCE(?, bid_price),
-          mandate_status = COALESCE(?, mandate_status),
-          category = COALESCE(?, category),
-          broker_account_id = CASE WHEN ? = 1 THEN ? ELSE broker_account_id END,
-          updated_at = ?
-         WHERE id = ?`,
-        [
-          details.bank_name ?? null,
-          details.upi_app ?? null,
-          details.app_number ?? null,
-          details.lots ?? null,
-          details.bid_price ?? null,
-          details.mandate_status ?? null,
-          details.category ?? null,
-          details.brokerAccountId !== undefined ? 1 : 0,
-          details.brokerAccountId ?? null,
-          new Date().toISOString(),
-          id
-        ]
+  const updateApplicationDetails = useCallback(
+    async (
+      id: string,
+      details: {
+        status: ApplicationStatus;
+        lots?: number;
+        bid_price?: number;
+        category?: string;
+  allotted_shares?: number | null;
+  allotted_lots?: number | null;
+  allotment_status?: string | null;
+        bank_name?: string;
+        upi_app?: string;
+        mandate_status?: string;
+        app_number?: string;
+        sellPrice?: number | null;
+        saleDate?: string | null;
+        tax?: number;
+        userCut?: number;
+        brokerAccountId?: string | null;
+      }
+    ) => {
+      // 1. In-memory targeted update
+      setApplications((prev) =>
+        prev.map((app) => {
+          if (app.id !== id) return app;
+          return {
+            ...app,
+            status: details.status,
+            sell_price: details.sellPrice !== undefined ? details.sellPrice : app.sell_price,
+            sale_date: details.saleDate !== undefined ? details.saleDate : app.sale_date,
+            tax: details.tax !== undefined ? details.tax : app.tax,
+            user_cut: details.userCut !== undefined ? details.userCut : app.user_cut,
+            user_bank_name: details.bank_name !== undefined && details.bank_name.trim() !== '' ? details.bank_name.trim() : app.user_bank_name,
+            user_upi_app: details.upi_app !== undefined && details.upi_app.trim() !== '' ? details.upi_app.trim() : app.user_upi_app,
+            broker_account_id: details.brokerAccountId !== undefined ? details.brokerAccountId : app.broker_account_id,
+            category: details.category !== undefined ? details.category : app.category,
+          };
+        })
       );
-    }
-    await refresh();
-    const currentUid = authUser?.uid || authUser?.id || null;
-    if (currentUid) {
-      try {
-        scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
-      } catch (err) {
-        console.warn('[updateApplicationDetails] scheduleDebouncedFirestoreSync failed:', err);
-      }
-    }
-  };
 
-  const updateBulkApplications = async (ids: string[], status: ApplicationStatus) => {
-    for (const id of ids) {
-      await handleBankAllotmentDebit(db, id, status);
-    }
-    const repo = new ApplicationRepository(db);
-    await repo.updateBulkStatus(ids, status);
-    await refresh();
-    const currentUid = authUser?.uid || authUser?.id || null;
-    if (currentUid) {
-      try {
-        scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
-      } catch (err) {
-        console.warn('[updateBulkApplications] scheduleDebouncedFirestoreSync failed:', err);
+      // 2. Persist to SQLite
+      await handleBankAllotmentDebit(db, id, details.status, details);
+      const repo = new ApplicationRepository(db);
+      await repo.update(id, details.status, details.sellPrice, details.saleDate, details.tax, details.userCut);
+      if (details.bank_name || details.upi_app || details.app_number || details.lots || details.bid_price || details.mandate_status || details.category || details.brokerAccountId !== undefined) {
+        await db.runAsync(
+          `UPDATE ipo_applications SET
+            bank_name = COALESCE(?, bank_name),
+            upi_app = COALESCE(?, upi_app),
+            app_number = COALESCE(?, app_number),
+            lots = COALESCE(?, lots),
+            bid_price = COALESCE(?, bid_price),
+            mandate_status = COALESCE(?, mandate_status),
+            category = COALESCE(?, category),
+            broker_account_id = CASE WHEN ? = 1 THEN ? ELSE broker_account_id END,
+            updated_at = ?
+           WHERE id = ?`,
+          [
+            details.bank_name ?? null,
+            details.upi_app ?? null,
+            details.app_number ?? null,
+            details.lots ?? null,
+            details.bid_price ?? null,
+            details.mandate_status ?? null,
+            details.category ?? null,
+            details.brokerAccountId !== undefined ? 1 : 0,
+            details.brokerAccountId ?? null,
+            new Date().toISOString(),
+            id
+          ]
+        );
       }
-    }
-  };
 
-  const deleteApplication = async (id: string) => {
-    await handleBankAllotmentDebit(db, id, 'Not Allotted' as ApplicationStatus);
-    const repo = new ApplicationRepository(db);
-    await repo.delete(id);
-    await refresh();
-    const currentUid = authUser?.uid || authUser?.id || null;
-    if (currentUid) {
-      try {
-        syncSingleDocDelete(currentUid, 'applications', id);
-        scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
-      } catch (err) {
-        console.warn('[deleteApplication] cloud sync failed:', err);
+      // 3. Lightweight single-doc Firestore sync
+      const currentUid = authUserRef.current?.uid || authUserRef.current?.id || null;
+      if (currentUid) {
+        try {
+          const updateData: Record<string, any> = {
+            status: details.status,
+            updated_at: new Date().toISOString(),
+          };
+          if (details.sellPrice !== undefined) updateData.sell_price = details.sellPrice;
+          if (details.saleDate !== undefined) updateData.sale_date = details.saleDate;
+          if (details.tax !== undefined) updateData.tax = details.tax;
+          if (details.userCut !== undefined) updateData.user_cut = details.userCut;
+          if (details.bank_name !== undefined) updateData.bank_name = details.bank_name;
+          if (details.upi_app !== undefined) updateData.upi_app = details.upi_app;
+          if (details.category !== undefined) updateData.category = details.category;
+          if (details.brokerAccountId !== undefined) updateData.broker_account_id = details.brokerAccountId;
+          syncSingleDocUpsert(currentUid, 'applications', id, updateData).catch(() => {});
+        } catch (err) {
+          console.warn('[updateApplicationDetails] syncSingleDocUpsert failed:', err);
+        }
       }
-    }
-  };
+    },
+    [db]
+  );
 
-  const toggleFavorite = async (id: string, isFavorite: boolean) => {
-    await db.runAsync('UPDATE ipo_applications SET is_favorite=? WHERE id=?', [isFavorite ? 1 : 0, id]);
-    await refresh();
-    const currentUid = authUser?.uid || authUser?.id || null;
-    if (currentUid) {
-      try {
-        scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
-      } catch (err) {
-        console.warn('[toggleFavorite] scheduleDebouncedFirestoreSync failed:', err);
+  const updateBulkApplications = useCallback(
+    async (ids: string[], status: ApplicationStatus) => {
+      // 1. In-memory instant update
+      setApplications((prev) =>
+        prev.map((app) => (ids.includes(app.id) ? { ...app, status } : app))
+      );
+
+      // 2. Persist to SQLite
+      for (const id of ids) {
+        await handleBankAllotmentDebit(db, id, status);
       }
-    }
-  };
+      const repo = new ApplicationRepository(db);
+      await repo.updateBulkStatus(ids, status);
+
+      // 3. Single-doc updates concurrently to Firestore
+      const currentUid = authUserRef.current?.uid || authUserRef.current?.id || null;
+      if (currentUid) {
+        const nowIso = new Date().toISOString();
+        for (const id of ids) {
+          syncSingleDocUpsert(currentUid, 'applications', id, {
+            status,
+            updated_at: nowIso,
+          }).catch(() => {});
+        }
+      }
+    },
+    [db]
+  );
+
+  const deleteApplication = useCallback(
+    async (id: string) => {
+      // 1. In-memory instant update
+      setApplications((prev) => prev.filter((app) => app.id !== id));
+
+      // 2. Persist to SQLite
+      await handleBankAllotmentDebit(db, id, 'Not Allotted' as ApplicationStatus);
+      const repo = new ApplicationRepository(db);
+      await repo.delete(id);
+
+      // 3. Single-doc delete to Firestore
+      const currentUid = authUserRef.current?.uid || authUserRef.current?.id || null;
+      if (currentUid) {
+        try {
+          syncSingleDocDelete(currentUid, 'applications', id).catch(() => {});
+        } catch (err) {
+          console.warn('[deleteApplication] cloud sync failed:', err);
+        }
+      }
+    },
+    [db]
+  );
+
+  const toggleFavorite = useCallback(
+    async (id: string, isFavorite: boolean) => {
+      // 1. In-memory instant update
+      setApplications((prev) =>
+        prev.map((app) => (app.id === id ? { ...app, is_favorite: isFavorite ? 1 : 0 } : app))
+      );
+
+      // 2. Persist to SQLite
+      await db.runAsync('UPDATE ipo_applications SET is_favorite=? WHERE id=?', [isFavorite ? 1 : 0, id]);
+
+      // 3. Single-doc upsert to Firestore
+      const currentUid = authUserRef.current?.uid || authUserRef.current?.id || null;
+      if (currentUid) {
+        try {
+          syncSingleDocUpsert(currentUid, 'applications', id, {
+            is_favorite: isFavorite ? 1 : 0,
+            updated_at: new Date().toISOString(),
+          }).catch(() => {});
+        } catch (err) {
+          console.warn('[toggleFavorite] syncSingleDocUpsert failed:', err);
+        }
+      }
+    },
+    [db]
+  );
 
   // ── Allotments ─────────────────────────────────────────────────────────────
 
@@ -1049,18 +1682,23 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     try {
       const currentUid = authUser?.uid || authUser?.id || null;
       const rows = currentUid
-        ? await db.getAllAsync<IPOAllotmentRecord>(
+        ? await safeGetAllAsync<IPOAllotmentRecord>(
+            db,
             `SELECT alt.* FROM ipo_allotments alt
-             JOIN ipo_applications a ON alt.application_id = a.id
-             WHERE a.owner_id = ?
+             LEFT JOIN ipo_applications a ON alt.application_id = a.id
+             WHERE (a.owner_id = ? OR a.owner_id IS NULL OR a.owner_id = '')
              ORDER BY alt.checked_at DESC`,
-            [currentUid]
+            [currentUid],
+            'DBContext.getAllotments'
           )
-        : await db.getAllAsync<IPOAllotmentRecord>(
+        : await safeGetAllAsync<IPOAllotmentRecord>(
+            db,
             `SELECT alt.* FROM ipo_allotments alt
-             JOIN ipo_applications a ON alt.application_id = a.id
+             LEFT JOIN ipo_applications a ON alt.application_id = a.id
              WHERE (a.owner_id IS NULL OR a.owner_id = '')
-             ORDER BY alt.checked_at DESC`
+             ORDER BY alt.checked_at DESC`,
+            [],
+            'DBContext.getAllotments'
           );
       return rows || [];
     } catch {
@@ -1082,8 +1720,13 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     const existing = await getAllotmentByAppId(params.application_id);
     const id = existing?.id || Crypto.randomUUID();
 
-    const allottedLots = params.allotted_lots ?? (params.allotment_status === 'ALLOTTED' ? 1 : 0);
-    const allottedShares = params.allotted_shares ?? 0;
+    const allottedLots = params.allotted_lots ?? (params.allotment_status === 'ALLOTTED' || params.allotment_status === 'PARTIALLY_ALLOTTED' ? 1 : 0);
+    const ipoObj = ipos.find((i) => i.id === params.ipo_id);
+    const lotSize = resolveIpoLotSize(ipoObj);
+    let allottedShares = params.allotted_shares ?? 0;
+    if (allottedShares <= 0 && allottedLots > 0) {
+      allottedShares = allottedLots * lotSize;
+    }
     const allotmentPrice = params.allotment_price ?? 0;
     const applicationAmount = params.application_amount ?? 0;
     const refundAmount = params.refund_amount ?? (
@@ -1128,7 +1771,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         refundAmount,
         registrar,
         verificationMethod,
-        now,
+        params.checked_at || now,
         errorCode,
         existing?.created_at || now,
         now,
@@ -1138,11 +1781,47 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     // Update application status ONLY for genuine allotment results (case-insensitive)
     const statusUpper = (params.allotment_status || '').trim().toUpperCase();
     if (statusUpper === 'ALLOTTED') {
-      await updateApplication(params.application_id, 'Allotted');
+      await updateApplication(
+        params.application_id,
+        'Allotted',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        allottedShares > 0 ? allottedShares : undefined,
+        allottedShares > 0 ? allottedShares : undefined
+      );
     } else if (statusUpper === 'PARTIALLY_ALLOTTED' || statusUpper === 'PARTIALLY ALLOTTED') {
-      await updateApplication(params.application_id, 'Partially Allotted');
+      await updateApplication(
+        params.application_id,
+        'Partially Allotted',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        allottedShares > 0 ? allottedShares : undefined,
+        allottedShares > 0 ? allottedShares : undefined
+      );
     } else if (statusUpper === 'NOT_ALLOTTED' || statusUpper === 'NOT ALLOTTED' || statusUpper === 'REJECTED') {
-      await updateApplication(params.application_id, 'Not Allotted');
+      await updateApplication(
+        params.application_id,
+        'Not Allotted',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        0
+      );
     }
 
     // Trigger allotment notification (deduplicated & technical error safe)
@@ -1161,7 +1840,25 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     } catch {}
 
     await refresh();
-    scheduleDebouncedFirestoreSync(exportJSON, authUser?.uid, 5000);
+    const currentUid = authUser?.uid || authUser?.id || null;
+    if (currentUid && params.application_id) {
+      try {
+        syncSingleDocUpsert(currentUid, 'allotments', id, {
+          application_id: params.application_id,
+          user_id: params.user_id,
+          ipo_id: params.ipo_id,
+          allotment_status: params.allotment_status,
+          allotted_lots: allottedLots,
+          allotted_shares: allottedShares,
+          allotment_price: allotmentPrice,
+          refund_amount: refundAmount,
+          checked_at: now,
+          updated_at: now,
+        }).catch(() => {});
+      } catch (err) {
+        console.warn('[saveAllotmentResult] syncSingleDocUpsert failed:', err);
+      }
+    }
 
     return {
       id,
@@ -1186,42 +1883,109 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
   // ── Bank accounts ──────────────────────────────────────────────────────────
 
   const addBankAccount = async (bankName: string, balance: number, upiApp?: string) => {
-    const repo = new BankRepository(db);
     const currentUid = authUser?.uid || authUser?.id || null;
-    const createdBank = await repo.add(bankName, balance, upiApp, currentUid);
-    await refresh();
-    if (currentUid && createdBank?.id) {
-      syncSingleDocUpsert(currentUid, 'bankAccounts', createdBank.id, {
-        bank_name: createdBank.bank_name,
-        balance: createdBank.balance,
-        upi_app: createdBank.upi_app || '',
-      }).catch((e) => {
-        if (isDev) console.warn('[DBContext.addBankAccount] Live cloud upsert warning:', e);
-      });
-      scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
+    let snapshotBanks: BankAccount[] = [];
+    setBankAccounts((prev) => {
+      snapshotBanks = prev;
+      return prev;
+    });
+
+    try {
+      const repo = new BankRepository(db);
+      const createdBank = await repo.add(bankName, balance, upiApp, currentUid);
+
+      // Instant targeted state update without blocking UI modal with full refresh()
+      if (createdBank) {
+        setBankAccounts((prev) => {
+          const existingIdx = prev.findIndex((b) => b.id === createdBank.id);
+          let next: BankAccount[];
+          if (existingIdx >= 0) {
+            next = [...prev];
+            next[existingIdx] = createdBank;
+          } else {
+            next = [...prev, createdBank];
+          }
+          return next.sort((a, b) => (a.bank_name || '').localeCompare(b.bank_name || ''));
+        });
+      }
+
+      if (currentUid && createdBank?.id) {
+        syncSingleDocUpsert(currentUid, 'bankAccounts', createdBank.id, {
+          bank_name: createdBank.bank_name,
+          balance: createdBank.balance,
+          upi_app: createdBank.upi_app || '',
+        }).catch((e) => {
+          if (isDev) console.warn('[DBContext.addBankAccount] Live cloud upsert warning:', e);
+        });
+      }
+    } catch (err) {
+      if (snapshotBanks.length > 0) setBankAccounts(snapshotBanks);
+      throw err;
     }
   };
 
   const updateBankBalance = async (id: string, balance: number, bankName?: string, upiApp?: string) => {
-    const repo = new BankRepository(db);
-    await repo.updateBalance(id, balance, bankName, upiApp);
-    await refresh();
+    const trimmedBankName = (bankName !== undefined && bankName.trim().length > 0) ? bankName.trim() : undefined;
+    let oldBankName: string | undefined;
+    let oldUpiApp: string | undefined;
+
+    let snapshotBanks: BankAccount[] = [];
+    let snapshotUsers: User[] = [];
+    let snapshotApps: ApplicationWithDetails[] = [];
+
+    // Instant targeted state update for bank accounts
+    setBankAccounts((prev) => {
+      snapshotBanks = prev;
+      return prev.map((b) => {
+        if (b.id !== id) return b;
+        oldBankName = b.bank_name;
+        oldUpiApp = b.upi_app;
+        return {
+          ...b,
+          balance: balance !== undefined ? balance : b.balance,
+          bank_name: trimmedBankName || b.bank_name,
+          upi_app: upiApp !== undefined ? upiApp.trim() : b.upi_app,
+        };
+      });
+    });
+
+    // If bank was renamed, cascade in-memory to linked users and applications
+    const bankRenamed = Boolean(trimmedBankName && oldBankName && trimmedBankName !== oldBankName);
+    if (bankRenamed) {
+      setUsers((prev) => {
+        snapshotUsers = prev;
+        return prev.map((u) => (u.bank_name === oldBankName ? { ...u, bank_name: trimmedBankName! } : u));
+      });
+      setApplications((prev) => {
+        snapshotApps = prev;
+        return prev.map((a) => (a.user_bank_name === oldBankName ? { ...a, user_bank_name: trimmedBankName! } : a));
+      });
+    }
+
+    try {
+      // Persist to SQLite
+      const repo = new BankRepository(db);
+      await repo.updateBalance(id, balance, bankName, upiApp);
+    } catch (dbErr) {
+      if (snapshotBanks.length > 0) setBankAccounts(snapshotBanks);
+      if (bankRenamed) {
+        if (snapshotUsers.length > 0) setUsers(snapshotUsers);
+        if (snapshotApps.length > 0) setApplications(snapshotApps);
+      }
+      throw dbErr;
+    }
+
+    // Live single-doc cloud sync
     const currentUid = authUser?.uid || authUser?.id || null;
     if (currentUid && id) {
-      const updatedRow = await db.getFirstAsync<BankAccount>(
-        'SELECT * FROM bank_accounts WHERE id = ?',
-        [id]
-      );
-      if (updatedRow) {
-        syncSingleDocUpsert(currentUid, 'bankAccounts', id, {
-          bank_name: updatedRow.bank_name,
-          balance: updatedRow.balance,
-          upi_app: updatedRow.upi_app || '',
-        }).catch((e) => {
-          if (isDev) console.warn('[DBContext.updateBankBalance] Live cloud upsert warning:', e);
-        });
-      }
-      scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
+      const resolvedUpi = upiApp !== undefined ? upiApp.trim() : (oldUpiApp || '');
+      syncSingleDocUpsert(currentUid, 'bankAccounts', id, {
+        bank_name: trimmedBankName || oldBankName || '',
+        balance: balance,
+        upi_app: resolvedUpi,
+      }).catch((e) => {
+        if (isDev) console.warn('[DBContext.updateBankBalance] Live cloud upsert warning:', e);
+      });
     }
   };
 
@@ -1270,15 +2034,27 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       syncSingleDocDelete(currentUid, 'bankAccounts', id).catch((e) => {
         if (isDev) console.warn('[DBContext.deleteBankAccount] Live cloud delete warning:', e);
       });
-      scheduleDebouncedFirestoreSync(exportJSON, currentUid, 1500);
     }
   };
 
   // ── Data management ────────────────────────────────────────────────────────
 
-  const clearAllData = async () => {
+  const clearAllData = async (targetUid?: string, options?: { skipCloudFlush?: boolean }) => {
     syncedUidRef.current = null;
-    const currentUid = authUser?.uid || authUser?.id || null;
+    const currentUid = targetUid || authUser?.uid || authUser?.id || null;
+    if (currentUid && !options?.skipCloudFlush) {
+      try {
+        // Ensure all local data (applications, profiles, banks, allotments)
+        // is 100% reliably saved in Cloud Firestore BEFORE wiping local SQLite tables!
+        const fullJson = await exportJSON();
+        const fullData = JSON.parse(fullJson);
+        if (fullData?.applications?.length > 0 || fullData?.users?.length > 0) {
+          await syncUserDataToFirestore(currentUid, fullData);
+        }
+      } catch (flushErr) {
+        if (isDev) console.warn('[DBContext.clearAllData] Cloud flush before clear warning:', flushErr);
+      }
+    }
     if (currentUid) {
       await clearLocalSyncCursor(currentUid);
       await db.runAsync('DELETE FROM ipo_allotments WHERE application_id IN (SELECT id FROM ipo_applications WHERE owner_id = ?)', [currentUid]);
@@ -1470,6 +2246,20 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         )
       : [];
 
+    const deletedApps = currentUid
+      ? await safeGetAllAsync<{ id: string; updated_at: string; deleted_at: string }>(
+          db,
+          'SELECT id, updated_at, deleted_at FROM ipo_applications WHERE (owner_id = ? OR owner_id IS NULL OR owner_id = "") AND deleted_at IS NOT NULL',
+          [currentUid],
+          'DBContext.exportJSON.deletedApps'
+        )
+      : await safeGetAllAsync<{ id: string; updated_at: string; deleted_at: string }>(
+          db,
+          'SELECT id, updated_at, deleted_at FROM ipo_applications WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NOT NULL',
+          [],
+          'DBContext.exportJSON.deletedApps'
+        );
+
     return JSON.stringify(
       {
         version: 1,
@@ -1483,6 +2273,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           id: a.id,
           user_id: a.user_id,
           ipo_id: a.ipo_id,
+          category: a.category || 'RETAIL',
           status: a.status,
           sell_price: a.sell_price ?? null,
           sale_date: a.sale_date ?? null,
@@ -1515,6 +2306,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           created_at: alt.created_at,
           updated_at: alt.updated_at,
         })),
+        deleted_applications: deletedApps || [],
       },
       null,
       2,
@@ -1536,30 +2328,42 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       const now = new Date().toISOString();
       const startTime = Date.now();
 
+      if (db) {
+        markDatabaseOpen(db);
+      }
+
       // Prefetch existing users, ipos, apps for O(1) lookup
       const currentUid = authUser?.uid || null;
-      const [existingUsersList, existingIposList, existingAppsList] = await Promise.all([
+      const [existingUsersList, existingIposList, existingListingsList, existingAppsList] = await Promise.all([
         safeGetAllAsync<{ id: string; pan_number: string; name: string }>(
           db,
-          currentUid
-            ? 'SELECT id, pan_number, name FROM users_table WHERE owner_id = ?'
-            : 'SELECT id, pan_number, name FROM users_table WHERE (owner_id IS NULL OR owner_id = "")',
-          currentUid ? [currentUid] : [],
+          'SELECT id, pan_number, name FROM users_table',
+          [],
           'importCriticalData.prefetchUsers'
         ),
         safeGetAllAsync<{ id: string; ipo_name: string }>(
           db,
           currentUid
-            ? 'SELECT id, ipo_name FROM ipo_listings WHERE (owner_id = ? OR owner_id IS NULL OR owner_id = "")'
-            : 'SELECT id, ipo_name FROM ipo_listings WHERE (owner_id IS NULL OR owner_id = "")',
+            ? `SELECT id, ipo_name FROM ipo_listings WHERE (owner_id = ? OR owner_id IS NULL OR owner_id = "")
+               UNION
+               SELECT id, ipo_name FROM ipo_master WHERE deleted_at IS NULL`
+            : `SELECT id, ipo_name FROM ipo_listings WHERE (owner_id IS NULL OR owner_id = "")
+               UNION
+               SELECT id, ipo_name FROM ipo_master WHERE deleted_at IS NULL`,
           currentUid ? [currentUid] : [],
           'importCriticalData.prefetchIPOs'
         ),
-        safeGetAllAsync<{ id: string; user_id: string; ipo_id: string; status: string; updated_at?: string; sync_status?: string }>(
+        safeGetAllAsync<{ id: string }>(
+          db,
+          'SELECT id FROM ipo_listings',
+          [],
+          'importCriticalData.prefetchListingIds'
+        ),
+        safeGetAllAsync<{ id: string; user_id: string; ipo_id: string; category?: string; status: string; updated_at?: string; sync_status?: string }>(
           db,
           currentUid
-            ? 'SELECT id, user_id, ipo_id, status, updated_at, sync_status FROM ipo_applications WHERE (owner_id = ? OR owner_id IS NULL OR owner_id = "")'
-            : 'SELECT id, user_id, ipo_id, status, updated_at, sync_status FROM ipo_applications WHERE (owner_id IS NULL OR owner_id = "")',
+            ? 'SELECT id, user_id, ipo_id, category, status, updated_at, sync_status FROM ipo_applications WHERE (owner_id = ? OR owner_id IS NULL OR owner_id = "")'
+            : 'SELECT id, user_id, ipo_id, category, status, updated_at, sync_status FROM ipo_applications WHERE (owner_id IS NULL OR owner_id = "")',
           currentUid ? [currentUid] : [],
           'importCriticalData.prefetchApps'
         ),
@@ -1574,6 +2378,11 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         if (u.name) existingUsersByName.set(u.name.trim().toLowerCase(), u);
       }
 
+      const existingListingsById = new Set<string>();
+      for (const l of existingListingsList || []) {
+        if (l.id) existingListingsById.add(l.id);
+      }
+
       const existingIposById = new Map<string, { id: string; ipo_name: string }>();
       const existingIposByName = new Map<string, { id: string; ipo_name: string }>();
       for (const i of existingIposList || []) {
@@ -1581,11 +2390,11 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         if (i.ipo_name) existingIposByName.set(i.ipo_name.trim().toLowerCase(), i);
       }
 
-      const existingAppsById = new Map<string, { id: string; user_id: string; ipo_id: string; status: string; updated_at?: string; sync_status?: string }>();
-      const existingAppsByCandidateKey = new Map<string, { id: string; user_id: string; ipo_id: string; status: string; updated_at?: string; sync_status?: string }>();
+      const existingAppsById = new Map<string, { id: string; user_id: string; ipo_id: string; category?: string; status: string; updated_at?: string; sync_status?: string }>();
+      const existingAppsByCandidateKey = new Map<string, { id: string; user_id: string; ipo_id: string; category?: string; status: string; updated_at?: string; sync_status?: string }>();
       for (const a of existingAppsList || []) {
         if (a.id) existingAppsById.set(a.id, a);
-        const candKey = `${a.user_id}_${a.ipo_id}_${a.status}`;
+        const candKey = `${a.user_id}_${a.ipo_id}_${a.category || 'RETAIL'}_${a.status}`;
         if (!existingAppsByCandidateKey.has(candKey)) {
           existingAppsByCandidateKey.set(candKey, a);
         }
@@ -1724,6 +2533,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
                 ],
                 'importCriticalData.updateIPO'
               );
+              existingListingsById.add(existing.id);
             } else {
               const newId = ipoId || Crypto.randomUUID();
               await safeRunAsync(
@@ -1759,6 +2569,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
               if (ipoId) existingIposById.set(ipoId, ipoObj);
               existingIposById.set(newId, ipoObj);
               existingIposByName.set(ipoNameKey, ipoObj);
+              existingListingsById.add(newId);
+              if (ipoId) existingListingsById.add(ipoId);
               ipoIdMap.set(ipoId, newId);
               ipoCount++;
             }
@@ -1864,6 +2676,11 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
               ],
               'importCriticalData.masterIpo'
             );
+            if (m.id) {
+              const mName = m.ipo_name || m.company_name || 'IPO';
+              existingIposById.set(m.id, { id: m.id, ipo_name: mName });
+              existingIposByName.set(mName.trim().toLowerCase(), { id: m.id, ipo_name: mName });
+            }
           }
 
           // 3. Process IPO Applications
@@ -1874,20 +2691,66 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
             if (!targetUserId || !targetIpoId) continue;
 
-            const userExists = existingUsersById.has(targetUserId);
-            const ipoExists = existingIposById.has(targetIpoId);
+            let userExists = existingUsersById.has(targetUserId);
+            if (!userExists) {
+              const uRow = await safeGetFirstAsync<{ id: string; name: string }>(
+                db,
+                'SELECT id, name FROM users_table WHERE id = ?',
+                [targetUserId],
+                'importCriticalData.checkFallbackUser'
+              );
+              if (uRow) {
+                existingUsersById.set(uRow.id, { id: uRow.id, pan_number: '', name: uRow.name });
+                userExists = true;
+              } else {
+                const fallbackUserName = (app as any).user_name || 'Applicant';
+                await safeRunAsync(
+                  db,
+                  'INSERT OR IGNORE INTO users_table (id, name, pan_number, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+                  [targetUserId, fallbackUserName, '', authUser?.uid || null, now, now],
+                  'importCriticalData.autoCreateUser'
+                );
+                existingUsersById.set(targetUserId, { id: targetUserId, pan_number: '', name: fallbackUserName });
+                userExists = true;
+              }
+            }
+
+            let ipoExists = existingListingsById.has(targetIpoId);
+            if (!ipoExists) {
+              const mRow = await safeGetFirstAsync<{ id: string; ipo_name: string; company_name: string; buy_price?: number; quantity?: number }>(
+                db,
+                'SELECT id, ipo_name, company_name, buy_price, quantity FROM ipo_master WHERE id = ?',
+                [targetIpoId],
+                'importCriticalData.checkMaster'
+              );
+              const resolvedName = mRow?.ipo_name || mRow?.company_name || (app as any).ipo_name || 'IPO';
+              await safeRunAsync(
+                db,
+                `INSERT OR IGNORE INTO ipo_listings (id, ipo_name, company_name, buy_price, quantity, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [targetIpoId, resolvedName, resolvedName, mRow?.buy_price || 100, mRow?.quantity || 1, authUser?.uid || null, now, now],
+                'importCriticalData.autoCreateShadowListing'
+              );
+              existingListingsById.add(targetIpoId);
+              existingIposById.set(targetIpoId, { id: targetIpoId, ipo_name: resolvedName });
+              ipoExists = true;
+            }
 
             if (!userExists || !ipoExists) {
+              if (isDev) {
+                console.warn(`[importCriticalData] Skipping app ${app.id}: parent user (${targetUserId}) or listing (${targetIpoId}) missing.`);
+              }
               continue;
             }
 
             const isFavVal = app.is_favorite ? 1 : 0;
             const targetSharesCount = app.shares_count ?? (app as any).quantity ?? null;
 
+            const appCategory = (app as any).category || 'RETAIL';
+            // Only match by exact app.id when present to avoid collapsing distinct applications!
             let existing = (app.id && !usedAppIds.has(app.id) && existingAppsById.get(app.id)) || null;
 
-            if (!existing) {
-              const candKey = `${targetUserId}_${targetIpoId}_${app.status}`;
+            if (!existing && !app.id) {
+              const candKey = `${targetUserId}_${targetIpoId}_${appCategory}_${app.status}`;
               const candidate = existingAppsByCandidateKey.get(candKey);
               if (candidate && !usedAppIds.has(candidate.id)) {
                 existing = candidate;
@@ -1915,6 +2778,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
               await safeRunAsync(
                 db,
                 `UPDATE ipo_applications SET
+                  category = COALESCE(?, category),
                   status = COALESCE(?, status),
                   shares_count = CASE WHEN ? IS NOT NULL THEN ? ELSE shares_count END,
                   sell_price = CASE WHEN ? IS NOT NULL THEN ? ELSE sell_price END,
@@ -1925,9 +2789,13 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
                   bank_name = CASE WHEN ? IS NOT NULL AND ? != "" THEN ? ELSE bank_name END,
                   upi_app = CASE WHEN ? IS NOT NULL AND ? != "" THEN ? ELSE upi_app END,
                   broker_account_id = CASE WHEN ? IS NOT NULL AND ? != "" THEN ? ELSE broker_account_id END,
-                  updated_at = ?
+                  sync_status = 'SYNCED',
+                  last_synced_at = ?,
+                  updated_at = ?,
+                  deleted_at = NULL
                 WHERE id = ?`,
                 [
+                  appCategory,
                   app.status || null,
                   targetSharesCount,
                   targetSharesCount,
@@ -1948,6 +2816,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
                   (app as any).broker_account_id || (app as any).brokerAccountId || null,
                   (app as any).broker_account_id || (app as any).brokerAccountId || '',
                   (app as any).broker_account_id || (app as any).brokerAccountId || null,
+                  now,
                   app.updated_at || now,
                   existing.id,
                 ],
@@ -1958,11 +2827,12 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
               usedAppIds.add(id);
               await safeRunAsync(
                 db,
-                'INSERT INTO ipo_applications (id, user_id, ipo_id, status, shares_count, sell_price, sale_date, tax, user_cut, is_favorite, bank_name, upi_app, broker_account_id, owner_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                'INSERT INTO ipo_applications (id, user_id, ipo_id, category, status, shares_count, sell_price, sale_date, tax, user_cut, is_favorite, bank_name, upi_app, broker_account_id, sync_status, last_synced_at, owner_id, created_at, updated_at, deleted_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,\'SYNCED\',?,?,?,NULL)',
                 [
                   id,
                   targetUserId,
                   targetIpoId,
+                  appCategory,
                   app.status || 'Applied',
                   targetSharesCount,
                   app.sell_price ?? null,
@@ -1973,13 +2843,14 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
                   app.bank_name || '',
                   app.upi_app || '',
                   (app as any).broker_account_id || (app as any).brokerAccountId || null,
+                  now,
                   authUser?.uid || null,
                   app.created_at || now,
                   app.updated_at || now,
                 ],
                 'importCriticalData.insertApp'
               );
-              const appObj = { id, user_id: targetUserId, ipo_id: targetIpoId, status: app.status || 'Applied' };
+              const appObj = { id, user_id: targetUserId, ipo_id: targetIpoId, category: appCategory, status: app.status || 'Applied' };
               existingAppsById.set(id, appObj);
               appIdMap.set(app.id, id);
               appCount++;
@@ -1989,7 +2860,10 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         'importCriticalData.transaction'
       );
 
-      const duration = Date.now() - startTime;
+      if (data.users && data.users.length > 0) {
+      prefetchUserAvatars(data.users);
+    }
+    const duration = Date.now() - startTime;
       if (isDev) {
         console.log(`[DBContext.importCriticalData] Completed in ${duration}ms (Users: ${userCount}, IPOs: ${ipoCount}, Applications: ${appCount})`);
       }
@@ -2029,10 +2903,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         ),
         safeGetAllAsync<{ id: string }>(
           db,
-          currentUid
-            ? 'SELECT id FROM ipo_applications WHERE owner_id = ?'
-            : 'SELECT id FROM ipo_applications WHERE (owner_id IS NULL OR owner_id = "")',
-          currentUid ? [currentUid] : [],
+          'SELECT id FROM ipo_applications',
+          [],
           'importSecondaryData.prefetchApps'
         ),
         safeGetAllAsync<{ id: string; application_id: string }>(
@@ -2047,12 +2919,17 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
       const existingBanksById = new Map<string, BankAccount>();
       const existingBanksByCompositeKey = new Map<string, BankAccount>();
+      const existingBanksByName = new Map<string, BankAccount>();
       for (const b of existingBanksList || []) {
         if (b.id) existingBanksById.set(b.id, b);
         if (b.bank_name) {
-          const compKey = `${b.bank_name.trim().toLowerCase()}:::${(b.upi_app || '').trim().toLowerCase()}`;
+          const normName = b.bank_name.trim().toLowerCase();
+          const compKey = `${normName}:::${(b.upi_app || '').trim().toLowerCase()}`;
           if (!existingBanksByCompositeKey.has(compKey)) {
             existingBanksByCompositeKey.set(compKey, b);
+          }
+          if (!existingBanksByName.has(normName)) {
+            existingBanksByName.set(normName, b);
           }
         }
       }
@@ -2074,8 +2951,9 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           for (const bank of data.banks ?? []) {
             if (!bank || !bank.bank_name) continue;
             const bankName = bank.bank_name.trim();
+            const normBankName = bankName.toLowerCase();
             const upiApp = (bank.upi_app || '').trim();
-            const compKey = `${bankName.toLowerCase()}:::${upiApp.toLowerCase()}`;
+            const compKey = `${normBankName}:::${upiApp.toLowerCase()}`;
 
             // Match 1: Stable Account ID
             let existing = bank.id ? existingBanksById.get(bank.id) : null;
@@ -2085,9 +2963,20 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
               existing = existingBanksByCompositeKey.get(compKey) || null;
             }
 
+            // Match 3: Normalized Bank Name (prevents duplicate banks when UPI app is omitted/blank)
+            if (!existing) {
+              if (!upiApp) {
+                existing = existingBanksByName.get(normBankName) || null;
+              } else {
+                const blankCompKey = `${normBankName}:::`;
+                existing = existingBanksByCompositeKey.get(blankCompKey) || null;
+              }
+            }
+
             if (existing) {
               const newBalance = bank.balance !== undefined && bank.balance !== null ? bank.balance : existing.balance;
-              const newUpiApp = bank.upi_app !== undefined && bank.upi_app !== null ? bank.upi_app.trim() : (existing.upi_app || '');
+              const incomingUpi = (bank.upi_app && typeof bank.upi_app === 'string') ? bank.upi_app.trim() : '';
+              const newUpiApp = incomingUpi || (existing.upi_app || '');
               const newOwnerId = authUser?.uid || existing.owner_id || null;
 
               await safeRunAsync(
@@ -2140,7 +3029,25 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           // 2. Process Allotments
           for (const alt of data.allotments ?? []) {
             if (!alt || !alt.application_id) continue;
-            if (!existingAppsById.has(alt.application_id)) continue;
+            let appExists = existingAppsById.has(alt.application_id);
+            if (!appExists) {
+              const aRow = await safeGetFirstAsync<{ id: string }>(
+                db,
+                'SELECT id FROM ipo_applications WHERE id = ?',
+                [alt.application_id],
+                'importSecondaryData.checkAppExists'
+              );
+              if (aRow) {
+                existingAppsById.add(aRow.id);
+                appExists = true;
+              }
+            }
+            if (!appExists) {
+              if (isDev) {
+                console.warn(`[importSecondaryData] Skipping allotment ${alt.id}: parent application ${alt.application_id} not found.`);
+              }
+              continue;
+            }
 
             const existingAlt = existingAllotmentsByAppId.get(alt.application_id);
             if (existingAlt) {
@@ -2283,6 +3190,11 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         if (isDev) console.warn('[DBContext.importJSON] Firestore sync after import warning:', err);
       }
     }
+
+    try {
+      const { reconcileScheduledNotifications } = require('@/services/notifications/notificationEngine');
+      reconcileScheduledNotifications(db).catch(() => {});
+    } catch {}
 
     return {
       users: criticalRes.users,
@@ -2586,8 +3498,8 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       const existing = await safeGetFirstAsync<{ id: string }>(
         db,
         currentUid
-          ? 'SELECT id FROM bank_accounts WHERE bank_name=? AND (owner_id=? OR owner_id IS NULL OR owner_id="") AND deleted_at IS NULL'
-          : 'SELECT id FROM bank_accounts WHERE bank_name=? AND (owner_id IS NULL OR owner_id="") AND deleted_at IS NULL',
+          ? 'SELECT id FROM bank_accounts WHERE LOWER(TRIM(bank_name))=LOWER(TRIM(?)) AND (owner_id=? OR owner_id IS NULL OR owner_id="") AND deleted_at IS NULL'
+          : 'SELECT id FROM bank_accounts WHERE LOWER(TRIM(bank_name))=LOWER(TRIM(?)) AND (owner_id IS NULL OR owner_id="") AND deleted_at IS NULL',
         currentUid ? [bankName, currentUid] : [bankName],
         'DBContext.importCSV.bank'
       );
@@ -2754,6 +3666,10 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     }
 
     await refresh();
+    try {
+      const { reconcileScheduledNotifications } = require('@/services/notifications/notificationEngine');
+      reconcileScheduledNotifications(db).catch(() => {});
+    } catch {}
     return { users: userMap.size, ipos: ipoMap.size, applications: appCount };
   };
 
@@ -2821,161 +3737,258 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     runAutoExport();
   }, [isLoading, autoExportEnabled, users, ipos, applications, bankAccounts, exportJSON]);
 
+  const performAutomaticCloudSync = useCallback(
+    async (targetUid: string, isManualRetry = false): Promise<boolean> => {
+      if (!targetUid || !db) return false;
+
+      // Prevent concurrent duplicate sync executions for the same user
+      if (isSyncInProgressRef.current) {
+        if (activeSyncUidRef.current === targetUid) {
+          if (isDev) console.log(`[DBContext] Sync already in progress, skipping duplicate call for ${targetUid}`);
+          return false;
+        }
+        // If an earlier sync for a different user account is winding down, wait for it to exit
+        while (isSyncInProgressRef.current) {
+          await new Promise((r) => setTimeout(r, 20));
+        }
+        if (authUserRef.current?.uid !== targetUid) return false;
+      }
+
+      isSyncInProgressRef.current = true;
+      activeSyncUidRef.current = targetUid;
+      setIsRestoring(true);
+      setCloudSyncStatus(isManualRetry ? 'restoring' : 'syncing');
+      setCloudSyncError(null);
+
+      try {
+        if (db) {
+          markDatabaseOpen(db);
+        }
+        if (isDev) console.log(`[DBContext] Starting cloud sync pipeline for UID: ${targetUid} (manual: ${isManualRetry})`);
+
+        // 1. Reconcile/claim any unassigned offline records created prior to authentication
+        try {
+          await db.runAsync(
+            'UPDATE users_table SET owner_id = ? WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL',
+            [targetUid]
+          );
+          await db.runAsync(
+            'UPDATE ipo_listings SET owner_id = ? WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL',
+            [targetUid]
+          );
+          await db.runAsync(
+            'UPDATE ipo_applications SET owner_id = ? WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL',
+            [targetUid]
+          );
+          await db.runAsync(
+            'UPDATE bank_accounts SET owner_id = ? WHERE (owner_id IS NULL OR owner_id = "") AND deleted_at IS NULL',
+            [targetUid]
+          );
+        } catch (claimErr) {
+          if (isDev) console.warn('[DBContext] Unassigned local data claiming warning:', claimErr);
+        }
+
+        // 2. Run staged cloud delta/full restore
+        const deltaRes = await syncDeltaFromFirestore(targetUid, db, {
+          onCriticalDataReady: async (criticalData) => {
+            // Guard: user session must still match targetUid
+            if (authUserRef.current?.uid !== targetUid) return;
+            if (db) {
+              markDatabaseOpen(db);
+            }
+            await importCriticalData(criticalData, { suppressLegacySync: true, skipRefresh: true });
+            await refreshCriticalRef.current();
+          },
+          onSecondaryDataReady: async (secondaryData) => {
+            if (authUserRef.current?.uid !== targetUid) return;
+            await importSecondaryData(secondaryData, { suppressLegacySync: true, skipRefresh: true });
+            await refreshSecondaryRef.current();
+          },
+          importJSONFallback: async (data) => {
+            if (authUserRef.current?.uid !== targetUid) return;
+            await importJSON(data, { suppressLegacySync: true, skipRefresh: true });
+            await refreshRef.current();
+          },
+        });
+
+        // Guard: check again after network/database operations complete
+        if (authUserRef.current?.uid !== targetUid) {
+          if (isDev) console.log('[DBContext] Active user switched during cloud sync, aborting commit.');
+          return false;
+        }
+
+        if (deltaRes.success) {
+          syncedUidRef.current = targetUid;
+          setCloudSyncStatus('success');
+          setCloudSyncError(null);
+          await refreshRef.current();
+          if (isDev) console.log(`[DBContext] Automatic cloud sync completed successfully for ${targetUid}`);
+          return true;
+        } else {
+          throw new Error(deltaRes.error || 'Cloud synchronization failed');
+        }
+      } catch (err: any) {
+        if (authUserRef.current?.uid !== targetUid) return false;
+        if (isDev) console.warn('[DBContext] Post-login cloud sync error:', err);
+        const errMsg = err?.message || 'Cloud sync failed. Tap to retry.';
+        setCloudSyncStatus('error');
+        setCloudSyncError(errMsg);
+        return false;
+      } finally {
+        isSyncInProgressRef.current = false;
+        activeSyncUidRef.current = null;
+        setIsRestoring(false);
+      }
+    },
+    [db, importCriticalData, importSecondaryData, importJSON, isDev]
+  );
+
+  const retryCloudSync = useCallback(async (): Promise<boolean> => {
+    const uid = authUser?.uid;
+    if (!uid) return false;
+    syncedUidRef.current = null;
+    return performAutomaticCloudSync(uid, true);
+  }, [authUser?.uid, performAutomaticCloudSync]);
+
   const restoreCloudData = useCallback(
     async (targetUid?: string): Promise<boolean> => {
       const uid = targetUid || authUser?.uid;
       if (!uid) return false;
-      setIsRestoring(true);
-      const startTime = Date.now();
-      try {
-        if (isDev) console.log(`[DBContext] Starting full cloud restore for user: ${uid}`);
-        const fullRestore = await fetchUserDataFromFirestore(uid);
-        if (fullRestore.success && fullRestore.data) {
-          await importJSON(fullRestore.data, { suppressLegacySync: true });
-          syncedUidRef.current = uid;
-          const duration = Date.now() - startTime;
-          if (isDev) console.log(`[DBContext] Full cloud restore completed in ${duration}ms.`);
-          return true;
-        }
-
-        const deltaRes = await syncDeltaFromFirestore(uid, db, {
-          onCriticalDataReady: async (criticalData) => {
-            await importCriticalData(criticalData, { suppressLegacySync: true });
-          },
-          onSecondaryDataReady: async (secondaryData) => {
-            await importSecondaryData(secondaryData, { suppressLegacySync: true });
-          },
-          importJSONFallback: async (data) => {
-            await importJSON(data, { suppressLegacySync: true });
-          },
-        });
-
-        if (deltaRes.success) {
-          syncedUidRef.current = uid;
-          await refresh();
-          return true;
-        }
-        return false;
-      } catch (err) {
-        if (isDev) console.warn('[DBContext] restoreCloudData error:', err);
-        return false;
-      } finally {
-        setIsRestoring(false);
-      }
+      syncedUidRef.current = null;
+      return performAutomaticCloudSync(uid, true);
     },
-    [authUser?.uid, db, importCriticalData, importSecondaryData, importJSON, refresh, isDev]
+    [authUser?.uid, performAutomaticCloudSync]
   );
 
   // Automatic background cloud sync/restore on login or startup
   useEffect(() => {
-    if (isLoading || !authUser?.uid) {
-      if (!authUser?.uid) {
-        syncedUidRef.current = null;
-      }
+    const currentUid = authUser?.uid;
+
+    if (!currentUid) {
+      syncedUidRef.current = null;
+      setCloudSyncStatus('idle');
+      setCloudSyncError(null);
       return;
     }
 
-    if (syncedUidRef.current === authUser.uid) {
+    if (isLoading) {
+      // Wait for SQLite database to complete initialization
       return;
     }
 
-    let isMounted = true;
-    const checkAndSyncDelta = async () => {
-      try {
-        setIsRestoring(true);
-        syncedUidRef.current = authUser.uid;
-        if (isDev) console.log('[DBContext] Checking cloud sync state for authenticated user:', authUser.uid);
-        
-        const deltaRes = await syncDeltaFromFirestore(authUser.uid, db, {
-          onCriticalDataReady: async (criticalData) => {
-            if (isMounted) {
-              await importCriticalData(criticalData, { suppressLegacySync: true });
-            }
-          },
-          onSecondaryDataReady: async (secondaryData) => {
-            if (isMounted) {
-              await importSecondaryData(secondaryData, { suppressLegacySync: true });
-            }
-          },
-          importJSONFallback: async (data) => {
-            if (isMounted) {
-              await importJSON(data, { suppressLegacySync: true });
-            }
-          },
-        });
+    if (syncedUidRef.current === currentUid) {
+      // Already successfully synced for this session
+      return;
+    }
 
-        if (isMounted) {
-          await refresh();
-        }
-      } catch (err) {
-        if (isDev) console.warn('[DBContext] Delta sync check warning, falling back to restore:', err);
-        if (isMounted && authUser?.uid) {
-          try {
-            await restoreCloudData(authUser.uid);
-          } catch {}
-        }
-      } finally {
-        if (isMounted) {
-          setIsRestoring(false);
-        }
-      }
-    };
+    performAutomaticCloudSync(currentUid);
+  }, [authUser?.uid, isLoading, performAutomaticCloudSync]);
 
-    checkAndSyncDelta();
-    return () => {
-      isMounted = false;
-    };
-  }, [authUser?.uid, isLoading, db, importCriticalData, importSecondaryData, importJSON, refresh, restoreCloudData, isDev]);
+  const contextValue = React.useMemo<DBContextType>(
+    () => ({
+      users,
+      ipos,
+      applications,
+      bankAccounts,
+      allotments,
+      isLoading,
+      isRestoring,
+      cloudSyncStatus,
+      cloudSyncError,
+      retryCloudSync,
+      restoreCloudData,
+      refresh,
+      refreshCritical,
+      refreshSecondary,
+      importCriticalData,
+      importSecondaryData,
+      addUser,
+      updateUser,
+      archiveUser,
+      unarchiveUser,
+      deleteUser,
+      addIPO,
+      updateIPO,
+      archiveIPO,
+      unarchiveIPO,
+      toggleIPOFavorite,
+      deleteIPO,
+      addBulkApplications,
+      updateApplication,
+      partialSellApplication,
+      updateApplicationDetails,
+      updateBulkApplications,
+      deleteApplication,
+      toggleFavorite,
+      getAllotments,
+      getAllotmentByAppId,
+      saveAllotmentResult,
+      addBankAccount,
+      updateBankBalance,
+      deleteBankAccount,
+      loadSampleData,
+      clearAllData,
+      exportCSV,
+      importCSV,
+      exportJSON,
+      importJSON,
+      autoExportEnabled,
+      setAutoExportEnabled,
+    }),
+    [
+      users,
+      ipos,
+      applications,
+      bankAccounts,
+      allotments,
+      isLoading,
+      isRestoring,
+      cloudSyncStatus,
+      cloudSyncError,
+      retryCloudSync,
+      restoreCloudData,
+      refresh,
+      refreshCritical,
+      refreshSecondary,
+      importCriticalData,
+      importSecondaryData,
+      addUser,
+      updateUser,
+      archiveUser,
+      unarchiveUser,
+      deleteUser,
+      addIPO,
+      updateIPO,
+      archiveIPO,
+      unarchiveIPO,
+      toggleIPOFavorite,
+      deleteIPO,
+      addBulkApplications,
+      updateApplication,
+      partialSellApplication,
+      updateApplicationDetails,
+      updateBulkApplications,
+      deleteApplication,
+      toggleFavorite,
+      getAllotments,
+      getAllotmentByAppId,
+      saveAllotmentResult,
+      addBankAccount,
+      updateBankBalance,
+      deleteBankAccount,
+      loadSampleData,
+      clearAllData,
+      exportCSV,
+      importCSV,
+      exportJSON,
+      importJSON,
+      autoExportEnabled,
+      setAutoExportEnabled,
+    ]
+  );
 
   return (
-    <DBContext.Provider
-      value={{
-        users,
-        ipos,
-        applications,
-        bankAccounts,
-        isLoading,
-        isRestoring,
-        restoreCloudData,
-        refresh,
-        refreshCritical,
-        refreshSecondary,
-        importCriticalData,
-        importSecondaryData,
-        addUser,
-        updateUser,
-        archiveUser,
-        unarchiveUser,
-        deleteUser,
-        addIPO,
-        updateIPO,
-        archiveIPO,
-        unarchiveIPO,
-        toggleIPOFavorite,
-        deleteIPO,
-        addBulkApplications,
-        updateApplication,
-        partialSellApplication,
-        updateApplicationDetails,
-        updateBulkApplications,
-        deleteApplication,
-        toggleFavorite,
-        getAllotments,
-        getAllotmentByAppId,
-        saveAllotmentResult,
-        addBankAccount,
-        updateBankBalance,
-        deleteBankAccount,
-        loadSampleData,
-        clearAllData,
-        exportCSV,
-        importCSV,
-        exportJSON,
-        importJSON,
-        autoExportEnabled,
-        setAutoExportEnabled,
-      }}
-    >
+    <DBContext.Provider value={contextValue}>
       {children}
     </DBContext.Provider>
   );

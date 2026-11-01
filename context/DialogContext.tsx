@@ -8,7 +8,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/ui/Icon';
 import { useColors } from '@/hooks/useColors';
 import { Button } from '@/components/ui/Button';
 
@@ -180,7 +180,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
             >
               {/* Icon Wrap */}
               <View style={[styles.iconWrap, { backgroundColor: iconConfig.bg }]}>
-                <Feather name={iconConfig.name as any} size={26} color={iconConfig.color} />
+                <Icon name={iconConfig.name as any} size={26} color={iconConfig.color} strokeWidth={2} />
               </View>
 
               {/* Title & Message */}

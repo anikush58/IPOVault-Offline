@@ -52,9 +52,20 @@ export const ADMOB_PROD_IDS = {
 } as const;
 
 /**
+ * Validates that an ad unit ID conforms strictly to AdMob's format:
+ * ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX
+ */
+export function isAdConfigurationValid(adUnitId: string | undefined | null): boolean {
+  if (!adUnitId || typeof adUnitId !== 'string') {
+    return false;
+  }
+  return /^ca-app-pub-\d+\/\d+$/.test(adUnitId.trim());
+}
+
+/**
  * Determines whether production ad units should be served.
  * Strictly guarantees that live ads can NEVER be requested in development,
- * automated testing, Expo Go, web, or preview runtimes.
+ * preview, automated testing, Expo Go, or web runtimes.
  */
 export function shouldUseProductionAds(): boolean {
   // Rule 1: Never in development mode
@@ -67,13 +78,27 @@ export function shouldUseProductionAds(): boolean {
     if (
       process.env.NODE_ENV === 'test' ||
       process.env.JEST_WORKER_ID !== undefined ||
-      process.env.VITEST !== undefined
+      process.env.VITEST !== undefined ||
+      (Array.isArray(process.argv) && process.argv.some((arg) => arg.includes('__tests__') || arg.includes('.test.')))
+    ) {
+      return false;
+    }
+
+    // Rule 3: Never in preview, staging, or non-production build profiles
+    const appEnv = process.env.APP_ENV || process.env.EXPO_PUBLIC_APP_ENV;
+    const easProfile = process.env.EAS_BUILD_PROFILE;
+    if (
+      appEnv === 'preview' ||
+      appEnv === 'staging' ||
+      appEnv === 'development' ||
+      easProfile === 'preview' ||
+      easProfile === 'development'
     ) {
       return false;
     }
   }
 
-  // Rule 3: Never on web
+  // Rule 4: Never on web
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const rn = require('react-native');
@@ -82,7 +107,7 @@ export function shouldUseProductionAds(): boolean {
     }
   } catch {}
 
-  // Rule 4: Never in Expo Go
+  // Rule 5: Never in Expo Go
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Constants = require('expo-constants').default || require('expo-constants');
@@ -94,24 +119,54 @@ export function shouldUseProductionAds(): boolean {
     }
   } catch {}
 
-  // Rule 5: Must be a production native standalone release build
-  // with production ad serving explicitly enabled via build environment
-  const isExplicitlyEnabled =
+  // Rule 6: In a production native standalone release build, serve production ads
+  // unless explicitly disabled via environment configuration
+  const isExplicitlyDisabled =
     typeof process !== 'undefined' &&
-    process.env?.EXPO_PUBLIC_USE_PROD_ADS === 'true';
+    process.env?.EXPO_PUBLIC_USE_PROD_ADS === 'false';
 
-  return isExplicitlyEnabled;
+  if (isExplicitlyDisabled) {
+    return false;
+  }
+
+  return true;
+}
+
+function isAutomatedTestEnvironment(): boolean {
+  return (
+    typeof process !== 'undefined' &&
+    (process.env.NODE_ENV === 'test' ||
+      process.env.JEST_WORKER_ID !== undefined ||
+      process.env.VITEST !== undefined ||
+      (Array.isArray(process.argv) &&
+        process.argv.some((arg) => arg.includes('__tests__') || arg.includes('.test.'))))
+  );
 }
 
 /**
  * Returns the banner ad unit ID appropriate for the current platform and environment.
- * Defaults strictly to Google official test IDs for all development, Expo Go, and test environments.
+ * In development, preview, and test environments, strictly returns Google official test IDs.
+ * In production builds, returns production ID if valid, otherwise empty string (fails closed).
+ *
+ * `forceProductionForTesting` is ONLY evaluated in automated test runners (`NODE_ENV === 'test'`).
+ * It is strictly ignored in all dev, preview, and production app runtimes.
  */
-export function getBannerAdUnitId(forceProduction?: boolean): string {
-  const useProd = forceProduction ?? shouldUseProductionAds();
-  if (useProd && getPlatformOS() === 'android') {
-    return ADMOB_PROD_IDS.ANDROID_BANNER;
+export function getBannerAdUnitId(forceProductionForTesting?: boolean): string {
+  const isTestRunner = isAutomatedTestEnvironment();
+
+  const useProd = isTestRunner && forceProductionForTesting === true
+    ? true
+    : shouldUseProductionAds();
+
+  if (useProd) {
+    if (getPlatformOS() === 'android') {
+      const prodId = ADMOB_PROD_IDS.ANDROID_BANNER;
+      return isAdConfigurationValid(prodId) ? prodId : '';
+    }
+    // Fail closed for unsupported platforms in production
+    return '';
   }
+
   if (getPlatformOS() === 'ios') {
     return ADMOB_TEST_IDS.IOS_BANNER;
   }
@@ -120,13 +175,28 @@ export function getBannerAdUnitId(forceProduction?: boolean): string {
 
 /**
  * Returns the native ad unit ID appropriate for the current platform and environment.
- * Defaults strictly to Google official test IDs for all development, Expo Go, and test environments.
+ * In development, preview, and test environments, strictly returns Google official test IDs.
+ * In production builds, returns production ID if valid, otherwise empty string (fails closed).
+ *
+ * `forceProductionForTesting` is ONLY evaluated in automated test runners (`NODE_ENV === 'test'`).
+ * It is strictly ignored in all dev, preview, and production app runtimes.
  */
-export function getNativeAdUnitId(forceProduction?: boolean): string {
-  const useProd = forceProduction ?? shouldUseProductionAds();
-  if (useProd && getPlatformOS() === 'android') {
-    return ADMOB_PROD_IDS.ANDROID_NATIVE;
+export function getNativeAdUnitId(forceProductionForTesting?: boolean): string {
+  const isTestRunner = isAutomatedTestEnvironment();
+
+  const useProd = isTestRunner && forceProductionForTesting === true
+    ? true
+    : shouldUseProductionAds();
+
+  if (useProd) {
+    if (getPlatformOS() === 'android') {
+      const prodId = ADMOB_PROD_IDS.ANDROID_NATIVE;
+      return isAdConfigurationValid(prodId) ? prodId : '';
+    }
+    // Fail closed for unsupported platforms in production
+    return '';
   }
+
   if (getPlatformOS() === 'ios') {
     return ADMOB_TEST_IDS.IOS_NATIVE;
   }

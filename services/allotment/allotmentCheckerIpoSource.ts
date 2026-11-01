@@ -1,3 +1,5 @@
+import { resolveIpoLotSize } from '../../utils/ipoCategoryUtils';
+import { getResolvedLogoUrl } from '../../utils/formatters';
 import { BackendIpo } from '../../types/backend-ipo';
 import { normalizeLifecycleStatus } from '../ipo/statusNormalizer';
 
@@ -86,14 +88,15 @@ export function normalizeBackendIpoForChecker(b: BackendIpo): AllotmentCheckerIp
     b.closeDate ||
     'TBD';
   const issueType = b.marketSegment === 'SME' ? 'SME' : 'Mainboard';
-  const lotSize = b.lotSize || 0;
+  const lotSize = resolveIpoLotSize(b);
   const buyPrice = b.priceBandHigh ?? b.issuePriceInr ?? b.priceBandLow ?? 0;
-  const logoUrl =
+  const rawLogo =
     b.company?.logoUrl ||
     b.logoUrl ||
     (b as any).logo_url ||
     (b as any).companyLogo ||
     '';
+  const logoUrl = getResolvedLogoUrl(rawLogo) || rawLogo;
 
   return {
     id: b.id,
@@ -176,4 +179,68 @@ export function sortCheckerIposByAllotmentRecency(ipos: BackendIpo[]): BackendIp
     const nameB = b.company?.displayName || b.companyName || b.symbol || '';
     return nameA.localeCompare(nameB);
   });
+}
+
+/**
+ * Extracts the latest activity date timestamp from candidate offering date fields.
+ * Considers listingDate, allotmentDate, and closeDate.
+ */
+export function getLatestIpoActivityTimestamp(b: BackendIpo): number {
+  if (!b) return 0;
+  const candidateDates = [
+    b.listingDate,
+    b.lifecycle?.listingDate,
+    b.allotmentDate,
+    b.lifecycle?.basisOfAllotmentDate,
+    b.allotmentConfig?.expectedDate,
+    b.allotment?.expectedDate,
+    b.closeDate,
+    b.lifecycle?.closeDate,
+  ];
+
+  let maxTs = 0;
+  let foundOfferingDate = false;
+
+  for (const d of candidateDates) {
+    if (d && typeof d === 'string') {
+      const trimmed = d.trim();
+      if (trimmed !== '' && trimmed.toUpperCase() !== 'TBD') {
+        const parsed = Date.parse(trimmed);
+        if (!isNaN(parsed) && parsed > 0) {
+          foundOfferingDate = true;
+          if (parsed > maxTs) {
+            maxTs = parsed;
+          }
+        }
+      }
+    }
+  }
+
+  if (foundOfferingDate) {
+    return maxTs;
+  }
+
+  // Fallback to update/created dates if no offering dates were provided
+  for (const d of [b.updatedAt, b.createdAt]) {
+    if (d && typeof d === 'string') {
+      const parsed = Date.parse(d.trim());
+      if (!isNaN(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+  }
+
+  return 0;
+}
+
+/**
+ * Checks whether an IPO has activity within the last 30 days (or in the future).
+ * IPOs older than 30 days return false.
+ */
+export function isIpoWithin30Days(b: BackendIpo, now = Date.now()): boolean {
+  if (!b) return false;
+  const ts = getLatestIpoActivityTimestamp(b);
+  if (ts <= 0) return true; // Keep if no valid date found so we do not aggressively hide active IPOs
+  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+  return ts >= (now - thirtyDaysMs);
 }

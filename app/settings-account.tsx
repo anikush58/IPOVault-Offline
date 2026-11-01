@@ -11,7 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/ui/Icon';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -22,8 +22,8 @@ import { useTheme } from '@/context/ThemeContext';
 import { useAuth } from '@/context/AuthContext';
 import { useDialog } from '@/context/DialogContext';
 import { useDB } from '@/context/DBContext';
-import { IconButton } from '@/components/ui/IconButton';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
+import { isCustomAvatarUrl } from '@/utils/avatarUtils';
 
 export default function SettingsAccountScreen() {
   const colors = useColors();
@@ -35,7 +35,7 @@ export default function SettingsAccountScreen() {
   const settingIconColor = isDark ? '#FFFFFF' : '#111827';
   const settingIconBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)';
 
-  const { user: authUser, signOut, resetPassword, updateProfile } = useAuth();
+  const { user: authUser, signOut, resetPassword, updateProfile, deleteAccount } = useAuth();
   const { clearAllData } = useDB();
   const { showConfirm, showSuccess, showError, showInfo } = useDialog();
 
@@ -52,7 +52,7 @@ export default function SettingsAccountScreen() {
     if (authUser?.displayName && authUser.displayName.trim()) {
       setCustomUsername(authUser.displayName.trim());
     }
-    if (authUser?.photoURL && authUser.photoURL.trim()) {
+    if (authUser?.photoURL && isCustomAvatarUrl(authUser.photoURL)) {
       setAvatarUri(authUser.photoURL.trim());
     }
   }, [authUser?.displayName, authUser?.photoURL]);
@@ -62,9 +62,9 @@ export default function SettingsAccountScreen() {
       let isMounted = true;
       safeAsyncStorage.getItem('@ipovault_avatar_uri').then((stored) => {
         if (isMounted) {
-          if (stored && stored.trim()) {
+          if (stored && isCustomAvatarUrl(stored)) {
             setAvatarUri(stored.trim());
-          } else if (authUser?.photoURL && authUser.photoURL.trim()) {
+          } else if (authUser?.photoURL && isCustomAvatarUrl(authUser.photoURL)) {
             setAvatarUri(authUser.photoURL.trim());
           } else {
             setAvatarUri(null);
@@ -249,6 +249,39 @@ export default function SettingsAccountScreen() {
     });
   };
 
+  const handleDeleteAccount = () => {
+    showConfirm({
+      title: 'Delete Account',
+      message:
+        'Are you sure you want to permanently delete your IPOVault account?\n\nThis will permanently delete your authentication credentials, cloud sync profile, and all locally stored Demat, PAN, and IPO application records. This action is irreversible.',
+      confirmText: 'Delete Account',
+      cancelText: 'Cancel',
+      isDanger: true,
+      onConfirm: async () => {
+        setBusy(true);
+        const targetUid = authUser?.uid || null;
+        try {
+          const res = await deleteAccount();
+          if (!res.success) {
+            showError('Account Deletion Failed', res.error || 'Failed to delete account. Please try again.');
+          } else {
+            await clearAllData(targetUid || undefined, { skipCloudFlush: true });
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            showSuccess(
+              'Account Deleted',
+              'Your account and associated cloud data have been permanently deleted.'
+            );
+            router.replace('/auth');
+          }
+        } catch (e: any) {
+          showError('Error', e?.message || 'Failed to delete account.');
+        } finally {
+          setBusy(false);
+        }
+      },
+    });
+  };
+
   const handleSwitchGoogleAccount = async () => {
     setShowManageGoogleModal(false);
     showConfirm({
@@ -280,6 +313,7 @@ export default function SettingsAccountScreen() {
         title="Edit Profile"
         centerTitle
         showBack
+        transparent
       />
 
       <ScrollView
@@ -308,13 +342,13 @@ export default function SettingsAccountScreen() {
               },
             ]}
           >
-            {avatarUri || authUser?.photoURL ? (
+            {isCustomAvatarUrl(avatarUri || authUser?.photoURL) ? (
               <Image source={{ uri: (avatarUri || authUser?.photoURL)! }} style={styles.avatarImg} />
             ) : (
               <Text style={[styles.avatarText, { color: settingIconColor }]}>{initial}</Text>
             )}
             <View style={[styles.avatarEditOverlay, { backgroundColor: colors.primary }]}>
-              <Feather name="camera" size={10} color={colors.primaryForeground} />
+              <Icon name="camera" size={10} color={colors.primaryForeground} />
             </View>
           </TouchableOpacity>
 
@@ -331,7 +365,7 @@ export default function SettingsAccountScreen() {
                 hitSlop={8}
                 style={[styles.editPencilBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F1F5F9' }]}
               >
-                <Feather name="edit-2" size={13} color={colors.primary} />
+                <Icon name="edit-2" size={13} color={colors.primary} />
               </TouchableOpacity>
             </View>
             <Text style={[styles.profileEmail, { color: colors.mutedForeground }]} numberOfLines={1}>
@@ -352,7 +386,7 @@ export default function SettingsAccountScreen() {
             }}
           >
             <View style={[styles.menuIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="user" size={17} color={settingIconColor} />
+              <Icon name="user" size={17} color={settingIconColor} />
             </View>
             <View style={styles.menuTextWrap}>
               <Text style={[styles.menuTitle, { color: colors.foreground }]}>Username</Text>
@@ -362,7 +396,7 @@ export default function SettingsAccountScreen() {
             </View>
             <View style={styles.rowRightPill}>
               <Text style={[styles.rowRightPillText, { color: colors.primary }]}>Edit</Text>
-              <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+              <Icon name="chevron-right" size={16} color={colors.mutedForeground} />
             </View>
           </TouchableOpacity>
           {/* Account ID (UID) */}
@@ -372,13 +406,13 @@ export default function SettingsAccountScreen() {
             onPress={() => setShowUidModal(true)}
           >
             <View style={[styles.menuIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="link-2" size={17} color={settingIconColor} />
+              <Icon name="link-2" size={17} color={settingIconColor} />
             </View>
             <View style={styles.menuTextWrap}>
               <Text style={[styles.menuTitle, { color: colors.foreground }]}>Account ID (UID)</Text>
               <Text style={[styles.menuSub, { color: colors.mutedForeground }]}>View your unique account ID</Text>
             </View>
-            <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+            <Icon name="chevron-right" size={16} color={colors.mutedForeground} />
           </TouchableOpacity>
 
           {/* Change Password */}
@@ -389,13 +423,13 @@ export default function SettingsAccountScreen() {
             disabled={busy}
           >
             <View style={[styles.menuIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="lock" size={17} color={settingIconColor} />
+              <Icon name="lock" size={17} color={settingIconColor} />
             </View>
             <View style={styles.menuTextWrap}>
               <Text style={[styles.menuTitle, { color: colors.foreground }]}>Change Password</Text>
               <Text style={[styles.menuSub, { color: colors.mutedForeground }]}>Update your account password</Text>
             </View>
-            <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+            <Icon name="chevron-right" size={16} color={colors.mutedForeground} />
           </TouchableOpacity>
 
           {/* Manage Google Account */}
@@ -405,31 +439,50 @@ export default function SettingsAccountScreen() {
             onPress={() => setShowManageGoogleModal(true)}
           >
             <View style={[styles.menuIconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="globe" size={17} color={settingIconColor} />
+              <Icon name="globe" size={17} color={settingIconColor} />
             </View>
             <View style={styles.menuTextWrap}>
               <Text style={[styles.menuTitle, { color: colors.foreground }]}>Manage Google Account</Text>
               <Text style={[styles.menuSub, { color: colors.mutedForeground }]}>Switch or disconnect Google account</Text>
             </View>
-            <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+            <Icon name="chevron-right" size={16} color={colors.mutedForeground} />
           </TouchableOpacity>
 
           {/* Log Out */}
           <TouchableOpacity
-            style={[styles.menuRow, { borderBottomWidth: 0 }]}
+            style={[styles.menuRow, { borderBottomColor: colors.border }]}
             activeOpacity={0.7}
             onPress={handleLogout}
             disabled={busy}
           >
             <View style={[styles.menuIconWrap, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2' }]}>
-              <Feather name="log-out" size={17} color="#EF4444" />
+              <Icon name="log-out" size={17} color="#EF4444" />
             </View>
             <View style={styles.menuTextWrap}>
               <Text style={[styles.menuTitle, { color: '#EF4444' }]}>Log Out</Text>
               <Text style={[styles.menuSub, { color: colors.mutedForeground }]}>Sign out from this device</Text>
             </View>
-            <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+            <Icon name="chevron-right" size={16} color={colors.mutedForeground} />
           </TouchableOpacity>
+
+          {/* Delete Account (Google Play Compliance) - Authenticated users only */}
+          {!!authUser && (
+            <TouchableOpacity
+              style={[styles.menuRow, { borderBottomWidth: 0 }]}
+              activeOpacity={0.7}
+              onPress={handleDeleteAccount}
+              disabled={busy}
+            >
+              <View style={[styles.menuIconWrap, { backgroundColor: isDark ? 'rgba(220, 38, 38, 0.2)' : '#FEE2E2' }]}>
+                <Icon name="trash-2" size={17} color="#DC2626" />
+              </View>
+              <View style={styles.menuTextWrap}>
+                <Text style={[styles.menuTitle, { color: '#DC2626' }]}>Delete Account</Text>
+                <Text style={[styles.menuSub, { color: colors.mutedForeground }]}>Permanently delete account and all cloud data</Text>
+              </View>
+              <Icon name="chevron-right" size={16} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
 
@@ -440,7 +493,7 @@ export default function SettingsAccountScreen() {
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.foreground }]}>Account ID (UID)</Text>
               <TouchableOpacity onPress={() => setShowUidModal(false)} hitSlop={8}>
-                <Feather name="x" size={18} color={colors.mutedForeground} />
+                <Icon name="x" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             </View>
 
@@ -462,7 +515,7 @@ export default function SettingsAccountScreen() {
                 setShowUidModal(false);
               }}
             >
-              <Feather name="copy" size={16} color={colors.primaryForeground} />
+              <Icon name="copy" size={16} color={colors.primaryForeground} />
               <Text style={[styles.primaryModalBtnText, { color: colors.primaryForeground }]}>Copy Account ID</Text>
             </TouchableOpacity>
           </Pressable>
@@ -476,7 +529,7 @@ export default function SettingsAccountScreen() {
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.foreground }]}>Edit Username</Text>
               <TouchableOpacity onPress={() => setShowEditNameModal(false)} hitSlop={8}>
-                <Feather name="x" size={18} color={colors.mutedForeground} />
+                <Icon name="x" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             </View>
 
@@ -485,7 +538,7 @@ export default function SettingsAccountScreen() {
             </Text>
 
             <View style={[styles.editInputBox, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F8FAFC', borderColor: colors.border }]}>
-              <Feather name="user" size={16} color={colors.primary} style={{ marginRight: 10 }} />
+              <Icon name="user" size={16} color={colors.primary} style={{ marginRight: 10 }} />
               <TextInput
                 style={[styles.modalTextInput, { color: colors.foreground }]}
                 value={nameInput}
@@ -496,7 +549,7 @@ export default function SettingsAccountScreen() {
               />
               {nameInput.length > 0 ? (
                 <TouchableOpacity onPress={() => setNameInput('')} hitSlop={8}>
-                  <Feather name="x-circle" size={16} color={colors.mutedForeground} />
+                  <Icon name="x-circle" size={16} color={colors.mutedForeground} />
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -532,7 +585,7 @@ export default function SettingsAccountScreen() {
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.foreground }]}>Manage Google Account</Text>
               <TouchableOpacity onPress={() => setShowManageGoogleModal(false)} hitSlop={8}>
-                <Feather name="x" size={18} color={colors.mutedForeground} />
+                <Icon name="x" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             </View>
 
@@ -555,9 +608,9 @@ export default function SettingsAccountScreen() {
                 <Text style={[styles.profileEmail, { color: colors.mutedForeground }]} numberOfLines={1}>
                   {emailStr}
                 </Text>
-                <View style={[styles.googleBadge, { marginTop: 4, backgroundColor: isDark ? 'rgba(16, 185, 129, 0.12)' : '#F0FDF4', borderColor: isDark ? 'rgba(16, 185, 129, 0.3)' : '#BBF7D0' }]}>
-                  <Feather name="check-circle" size={10} color="#10B981" />
-                  <Text style={[styles.googleBadgeText, { color: isDark ? '#4ADE80' : '#15803D' }]}>
+                <View style={[styles.googleBadge, { marginTop: 4, backgroundColor: '#10B981', borderWidth: 0 }]}>
+                  <Icon name="check-circle" size={10} color="#FFFFFF" />
+                  <Text style={[styles.googleBadgeText, { color: '#FFFFFF' }]}>
                     Currently Signed In
                   </Text>
                 </View>
@@ -570,7 +623,6 @@ export default function SettingsAccountScreen() {
                 activeOpacity={0.8}
                 onPress={handleSwitchGoogleAccount}
               >
-                <Feather name="refresh-cw" size={15} color="#3B82F6" />
                 <Text style={[styles.switchBtnText, { color: '#3B82F6' }]}>Switch Google Account</Text>
               </TouchableOpacity>
 
@@ -579,7 +631,6 @@ export default function SettingsAccountScreen() {
                 activeOpacity={0.8}
                 onPress={handleDisconnectGoogleAccount}
               >
-                <Feather name="trash-2" size={15} color="#EF4444" />
                 <Text style={[styles.disconnectBtnText, { color: '#EF4444' }]}>Disconnect Account</Text>
               </TouchableOpacity>
             </View>
@@ -642,7 +693,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 12,
+    borderRadius: 5,
     borderWidth: 1,
     marginTop: 4,
   },
@@ -701,7 +752,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 16,
   },
-  codeText: { fontSize: 12, fontFamily: 'SpaceMono_400Regular', textAlign: 'center' },
+  codeText: { fontSize: 12, fontFamily: 'GoogleSansFlex_500Medium', textAlign: 'center' },
   primaryModalBtn: {
     flexDirection: 'row',
     alignItems: 'center',

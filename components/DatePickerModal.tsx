@@ -5,10 +5,13 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useColors } from '@/hooks/useColors';
+import { DesignSystem } from '@/constants/DesignSystem';
 
 const DAYS_OF_WEEK = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const MONTHS = [
@@ -47,6 +50,8 @@ function sameDay(a: Date, b: Date) {
 
 export function DatePickerModal({ visible, value, label, onConfirm, onClose }: Props) {
   const colors = useColors();
+  const { width: windowWidth } = useWindowDimensions();
+  const isNarrow = windowWidth < 360;
   const today = new Date();
 
   const initial = isoToDate(value || '');
@@ -94,9 +99,13 @@ export function DatePickerModal({ visible, value, label, onConfirm, onClose }: P
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.overlay} onPress={onClose}>
+      <Pressable style={[styles.overlay, isNarrow && { paddingHorizontal: 12 }]} onPress={onClose}>
         <Pressable
-          style={[styles.card, { backgroundColor: colors.background, borderColor: colors.border }]}
+          style={[
+            styles.card,
+            isNarrow && { padding: 14, borderRadius: 20 },
+            { backgroundColor: colors.background, borderColor: colors.border },
+          ]}
           onPress={() => {}}
         >
           {/* ── Header label ── */}
@@ -178,7 +187,15 @@ export function DatePickerModal({ visible, value, label, onConfirm, onClose }: P
               style={[styles.cancelBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}
               activeOpacity={0.8}
             >
-              <Text style={[styles.cancelText, { color: colors.mutedForeground }]}>Cancel</Text>
+              <Text
+                style={[styles.cancelText, { color: colors.mutedForeground }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+                maxFontSizeMultiplier={1.2}
+              >
+                Cancel
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleConfirm}
@@ -186,7 +203,15 @@ export function DatePickerModal({ visible, value, label, onConfirm, onClose }: P
               activeOpacity={0.85}
             >
               <Feather name="check" size={15} color={colors.primaryForeground} style={{ marginRight: 6 }} />
-              <Text style={[styles.confirmText, { color: colors.primaryForeground }]}>Confirm</Text>
+              <Text
+                style={[styles.confirmText, { color: colors.primaryForeground }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+                maxFontSizeMultiplier={1.2}
+              >
+                Confirm
+              </Text>
             </TouchableOpacity>
           </View>
         </Pressable>
@@ -295,7 +320,9 @@ const styles = StyleSheet.create({
   },
   cancelBtn: {
     flex: 1,
-    height: 44,
+    minHeight: 44,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     borderRadius: 9999,
     borderWidth: 1,
     alignItems: 'center',
@@ -307,7 +334,9 @@ const styles = StyleSheet.create({
   },
   confirmBtn: {
     flex: 2,
-    height: 44,
+    minHeight: 44,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     borderRadius: 9999,
     flexDirection: 'row',
     alignItems: 'center',

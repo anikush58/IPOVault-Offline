@@ -11,19 +11,16 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/ui/Icon';
 import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { useDialog } from '@/context/DialogContext';
-import { IconButton } from '@/components/ui/IconButton';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 
 export default function SettingsContactSupportScreen() {
   const colors = useColors();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { resolvedScheme } = useTheme();
   const isDark = resolvedScheme === 'dark';
@@ -60,6 +57,7 @@ export default function SettingsContactSupportScreen() {
         title="Contact Support"
         centerTitle
         showBack
+        transparent
       />
 
       <ScrollView
@@ -83,7 +81,7 @@ export default function SettingsContactSupportScreen() {
             onPress={() => setShowInAppFeedbackModal(true)}
           >
             <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="message-square" size={17} color={settingIconColor} />
+              <Icon name="message-square" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>In-App Support</Text>
@@ -91,7 +89,7 @@ export default function SettingsContactSupportScreen() {
                 Send us a message from within the app
               </Text>
             </View>
-            <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+            <Icon name="chevron-right" size={16} color={colors.mutedForeground} />
           </TouchableOpacity>
 
           {/* Email Support */}
@@ -101,7 +99,7 @@ export default function SettingsContactSupportScreen() {
             onPress={handleEmailSupport}
           >
             <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="mail" size={17} color={settingIconColor} />
+              <Icon name="mail" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>Email Support</Text>
@@ -109,7 +107,7 @@ export default function SettingsContactSupportScreen() {
                 support@ipovault.app
               </Text>
             </View>
-            <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+            <Icon name="chevron-right" size={16} color={colors.mutedForeground} />
           </TouchableOpacity>
 
           {/* WhatsApp Support */}
@@ -119,7 +117,7 @@ export default function SettingsContactSupportScreen() {
             onPress={handleWhatsAppSupport}
           >
             <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
-              <Feather name="message-circle" size={17} color={settingIconColor} />
+              <Icon name="message-circle" size={17} color={settingIconColor} />
             </View>
             <View style={styles.textWrap}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>WhatsApp Support</Text>
@@ -127,14 +125,14 @@ export default function SettingsContactSupportScreen() {
                 Chat with our support team
               </Text>
             </View>
-            <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+            <Icon name="chevron-right" size={16} color={colors.mutedForeground} />
           </TouchableOpacity>
         </View>
 
         {/* Support Hours Card */}
         <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 14 }]}>
           <View style={[styles.iconWrap, { backgroundColor: settingIconBg }]}>
-            <Feather name="clock" size={17} color={settingIconColor} />
+            <Icon name="clock" size={17} color={settingIconColor} />
           </View>
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={[styles.infoTitle, { color: colors.foreground }]}>Support Hours</Text>
@@ -146,7 +144,7 @@ export default function SettingsContactSupportScreen() {
 
         {/* Include Details Tip Card */}
         <View style={[styles.tipCard, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.08)' : '#FEF2F2', borderColor: isDark ? 'rgba(239, 68, 68, 0.25)' : '#FECACA', marginTop: 14 }]}>
-          <Feather name="alert-triangle" size={18} color="#EF4444" style={{ marginTop: 2 }} />
+          <Icon name="alert-triangle" size={18} color="#EF4444" style={{ marginTop: 2 }} />
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={[styles.tipTitle, { color: '#EF4444' }]}>Include Details</Text>
             <Text style={[styles.tipSub, { color: colors.mutedForeground }]}>
@@ -163,7 +161,7 @@ export default function SettingsContactSupportScreen() {
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.foreground }]}>In-App Message</Text>
               <TouchableOpacity onPress={() => setShowInAppFeedbackModal(false)} hitSlop={8}>
-                <Feather name="x" size={18} color={colors.mutedForeground} />
+                <Icon name="x" size={18} color={colors.mutedForeground} />
               </TouchableOpacity>
             </View>
 

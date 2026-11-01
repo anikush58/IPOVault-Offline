@@ -1,5 +1,7 @@
 import React from 'react';
 import {
+  Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,7 +13,6 @@ import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
-import { ScoopedBottomSheet } from '@/components/ui/ScoopedBottomSheet';
 
 export type FilterState = {
   issueTypes: string[];   // 'Mainboard' | 'SME'
@@ -88,48 +89,59 @@ export function IPOFilterSheet({
     (draft.onlyFavorites ? 1 : 0);
 
   return (
-    <ScoopedBottomSheet
+    <Modal
       visible={visible}
-      onClose={onClose}
-      maxHeight="88%"
+      animationType="fade"
+      transparent
+      onRequestClose={onClose}
     >
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <View style={styles.headerTitleGroup}>
-          <View style={[styles.headerIconWrap, { backgroundColor: colors.primary + '18' }]}>
-            <Feather name="filter" size={16} color={colors.primary} />
-          </View>
-          <View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={[styles.title, { color: colors.foreground }]}>Filter IPOs</Text>
-              {activeCount > 0 && (
-                <View style={[styles.activeBadge, { backgroundColor: colors.primary }]}>
-                  <Text style={[styles.activeBadgeText, { color: colors.primaryForeground }]}>{activeCount}</Text>
+      <View style={styles.centerModalOverlay}>
+        <Pressable style={styles.backdropDismiss} onPress={onClose} />
+        <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          {/* Header */}
+          <View style={[styles.header, { borderBottomColor: colors.border }]}>
+            <View style={styles.headerTitleGroup}>
+              <View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={[styles.title, { color: colors.foreground }]}>Filter IPOs</Text>
+                  {activeCount > 0 && (
+                    <View style={[styles.activeBadge, { backgroundColor: colors.primary }]}>
+                      <Text style={[styles.activeBadgeText, { color: colors.primaryForeground }]}>{activeCount}</Text>
+                    </View>
+                  )}
                 </View>
-              )}
+                <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
+                  Filter by sector, issue type & registrar
+                </Text>
+              </View>
             </View>
-            <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-              Filter by sector, issue type & registrar
-            </Text>
-          </View>
-        </View>
 
-        {activeCount > 0 && (
-          <TouchableOpacity
-            onPress={handleReset}
-            style={[styles.clearBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}
-            activeOpacity={0.7}
-          >
-            <Feather name="rotate-ccw" size={12} color={colors.primary} style={{ marginRight: 4 }} />
-            <Text style={[styles.clearText, { color: colors.primary }]}>Reset</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {activeCount > 0 && (
+                <TouchableOpacity
+                  onPress={handleReset}
+                  style={[styles.clearBtn, { borderColor: colors.border, backgroundColor: colors.surface }]}
+                  activeOpacity={0.7}
+                >
+                  <Feather name="rotate-ccw" size={12} color={colors.primary} style={{ marginRight: 4 }} />
+                  <Text style={[styles.clearText, { color: colors.primary }]}>Reset</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                onPress={onClose}
+                style={[styles.closeBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                hitSlop={8}
+              >
+                <Feather name="x" size={16} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+          </View>
 
       <ScrollView
-        style={{ flex: 1 }}
+        style={{ flexShrink: 1, flexGrow: 0 }}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        bounces={false}
         keyboardShouldPersistTaps="handled"
       >
         {/* Favorites Toggle */}
@@ -300,23 +312,59 @@ export function IPOFilterSheet({
       </ScrollView>
 
       {/* Sticky Apply button */}
-      <View style={[styles.footer, { borderTopColor: colors.border, paddingBottom: Math.max(insets.bottom, 22) + 6 }]}>
+      <View style={[styles.footer, { borderTopColor: colors.border, paddingBottom: 16 }]}>
         <TouchableOpacity
           onPress={handleApply}
           style={[styles.applyBtn, { backgroundColor: colors.primary }]}
           activeOpacity={0.85}
         >
-          <Feather name="check" size={16} color={colors.primaryForeground} style={{ marginRight: 6 }} />
           <Text style={[styles.applyBtnText, { color: colors.primaryForeground }]}>
             {activeCount > 0 ? `Apply Filters (${activeCount})` : 'Apply Filters'}
           </Text>
         </TouchableOpacity>
       </View>
-    </ScoopedBottomSheet>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
+export const IPOFilterModal = IPOFilterSheet;
+
 const styles = StyleSheet.create({
+  centerModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  backdropDismiss: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 440,
+    maxHeight: '88%',
+    borderRadius: 24,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+    paddingTop: 16,
+    zIndex: 10,
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

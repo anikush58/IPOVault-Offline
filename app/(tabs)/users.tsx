@@ -3,6 +3,7 @@ import {
   Animated,
   Platform,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -21,6 +22,7 @@ import { useDB, type User } from '@/context/DBContext';
 import { IconButton } from '@/components/ui/IconButton';
 import { UserCard } from '@/components/UserCard';
 import { AddUserModal } from '@/components/AddUserModal';
+import { UsersSkeleton } from '@/components/users/UsersSkeleton';
 
 
 import { useSwipeGesture } from '@/hooks/useSwipeGesture';
@@ -70,45 +72,46 @@ export default function UsersScreen() {
 
   const displayedUsers = activeTab === 'active' ? activeUsers : archivedUsers;
 
-  // Per-user strike rate stats derived from applications
-  const statsForUser = (userId: string) => {
-    const userApps = applications.filter((a) => a.user_id === userId);
-    const applied = userApps.length;
-    const allotted = userApps.filter(
-      (a) =>
-        a.status === 'Allotted' ||
-        a.status === 'Holding' ||
-        a.status === 'Sold',
-    ).length;
-    const decided = userApps.filter(
-      (a) =>
-        a.status === 'Allotted' ||
-        a.status === 'Holding' ||
-        a.status === 'Sold' ||
-        a.status === 'Not Allotted',
-    ).length;
-    return { applied, allotted, decided };
-  };
+  // Precomputed O(1) user stats map derived from applications
+  const statsByUser = useMemo(() => {
+    const map = new Map<string, { applied: number; allotted: number; decided: number }>();
+    for (const a of applications) {
+      let s = map.get(a.user_id);
+      if (!s) {
+        s = { applied: 0, allotted: 0, decided: 0 };
+        map.set(a.user_id, s);
+      }
+      s.applied++;
+      const st = a.status;
+      if (st === 'Allotted' || st === 'Holding' || st === 'Sold') {
+        s.allotted++;
+        s.decided++;
+      } else if (st === 'Not Allotted') {
+        s.decided++;
+      }
+    }
+    return map;
+  }, [applications]);
 
-  const handleArchive = async (user: User) => {
+  const handleArchive = useCallback(async (user: User) => {
     try {
       await archiveUser(user.id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       showError('Error', 'Failed to archive user.');
     }
-  };
+  }, [archiveUser, showError]);
 
-  const handleUnarchive = async (user: User) => {
+  const handleUnarchive = useCallback(async (user: User) => {
     try {
       await unarchiveUser(user.id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       showError('Error', 'Failed to unarchive user.');
     }
-  };
+  }, [unarchiveUser, showError]);
 
-  const handleDelete = (user: User) => {
+  const handleDelete = useCallback((user: User) => {
     showConfirm({
       title: 'Delete User',
       message: `Remove ${user.name} and all their applications?`,
@@ -123,7 +126,12 @@ export default function UsersScreen() {
         }
       },
     });
-  };
+  }, [deleteUser, showConfirm, showError]);
+
+  const handleEdit = useCallback((user: User) => {
+    setEditingUser(user);
+    setShowModal(true);
+  }, []);
 
 
 
@@ -151,6 +159,25 @@ export default function UsersScreen() {
     outputRange: [0, 1],
     extrapolate: 'clamp',
   });
+
+    const renderItem = useCallback(
+    ({ item }: { item: User }) => {
+      const stats = statsByUser.get(item.id) || { applied: 0, allotted: 0, decided: 0 };
+      return (
+        <UserCard
+          user={item}
+          applied={stats.applied}
+          allotted={stats.allotted}
+          decided={stats.decided}
+          onEdit={handleEdit}
+          onArchive={activeTab === 'active' ? handleArchive : undefined}
+          onUnarchive={activeTab === 'archived' ? handleUnarchive : undefined}
+          onDelete={handleDelete}
+        />
+      );
+    },
+    [statsByUser, handleEdit, activeTab, handleArchive, handleUnarchive, handleDelete]
+  );
 
   const topPad = Platform.OS === 'web' ? 20 : insets.top;
 
@@ -234,9 +261,21 @@ export default function UsersScreen() {
       </View>
 
       {/* Users list */}
-      <Animated.FlatList
-        data={displayedUsers}
-        keyExtractor={(item) => item.id}
+      {isLoading && users.length === 0 ? (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingTop: topPad + 120,
+            paddingBottom: insets.bottom + (isNonPro ? 90 : 20),
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          <UsersSkeleton />
+        </ScrollView>
+      ) : (
+        <Animated.FlatList
+          data={displayedUsers}
+          keyExtractor={(item) => item.id}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: true }
@@ -254,21 +293,11 @@ export default function UsersScreen() {
             progressViewOffset={topPad + 123}
           />
         }
-        renderItem={({ item }) => {
-          const stats = statsForUser(item.id);
-          return (
-            <UserCard
-              user={item}
-              applied={stats.applied}
-              allotted={stats.allotted}
-              decided={stats.decided}
-              onEdit={() => openEditUser(item)}
-              onArchive={activeTab === 'active' ? () => handleArchive(item) : undefined}
-              onUnarchive={activeTab === 'archived' ? () => handleUnarchive(item) : undefined}
-              onDelete={() => handleDelete(item)}
-            />
-          );
-        }}
+        renderItem={renderItem}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS !== 'web'}
         ListEmptyComponent={() => (
           <View style={styles.emptyContainer}>
             <View style={[styles.emptyIconCircle, { backgroundColor: colors.surface }]}>
@@ -298,6 +327,7 @@ export default function UsersScreen() {
           </View>
         )}
       />
+      )}
 
       <AddUserModal
         visible={showModal}

@@ -2,34 +2,24 @@
   "expo": {
     "name": "IPOVault",
     "slug": "ipovault",
-    "version": "2.0.2",
+    "version": "2.3.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "ipovault",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/splash-light.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FAFAFC",
-      "dark": {
-        "image": "./assets/images/splash-dark.png",
-        "backgroundColor": "#090A0C",
-        "resizeMode": "contain"
-      }
+      "backgroundColor": "#FAFAFC"
     },
     "ios": {
       "supportsTablet": true,
-      "userInterfaceStyle": "automatic",
+      "userInterfaceStyle": "light",
       "splash": {
         "image": "./assets/images/splash-light.png",
         "resizeMode": "contain",
-        "backgroundColor": "#FAFAFC",
-        "dark": {
-          "image": "./assets/images/splash-dark.png",
-          "backgroundColor": "#090A0C",
-          "resizeMode": "contain"
-        }
+        "backgroundColor": "#FAFAFC"
       }
     },
     "android": {
@@ -40,16 +30,13 @@
       "splash": {
         "image": "./assets/images/splash-light.png",
         "resizeMode": "contain",
-        "backgroundColor": "#FAFAFC",
-        "dark": {
-          "image": "./assets/images/splash-dark.png",
-          "backgroundColor": "#090A0C",
-          "resizeMode": "contain"
-        }
+        "backgroundColor": "#FAFAFC"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.ipovault.app",
+      "versionCode": 2,
+      "allowBackup": false,
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
@@ -92,7 +79,9 @@
       [
         "expo-notifications",
         {
-          "color": "#3B82F6"
+          "icon": "./assets/images/icon.png",
+          "color": "#3B82F6",
+          "defaultChannel": "ipovault-alerts"
         }
       ]
     ],

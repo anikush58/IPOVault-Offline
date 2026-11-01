@@ -27,6 +27,8 @@ import {
 import { adConsentService } from '../services/ads/adConsentService';
 import { adInitializationService } from '../services/ads/adInitializationService';
 
+(process.env as Record<string, string | undefined>).NODE_ENV = 'test';
+
 function assert(condition: boolean, message: string) {
   if (!condition) {
     throw new Error(`Assertion failed: ${message}`);
@@ -103,14 +105,26 @@ async function runTests() {
   );
   assert(
     getBannerAdUnitId(true) === ADMOB_PROD_IDS.ANDROID_BANNER,
-    'Banner getter resolves to production ID when production mode is forced'
+    'Banner getter resolves to production ID when production mode is forced in test runner'
   );
   assert(
     getNativeAdUnitId(true) === ADMOB_PROD_IDS.ANDROID_NATIVE,
-    'Native getter resolves to production ID when production mode is forced'
+    'Native getter resolves to production ID when production mode is forced in test runner'
   );
 
-  // 1.4 Expo Config Plugin App ID verification in app.json
+  // 1.4 Ad Unit ID Format Validation & Fail-Closed Behavior
+  const { isAdConfigurationValid } = await import('../services/ads/adConfig');
+  assert(isAdConfigurationValid(ADMOB_PROD_IDS.ANDROID_BANNER) === true, 'Validates prod banner ID format');
+  assert(isAdConfigurationValid(ADMOB_PROD_IDS.ANDROID_NATIVE) === true, 'Validates prod native ID format');
+  assert(isAdConfigurationValid(ADMOB_TEST_IDS.ANDROID_BANNER) === true, 'Validates test banner ID format');
+  assert(isAdConfigurationValid('invalid-id') === false, 'Rejects invalid string');
+  assert(isAdConfigurationValid('') === false, 'Rejects empty string');
+  assert(isAdConfigurationValid(null) === false, 'Rejects null');
+  assert(isAdConfigurationValid(undefined) === false, 'Rejects undefined');
+  console.log('✓ PASS: [1.3] Production IDs isolated, format validated, and getters fail closed on invalid config');
+  passed++;
+
+  // 1.5 Expo Config Plugin & EAS Build Profiles
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const appJson = require('../app.json');
   const admobPlugin = appJson?.expo?.plugins?.find(
@@ -124,7 +138,43 @@ async function runTests() {
     admobPlugin[1]?.androidAppId === 'ca-app-pub-3768316467682663~8023640805',
     'Android App ID in app.json matches registered production App ID'
   );
-  console.log('✓ PASS: [1.3] Production IDs isolated, gated against test/dev leakage, and configured in Expo plugin');
+  assert(
+    admobPlugin[1]?.delayAppMeasurementInit === true,
+    'Plugin configures delayAppMeasurementInit for Google consent compliance'
+  );
+
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const easJson = require('../eas.json');
+  assert(
+    easJson?.build?.production?.env?.EXPO_PUBLIC_USE_PROD_ADS === 'true',
+    'EAS production build explicitly enables production ads'
+  );
+  assert(
+    easJson?.build?.['production-apk']?.env?.EXPO_PUBLIC_USE_PROD_ADS === 'true',
+    'EAS production-apk build explicitly enables production ads'
+  );
+  assert(
+    easJson?.build?.['production-apk']?.android?.buildType === 'apk',
+    'EAS production-apk build explicitly sets buildType to apk'
+  );
+  assert(
+    easJson?.build?.preview?.env?.EXPO_PUBLIC_USE_PROD_ADS === 'false',
+    'EAS preview build explicitly keeps test ads active'
+  );
+
+  // Check AndroidManifest.xml for AdMob metadata
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require('fs');
+  const manifestContent = fs.readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
+  assert(
+    manifestContent.includes('ca-app-pub-3768316467682663~8023640805'),
+    'AndroidManifest.xml contains matching production AdMob App ID'
+  );
+  assert(
+    manifestContent.includes('com.google.android.gms.ads.DELAY_APP_MEASUREMENT_INIT'),
+    'AndroidManifest.xml contains DELAY_APP_MEASUREMENT_INIT'
+  );
+  console.log('✓ PASS: [1.4] Expo plugin, EAS profiles, and AndroidManifest metadata verified');
   passed++;
 
   // --- SECTION 2: Privacy Guarantees & Zero Financial Data Leakage ---
@@ -233,6 +283,16 @@ async function runTests() {
   console.log(`✓ PASS: [4.3] Consent gating evaluates safely without unhandled exceptions (canRequestAds: ${canRequest})`);
   passed++;
 
+  // 4.4 Deduplication of concurrent consent requests
+  const [c1, c2] = await Promise.all([
+    adConsentService.initializeConsent(),
+    adConsentService.initializeConsent(),
+  ]);
+  assert(c1.canRequestAds === c2.canRequestAds, 'Concurrent consent requests return identical canRequestAds');
+  assert(c1.status === c2.status, 'Concurrent consent requests return identical status');
+  console.log('✓ PASS: [4.4] Concurrent consent requests are safely deduplicated to a single in-flight promise');
+  passed++;
+
   // --- SECTION 5: Idempotent SDK Initialization ---
   console.log('\n--- TEST 5: SDK Initialization Idempotency & Runtime Detection ---');
 
@@ -263,6 +323,33 @@ async function runTests() {
   const entitlementModule = await import('../services/ads/adEntitlementService');
   assert(!('db' in entitlementModule), 'adEntitlementService does not touch database');
   console.log('✓ PASS: [6.1] Advertising modules are 100% decoupled from SQLite tables, Firestore sync, and broker OAuth');
+  passed++;
+
+  // --- SECTION 7: Live AdMob Readiness & Screen Placements ---
+  console.log('\n--- TEST 7: Live AdMob Readiness & Screen Placements ---');
+
+  // 7.1 Backend app-ads.txt validation
+  const backendAppAdsPath = 'd:/Projects/IPOVault-Backend/public/app-ads.txt';
+  const fsModule = await import('fs');
+  assert(fsModule.existsSync(backendAppAdsPath), 'public/app-ads.txt exists in IPOVault-Backend');
+  const appAdsContent = fsModule.readFileSync(backendAppAdsPath, 'utf8').trim();
+  assert(
+    appAdsContent.includes('google.com, pub-3768316467682663, DIRECT, f08c47fec0942fa0'),
+    'app-ads.txt contains valid publisher entry for pub-3768316467682663'
+  );
+  console.log('✓ PASS: [7.1] Backend app-ads.txt correctly verified for Google AdMob crawlers');
+  passed++;
+
+  // 7.2 Active Banner & Native Ad Screen Placements
+  const indexSource = fsModule.readFileSync('d:/Projects/IPOVault-Offline/app/(tabs)/index.tsx', 'utf8');
+  assert(indexSource.includes('<BannerAdView'), 'BannerAdView placed on Dashboard (index.tsx)');
+
+  const allotmentSource = fsModule.readFileSync('d:/Projects/IPOVault-Offline/app/allotment-checker.tsx', 'utf8');
+  assert(allotmentSource.includes('<BannerAdView'), 'BannerAdView placed on Allotment Checker (allotment-checker.tsx)');
+
+  const hubSource = fsModule.readFileSync('d:/Projects/IPOVault-Offline/app/new-ipos.tsx', 'utf8');
+  assert(hubSource.includes('<NativeAdCard'), 'NativeAdCard placed in IPO browsing list (new-ipos.tsx)');
+  console.log('✓ PASS: [7.2] Ad units actively placed across key user screens (Dashboard, Allotment Checker, IPO Hub)');
   passed++;
 
   console.log('\n===============================================================');

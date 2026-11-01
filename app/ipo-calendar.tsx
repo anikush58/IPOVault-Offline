@@ -21,6 +21,7 @@ import { useColors } from '@/hooks/useColors';
 import { useTheme } from '@/context/ThemeContext';
 import { IconButton } from '@/components/ui/IconButton';
 import { useDB } from '@/context/DBContext';
+import { IPOSkeletonList } from '@/components/ipo/IPOSkeleton';
 
 export type EventStatus = 'OPEN' | 'CLOSING' | 'CLOSED' | 'ALLOTMENT' | 'LISTING' | 'LISTED' | 'HOLIDAY';
 
@@ -296,33 +297,33 @@ export default function IPOCalendarScreen() {
     switch (status) {
       case 'OPEN':
         return {
-          bg: isDark ? '#1E3A8A55' : '#DBEAFE',
-          text: isDark ? '#93C5FD' : '#1D4ED8',
-          dot: isDark ? '#60A5FA' : '#2563EB',
+          bg: '#2563EB',
+          text: '#FFFFFF',
+          dot: '#FFFFFF',
           label: 'OPEN',
         };
       case 'ALLOTMENT':
         return {
-          bg: isDark ? '#064E3B55' : '#D1FAE5',
-          text: isDark ? '#6EE7B7' : '#047857',
-          dot: isDark ? '#34D399' : '#059669',
+          bg: '#10B981',
+          text: '#FFFFFF',
+          dot: '#FFFFFF',
           label: 'ALLOTMENT',
         };
       case 'LISTING':
       case 'LISTED':
         return {
-          bg: isDark ? '#78350F55' : '#FEF3C7',
-          text: isDark ? '#FDE047' : '#B45309',
-          dot: isDark ? '#FACC15' : '#D97706',
+          bg: '#8B5CF6',
+          text: '#FFFFFF',
+          dot: '#FFFFFF',
           label: status,
         };
       case 'CLOSING':
       case 'CLOSED':
       default:
         return {
-          bg: isDark ? '#37415155' : '#E2E8F0',
-          text: isDark ? '#D1D5DB' : '#334155',
-          dot: isDark ? '#9CA3AF' : '#64748B',
+          bg: '#64748B',
+          text: '#FFFFFF',
+          dot: '#FFFFFF',
           label: status,
         };
     }
@@ -332,24 +333,24 @@ export default function IPOCalendarScreen() {
     switch (type) {
       case 'NSE SME':
         return {
-          bg: isDark ? '#581C8755' : '#F3E8FF',
-          text: isDark ? '#E9D5FF' : '#7E22CE',
-          border: isDark ? '#7E22CE44' : '#D8B4FE',
+          bg: '#EC4899',
+          text: '#FFFFFF',
+          border: '#EC4899',
           label: 'NSE SME',
         };
       case 'BSE SME':
         return {
-          bg: isDark ? '#1E3A8A55' : '#E0F2FE',
-          text: isDark ? '#BFDBFE' : '#0369A1',
-          border: isDark ? '#1D4ED844' : '#7DD3FC',
+          bg: '#EC4899',
+          text: '#FFFFFF',
+          border: '#EC4899',
           label: 'BSE SME',
         };
       case 'MAINBOARD':
       default:
         return {
-          bg: isDark ? '#312E8155' : '#EEF2FF',
-          text: isDark ? '#C7D2FE' : '#4338CA',
-          border: isDark ? '#4338CA44' : '#C7D2FE',
+          bg: '#4F46E5',
+          text: '#FFFFFF',
+          border: '#4F46E5',
           label: 'MAINBOARD',
         };
     }
@@ -393,13 +394,13 @@ export default function IPOCalendarScreen() {
               onPress={() => setViewMode('list')}
               style={[styles.toggleBtn, viewMode === 'list' && { backgroundColor: isDark ? colors.primary : '#0F172A' }]}
             >
-              <Feather name="list" size={15} color={viewMode === 'list' ? '#FFFFFF' : colors.mutedForeground} />
+              <Feather name="list" size={15} color={viewMode === 'list' ? (isDark ? colors.primaryForeground : '#FFFFFF') : colors.mutedForeground} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setViewMode('card')}
               style={[styles.toggleBtn, viewMode === 'card' && { backgroundColor: isDark ? colors.primary : '#0F172A' }]}
             >
-              <Feather name="grid" size={15} color={viewMode === 'card' ? '#FFFFFF' : colors.mutedForeground} />
+              <Feather name="grid" size={15} color={viewMode === 'card' ? (isDark ? colors.primaryForeground : '#FFFFFF') : colors.mutedForeground} />
             </TouchableOpacity>
           </View>
         </View>
@@ -416,12 +417,12 @@ export default function IPOCalendarScreen() {
                   styles.boardPillChip,
                   active
                     ? {
-                        backgroundColor: isDark ? '#818CF8' : '#0F172A',
-                        borderColor: isDark ? '#818CF8' : '#0F172A',
+                        backgroundColor: colors.pillActiveBg,
+                        borderColor: colors.pillActiveBg,
                       }
                     : {
-                        backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
-                        borderColor: isDark ? '#334155' : '#E2E8F0',
+                        backgroundColor: isDark ? colors.surfaceElevated : '#FFFFFF',
+                        borderColor: colors.border,
                       },
                 ]}
                 activeOpacity={0.8}
@@ -429,7 +430,7 @@ export default function IPOCalendarScreen() {
                 <Text
                   style={[
                     styles.boardPillChipText,
-                    { color: active ? '#FFFFFF' : colors.foreground },
+                    { color: active ? colors.pillActiveText : colors.foreground },
                     active && { fontFamily: 'GoogleSansFlex_700Bold' },
                   ]}
                 >
@@ -442,9 +443,22 @@ export default function IPOCalendarScreen() {
       </View>
 
       {/* Main Timeline SectionList with STICKY HEADERS */}
-      <AnimatedSectionList
-        sections={sections}
-        keyExtractor={(item: any) => item.id}
+      {isLoading && ipos.length === 0 ? (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: topPad + 114,
+            paddingBottom: insets.bottom + 24,
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          <IPOSkeletonList count={5} />
+        </ScrollView>
+      ) : (
+        <AnimatedSectionList
+          sections={sections}
+          keyExtractor={(item: any) => item.id}
         stickySectionHeadersEnabled={true}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
@@ -472,13 +486,13 @@ export default function IPOCalendarScreen() {
                 styles.distinctDateCard,
                 section.isToday
                   ? {
-                      backgroundColor: isDark ? '#312E81' : '#EEF2FF',
+                      backgroundColor: isDark ? 'rgba(99, 102, 241, 0.18)' : '#EEF2FF',
                       borderColor: '#6366F1',
                       borderWidth: 1.5,
                     }
                   : {
-                      backgroundColor: isDark ? '#181826' : '#F1F5F9',
-                      borderColor: isDark ? '#2D2D42' : '#CBD5E1',
+                      backgroundColor: isDark ? colors.surfaceElevated : '#F1F5F9',
+                      borderColor: colors.border,
                       borderWidth: 1,
                     },
               ]}
@@ -557,7 +571,7 @@ export default function IPOCalendarScreen() {
 
             {/* Festive Market Holiday Banner (if holiday section) */}
             {section.isHolidayGroup && section.holidayTitle ? (
-              <View style={[styles.festiveHolidayCard, { backgroundColor: isDark ? '#0F172A' : '#EFF6FF', borderColor: '#3B82F644' }]}>
+              <View style={[styles.festiveHolidayCard, { backgroundColor: isDark ? colors.card : '#EFF6FF', borderColor: colors.border }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                   <View style={{ flex: 1, paddingRight: 10 }}>
                     <Text style={[styles.festiveHolidayTitle, { color: colors.foreground }]}>
@@ -685,6 +699,7 @@ export default function IPOCalendarScreen() {
           );
         }}
       />
+      )}
     </View>
   );
 }
@@ -855,7 +870,7 @@ const styles = StyleSheet.create({
   boardBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 8,
+    borderRadius: 50,
     borderWidth: 1,
   },
   boardBadgeText: {
@@ -870,7 +885,7 @@ const styles = StyleSheet.create({
     gap: 5,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 10,
+    borderRadius: 5,
   },
   statusDot: {
     width: 5,
