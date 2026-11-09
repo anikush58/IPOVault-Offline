@@ -220,7 +220,7 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
           resolvedBankName || undefined,
           resolvedUpiApp,
           selectedBrokerAccountId,
-          undefined,
+          isAllottedOutcome || isHolding ? finalAllottedShares : undefined,
           isAllottedOutcome || isHolding ? finalAllottedShares : status === 'Not Allotted' ? 0 : undefined
         );
 

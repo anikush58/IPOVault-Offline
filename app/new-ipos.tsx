@@ -359,7 +359,7 @@ const NewIpoCardItem = React.memo(
     const isSme = item.marketSegment === 'SME' || ((item as any).issue_type || '').toUpperCase().includes('SME');
     const upperPrice = highPrice || lowPrice || 0;
     const lotQty = item.lotSize || 0;
-    const minInvestment = upperPrice && lotQty ? (isSme ? upperPrice * lotQty * 2 : upperPrice * lotQty) : null;
+    const minInvestment = upperPrice && lotQty ? upperPrice * lotQty : null;
 
     const subTotal = (item as any).total_sub ?? (item as any).total_subscription ?? (item.currentSubscription?.totalSubscriptionMultiple != null ? Number(item.currentSubscription.totalSubscriptionMultiple) : null);
     const qibCat = item.currentSubscription?.categories?.find((c: any) => c.category === 'QIB');

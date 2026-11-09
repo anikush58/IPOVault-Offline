@@ -523,13 +523,11 @@ export class ApplicationRepository implements IApplicationRepository {
 
       const userLots =
         typeof lotCounts === 'object' && lotCounts !== null
-          ? (lotCounts[uid] ?? (isSme ? 2 : 1))
+          ? (lotCounts[uid] ?? 1)
           : typeof lotCounts === 'number'
           ? lotCounts
-          : isSme
-          ? 2
           : 1;
-      const calculatedShares = userLots > 0 ? userLots * lotSize : (isSme ? 2 * lotSize : lotSize);
+      const calculatedShares = userLots > 0 ? userLots * lotSize : lotSize;
 
       const params = [
         id,

@@ -368,15 +368,14 @@ concurrentTap.then((res) => {
 });
 isSubmittingLock = false;
 
-// SME bid validation
+// Bid validation
 function validateBid(isSme: boolean, lots: number): { valid: boolean; error?: string } {
   if (lots <= 0) return { valid: false, error: 'Every selected applicant must have at least 1 lot.' };
-  if (isSme && lots < 2) return { valid: false, error: 'SME IPOs require a minimum of 2 lots per application.' };
   return { valid: true };
 }
 
 assert(validateBid(false, 1).valid, 'Bid Validation', 'Mainboard IPO permits 1 lot bid');
-assert(!validateBid(true, 1).valid, 'Bid Validation', 'SME IPO rejects 1 lot bid (min 2 lots required)');
+assert(validateBid(true, 1).valid, 'Bid Validation', 'SME IPO permits 1 lot bid');
 assert(validateBid(true, 2).valid, 'Bid Validation', 'SME IPO accepts 2 lots bid');
 
 // ── 4. Atomic Application Update & Source of Truth ───────────────────────────

@@ -299,8 +299,6 @@ export function validateCategoryBid({
   const minLotsRequired =
     categoryConfig?.minLots && categoryConfig.minLots > 0
       ? categoryConfig.minLots
-      : isSme
-      ? 2
       : 1;
 
   if (safeUnitPrice <= 0 || safeLotSize <= 0) {
@@ -319,13 +317,6 @@ export function validateCategoryBid({
       valid: false,
       error: 'Every selected applicant must have at least 1 lot.',
       minLots: minLotsRequired,
-    };
-  }
-  if (isSme && lots < 2) {
-    return {
-      valid: false,
-      error: 'SME IPOs require a minimum of 2 lots per application.',
-      minLots: 2,
     };
   }
 
@@ -387,7 +378,7 @@ export function validateCategoryBid({
   // 4. HNI / NII Validation (Must exceed ₹2,00,000)
   if (normCategory === 'HNI' || normCategory === 'NII') {
     const minHniAmount = 200000;
-    const minHniFloor = isSme ? 3 : minLotsRequired;
+    const minHniFloor = isSme ? 2 : minLotsRequired;
     const minHniLots = Math.max(minHniFloor, Math.floor(minHniAmount / lotCost) + 1);
 
     if (lots < minHniLots || bidAmount <= minHniAmount) {
@@ -446,8 +437,6 @@ export function getCategoryLotLimits({
   const minLotsRequired =
     categoryConfig?.minLots && categoryConfig.minLots > 0
       ? categoryConfig.minLots
-      : isSme
-      ? 2
       : 1;
 
   if (safeUnitPrice <= 0 || safeLotSize <= 0) {
@@ -470,7 +459,7 @@ export function getCategoryLotLimits({
 
   if (normCategory === 'HNI' || normCategory === 'NII') {
     const minHniAmount = 200000;
-    const minHniFloor = isSme ? 3 : minLotsRequired;
+    const minHniFloor = isSme ? 2 : minLotsRequired;
     const minHniLots = Math.max(minHniFloor, Math.floor(minHniAmount / lotCost) + 1);
     const configuredMaxAmount =
       categoryConfig?.maxAmount != null ? Number(categoryConfig.maxAmount) : 1000000;

@@ -139,7 +139,7 @@ function testCategoryBidValidation() {
   });
   assert(hniValid.valid, 'HNI Over ₹2L', 'HNI application over ₹2,00,000 is valid');
 
-  // SME IPO: 1 lot -> Fails minimum 2 lots
+  // SME IPO: 1 lot (1000 * 100 = ₹1,00,000 <= ₹2L) -> Valid for Retail
   const sme1 = validateCategoryBid({
     category: 'RETAIL',
     lots: 1,
@@ -147,17 +147,17 @@ function testCategoryBidValidation() {
     lotSize: 1000,
     isSme: true,
   });
-  assert(!sme1.valid, 'SME 1 Lot Rejection', 'SME IPO application with only 1 lot is rejected');
+  assert(sme1.valid, 'SME 1 Lot Valid', 'SME IPO application with 1 lot is valid for Retail');
 
-  // SME IPO: 2 lots -> Valid
-  const sme2 = validateCategoryBid({
+  // SME IPO: 3 lots (3000 * 100 = ₹3,00,000 > ₹2L) -> Rejection for Retail
+  const sme3 = validateCategoryBid({
     category: 'RETAIL',
-    lots: 2,
+    lots: 3,
     unitPrice: 100,
     lotSize: 1000,
     isSme: true,
   });
-  assert(sme2.valid, 'SME 2 Lots Valid', 'SME IPO application with 2 lots is valid');
+  assert(!sme3.valid, 'SME 3 Lots Rejection', 'SME IPO application with 3 lots exceeding ₹2L is rejected for Retail');
 
   // 0 Lots -> Fails
   const zeroLots = validateCategoryBid({
@@ -390,7 +390,7 @@ function testCategoryLotLimits() {
   assert(retailLimits.minAmount === 15000, 'Retail Min Amount', 'Min amount is ₹15,000');
   assert(retailLimits.maxAmount === 195000, 'Retail Max Amount', 'Max amount is ₹1,95,000');
 
-  // 2. Retail SME (Mandatory 2-lot minimum)
+  // 2. Retail SME
   const smeUnitPrice = 100;
   const smeLotSize = 1000; // 1 Lot = ₹1,00,000
   const smeLimits = getCategoryLotLimits({
@@ -399,10 +399,10 @@ function testCategoryLotLimits() {
     lotSize: smeLotSize,
     isSme: true,
   });
-  assert(smeLimits.minLots === 2, 'SME Min Lots', 'SME minimum lots is strictly 2');
-  assert(smeLimits.defaultLots === 2, 'SME Default Lots', 'SME default lots is 2');
+  assert(smeLimits.minLots === 1, 'SME Min Lots', 'SME minimum lots is 1');
+  assert(smeLimits.defaultLots === 1, 'SME Default Lots', 'SME default lots is 1');
   assert(smeLimits.maxLots === 2, 'SME Max Lots', 'SME maximum lots is 2 (2 lots = ₹2,00,000)');
-  assert(smeLimits.options.length === 1 && smeLimits.options[0] === 2, 'SME Options Only 2', 'Only 2 lots permissible within ₹2L');
+  assert(smeLimits.options.length === 2 && smeLimits.options[0] === 1 && smeLimits.options[1] === 2, 'SME Options 1 and 2', 'Options permissible within ₹2L');
 
   // 3. Shareholder Category Standard (₹2,00,000 standard ceiling)
   const shLimits = getCategoryLotLimits({

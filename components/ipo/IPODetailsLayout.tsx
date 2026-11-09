@@ -365,10 +365,10 @@ export function IPODetailsLayout({
     }
     const effectivePrice = priceHigh || priceLow;
     if (effectivePrice && lotSize) {
-      return Number(effectivePrice) * Number(lotSize) * (isSme ? 2 : 1);
+      return Number(effectivePrice) * Number(lotSize);
     }
     return null;
-  }, [ipo.minimumInvestmentAmount, priceHigh, priceLow, lotSize, isSme]);
+  }, [ipo.minimumInvestmentAmount, priceHigh, priceLow, lotSize]);
 
   // Status Banner Info with accurate Days Calculation
   const statusBannerInfo = useMemo(() => {
@@ -952,11 +952,11 @@ export function IPODetailsLayout({
     if (p <= 0 || ls <= 0) return [];
 
     const lotCost = p * ls;
-    const retailMinLots = isSme ? 2 : 1;
-    const retailMaxLots = isSme ? 2 : Math.max(1, Math.floor(200000 / lotCost));
-    const sHniMinLots = isSme ? 3 : retailMaxLots + 1;
-    const sHniMaxLots = isSme ? 5 : Math.max(sHniMinLots, Math.floor(1000000 / lotCost));
-    const bHniMinLots = isSme ? 6 : sHniMaxLots + 1;
+    const retailMinLots = 1;
+    const retailMaxLots = Math.max(1, Math.floor(200000 / lotCost));
+    const sHniMinLots = isSme ? Math.max(2, Math.floor(200000 / lotCost) + 1) : retailMaxLots + 1;
+    const sHniMaxLots = isSme ? Math.max(sHniMinLots, 5) : Math.max(sHniMinLots, Math.floor(1000000 / lotCost));
+    const bHniMinLots = sHniMaxLots + 1;
 
     return [
       { type: 'Retail (Min)', lots: retailMinLots, shares: retailMinLots * ls, amount: retailMinLots * lotCost },

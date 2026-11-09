@@ -48,7 +48,11 @@ function isAppliedStatus(st: string) {
 }
 
 function isAllottedStatus(st: string) {
-  return st === 'Allotted' || st === 'Partially Allotted' || st === 'Holding' || st === 'Sold';
+  return st === 'Allotted' || st === 'Partially Allotted';
+}
+
+function isNotAllottedStatus(st: string) {
+  return st === 'Not Allotted' || st === 'Cancelled';
 }
 
 function ApplicationsScreenContent() {
@@ -218,6 +222,8 @@ function ApplicationsScreenContent() {
       ? searchFiltered.filter((a) => isAppliedStatus(a.status))
       : activeTab === 'Allotted'
       ? searchFiltered.filter((a) => isAllottedStatus(a.status))
+      : activeTab === 'Not Allotted'
+      ? searchFiltered.filter((a) => isNotAllottedStatus(a.status))
       : searchFiltered.filter((a) => a.status === activeTab);
 
     return [...tabFiltered].sort((a, b) => {
@@ -246,7 +252,7 @@ function ApplicationsScreenContent() {
       if (isAllottedStatus(st)) allotted++;
       if (st === 'Holding') holding++;
       if (st === 'Sold') sold++;
-      if (st === 'Not Allotted') notAllotted++;
+      if (isNotAllottedStatus(st)) notAllotted++;
     }
 
     return {
@@ -293,6 +299,7 @@ function ApplicationsScreenContent() {
           }
         }}
         isAppliedTab={activeTab === 'Applied'}
+        isAllottedTab={activeTab === 'Allotted'}
         isSelectionMode={isSelectionMode}
         isSelected={selectedAppIds.includes(item.id)}
         onSelectToggle={() => toggleSelectApp(item.id)}
@@ -315,7 +322,7 @@ function ApplicationsScreenContent() {
     if (selectedAppIds.length === 0) return;
     setBulkActionLoading(true);
     try {
-      if (status === 'Allotted') {
+      if (status === 'Allotted' || status === 'Holding' || status === 'Sold') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } else {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -615,61 +622,181 @@ function ApplicationsScreenContent() {
 
           {/* 4 Action Buttons Row */}
           <View style={styles.floating4ButtonsRow}>
-            {/* 1. Mandate */}
-            <TouchableOpacity
-              onPress={() => handleBulkStatusUpdate('Mandate Approved')}
-              disabled={bulkActionLoading || selectedAppIds.length === 0}
-              style={[
-                styles.bulk4Btn,
-                { backgroundColor: '#1E40AF' },
-                selectedAppIds.length === 0 && { opacity: 0.5 },
-              ]}
-            >
-              <Icon name="clock" size={13} color="#FFFFFF" />
-              <Text style={styles.bulk4BtnText}>Mandate</Text>
-            </TouchableOpacity>
+            {activeTab === 'Allotted' ? (
+              <>
+                {/* 1. Holding */}
+                <TouchableOpacity
+                  onPress={() => handleBulkStatusUpdate('Holding')}
+                  disabled={bulkActionLoading || selectedAppIds.length === 0}
+                  style={[
+                    styles.bulk4Btn,
+                    { backgroundColor: '#059669' },
+                    selectedAppIds.length === 0 && { opacity: 0.5 },
+                  ]}
+                >
+                  <Icon name="briefcase" size={13} color="#FFFFFF" />
+                  <Text style={styles.bulk4BtnText}>Holding</Text>
+                </TouchableOpacity>
 
-            {/* 2. Allotted */}
-            <TouchableOpacity
-              onPress={() => handleBulkStatusUpdate('Allotted')}
-              disabled={bulkActionLoading || selectedAppIds.length === 0}
-              style={[
-                styles.bulk4Btn,
-                { backgroundColor: '#16A34A' },
-                selectedAppIds.length === 0 && { opacity: 0.5 },
-              ]}
-            >
-              <Icon name="check" size={13} color="#FFFFFF" />
-              <Text style={styles.bulk4BtnText}>Allotted</Text>
-            </TouchableOpacity>
+                {/* 2. Sold */}
+                <TouchableOpacity
+                  onPress={() => handleBulkStatusUpdate('Sold')}
+                  disabled={bulkActionLoading || selectedAppIds.length === 0}
+                  style={[
+                    styles.bulk4Btn,
+                    { backgroundColor: '#2563EB' },
+                    selectedAppIds.length === 0 && { opacity: 0.5 },
+                  ]}
+                >
+                  <Icon name="dollar-sign" size={13} color="#FFFFFF" />
+                  <Text style={styles.bulk4BtnText}>Sold</Text>
+                </TouchableOpacity>
 
-            {/* 3. Not Allotted */}
-            <TouchableOpacity
-              onPress={() => handleBulkStatusUpdate('Not Allotted')}
-              disabled={bulkActionLoading || selectedAppIds.length === 0}
-              style={[
-                styles.bulk4Btn,
-                { backgroundColor: '#DC2626' },
-                selectedAppIds.length === 0 && { opacity: 0.5 },
-              ]}
-            >
-              <Icon name="x" size={13} color="#FFFFFF" />
-              <Text style={styles.bulk4BtnText}>Not Allotted</Text>
-            </TouchableOpacity>
+                {/* 3. Not Allotted */}
+                <TouchableOpacity
+                  onPress={() => handleBulkStatusUpdate('Not Allotted')}
+                  disabled={bulkActionLoading || selectedAppIds.length === 0}
+                  style={[
+                    styles.bulk4Btn,
+                    { backgroundColor: '#DC2626' },
+                    selectedAppIds.length === 0 && { opacity: 0.5 },
+                  ]}
+                >
+                  <Icon name="x" size={13} color="#FFFFFF" />
+                  <Text style={styles.bulk4BtnText}>Not Allotted</Text>
+                </TouchableOpacity>
 
-            {/* 4. Cancelled */}
-            <TouchableOpacity
-              onPress={() => handleBulkStatusUpdate('Cancelled')}
-              disabled={bulkActionLoading || selectedAppIds.length === 0}
-              style={[
-                styles.bulk4Btn,
-                { backgroundColor: '#475569' },
-                selectedAppIds.length === 0 && { opacity: 0.5 },
-              ]}
-            >
-              <Icon name="slash" size={13} color="#FFFFFF" />
-              <Text style={styles.bulk4BtnText}>Cancelled</Text>
-            </TouchableOpacity>
+                {/* 4. Cancelled */}
+                <TouchableOpacity
+                  onPress={() => handleBulkStatusUpdate('Cancelled')}
+                  disabled={bulkActionLoading || selectedAppIds.length === 0}
+                  style={[
+                    styles.bulk4Btn,
+                    { backgroundColor: '#475569' },
+                    selectedAppIds.length === 0 && { opacity: 0.5 },
+                  ]}
+                >
+                  <Icon name="slash" size={13} color="#FFFFFF" />
+                  <Text style={styles.bulk4BtnText}>Cancelled</Text>
+                </TouchableOpacity>
+              </>
+            ) : activeTab === 'Holding' ? (
+              <>
+                {/* 1. Sold */}
+                <TouchableOpacity
+                  onPress={() => handleBulkStatusUpdate('Sold')}
+                  disabled={bulkActionLoading || selectedAppIds.length === 0}
+                  style={[
+                    styles.bulk4Btn,
+                    { backgroundColor: '#2563EB' },
+                    selectedAppIds.length === 0 && { opacity: 0.5 },
+                  ]}
+                >
+                  <Icon name="dollar-sign" size={13} color="#FFFFFF" />
+                  <Text style={styles.bulk4BtnText}>Sold</Text>
+                </TouchableOpacity>
+
+                {/* 2. Allotted */}
+                <TouchableOpacity
+                  onPress={() => handleBulkStatusUpdate('Allotted')}
+                  disabled={bulkActionLoading || selectedAppIds.length === 0}
+                  style={[
+                    styles.bulk4Btn,
+                    { backgroundColor: '#16A34A' },
+                    selectedAppIds.length === 0 && { opacity: 0.5 },
+                  ]}
+                >
+                  <Icon name="check" size={13} color="#FFFFFF" />
+                  <Text style={styles.bulk4BtnText}>Allotted</Text>
+                </TouchableOpacity>
+
+                {/* 3. Not Allotted */}
+                <TouchableOpacity
+                  onPress={() => handleBulkStatusUpdate('Not Allotted')}
+                  disabled={bulkActionLoading || selectedAppIds.length === 0}
+                  style={[
+                    styles.bulk4Btn,
+                    { backgroundColor: '#DC2626' },
+                    selectedAppIds.length === 0 && { opacity: 0.5 },
+                  ]}
+                >
+                  <Icon name="x" size={13} color="#FFFFFF" />
+                  <Text style={styles.bulk4BtnText}>Not Allotted</Text>
+                </TouchableOpacity>
+
+                {/* 4. Cancelled */}
+                <TouchableOpacity
+                  onPress={() => handleBulkStatusUpdate('Cancelled')}
+                  disabled={bulkActionLoading || selectedAppIds.length === 0}
+                  style={[
+                    styles.bulk4Btn,
+                    { backgroundColor: '#475569' },
+                    selectedAppIds.length === 0 && { opacity: 0.5 },
+                  ]}
+                >
+                  <Icon name="slash" size={13} color="#FFFFFF" />
+                  <Text style={styles.bulk4BtnText}>Cancelled</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                {/* 1. Mandate */}
+                <TouchableOpacity
+                  onPress={() => handleBulkStatusUpdate('Mandate Approved')}
+                  disabled={bulkActionLoading || selectedAppIds.length === 0}
+                  style={[
+                    styles.bulk4Btn,
+                    { backgroundColor: '#1E40AF' },
+                    selectedAppIds.length === 0 && { opacity: 0.5 },
+                  ]}
+                >
+                  <Icon name="clock" size={13} color="#FFFFFF" />
+                  <Text style={styles.bulk4BtnText}>Mandate</Text>
+                </TouchableOpacity>
+
+                {/* 2. Allotted */}
+                <TouchableOpacity
+                  onPress={() => handleBulkStatusUpdate('Allotted')}
+                  disabled={bulkActionLoading || selectedAppIds.length === 0}
+                  style={[
+                    styles.bulk4Btn,
+                    { backgroundColor: '#16A34A' },
+                    selectedAppIds.length === 0 && { opacity: 0.5 },
+                  ]}
+                >
+                  <Icon name="check" size={13} color="#FFFFFF" />
+                  <Text style={styles.bulk4BtnText}>Allotted</Text>
+                </TouchableOpacity>
+
+                {/* 3. Not Allotted */}
+                <TouchableOpacity
+                  onPress={() => handleBulkStatusUpdate('Not Allotted')}
+                  disabled={bulkActionLoading || selectedAppIds.length === 0}
+                  style={[
+                    styles.bulk4Btn,
+                    { backgroundColor: '#DC2626' },
+                    selectedAppIds.length === 0 && { opacity: 0.5 },
+                  ]}
+                >
+                  <Icon name="x" size={13} color="#FFFFFF" />
+                  <Text style={styles.bulk4BtnText}>Not Allotted</Text>
+                </TouchableOpacity>
+
+                {/* 4. Cancelled */}
+                <TouchableOpacity
+                  onPress={() => handleBulkStatusUpdate('Cancelled')}
+                  disabled={bulkActionLoading || selectedAppIds.length === 0}
+                  style={[
+                    styles.bulk4Btn,
+                    { backgroundColor: '#475569' },
+                    selectedAppIds.length === 0 && { opacity: 0.5 },
+                  ]}
+                >
+                  <Icon name="slash" size={13} color="#FFFFFF" />
+                  <Text style={styles.bulk4BtnText}>Cancelled</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </View>
       )}

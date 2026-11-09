@@ -182,10 +182,10 @@ export const IPOCard = React.memo(function IPOCard({ ipo, onPress, onToggleFavor
   const lotValue = React.useMemo(() => {
     const p = ipo.price_band_max || ipo.price_band_min;
     if (p && ipo.lot_size) {
-      return isSme ? p * ipo.lot_size * 2 : p * ipo.lot_size;
+      return p * ipo.lot_size;
     }
     return null;
-  }, [ipo.price_band_max, ipo.price_band_min, ipo.lot_size, isSme]);
+  }, [ipo.price_band_max, ipo.price_band_min, ipo.lot_size]);
 
   // Fallback Initials
   const initials = companyNameStr

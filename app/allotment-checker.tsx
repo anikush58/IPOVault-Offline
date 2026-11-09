@@ -545,6 +545,7 @@ function DeveloperDiagnosticsPanel(props: {
     noRecord: number;
     notAvailable: number;
     needsReview: number;
+    totalSharesAllotted?: number;
   };
   onClearDiagnostics: () => void;
   onRunCheckAgain: () => void;
@@ -3146,10 +3147,12 @@ export default function AllotmentCheckerScreen({ isTabScreen }: { isTabScreen?: 
     let noRecord = 0;
     let notAvailable = 0;
     let needsReview = 0;
+    let totalSharesAllotted = 0;
 
     for (const app of uiApplicants) {
       if (app.status === 'allotted' || app.status === 'partially_allotted') {
         allotted++;
+        totalSharesAllotted += app.sharesAllotted || 0;
       } else if (app.status === 'not_allotted') {
         notAllotted++;
       } else if (app.status === 'no_record') {
@@ -3165,7 +3168,7 @@ export default function AllotmentCheckerScreen({ isTabScreen }: { isTabScreen?: 
       total = activeJob.totalChecks || total;
     }
 
-    return { total, allotted, notAllotted, noRecord, notAvailable, needsReview };
+    return { total, allotted, notAllotted, noRecord, notAvailable, needsReview, totalSharesAllotted };
   }, [uiApplicants, activeJob]);
 
   // Determine if allotment check has finished for the selected IPO
@@ -4672,6 +4675,46 @@ export default function AllotmentCheckerScreen({ isTabScreen }: { isTabScreen?: 
                 </View>
               </View>
             </View>
+
+            {/* Combined Total Shares Allotted Banner */}
+            {(summaryCounts.totalSharesAllotted ?? 0) > 0 && (
+              <View
+                style={[
+                  styles.combinedSharesBanner,
+                  {
+                    backgroundColor: isDark ? 'rgba(47, 160, 17, 0.14)' : '#ECFDF5',
+                    borderColor: isDark ? 'rgba(74, 222, 128, 0.28)' : '#A7F3D0',
+                  },
+                ]}
+              >
+                <View style={styles.combinedSharesLeft}>
+                  <View
+                    style={[
+                      styles.combinedSharesIconWrap,
+                      { backgroundColor: isDark ? 'rgba(74, 222, 128, 0.2)' : '#D1FAE5' },
+                    ]}
+                  >
+                    <Ionicons name="pie-chart" size={15} color={isDark ? '#4ADE80' : '#059669'} />
+                  </View>
+                  <View>
+                    <Text style={[styles.combinedSharesTitle, { color: isDark ? '#F1F5F9' : '#065F46' }]}>
+                      Total Shares Allotted
+                    </Text>
+                    <Text style={[styles.combinedSharesSub, { color: isDark ? '#94A3B8' : '#047857' }]}>
+                      Combined across {summaryCounts.allotted} allotted {summaryCounts.allotted === 1 ? 'applicant' : 'applicants'}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.combinedSharesRight}>
+                  <Text style={[styles.combinedSharesCount, { color: isDark ? '#4ADE80' : '#047857' }]}>
+                    {(summaryCounts.totalSharesAllotted ?? 0).toLocaleString('en-IN')}
+                  </Text>
+                  <Text style={[styles.combinedSharesUnit, { color: isDark ? '#86EFAC' : '#059669' }]}>
+                    Shares
+                  </Text>
+                </View>
+              </View>
+            )}
           </View>
         )}
 
@@ -6059,6 +6102,52 @@ const styles = StyleSheet.create({
     height: 15,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  combinedSharesBanner: {
+    marginTop: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  combinedSharesLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  combinedSharesIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  combinedSharesTitle: {
+    fontSize: 12,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.1,
+  },
+  combinedSharesSub: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_500Medium',
+  },
+  combinedSharesRight: {
+    alignItems: 'flex-end',
+  },
+  combinedSharesCount: {
+    fontSize: 17,
+    fontFamily: 'GoogleSansFlex_700Bold',
+    letterSpacing: -0.4,
+    lineHeight: 20,
+  },
+  combinedSharesUnit: {
+    fontSize: 10,
+    fontFamily: 'GoogleSansFlex_600SemiBold',
+    letterSpacing: 0.2,
+    textTransform: 'uppercase',
   },
   sectionHeader: {
     marginTop: 8,

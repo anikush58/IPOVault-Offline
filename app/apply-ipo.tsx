@@ -550,23 +550,6 @@ function ApplyIPOScreenContent() {
     setUserLotQuantities({});
   }, [selectedIpoId]);
 
-  // If market segment resolves to SME after async details load, ensure already-selected users meet the 2-lot minimum
-  React.useEffect(() => {
-    if (isSme) {
-      setUserLotQuantities((prev) => {
-        let changed = false;
-        const next = { ...prev };
-        selectedUserIds.forEach((uid) => {
-          if (next[uid] === 1) {
-            next[uid] = 2;
-            changed = true;
-          }
-        });
-        return changed ? next : prev;
-      });
-    }
-  }, [isSme, selectedUserIds]);
-
   // Aggregate Order Summary Calculation
   const orderSummary = useMemo(() => {
     let totalLots = 0;
@@ -574,7 +557,7 @@ function ApplyIPOScreenContent() {
     let totalAmount = 0;
     const lotSize = resolveIpoLotSize(selectedIPO) || selectedIPO?.quantity || 1;
     const unitPrice = selectedIPO?.buy_price || 0;
-    const defaultLotCount = isSme ? 2 : 1;
+    const defaultLotCount = 1;
 
     selectedUserIds.forEach((uid) => {
       const lots = userLotQuantities[uid] || defaultLotCount;
@@ -589,7 +572,7 @@ function ApplyIPOScreenContent() {
       totalShares,
       totalAmount,
     };
-  }, [selectedUserIds, userLotQuantities, selectedIPO, isSme]);
+  }, [selectedUserIds, userLotQuantities, selectedIPO]);
 
   // Precompute set of already applied user ID + category combinations for selected IPO
   const appliedUserCategorySet = useMemo(() => {
@@ -608,7 +591,7 @@ function ApplyIPOScreenContent() {
     const cat = userSelectedCategory[userId] || 'RETAIL';
     if (appliedUserCategorySet.has(`${userId}_${cat}`)) return;
 
-    const defaultLotCount = isSme ? 2 : 1;
+    const defaultLotCount = 1;
     const isSelected = selectedUserIds.has(userId);
 
     if (isSelected) {
@@ -634,7 +617,7 @@ function ApplyIPOScreenContent() {
       });
     }
     Haptics.selectionAsync();
-  }, [appliedUserCategorySet, isSme, selectedUserIds, userSelectedCategory]);
+  }, [appliedUserCategorySet, selectedUserIds, userSelectedCategory]);
 
   const handleCategorySelect = useCallback((userId: string, category: IpoCategory) => {
     setUserSelectedCategory((prev) => ({ ...prev, [userId]: category }));
@@ -655,7 +638,7 @@ function ApplyIPOScreenContent() {
       return !appliedUserCategorySet.has(`${u.id}_${cat}`);
     });
     const allSelected = eligibleUsers.length > 0 && eligibleUsers.every((u) => selectedUserIds.has(u.id));
-    const defaultLotCount = isSme ? 2 : 1;
+    const defaultLotCount = 1;
 
     if (allSelected) {
       // Deselect all
@@ -675,7 +658,7 @@ function ApplyIPOScreenContent() {
       setUserLotQuantities(nextLots);
     }
     Haptics.selectionAsync();
-  }, [activeUsers, appliedUserCategorySet, isSme, selectedUserIds, userLotQuantities, userSelectedCategory]);
+  }, [activeUsers, appliedUserCategorySet, selectedUserIds, userLotQuantities, userSelectedCategory]);
 
   const handleBankPress = useCallback((userId: string) => {
     setActiveBankPickerUserId(userId);
@@ -714,7 +697,7 @@ function ApplyIPOScreenContent() {
     // Bid validation before execution against selected category rules
     for (const uid of Array.from(selectedUserIds)) {
       const cat = userSelectedCategory[uid] || 'RETAIL';
-      const lots = userLotQuantities[uid] ?? (isSme ? 2 : 1);
+      const lots = userLotQuantities[uid] ?? 1;
       const catConfig = offerCats.find(
         (c) => (c.category || '').toUpperCase().trim() === cat
       );
@@ -1059,7 +1042,7 @@ function ApplyIPOScreenContent() {
             const userCategory = userSelectedCategory[u.id] || 'RETAIL';
             const isApplied = appliedUserCategorySet.has(`${u.id}_${userCategory}`);
             const isSelected = selectedUserIds.has(u.id) && !isApplied;
-            const currentLots = isSelected ? (userLotQuantities[u.id] || (isSme ? 2 : 1)) : 0;
+            const currentLots = isSelected ? (userLotQuantities[u.id] || 1) : 0;
             const selectedBank = userSelectedBank[u.id] || u.bank_name || (bankAccounts[0]?.bank_name ?? 'Default Bank');
             const selectedUPI = userSelectedUPI[u.id] || u.upi_id || u.upi_app || 'HDFC UPI';
 

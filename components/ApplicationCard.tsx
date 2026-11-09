@@ -13,6 +13,7 @@ type Props = {
   application: ApplicationWithDetails;
   onPress: () => void;
   isAppliedTab?: boolean;
+  isAllottedTab?: boolean;
   isSelectionMode?: boolean;
   isSelected?: boolean;
   onSelectToggle?: () => void;
@@ -45,6 +46,7 @@ export const ApplicationCard = React.memo(function ApplicationCard({
   application: app,
   onPress,
   isAppliedTab = false,
+  isAllottedTab = false,
   isSelectionMode = false,
   isSelected = false,
   onSelectToggle,
@@ -177,29 +179,30 @@ export const ApplicationCard = React.memo(function ApplicationCard({
     extrapolate: 'clamp',
   });
 
+  const isSwipeEnabled = (isAppliedTab || isAllottedTab) && !isSelectionMode;
+
   // Zero-re-render PanResponder (60 FPS smooth dragging)
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gestureState) => {
         return (
-          isAppliedTab &&
-          !isSelectionMode &&
+          isSwipeEnabled &&
           Math.abs(gestureState.dx) > 10 &&
           Math.abs(gestureState.dx) > Math.abs(gestureState.dy)
         );
       },
       onPanResponderMove: Animated.event([null, { dx: pan.x }], { useNativeDriver: false }),
       onPanResponderRelease: (_, gestureState) => {
-        if (!isAppliedTab || isSelectionMode) return;
+        if (!isSwipeEnabled) return;
 
         if (gestureState.dx > 55) {
-          // Fast Swipe Right -> Allotted
+          // Fast Swipe Right -> Allotted (if on Applied tab) or Holding (if on Allotted tab)
           try {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           } catch {}
           Animated.timing(pan, { toValue: { x: 380, y: 0 }, duration: 120, useNativeDriver: false }).start(() => {
             pan.setValue({ x: 0, y: 0 });
-            onUpdateStatus?.(app.id, 'Allotted');
+            onUpdateStatus?.(app.id, isAllottedTab ? 'Holding' : 'Allotted');
           });
         } else if (gestureState.dx < -55) {
           // Fast Swipe Left -> Not Allotted
@@ -226,12 +229,20 @@ export const ApplicationCard = React.memo(function ApplicationCard({
   return (
     <View style={styles.outerWrapper}>
       {/* Background Action Panels for Swipe with Instant Fade */}
-      {isAppliedTab && !isSelectionMode && (
+      {isSwipeEnabled && (
         <View style={StyleSheet.absoluteFill}>
-          {/* Swiping Right: Green Panel + Tick Icon + "Allotted" */}
-          <Animated.View style={[styles.swipeBgRight, { backgroundColor: '#16A34A', opacity: swipeOpacityRight }]}>
-            <Icon name="check-circle" size={22} color="#FFFFFF" />
-            <Text style={styles.swipeText}>Allotted</Text>
+          {/* Swiping Right: Green/Emerald Panel + Tick/Briefcase Icon + "Allotted" or "Holding" */}
+          <Animated.View
+            style={[
+              styles.swipeBgRight,
+              {
+                backgroundColor: isAllottedTab ? '#059669' : '#16A34A',
+                opacity: swipeOpacityRight,
+              },
+            ]}
+          >
+            <Icon name={isAllottedTab ? 'briefcase' : 'check-circle'} size={22} color="#FFFFFF" />
+            <Text style={styles.swipeText}>{isAllottedTab ? 'Holding' : 'Allotted'}</Text>
           </Animated.View>
 
           {/* Swiping Left: Red Panel + Cross Icon + "Not Allotted" */}
@@ -244,7 +255,7 @@ export const ApplicationCard = React.memo(function ApplicationCard({
 
       {/* Main Card View */}
       <Animated.View
-        {...(isAppliedTab && !isSelectionMode ? panResponder.panHandlers : {})}
+        {...(isSwipeEnabled ? panResponder.panHandlers : {})}
         style={[
           styles.cardContainer,
           {
