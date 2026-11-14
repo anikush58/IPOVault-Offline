@@ -1,4 +1,5 @@
 import { resolveIpoLotSize } from '@/utils/ipoCategoryUtils';
+import { findSafeMatchingIpo } from '@/utils/ipoNormalizer';
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { SQLiteProvider, useSQLiteContext } from 'expo-sqlite';
 import type { SQLiteDatabase } from 'expo-sqlite';
@@ -8,7 +9,7 @@ import * as Crypto from 'expo-crypto';
 import { UserRepository, IPORepository, ApplicationRepository, BankRepository, type BulkApplyResult } from '@/db/repositories';
 export type { BulkApplyResult };
 import { syncStore } from '@/services/sync/syncStatus';
-import { safeRunAsync, safeGetFirstAsync, safeGetAllAsync, runWithTransaction, isClosedResourceError, isDatabaseOpen, markDatabaseOpen } from '@/utils/sqliteDebug';
+import { safeRunAsync, safeGetFirstAsync, safeGetAllAsync, safeExecAsync, runWithTransaction, isClosedResourceError, isDatabaseOpen, markDatabaseOpen } from '@/utils/sqliteDebug';
 import { safeAsyncStorage } from '@/utils/safeAsyncStorage';
 import { ensureBase64DataUrl, extractBase64Payload, saveBase64ToLocalImage } from '@/utils/imageUtils';
 import { getEffectiveAvatarUrl, prefetchUserAvatars } from '@/utils/avatarUtils';
@@ -116,6 +117,8 @@ export type ApplicationWithDetails = {
   allotted_shares?: number | null;
   allotted_lots?: number | null;
   allotment_status?: string | null;
+  verification_method?: string | null;
+  registrar?: string | null;
 };
 
 export type BankAccount = {
@@ -382,9 +385,55 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       throw err;
     });
 
+    // Self-heal shadow listing buy_price or quantity if completely missing (<= 0)
+    try {
+      await safeExecAsync(
+        db,
+        `UPDATE ipo_listings
+         SET buy_price = (
+           SELECT COALESCE(NULLIF(m.price_band_max, 0), NULLIF(m.price_band_min, 0))
+           FROM ipo_master m
+           WHERE m.id = ipo_listings.id
+              OR (ipo_listings.backend_ipo_id IS NOT NULL AND ipo_listings.backend_ipo_id != '' AND m.id = ipo_listings.backend_ipo_id)
+              OR (ipo_listings.symbol IS NOT NULL AND ipo_listings.symbol != '' AND m.symbol = ipo_listings.symbol)
+           LIMIT 1
+         )
+         WHERE buy_price <= 0
+           AND EXISTS (
+             SELECT 1 FROM ipo_master m
+             WHERE (
+               m.id = ipo_listings.id
+               OR (ipo_listings.backend_ipo_id IS NOT NULL AND ipo_listings.backend_ipo_id != '' AND m.id = ipo_listings.backend_ipo_id)
+               OR (ipo_listings.symbol IS NOT NULL AND ipo_listings.symbol != '' AND m.symbol = ipo_listings.symbol)
+             )
+             AND (m.price_band_max > 0 OR m.price_band_min > 0)
+           );
+         UPDATE ipo_listings
+         SET quantity = (
+           SELECT m.lot_size
+           FROM ipo_master m
+           WHERE m.id = ipo_listings.id
+              OR (ipo_listings.backend_ipo_id IS NOT NULL AND ipo_listings.backend_ipo_id != '' AND m.id = ipo_listings.backend_ipo_id)
+              OR (ipo_listings.symbol IS NOT NULL AND ipo_listings.symbol != '' AND m.symbol = ipo_listings.symbol)
+           LIMIT 1
+         )
+         WHERE quantity <= 0
+           AND EXISTS (
+             SELECT 1 FROM ipo_master m
+             WHERE (
+               m.id = ipo_listings.id
+               OR (ipo_listings.backend_ipo_id IS NOT NULL AND ipo_listings.backend_ipo_id != '' AND m.id = ipo_listings.backend_ipo_id)
+               OR (ipo_listings.symbol IS NOT NULL AND ipo_listings.symbol != '' AND m.symbol = ipo_listings.symbol)
+             )
+             AND m.lot_size > 1
+           );`,
+        'DBContext.healShadowListings'
+      );
+    } catch {}
+
     const masterIPOsPromise = safeGetAllAsync<any>(
       db,
-      `SELECT *, price_band_max AS buy_price, lot_size AS quantity FROM ipo_master WHERE deleted_at IS NULL AND (status = 'OPEN' OR status = 'UPCOMING' OR is_favorite = 1)`,
+      `SELECT *, price_band_max AS buy_price, lot_size AS quantity FROM ipo_master WHERE deleted_at IS NULL`,
       [],
       'DBContext.refreshCritical.master'
     ).catch(() => [] as any[]);
@@ -402,15 +451,39 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
                  COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
                  COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
                  COALESCE(NULLIF(i.ipo_name, ''), NULLIF(m.ipo_name, ''), NULLIF(m.company_name, ''), 'IPO') AS ipo_name,
-                 COALESCE(NULLIF(i.buy_price, 0), NULLIF(m.price_band_max, 0), NULLIF(m.price_band_min, 0), 100) AS buy_price,
-                 COALESCE(a.shares_count, NULLIF(i.quantity, 0), NULLIF(m.lot_size, 0), 1) AS quantity,
+                 COALESCE(
+                   NULLIF(m.price_band_max, 0),
+                   NULLIF(m.price_band_min, 0),
+                   NULLIF(i.buy_price, 0),
+                   0
+                 ) AS buy_price,
+                 COALESCE(
+                   CASE
+                     WHEN a.status IN ('Allotted', 'Partially Allotted', 'Holding', 'Sold') AND alt.allotted_shares > 0 THEN alt.allotted_shares
+                     ELSE a.shares_count
+                   END,
+                   NULLIF(m.lot_size, 0),
+                   NULLIF(i.quantity, 0),
+                   1
+                 ) AS quantity,
+                 alt.allotted_shares,
+                 alt.allotted_lots,
+                 alt.allotment_status,
+                 alt.verification_method,
+                 alt.registrar,
                  COALESCE(NULLIF(i.open_date, ''), NULLIF(m.open_date, ''), '') AS open_date,
                  COALESCE(NULLIF(i.logo_url, ''), NULLIF(m.logo_url, ''), '') AS ipo_logo_url
           FROM   ipo_applications a
           JOIN   users_table u ON a.user_id = u.id
           LEFT JOIN ipo_listings i ON a.ipo_id = i.id
-          LEFT JOIN ipo_master m ON a.ipo_id = m.id
+          LEFT JOIN ipo_master m ON (
+            a.ipo_id = m.id
+            OR (i.backend_ipo_id IS NOT NULL AND i.backend_ipo_id != '' AND i.backend_ipo_id = m.id)
+            OR (i.symbol IS NOT NULL AND i.symbol != '' AND i.symbol = m.symbol)
+          )
+          LEFT JOIN ipo_allotments alt ON a.id = alt.application_id
           WHERE  (a.owner_id = ? OR a.owner_id IS NULL OR a.owner_id = '') AND a.deleted_at IS NULL AND u.deleted_at IS NULL AND (i.deleted_at IS NULL OR i.id IS NULL)
+          GROUP  BY a.id
           ORDER  BY a.id DESC`,
           [currentUid],
           'DBContext.refreshCritical.apps'
@@ -427,15 +500,39 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
                  COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
                  COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
                  COALESCE(NULLIF(i.ipo_name, ''), NULLIF(m.ipo_name, ''), NULLIF(m.company_name, ''), 'IPO') AS ipo_name,
-                 COALESCE(NULLIF(i.buy_price, 0), NULLIF(m.price_band_max, 0), NULLIF(m.price_band_min, 0), 100) AS buy_price,
-                 COALESCE(a.shares_count, NULLIF(i.quantity, 0), NULLIF(m.lot_size, 0), 1) AS quantity,
+                 COALESCE(
+                   NULLIF(m.price_band_max, 0),
+                   NULLIF(m.price_band_min, 0),
+                   NULLIF(i.buy_price, 0),
+                   0
+                 ) AS buy_price,
+                 COALESCE(
+                   CASE
+                     WHEN a.status IN ('Allotted', 'Partially Allotted', 'Holding', 'Sold') AND alt.allotted_shares > 0 THEN alt.allotted_shares
+                     ELSE a.shares_count
+                   END,
+                   NULLIF(m.lot_size, 0),
+                   NULLIF(i.quantity, 0),
+                   1
+                 ) AS quantity,
+                 alt.allotted_shares,
+                 alt.allotted_lots,
+                 alt.allotment_status,
+                 alt.verification_method,
+                 alt.registrar,
                  COALESCE(NULLIF(i.open_date, ''), NULLIF(m.open_date, ''), '') AS open_date,
                  COALESCE(NULLIF(i.logo_url, ''), NULLIF(m.logo_url, ''), '') AS ipo_logo_url
           FROM   ipo_applications a
           JOIN   users_table u ON a.user_id = u.id
           LEFT JOIN ipo_listings i ON a.ipo_id = i.id
-          LEFT JOIN ipo_master m ON a.ipo_id = m.id
+          LEFT JOIN ipo_master m ON (
+            a.ipo_id = m.id
+            OR (i.backend_ipo_id IS NOT NULL AND i.backend_ipo_id != '' AND i.backend_ipo_id = m.id)
+            OR (i.symbol IS NOT NULL AND i.symbol != '' AND i.symbol = m.symbol)
+          )
+          LEFT JOIN ipo_allotments alt ON a.id = alt.application_id
           WHERE  (a.owner_id IS NULL OR a.owner_id = '') AND a.deleted_at IS NULL AND u.deleted_at IS NULL AND (i.deleted_at IS NULL OR i.id IS NULL)
+          GROUP  BY a.id
           ORDER  BY a.id DESC`,
           [],
           'DBContext.refreshCritical.apps'
@@ -467,13 +564,13 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       }
 
       masterRows = masterIPOs
-        .filter((m) => m && m.id && !existingIds.has(m.id))
+        .filter((m) => m && m.id && !existingIds.has(m.id) && (m.status === 'OPEN' || m.status === 'UPCOMING' || m.is_favorite === 1))
         .map((m) => ({
           ...m,
           id: m.id,
           company_name: m.company_name || m.ipo_name || 'IPO',
           ipo_name: m.ipo_name || m.company_name || 'IPO',
-          buy_price: typeof m.buy_price === 'number' && m.buy_price > 0 ? m.buy_price : (m.price_band_max || 100),
+          buy_price: typeof m.buy_price === 'number' && m.buy_price > 0 ? m.buy_price : (m.price_band_max || m.price_band_min || 0),
           quantity: typeof m.quantity === 'number' && m.quantity > 0 ? m.quantity : (m.lot_size || 1),
           open_date: m.open_date || '',
           close_date: m.close_date || '',
@@ -495,8 +592,17 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     }
 
     const enrichedIpoRows = (ipoRows || []).map((row) => {
-      const master = masterById.get(row.id);
+      const master =
+        masterById.get(row.id) ||
+        Array.from(masterById.values()).find(
+          (m) =>
+            (row.backend_ipo_id && m.id === row.backend_ipo_id) ||
+            (row.symbol && m.symbol && row.symbol.toLowerCase() === m.symbol.toLowerCase()) ||
+            (row.company_name && m.company_name && row.company_name.toLowerCase().trim() === m.company_name.toLowerCase().trim())
+        );
       if (!master) return row;
+      const authoritativePrice = master.price_band_max || master.price_band_min;
+      const authoritativeLot = master.lot_size;
       return {
         ...row,
         status: master.status || row.status || '',
@@ -514,13 +620,52 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         gmp_amount: row.gmp_amount ?? master.gmp_amount ?? null,
         gmp_percent: row.gmp_percent ?? master.gmp_percent ?? null,
         total_sub: row.total_sub ?? master.total_sub ?? null,
-        buy_price: row.buy_price > 0 ? row.buy_price : (master.price_band_max || master.price_band_min || row.buy_price),
-        quantity: row.quantity > 0 ? row.quantity : (master.lot_size || row.quantity),
+        buy_price: authoritativePrice || (row.buy_price > 0 ? row.buy_price : 0),
+        quantity: authoritativeLot && authoritativeLot > 0 ? authoritativeLot : (row.quantity > 0 ? row.quantity : 1),
       };
     });
 
-    setIPOs([...enrichedIpoRows, ...masterRows]);
-    setApplications(appRows || []);
+    const allIpoList = [...enrichedIpoRows, ...masterRows];
+    setIPOs(allIpoList);
+
+    const enrichedAppRows = (appRows || []).map((app) => {
+      const matchingIpo = findSafeMatchingIpo(
+        { ipo_id: app.ipo_id, ipo_name: app.ipo_name, symbol: (app as any).symbol },
+        allIpoList
+      );
+
+      const authoritativePrice =
+        (matchingIpo?.price_band_max && matchingIpo.price_band_max > 0)
+          ? matchingIpo.price_band_max
+          : (matchingIpo?.price_band_min && matchingIpo.price_band_min > 0)
+          ? matchingIpo.price_band_min
+          : (matchingIpo?.buy_price && matchingIpo.buy_price > 0)
+          ? matchingIpo.buy_price
+          : null;
+
+      let resolvedBuyPrice = app.buy_price || 0;
+      if (authoritativePrice && typeof authoritativePrice === 'number' && authoritativePrice > 0) {
+        resolvedBuyPrice = authoritativePrice;
+      }
+
+      const authoritativeLot =
+        matchingIpo?.lot_size ||
+        (matchingIpo?.quantity && matchingIpo.quantity > 1 ? matchingIpo.quantity : null);
+
+      const resolvedQuantity =
+        (app.quantity && app.quantity > 1)
+          ? app.quantity
+          : (authoritativeLot || (app.quantity > 0 ? app.quantity : 1));
+
+      return {
+        ...app,
+        buy_price: resolvedBuyPrice,
+        quantity: resolvedQuantity,
+        sell_price: app.sell_price,
+      };
+    });
+
+    setApplications(enrichedAppRows);
 
     setIsLoading(false);
     const duration = Date.now() - t0;
@@ -1128,7 +1273,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
           ipoListingData.ipo_name || 'IPO',
           ipoListingData.company_name || ipoListingData.ipo_name || 'IPO',
           ipoListingData.symbol || '',
-          ipoListingData.buy_price || 100,
+          ipoListingData.buy_price || 0,
           ipoListingData.quantity || 1,
           ipoListingData.open_date || '',
           ipoListingData.close_date || '',
@@ -1194,7 +1339,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
               masterRecord.ipo_name || masterRecord.company_name || 'IPO',
               masterRecord.company_name || masterRecord.ipo_name || 'IPO',
               masterRecord.symbol || '',
-              masterRecord.price_band_max || masterRecord.price_band_min || 100,
+              masterRecord.price_band_max || masterRecord.price_band_min || 0,
               masterRecord.lot_size || 1,
               masterRecord.open_date || '',
               masterRecord.close_date || '',
@@ -1220,7 +1365,7 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
               id, ipo_name, company_name, buy_price, quantity, open_date, close_date, listing_date, allotment_date,
               registrar, exchange, issue_type, archived, is_favorite, owner_id, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, '', '', '', '', ?, 'NSE, BSE', 'Mainboard', 0, 0, ?, ?, ?)`,
-            [ipoId, ipoId, ipoId, 100, 1, shadowRegistrar, currentUid, now, now],
+            [ipoId, ipoId, ipoId, 0, 1, shadowRegistrar, currentUid, now, now],
             'DBContext.addBulkApplications.insertFallbackShadow'
           );
         }
@@ -1250,23 +1395,62 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
                   COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
                   COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
                   COALESCE(NULLIF(i.ipo_name, ''), NULLIF(m.ipo_name, ''), NULLIF(m.company_name, ''), 'IPO') AS ipo_name,
-                  COALESCE(NULLIF(i.buy_price, 0), NULLIF(m.price_band_max, 0), NULLIF(m.price_band_min, 0), 100) AS buy_price,
-                  COALESCE(a.shares_count, NULLIF(i.quantity, 0), NULLIF(m.lot_size, 0), 1) AS quantity,
+                  COALESCE(
+                    NULLIF(m.price_band_max, 0),
+                    NULLIF(m.price_band_min, 0),
+                    NULLIF(i.buy_price, 0),
+                    0
+                  ) AS buy_price,
+                  COALESCE(
+                    a.shares_count,
+                    NULLIF(m.lot_size, 0),
+                    NULLIF(i.quantity, 0),
+                    1
+                  ) AS quantity,
+                  alt.allotted_shares,
+                  alt.allotted_lots,
+                  alt.allotment_status,
+                  alt.verification_method,
+                  alt.registrar,
                   COALESCE(NULLIF(i.open_date, ''), NULLIF(m.open_date, ''), '') AS open_date,
                   COALESCE(NULLIF(i.logo_url, ''), NULLIF(m.logo_url, ''), '') AS ipo_logo_url
            FROM   ipo_applications a
            JOIN   users_table u ON a.user_id = u.id
            LEFT JOIN ipo_listings i ON a.ipo_id = i.id
-           LEFT JOIN ipo_master m ON a.ipo_id = m.id
-           WHERE  a.id IN (${placeholders})`,
+           LEFT JOIN ipo_master m ON (
+             a.ipo_id = m.id
+             OR (i.backend_ipo_id IS NOT NULL AND i.backend_ipo_id != '' AND i.backend_ipo_id = m.id)
+             OR (i.symbol IS NOT NULL AND i.symbol != '' AND i.symbol = m.symbol)
+           )
+           LEFT JOIN ipo_allotments alt ON a.id = alt.application_id
+           WHERE  a.id IN (${placeholders})
+           GROUP  BY a.id`,
           result.createdAppIds,
           'DBContext.addBulkApplications.fetchNewRows'
         );
 
         if (newAppRows && newAppRows.length > 0) {
-          const newIds = new Set(newAppRows.map((r) => r.id));
+          const enrichedNewAppRows = newAppRows.map((app) => {
+            const matchingIpo = findSafeMatchingIpo(
+              { ipo_id: app.ipo_id, ipo_name: app.ipo_name, symbol: (app as any).symbol },
+              ipos
+            );
+            const authoritativePrice =
+              (matchingIpo?.price_band_max && matchingIpo.price_band_max > 0)
+                ? matchingIpo.price_band_max
+                : (matchingIpo?.price_band_min && matchingIpo.price_band_min > 0)
+                ? matchingIpo.price_band_min
+                : (matchingIpo?.buy_price && matchingIpo.buy_price > 0)
+                ? matchingIpo.buy_price
+                : null;
+            return {
+              ...app,
+              buy_price: app.buy_price > 0 ? app.buy_price : (authoritativePrice || 0),
+            };
+          });
+          const newIds = new Set(enrichedNewAppRows.map((r) => r.id));
           setApplications((prev) => [
-            ...newAppRows,
+            ...enrichedNewAppRows,
             ...prev.filter((existing) => !newIds.has(existing.id) && existing.status !== 'Cancelled'),
           ]);
         }
@@ -1316,9 +1500,17 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
   ) => {
     try {
       const app = await targetDb.getFirstAsync(
-        `SELECT a.*, l.buy_price as ipo_buy_price, l.quantity as ipo_quantity, u.bank_name as user_bank_name
+        `SELECT a.*,
+                COALESCE(NULLIF(m.price_band_max, 0), NULLIF(m.price_band_min, 0), NULLIF(l.buy_price, 0), 0) as ipo_buy_price,
+                COALESCE(NULLIF(m.lot_size, 0), NULLIF(l.quantity, 0), 1) as ipo_quantity,
+                u.bank_name as user_bank_name
          FROM ipo_applications a
          LEFT JOIN ipo_listings l ON a.ipo_id = l.id
+         LEFT JOIN ipo_master m ON (
+           a.ipo_id = m.id
+           OR (l.backend_ipo_id IS NOT NULL AND l.backend_ipo_id != '' AND l.backend_ipo_id = m.id)
+           OR (l.symbol IS NOT NULL AND l.symbol != '' AND l.symbol = m.symbol)
+         )
          LEFT JOIN users_table u ON a.user_id = u.id
          WHERE a.id = ?`,
         [appId]
@@ -1430,6 +1622,14 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
         await handleBankAllotmentDebit(db, id, status, bankName ? { bank_name: bankName } : undefined);
         const repo = new ApplicationRepository(db);
         await repo.update(id, status, sellPrice, saleDate, tax, userCut, bankName, upiApp, brokerAccountId, sharesCount);
+        if (allottedShares !== undefined && allottedShares !== null) {
+          await safeRunAsync(
+            db,
+            'UPDATE ipo_allotments SET allotted_shares = ?, updated_at = ? WHERE application_id = ?',
+            [allottedShares, new Date().toISOString(), id],
+            'DBContext.updateApplication.syncAllotmentShares'
+          );
+        }
       } catch (err) {
         if (snapshot.length > 0) setApplications(snapshot);
         throw err;
@@ -1721,13 +1921,20 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
     const id = existing?.id || Crypto.randomUUID();
 
     const allottedLots = params.allotted_lots ?? (params.allotment_status === 'ALLOTTED' || params.allotment_status === 'PARTIALLY_ALLOTTED' ? 1 : 0);
-    const ipoObj = ipos.find((i) => i.id === params.ipo_id);
+    const ipoObj = ipos.find((i) => i.id === params.ipo_id || (i as any).backend_ipo_id === params.ipo_id);
     const lotSize = resolveIpoLotSize(ipoObj);
     let allottedShares = params.allotted_shares ?? 0;
     if (allottedShares <= 0 && allottedLots > 0) {
       allottedShares = allottedLots * lotSize;
     }
-    const allotmentPrice = params.allotment_price ?? 0;
+    const resolvedPriceFromIpo =
+      (ipoObj as any)?.price_band_max ||
+      (ipoObj as any)?.price_band_min ||
+      (ipoObj?.buy_price && ipoObj.buy_price > 0 ? ipoObj.buy_price : 0);
+    const allotmentPrice =
+      params.allotment_price && params.allotment_price > 0
+        ? params.allotment_price
+        : (resolvedPriceFromIpo || existing?.allotment_price || 0);
     const applicationAmount = params.application_amount ?? 0;
     const refundAmount = params.refund_amount ?? (
       params.allotment_status === 'NOT_ALLOTTED'
@@ -1778,50 +1985,63 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
       ]
     );
 
+    // Fetch the current application status from SQLite
+    const currentApp = await safeGetFirstAsync<{ status: string }>(
+      db,
+      'SELECT status FROM ipo_applications WHERE id = ?',
+      [params.application_id],
+      'DBContext.saveAllotmentResult.currentStatus'
+    );
+    const currentStatus = currentApp?.status;
+    const isAlreadyHoldingOrSold = currentStatus === 'Holding' || currentStatus === 'Sold';
+
     // Update application status ONLY for genuine allotment results (case-insensitive)
-    const statusUpper = (params.allotment_status || '').trim().toUpperCase();
-    if (statusUpper === 'ALLOTTED') {
-      await updateApplication(
-        params.application_id,
-        'Allotted',
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        allottedShares > 0 ? allottedShares : undefined,
-        allottedShares > 0 ? allottedShares : undefined
-      );
-    } else if (statusUpper === 'PARTIALLY_ALLOTTED' || statusUpper === 'PARTIALLY ALLOTTED') {
-      await updateApplication(
-        params.application_id,
-        'Partially Allotted',
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        allottedShares > 0 ? allottedShares : undefined,
-        allottedShares > 0 ? allottedShares : undefined
-      );
-    } else if (statusUpper === 'NOT_ALLOTTED' || statusUpper === 'NOT ALLOTTED' || statusUpper === 'REJECTED') {
-      await updateApplication(
-        params.application_id,
-        'Not Allotted',
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        0
-      );
+    // Never revert applications that have already moved to Holding or Sold!
+    if (!isAlreadyHoldingOrSold) {
+      const statusUpper = (params.allotment_status || '').trim().toUpperCase();
+      if (statusUpper === 'ALLOTTED') {
+        await updateApplication(
+          params.application_id,
+          'Allotted',
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          allottedShares > 0 ? allottedShares : undefined,
+          allottedShares > 0 ? allottedShares : undefined
+        );
+      } else if (statusUpper === 'PARTIALLY_ALLOTTED' || statusUpper === 'PARTIALLY ALLOTTED') {
+        await updateApplication(
+          params.application_id,
+          'Partially Allotted',
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          allottedShares > 0 ? allottedShares : undefined,
+          allottedShares > 0 ? allottedShares : undefined
+        );
+      } else if (statusUpper === 'NOT_ALLOTTED' || statusUpper === 'NOT ALLOTTED' || statusUpper === 'REJECTED') {
+        await updateApplication(
+          params.application_id,
+          'Not Allotted',
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          0
+        );
+      }
     }
 
     // Trigger allotment notification (deduplicated & technical error safe)
@@ -2717,17 +2937,27 @@ function DBProviderInner({ children }: { children: React.ReactNode }) {
 
             let ipoExists = existingListingsById.has(targetIpoId);
             if (!ipoExists) {
-              const mRow = await safeGetFirstAsync<{ id: string; ipo_name: string; company_name: string; buy_price?: number; quantity?: number }>(
+              const mRow = await safeGetFirstAsync<{
+                id: string;
+                ipo_name: string;
+                company_name: string;
+                price_band_max?: number;
+                price_band_min?: number;
+                lot_size?: number;
+                symbol?: string;
+              }>(
                 db,
-                'SELECT id, ipo_name, company_name, buy_price, quantity FROM ipo_master WHERE id = ?',
+                'SELECT id, ipo_name, company_name, price_band_max, price_band_min, lot_size, symbol FROM ipo_master WHERE id = ?',
                 [targetIpoId],
                 'importCriticalData.checkMaster'
               );
               const resolvedName = mRow?.ipo_name || mRow?.company_name || (app as any).ipo_name || 'IPO';
+              const resolvedPrice = mRow?.price_band_max || mRow?.price_band_min || 0;
+              const resolvedLot = mRow?.lot_size || 1;
               await safeRunAsync(
                 db,
-                `INSERT OR IGNORE INTO ipo_listings (id, ipo_name, company_name, buy_price, quantity, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                [targetIpoId, resolvedName, resolvedName, mRow?.buy_price || 100, mRow?.quantity || 1, authUser?.uid || null, now, now],
+                `INSERT OR IGNORE INTO ipo_listings (id, ipo_name, company_name, symbol, buy_price, quantity, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [targetIpoId, resolvedName, resolvedName, mRow?.symbol || '', resolvedPrice, resolvedLot, authUser?.uid || null, now, now],
                 'importCriticalData.autoCreateShadowListing'
               );
               existingListingsById.add(targetIpoId);

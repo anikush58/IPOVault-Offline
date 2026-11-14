@@ -1038,17 +1038,27 @@ export async function applyCriticalDeltaToSQLite(
             if (lCheck) {
               listingExists = true;
             } else {
-              const mRow = await safeGetFirstAsync<{ id: string; ipo_name: string; company_name: string }>(
+              const mRow = await safeGetFirstAsync<{
+                id: string;
+                ipo_name: string;
+                company_name: string;
+                price_band_max?: number;
+                price_band_min?: number;
+                lot_size?: number;
+                symbol?: string;
+              }>(
                 db,
-                'SELECT id, ipo_name, company_name FROM ipo_master WHERE id = ?',
+                'SELECT id, ipo_name, company_name, price_band_max, price_band_min, lot_size, symbol FROM ipo_master WHERE id = ?',
                 [app.ipo_id],
                 'applyCriticalDelta.checkMaster'
               );
               const resolvedName = mRow?.ipo_name || mRow?.company_name || (app as any).ipo_name || 'IPO';
+              const resolvedPrice = mRow?.price_band_max || mRow?.price_band_min || 0;
+              const resolvedLot = mRow?.lot_size || 1;
               await safeRunAsync(
                 db,
-                'INSERT OR IGNORE INTO ipo_listings (id, ipo_name, company_name, buy_price, quantity, owner_id, created_at, updated_at) VALUES (?, ?, ?, 100, 1, ?, ?, ?)',
-                [app.ipo_id, resolvedName, resolvedName, uid, nowIso, nowIso],
+                'INSERT OR IGNORE INTO ipo_listings (id, ipo_name, company_name, symbol, buy_price, quantity, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [app.ipo_id, resolvedName, resolvedName, mRow?.symbol || '', resolvedPrice, resolvedLot, uid, nowIso, nowIso],
                 'applyCriticalDelta.autoCreateShadowListing'
               );
               listingExists = true;

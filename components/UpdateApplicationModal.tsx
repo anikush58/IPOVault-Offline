@@ -1,4 +1,5 @@
 import { resolveIpoLotSize } from '@/utils/ipoCategoryUtils';
+import { findSafeMatchingIpo } from '@/utils/ipoNormalizer';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -77,8 +78,9 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
   const [logoError, setLogoError] = useState(false);
 
 
-  const matchingIPO = ipos.find(
-    (i) => (app?.ipo_id && i.id === app.ipo_id) || (app?.ipo_name && i.ipo_name.toLowerCase().trim() === app.ipo_name.toLowerCase().trim())
+  const matchingIPO = findSafeMatchingIpo(
+    { ipo_id: app?.ipo_id, ipo_name: app?.ipo_name, symbol: (app as any)?.symbol },
+    ipos
   );
   const rawLogo = app?.ipo_logo_url || (app as any)?.logo_url || matchingIPO?.logo_url;
   const companyNameStr = app?.ipo_name || 'IPO';
@@ -96,7 +98,11 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
     if (app) {
       setStatus(app.status);
       setSellPrice(app.sell_price?.toString() ?? '');
-      setCurrentPrice(app.sell_price?.toString() ?? app.buy_price.toString());
+      const initialHoldingPrice =
+        (app.sell_price != null && app.sell_price > 0)
+          ? app.sell_price.toString()
+          : (app.buy_price > 0 ? app.buy_price.toString() : '');
+      setCurrentPrice(initialHoldingPrice);
       setSaleDate(app.sale_date ?? todayISO());
       setTax((app.tax ?? 0).toString());
       setUserCut((app.user_cut ?? 0).toString());
@@ -201,7 +207,9 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
         }
       } else {
         const effectivePrice = isHolding
-          ? (currentPrice.trim() !== '' ? parseFloat(currentPrice) : null)
+          ? (currentPrice.trim() !== '' && parseFloat(currentPrice) !== app.buy_price
+              ? parseFloat(currentPrice)
+              : null)
           : null;
 
         const parsedAllotted = parseInt(allottedShares, 10);
@@ -233,7 +241,14 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
             allotment_status: status === 'Partially Allotted' ? 'PARTIALLY_ALLOTTED' : 'ALLOTTED',
             allotted_shares: finalAllottedShares,
             allotted_lots: Math.max(1, Math.round(finalAllottedShares / lotSize)),
-            allotment_price: app.buy_price || 0,
+            allotment_price:
+              (matchingIPO?.price_band_max && matchingIPO.price_band_max > 0)
+                ? matchingIPO.price_band_max
+                : (matchingIPO?.price_band_min && matchingIPO.price_band_min > 0)
+                ? matchingIPO.price_band_min
+                : (matchingIPO?.buy_price && matchingIPO.buy_price > 0)
+                ? matchingIPO.buy_price
+                : (app.buy_price || 0),
             verification_method: 'USER_VERIFIED',
           });
         } else if (status === 'Not Allotted') {
@@ -244,7 +259,14 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
             allotment_status: 'NOT_ALLOTTED',
             allotted_shares: 0,
             allotted_lots: 0,
-            allotment_price: app.buy_price || 0,
+            allotment_price:
+              (matchingIPO?.price_band_max && matchingIPO.price_band_max > 0)
+                ? matchingIPO.price_band_max
+                : (matchingIPO?.price_band_min && matchingIPO.price_band_min > 0)
+                ? matchingIPO.price_band_min
+                : (matchingIPO?.buy_price && matchingIPO.buy_price > 0)
+                ? matchingIPO.buy_price
+                : (app.buy_price || 0),
             verification_method: 'USER_VERIFIED',
           });
         }

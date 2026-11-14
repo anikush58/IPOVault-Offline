@@ -87,7 +87,10 @@ export const ApplicationCard = React.memo(function ApplicationCard({
   const isProfit  = netProfit != null && netProfit >= 0;
 
   // Holding Price calculation (uses authoritative broker LTP / manual sell_price, or falls back to buy_price)
-  const holdingPrice = app.sell_price != null && app.sell_price > 0 ? app.sell_price : (app.buy_price || 0);
+  const holdingPrice =
+    app.sell_price != null && app.sell_price > 0
+      ? app.sell_price
+      : (app.buy_price || 0);
   const holdingValue = calcSaleValue(holdingPrice, effectiveQty);
   const currentProfit = holdingValue - buyValue;
 
@@ -485,7 +488,7 @@ export const ApplicationCard = React.memo(function ApplicationCard({
                 <>
                   <View style={styles.dataColFirst}>
                     <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                      BUY PRICE
+                      ISSUE PRICE
                     </Text>
                     <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
                       {formatCurrency(app.buy_price || 0)}
@@ -494,7 +497,7 @@ export const ApplicationCard = React.memo(function ApplicationCard({
 
                   <View style={styles.dataColMiddle}>
                     <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                      EST. PRICE
+                      CURRENT PRICE
                     </Text>
                     <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
                       {formatCurrency(holdingPrice)}

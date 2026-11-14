@@ -26,7 +26,6 @@ export default function SettingsAboutScreen() {
   const settingIconColor = isDark ? '#FFFFFF' : '#111827';
   const settingIconBg = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.06)';
 
-  const [showWhatsNewModal, setShowWhatsNewModal] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [showLicensesModal, setShowLicensesModal] = useState(false);
 
@@ -74,22 +73,6 @@ export default function SettingsAboutScreen() {
 
         {/* About Menu Card */}
         <View style={[styles.menuCard, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 16 }]}>
-          {/* What's New */}
-          <TouchableOpacity
-            style={[styles.menuRow, { borderBottomColor: colors.border }]}
-            activeOpacity={0.7}
-            onPress={() => setShowWhatsNewModal(true)}
-          >
-            <View style={[styles.menuIconWrap, { backgroundColor: settingIconBg }]}>
-              <Icon name="star" size={17} color={settingIconColor} />
-            </View>
-            <View style={styles.menuTextWrap}>
-              <Text style={[styles.menuTitle, { color: colors.foreground }]}>{"What's New"}</Text>
-              <Text style={[styles.menuSub, { color: colors.mutedForeground }]}>{"See what's new in this version"}</Text>
-            </View>
-            <Icon name="chevron-right" size={16} color={colors.mutedForeground} />
-          </TouchableOpacity>
-
           {/* Terms of Service */}
           <TouchableOpacity
             style={[styles.menuRow, { borderBottomColor: colors.border }]}
@@ -139,73 +122,6 @@ export default function SettingsAboutScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-
-      {/* What's New Sheet Modal */}
-      <Modal visible={showWhatsNewModal} transparent animationType="fade" onRequestClose={() => setShowWhatsNewModal(false)}>
-        <Pressable style={styles.modalOverlay} onPress={() => setShowWhatsNewModal(false)}>
-          <Pressable style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => {}}>
-            <View style={styles.modalHeader}>
-              <View>
-                <Text style={[styles.modalTitle, { color: colors.foreground }]}>{"What's New"}</Text>
-                <Text style={[styles.modalSubTitle, { color: colors.mutedForeground }]}>
-                  Version 2.3.0 • Recent Updates
-                </Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowWhatsNewModal(false)} hitSlop={8}>
-                <Icon name="x" size={18} color={colors.mutedForeground} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={{ maxHeight: 340 }}>
-              <View style={{ gap: 14, paddingVertical: 6 }}>
-                <View style={styles.whatsNewItem}>
-                  <View style={[styles.whatsNewIconWrap, { backgroundColor: settingIconBg }]}>
-                    <Icon name="zap" size={16} color={settingIconColor} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.whatsNewItemTitle, { color: colors.foreground }]}>Faster Dashboard Loading</Text>
-                    <Text style={[styles.whatsNewItemDesc, { color: colors.mutedForeground }]}>
-                      Staged background sync for instantaneous post-login access to portfolio totals.
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.whatsNewItem}>
-                  <View style={[styles.whatsNewIconWrap, { backgroundColor: settingIconBg }]}>
-                    <Icon name="link-2" size={16} color={settingIconColor} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.whatsNewItemTitle, { color: colors.foreground }]}>Improved Broker Integration</Text>
-                    <Text style={[styles.whatsNewItemDesc, { color: colors.mutedForeground }]}>
-                      Direct Upstox market quotes and live LTP enrichment for holding applications.
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.whatsNewItem}>
-                  <View style={[styles.whatsNewIconWrap, { backgroundColor: settingIconBg }]}>
-                    <Icon name="bar-chart" size={16} color={settingIconColor} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.whatsNewItemTitle, { color: colors.foreground }]}>New Performance Bar Chart</Text>
-                    <Text style={[styles.whatsNewItemDesc, { color: colors.mutedForeground }]}>
-                      Side-by-side performance bar graph with interactive tooltips and period filtering.
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            </ScrollView>
-
-            <TouchableOpacity
-              style={[styles.primaryModalBtn, { backgroundColor: colors.primary, marginTop: 14 }]}
-              activeOpacity={0.85}
-              onPress={() => setShowWhatsNewModal(false)}
-            >
-              <Text style={[styles.primaryModalBtnText, { color: colors.primaryForeground }]}>Got it</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
 
       {/* Terms of Service Modal */}
       <Modal visible={showTermsModal} transparent animationType="fade" onRequestClose={() => setShowTermsModal(false)}>
@@ -395,22 +311,6 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 17, fontFamily: 'GoogleSansFlex_700Bold', letterSpacing: -0.3 },
   modalSubTitle: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', marginTop: 2 },
-
-  whatsNewItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  whatsNewIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  whatsNewItemTitle: { fontSize: 13.5, fontFamily: 'GoogleSansFlex_700Bold' },
-  whatsNewItemDesc: { fontSize: 12, fontFamily: 'GoogleSansFlex_400Regular', lineHeight: 16, marginTop: 2 },
 
   termsHeading: { fontSize: 13.5, fontFamily: 'GoogleSansFlex_700Bold' },
   termsText: { fontSize: 12.5, fontFamily: 'GoogleSansFlex_400Regular', lineHeight: 18 },

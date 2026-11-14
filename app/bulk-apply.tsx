@@ -239,7 +239,14 @@ function BulkApplyScreenContent() {
         return isIpoAvailableForBulkApply(b);
       })
       .map((b): BulkIPOOption => {
-        const price = b.priceBandHigh || b.priceBandLow || 100;
+        const price =
+          (b.priceBandHigh != null && !isNaN(Number(b.priceBandHigh)) && Number(b.priceBandHigh) > 0)
+            ? Number(b.priceBandHigh)
+            : (b.priceBandLow != null && !isNaN(Number(b.priceBandLow)) && Number(b.priceBandLow) > 0)
+            ? Number(b.priceBandLow)
+            : (b.issuePriceInr != null && !isNaN(Number(b.issuePriceInr)) && Number(b.issuePriceInr) > 0)
+            ? Number(b.issuePriceInr)
+            : 0;
         const lot = resolveIpoLotSize(b);
         const compName = (b.company?.displayName || b.companyName || b.symbol || '').trim();
         return {

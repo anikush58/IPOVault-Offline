@@ -154,7 +154,6 @@ export default function SettingsScreen() {
 
   // Bottom Sheet States
   const [showNotificationsSheet, setShowNotificationsSheet] = useState(false);
-  const [showWhatsNewSheet, setShowWhatsNewSheet] = useState(false);
   const [showPrivacySheet, setShowPrivacySheet] = useState(false);
   const [showTermsSheet, setShowTermsSheet] = useState(false);
   const [showLicensesSheet, setShowLicensesSheet] = useState(false);
@@ -250,7 +249,6 @@ export default function SettingsScreen() {
       return () => {
         isMounted = false;
         setShowNotificationsSheet(false);
-        setShowWhatsNewSheet(false);
         setShowPrivacySheet(false);
         setShowTermsSheet(false);
         setShowLicensesSheet(false);
@@ -800,21 +798,8 @@ export default function SettingsScreen() {
                 iconBg={settingIconBg}
                 title="Contact Support"
                 subtitle="Get direct assistance from our team"
-                onPress={() => navigateTo('/settings-contact-support')}
-              />
-              <SettingRow
-                icon="zap"
-                iconColor={settingIconColor}
-                iconBg={settingIconBg}
-                title="What's New in v2.3.0"
-                subtitle="Recent performance & feature upgrades"
-                badge={{
-                  text: 'New',
-                  color: '#FFFFFF',
-                  bg: '#EC4899',
-                }}
                 isLast
-                onPress={() => setShowWhatsNewSheet(true)}
+                onPress={() => navigateTo('/settings-contact-support')}
               />
             </View>
           </View>
@@ -1277,74 +1262,6 @@ export default function SettingsScreen() {
             }}
           >
             <Text style={[styles.solidCTAText, { color: colors.primaryForeground }]}>Save Preferences</Text>
-          </TouchableOpacity>
-        </View>
-      </ScoopedBottomSheet>
-
-      {/* ── WHAT'S NEW BOTTOM SHEET ── */}
-      <ScoopedBottomSheet
-        visible={showWhatsNewSheet}
-        onClose={() => setShowWhatsNewSheet(false)}
-        maxHeight="86%"
-      >
-        <View style={[styles.sheetHeader, { borderBottomColor: colors.border }]}>
-          <View style={styles.sheetHeaderTitleGroup}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.sheetTitle, { color: colors.foreground }]}>{"What's New in v2.3.0"}</Text>
-              <Text style={[styles.sheetSubtitle, { color: colors.mutedForeground }]}>
-                Performance upgrades & sleek new interface
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false}>
-          <View style={{ gap: 12 }}>
-            <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={[styles.featureIconBadge, { backgroundColor: settingIconBg }]}>
-                <Icon name="layout" size={18} color={settingIconColor} strokeWidth={1.8} />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[styles.featureTitle, { color: colors.foreground }]}>Bespoke Bottom Sheets</Text>
-                <Text style={[styles.featureDesc, { color: colors.mutedForeground }]}>
-                  All bank account, user profile, and preference modals now use our signature scooped sheet design.
-                </Text>
-              </View>
-            </View>
-
-            <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={[styles.featureIconBadge, { backgroundColor: settingIconBg }]}>
-                <Icon name="credit-card" size={18} color={settingIconColor} strokeWidth={1.8} />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[styles.featureTitle, { color: colors.foreground }]}>Default UPI App Auto-Binding</Text>
-                <Text style={[styles.featureDesc, { color: colors.mutedForeground }]}>
-                  Bind default payment apps directly to your bank accounts for fast reference during application recording.
-                </Text>
-              </View>
-            </View>
-
-            <View style={[styles.featureCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <View style={[styles.featureIconBadge, { backgroundColor: settingIconBg }]}>
-                <Icon name="trending-up" size={18} color={settingIconColor} strokeWidth={1.8} />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={[styles.featureTitle, { color: colors.foreground }]}>Live Broker LTP Sync</Text>
-                <Text style={[styles.featureDesc, { color: colors.mutedForeground }]}>
-                  Automatic Upstox quotes and real-time market valuations for your held shares.
-                </Text>
-              </View>
-            </View>
-          </View>
-        </ScrollView>
-
-        <View style={[styles.sheetFooter, { borderTopColor: colors.border }]}>
-          <TouchableOpacity
-            style={[styles.solidCTA, { backgroundColor: colors.primary }]}
-            activeOpacity={0.85}
-            onPress={() => setShowWhatsNewSheet(false)}
-          >
-            <Text style={[styles.solidCTAText, { color: colors.primaryForeground }]}>Got it</Text>
           </TouchableOpacity>
         </View>
       </ScoopedBottomSheet>
@@ -2064,31 +1981,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.1,
   },
 
-  // ── Whats New & Legal Sheets ──
-  featureCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 14,
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  featureIconBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  featureTitle: {
-    fontSize: 14,
-    fontFamily: 'GoogleSansFlex_600SemiBold',
-  },
-  featureDesc: {
-    fontSize: 12,
-    fontFamily: 'GoogleSansFlex_400Regular',
-    lineHeight: 17,
-  },
+  // ── Legal Sheets ──
   legalCard: {
     padding: 16,
     borderRadius: 16,

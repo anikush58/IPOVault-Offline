@@ -260,7 +260,7 @@ export function BulkApplySheet({ visible, onClose }: Props) {
         return isIpoAvailableForBulkApply(b);
       })
       .map((b): BulkIPOOption => {
-        const price = b.priceBandHigh || b.priceBandLow || 100;
+        const price = b.priceBandHigh || b.priceBandLow || 0;
         const lot = resolveIpoLotSize(b);
         const compName = (b.company?.displayName || b.companyName || b.symbol || '').trim();
         return {

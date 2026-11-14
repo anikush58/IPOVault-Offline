@@ -1843,8 +1843,23 @@ export default function AllotmentCheckerScreen({ isTabScreen }: { isTabScreen?: 
                 // If user received an allotment in a verified category not yet tracked in SQLite applications, auto-create it
                 if (!matchedApp && isCatAllotted) {
                   try {
-                    const newAppId = `app_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
                     const nowIso = new Date().toISOString();
+                    const resolvedListingPrice =
+                      (currentIpo as any).price_band_max ||
+                      (currentIpo as any).priceBandHigh ||
+                      (currentIpo as any).price_band_min ||
+                      (currentIpo as any).priceBandLow ||
+                      (currentIpo as any).buy_price ||
+                      0;
+                    const resolvedListingQty = currentIpo.lot_size || (currentIpo as any).lotSize || 1;
+                    await safeRunAsync(
+                      db,
+                      `INSERT OR IGNORE INTO ipo_listings (id, ipo_name, company_name, symbol, buy_price, quantity, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                      [currentIpo.id, currentIpo.ipo_name, currentIpo.company_name || currentIpo.ipo_name, currentIpo.symbol || '', resolvedListingPrice, resolvedListingQty, nowIso, nowIso],
+                      'AllotmentChecker.autoCreateApp.ensureListing'
+                    );
+
+                    const newAppId = `app_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
                     const initialShares = catRes.sharesAllotted || getAuthoritativeIpoLotSize(currentIpo, backendIpos, ipos, normCat) || 0;
                     await safeRunAsync(
                       db,
@@ -1902,6 +1917,17 @@ export default function AllotmentCheckerScreen({ isTabScreen }: { isTabScreen?: 
                       ? ((catRes as any).allottedLots || Math.max(1, Math.round(sharesCount / lotSize)))
                       : 0;
 
+                    const catResolvedPrice =
+                      ((currentIpo as any).price_band_max && (currentIpo as any).price_band_max > 0)
+                        ? (currentIpo as any).price_band_max
+                        : ((currentIpo as any).price_band_min && (currentIpo as any).price_band_min > 0)
+                        ? (currentIpo as any).price_band_min
+                        : (matchedApp.buy_price && matchedApp.buy_price > 0)
+                        ? matchedApp.buy_price
+                        : (currentIpo.buy_price && currentIpo.buy_price > 0)
+                        ? currentIpo.buy_price
+                        : 0;
+
                     await saveAllotmentResult({
                       application_id: matchedApp.id,
                       user_id: usr.id,
@@ -1909,6 +1935,7 @@ export default function AllotmentCheckerScreen({ isTabScreen }: { isTabScreen?: 
                       allotment_status: effectiveCatStatus,
                       allotted_lots: allottedLots,
                       allotted_shares: sharesCount,
+                      allotment_price: catResolvedPrice,
                       registrar: currentIpo.registrar || '',
                       checked_at: item.checkedAt || new Date().toISOString(),
                     });
@@ -1965,6 +1992,17 @@ export default function AllotmentCheckerScreen({ isTabScreen }: { isTabScreen?: 
                   ? ((item as any).allottedLots || Math.max(1, Math.round(sharesCount / lotSize)))
                   : 0;
 
+                const overallResolvedPrice =
+                  ((currentIpo as any).price_band_max && (currentIpo as any).price_band_max > 0)
+                    ? (currentIpo as any).price_band_max
+                    : ((currentIpo as any).price_band_min && (currentIpo as any).price_band_min > 0)
+                    ? (currentIpo as any).price_band_min
+                    : (targetApp.buy_price && targetApp.buy_price > 0)
+                    ? targetApp.buy_price
+                    : (currentIpo.buy_price && currentIpo.buy_price > 0)
+                    ? currentIpo.buy_price
+                    : 0;
+
                 await saveAllotmentResult({
                   application_id: targetApp.id,
                   user_id: usr.id,
@@ -1972,6 +2010,7 @@ export default function AllotmentCheckerScreen({ isTabScreen }: { isTabScreen?: 
                   allotment_status: effectiveBackendStatus,
                   allotted_lots: allottedLots,
                   allotted_shares: sharesCount,
+                  allotment_price: overallResolvedPrice,
                   registrar: currentIpo.registrar || '',
                   checked_at: item.checkedAt || new Date().toISOString(),
                 });
@@ -2031,6 +2070,14 @@ export default function AllotmentCheckerScreen({ isTabScreen }: { isTabScreen?: 
               inFlightCreatedAppsRef.current.add(inFlightKey);
               try {
                 const sharesCount = item.sharesAllotted || currentIpo.lot_size || 0;
+                const autoResolvedPrice =
+                  ((currentIpo as any).price_band_max && (currentIpo as any).price_band_max > 0)
+                    ? (currentIpo as any).price_band_max
+                    : ((currentIpo as any).price_band_min && (currentIpo as any).price_band_min > 0)
+                    ? (currentIpo as any).price_band_min
+                    : (currentIpo.buy_price && currentIpo.buy_price > 0)
+                    ? currentIpo.buy_price
+                    : 0;
                 await saveAllotmentResult({
                   application_id: existingDbApp.id,
                   user_id: usr.id,
@@ -2038,6 +2085,7 @@ export default function AllotmentCheckerScreen({ isTabScreen }: { isTabScreen?: 
                   allotment_status: backendStatus,
                   allotted_lots: (item as any).allottedLots || 1,
                   allotted_shares: sharesCount,
+                  allotment_price: autoResolvedPrice,
                   registrar: currentIpo.registrar || '',
                   checked_at: item.checkedAt || new Date().toISOString(),
                 });
@@ -2050,10 +2098,18 @@ export default function AllotmentCheckerScreen({ isTabScreen }: { isTabScreen?: 
             try {
               if (!matchedListing) {
                 const nowIso = new Date().toISOString();
+                const resolvedListingPrice =
+                  (currentIpo as any).price_band_max ||
+                  (currentIpo as any).price_band_min ||
+                  (currentIpo as any).buy_price ||
+                  (currentIpo as any).priceBandHigh ||
+                  (currentIpo as any).priceBandLow ||
+                  0;
+                const resolvedListingQty = currentIpo.lot_size || (currentIpo as any).lotSize || 1;
                 await safeRunAsync(
                   db,
                   `INSERT OR IGNORE INTO ipo_listings (id, ipo_name, company_name, symbol, buy_price, quantity, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                  [currentIpo.id, currentIpo.ipo_name, currentIpo.company_name || currentIpo.ipo_name, currentIpo.symbol || '', currentIpo.buy_price || 100, currentIpo.lot_size || 1, nowIso, nowIso],
+                  [currentIpo.id, currentIpo.ipo_name, currentIpo.company_name || currentIpo.ipo_name, currentIpo.symbol || '', resolvedListingPrice, resolvedListingQty, nowIso, nowIso],
                   'AllotmentChecker.insertListing'
                 );
               }
@@ -2061,6 +2117,14 @@ export default function AllotmentCheckerScreen({ isTabScreen }: { isTabScreen?: 
               const newAppId = `app_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
               const nowIso = new Date().toISOString();
               const sharesCount = item.sharesAllotted || currentIpo.lot_size || 0;
+              const autoResolvedPrice =
+                ((currentIpo as any).price_band_max && (currentIpo as any).price_band_max > 0)
+                  ? (currentIpo as any).price_band_max
+                  : ((currentIpo as any).price_band_min && (currentIpo as any).price_band_min > 0)
+                  ? (currentIpo as any).price_band_min
+                  : (currentIpo.buy_price && currentIpo.buy_price > 0)
+                  ? currentIpo.buy_price
+                  : 0;
 
               await safeRunAsync(
                 db,
@@ -2076,6 +2140,7 @@ export default function AllotmentCheckerScreen({ isTabScreen }: { isTabScreen?: 
                 allotment_status: backendStatus,
                 allotted_lots: (item as any).allottedLots || 1,
                 allotted_shares: sharesCount,
+                allotment_price: autoResolvedPrice,
                 registrar: currentIpo.registrar || '',
                 checked_at: item.checkedAt || nowIso,
               });

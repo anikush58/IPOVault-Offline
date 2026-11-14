@@ -662,7 +662,7 @@ function PortfolioReportScreenContent() {
                 <View style={styles.dataRow}>
                   <View style={styles.dataColLeft}>
                     <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                      BUY PRICE
+                      {activeTab === 'holding' ? 'ISSUE PRICE' : 'BUY PRICE'}
                     </Text>
                     <Text style={[styles.dataVal, { color: colors.foreground }]} numberOfLines={1}>
                       {formatCurrency(item.buy_price || 0)}
@@ -671,7 +671,7 @@ function PortfolioReportScreenContent() {
 
                   <View style={styles.dataColCenter}>
                     <Text style={[styles.dataLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
-                      {activeTab === 'holding' ? 'EST. PRICE' : 'SELL PRICE'}
+                      {activeTab === 'holding' ? 'CURRENT PRICE' : 'SELL PRICE'}
                     </Text>
                     <Text
                       style={[
@@ -687,7 +687,9 @@ function PortfolioReportScreenContent() {
                       ]}
                       numberOfLines={1}
                     >
-                      {item.sell_price != null ? formatCurrency(item.sell_price) : '—'}
+                      {item.sell_price != null
+                        ? formatCurrency(item.sell_price)
+                        : (activeTab === 'holding' ? formatCurrency(item.buy_price || 0) : '—')}
                     </Text>
                   </View>
 

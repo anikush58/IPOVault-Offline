@@ -248,3 +248,134 @@ export function logAutoFillAuditSummary(normalized: NormalizedIPODetails): void 
   logField('Issue Type', normalized.issueType, normalized.fieldStatus.issueType);
   console.log('──────────────────────────────────────────────────────');
 }
+
+/**
+ * Safely matches an application or query target to an IPO candidate from a list.
+ *
+ * Rules:
+ * 1. Exact ID or backend_ipo_id match (highest priority, unambiguous).
+ * 2. Exact Symbol match (must be non-empty; fails closed if multiple candidates share symbol).
+ * 3. Exact full company_name or ipo_name match (case-insensitive, normalized; fails closed if multiple candidates match).
+ * 4. Controlled token prefix matching for truncated names ending in '...' or similar:
+ *    - Tokenizes target by removing punctuation and noise words (ltd, limited, pvt, corp, etc.).
+ *    - Requires at least 2 significant tokens (generic single words like "Adani" or "Reliance" fail closed).
+ *    - In-order matching: candidate must match each prefix token in order.
+ *    - Must fail closed (return undefined) if more than 1 candidate matches.
+ */
+export function findSafeMatchingIpo<
+  T extends {
+    id?: string;
+    backend_ipo_id?: string | null;
+    symbol?: string | null;
+    company_name?: string | null;
+    ipo_name?: string | null;
+    price_band_max?: number | null;
+    price_band_min?: number | null;
+    buy_price?: number | null;
+    lot_size?: number | null;
+    quantity?: number | null;
+    logo_url?: string | null;
+    [key: string]: any;
+  }
+>(
+  target: { ipo_id?: string; ipo_name?: string; symbol?: string },
+  ipoList: T[]
+): T | undefined {
+  if (!target || !ipoList || ipoList.length === 0) return undefined;
+
+  // 1. Exact ID match (highest priority, unambiguous)
+  if (target.ipo_id) {
+    const match = ipoList.find(
+      (i) => i.id === target.ipo_id || (i as any).backend_ipo_id === target.ipo_id
+    );
+    if (match) return match;
+  }
+
+  // 2. Exact Symbol match (unambiguous)
+  if (target.symbol && target.symbol.trim() !== '') {
+    const sym = target.symbol.trim().toUpperCase();
+    const symMatches = ipoList.filter((i) => (i.symbol || '').trim().toUpperCase() === sym);
+    if (symMatches.length === 1) return symMatches[0];
+    if (symMatches.length > 1) return undefined; // fail closed if ambiguous symbols
+  }
+
+  const rawName = (target.ipo_name || '').trim();
+  if (!rawName) return undefined;
+
+  const normalize = (s: string) => s.toLowerCase().trim();
+  const targetNorm = normalize(rawName);
+
+  // 3. Exact name match (case-insensitive)
+  const exactMatches = ipoList.filter((i) => {
+    const compNorm = normalize(i.company_name || '');
+    const ipoNorm = normalize(i.ipo_name || '');
+    return compNorm === targetNorm || ipoNorm === targetNorm;
+  });
+  if (exactMatches.length === 1) return exactMatches[0];
+  if (exactMatches.length > 1) return undefined; // fail closed if ambiguous
+
+  // Helper to extract significant tokens
+  const noiseWords = new Set([
+    'ltd',
+    'limited',
+    'pvt',
+    'private',
+    'corp',
+    'corporation',
+    'inc',
+    'incorporated',
+    'ipo',
+  ]);
+
+  const tokenize = (s: string): string[] => {
+    return s
+      .toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .split(/\s+/)
+      .filter((tok) => tok.length > 0 && !noiseWords.has(tok));
+  };
+
+  const targetTokens = tokenize(rawName);
+
+  // Generic or single-token names fail closed (e.g. "Adani", "Reliance")
+  if (targetTokens.length < 2) {
+    return undefined;
+  }
+
+  // 4. Token prefix matching
+  const candidateMatches = ipoList.filter((i) => {
+    const candTokens1 = tokenize(i.company_name || '');
+    const candTokens2 = tokenize(i.ipo_name || '');
+
+    const matchesTokens = (candTokens: string[]) => {
+      if (candTokens.length < targetTokens.length) return false;
+      for (let j = 0; j < targetTokens.length; j++) {
+        const tTok = targetTokens[j];
+        const cTok = candTokens[j];
+        if (!cTok) return false;
+
+        if (j === targetTokens.length - 1) {
+          // Last token can be exact or prefix (e.g. "tech" matches "technologies")
+          if (cTok !== tTok && !cTok.startsWith(tTok)) {
+            return false;
+          }
+        } else {
+          // Earlier tokens must match exactly
+          if (cTok !== tTok) {
+            return false;
+          }
+        }
+      }
+      return true;
+    };
+
+    return matchesTokens(candTokens1) || matchesTokens(candTokens2);
+  });
+
+  // Strict disambiguation: fail closed if more than 1 candidate matches!
+  if (candidateMatches.length === 1) {
+    return candidateMatches[0];
+  }
+
+  return undefined;
+}

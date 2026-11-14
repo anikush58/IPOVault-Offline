@@ -689,8 +689,17 @@ function ApplyIPOScreenContent() {
 
     const bIpo = backendIpoRecord || parsedItem;
     const unitPrice =
-      selectedIPO?.buy_price ||
-      (bIpo?.priceBandHigh ? Number(bIpo.priceBandHigh) : (bIpo?.priceBandLow ? Number(bIpo.priceBandLow) : 100));
+      (bIpo?.priceBandHigh && Number(bIpo.priceBandHigh) > 0)
+        ? Number(bIpo.priceBandHigh)
+        : ((bIpo as any)?.price_band_max && Number((bIpo as any).price_band_max) > 0)
+        ? Number((bIpo as any).price_band_max)
+        : (bIpo?.priceBandLow && Number(bIpo.priceBandLow) > 0)
+        ? Number(bIpo.priceBandLow)
+        : ((bIpo as any)?.price_band_min && Number((bIpo as any).price_band_min) > 0)
+        ? Number((bIpo as any).price_band_min)
+        : (selectedIPO?.buy_price && selectedIPO.buy_price > 0)
+        ? selectedIPO.buy_price
+        : 0;
     const lotQty = resolveIpoLotSize(selectedIPO || bIpo) || selectedIPO?.quantity || 1;
     const offerCats = getIpoOfferCategories(bIpo || selectedIPO);
 

@@ -350,27 +350,39 @@ export class ApplicationRepository implements IApplicationRepository {
              COALESCE(NULLIF(a.bank_name, ''), u.bank_name, '') AS user_bank_name,
              COALESCE(NULLIF(a.upi_app, ''), u.upi_app, '')   AS user_upi_app,
              COALESCE(NULLIF(i.ipo_name, ''), NULLIF(m.ipo_name, ''), NULLIF(m.company_name, ''), 'IPO') AS ipo_name,
-             COALESCE(NULLIF(i.buy_price, 0), NULLIF(m.price_band_max, 0), NULLIF(m.price_band_min, 0), 100) AS buy_price,
+             COALESCE(
+               NULLIF(m.price_band_max, 0),
+               NULLIF(m.price_band_min, 0),
+               NULLIF(i.buy_price, 0),
+               0
+             ) AS buy_price,
              COALESCE(
                CASE
                  WHEN a.status IN ('Allotted', 'Partially Allotted', 'Holding', 'Sold') AND alt.allotted_shares > 0 THEN alt.allotted_shares
                  ELSE a.shares_count
                END,
-               NULLIF(i.quantity, 0),
                NULLIF(m.lot_size, 0),
+               NULLIF(i.quantity, 0),
                1
              ) AS quantity,
              alt.allotted_shares,
              alt.allotted_lots,
              alt.allotment_status,
+             alt.verification_method,
+             alt.registrar,
              COALESCE(NULLIF(i.open_date, ''), NULLIF(m.open_date, ''), '') AS open_date,
              COALESCE(NULLIF(i.logo_url, ''), NULLIF(m.logo_url, ''), '') AS ipo_logo_url
       FROM   ipo_applications a
       JOIN   users_table u ON a.user_id = u.id
       LEFT JOIN ipo_listings i ON a.ipo_id = i.id
-      LEFT JOIN ipo_master m ON a.ipo_id = m.id
+      LEFT JOIN ipo_master m ON (
+        a.ipo_id = m.id
+        OR (i.backend_ipo_id IS NOT NULL AND i.backend_ipo_id != '' AND i.backend_ipo_id = m.id)
+        OR (i.symbol IS NOT NULL AND i.symbol != '' AND i.symbol = m.symbol)
+      )
       LEFT JOIN ipo_allotments alt ON a.id = alt.application_id
       WHERE  a.deleted_at IS NULL AND u.deleted_at IS NULL AND (i.deleted_at IS NULL OR i.id IS NULL)
+      GROUP  BY a.id
       ORDER  BY a.created_at DESC
       `,
       [],
@@ -624,10 +636,10 @@ export class ApplicationRepository implements IApplicationRepository {
     const sql = `
       UPDATE ipo_applications SET
         status = ?,
-        sell_price = ?,
-        sale_date = ?,
-        tax = ?,
-        user_cut = ?,
+        sell_price = CASE WHEN ? = 1 THEN ? ELSE sell_price END,
+        sale_date = CASE WHEN ? = 1 THEN ? ELSE sale_date END,
+        tax = CASE WHEN ? = 1 THEN ? ELSE tax END,
+        user_cut = CASE WHEN ? = 1 THEN ? ELSE user_cut END,
         bank_name = CASE WHEN ? = 1 THEN ? ELSE bank_name END,
         upi_app = CASE WHEN ? = 1 THEN ? ELSE upi_app END,
         broker_account_id = CASE WHEN ? = 1 THEN ? ELSE broker_account_id END,
@@ -639,9 +651,13 @@ export class ApplicationRepository implements IApplicationRepository {
     `;
     const params = [
       status,
+      sellPrice !== undefined ? 1 : 0,
       sellPrice ?? null,
+      saleDate !== undefined ? 1 : 0,
       saleDate ?? null,
+      tax !== undefined ? 1 : 0,
       tax ?? 0,
+      userCut !== undefined ? 1 : 0,
       userCut ?? 0,
       bankName !== undefined ? 1 : 0,
       bankName ?? null,
