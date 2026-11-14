@@ -211,9 +211,10 @@ export async function runAllotmentModalAndNotificationTestSuite() {
     assert(tonboPastDate === true, 'Scenario 4b: Tonbo Past Listing Date', 'Tonbo Imaging with past listing date is excluded');
 
     // 4c. Active unlisted IPO with upcoming listing date
+    const futureDate = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
     const freshIpo = isIpoAlreadyListed({
       ipoStatus: 'ALLOTMENT_COMPLETED',
-      listingDate: '2026-11-05',
+      listingDate: futureDate,
     });
     assert(freshIpo === false, 'Scenario 4c: Active Fresh IPO Not Listed', 'Fresh unlisted IPO is not excluded');
 

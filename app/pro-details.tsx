@@ -350,7 +350,7 @@ export default function ProDetailsScreen() {
               style={[
                 styles.statusBadge,
                 {
-                  backgroundColor: isUserPro ? '#F59E0B' : (isDark ? '#334155' : '#64748B'),
+                  backgroundColor: isUserPro ? '#10B981' : (isDark ? '#334155' : '#64748B'),
                 },
               ]}
             >
@@ -648,6 +648,21 @@ export default function ProDetailsScreen() {
             ))}
           </View>
         </View>
+
+        {/* ── INFORMATIONAL NOTICE & DISCLAIMERS ── */}
+        <View
+          style={[
+            styles.disclaimerCard,
+            { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.02)', borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.disclaimerNoticeText, { color: colors.mutedForeground }]}>
+            In-app plan purchases are currently not active. Pro features can be previewed within the application.
+          </Text>
+          <Text style={[styles.disclaimerSubtext, { color: colors.mutedForeground }]}>
+            IPOVault is an application tracking and portfolio utility. IPOVault does not place bids on any stock exchange or guarantee IPO share allotment.
+          </Text>
+        </View>
       </Animated.ScrollView>
     </View>
   );
@@ -902,5 +917,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: DesignSystem.typography.fontRegular,
     lineHeight: 18,
+  },
+  disclaimerCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 16,
+    gap: 8,
+    marginBottom: DesignSystem.spacing.xl,
+  },
+  disclaimerNoticeText: {
+    fontSize: 12,
+    fontFamily: DesignSystem.typography.fontMedium,
+    lineHeight: 17,
+  },
+  disclaimerSubtext: {
+    fontSize: 11,
+    fontFamily: DesignSystem.typography.fontRegular,
+    lineHeight: 15,
   },
 });

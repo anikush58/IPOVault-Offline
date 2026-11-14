@@ -4,12 +4,16 @@ const path = require('path');
 const config = getDefaultConfig(__dirname);
 
 config.resolver.sourceExts.push('cjs');
+config.resolver.assetExts.push('wasm');
 config.resolver.unstable_enablePackageExports = false;
 
 // Direct react-native-google-mobile-ads to compiled distribution instead of raw TypeScript source
 const defaultResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (moduleName === 'react-native-google-mobile-ads') {
+    if (platform === 'web') {
+      return { type: 'empty' };
+    }
     return {
       filePath: path.resolve(__dirname, 'node_modules/react-native-google-mobile-ads/lib/module/index.js'),
       type: 'sourceFile',

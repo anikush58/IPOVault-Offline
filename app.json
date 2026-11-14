@@ -36,12 +36,19 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.ipovault.app",
       "versionCode": 2,
+      "compileSdkVersion": 36,
+      "targetSdkVersion": 36,
       "allowBackup": false,
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
         "POST_NOTIFICATIONS",
         "VIBRATE"
+      ],
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
     "web": {

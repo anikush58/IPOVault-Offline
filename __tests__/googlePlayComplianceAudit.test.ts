@@ -19,8 +19,11 @@ async function runTests() {
   {
     const manifestPath = path.join(rootDir, 'android/app/src/main/AndroidManifest.xml');
     const content = fs.readFileSync(manifestPath, 'utf8');
+    const hasActiveSystemAlert =
+      content.includes('android.permission.SYSTEM_ALERT_WINDOW') &&
+      !content.includes('android.permission.SYSTEM_ALERT_WINDOW" tools:node="remove"');
     assert(
-      !content.includes('android.permission.SYSTEM_ALERT_WINDOW'),
+      !hasActiveSystemAlert,
       'SYSTEM_ALERT_WINDOW must NOT be declared in production AndroidManifest.xml',
     );
     passed++;
@@ -31,9 +34,13 @@ async function runTests() {
   {
     const manifestPath = path.join(rootDir, 'android/app/src/main/AndroidManifest.xml');
     const content = fs.readFileSync(manifestPath, 'utf8');
+    const hasActiveStorage =
+      (content.includes('android.permission.READ_EXTERNAL_STORAGE') &&
+        !content.includes('android.permission.READ_EXTERNAL_STORAGE" tools:node="remove"')) ||
+      (content.includes('android.permission.WRITE_EXTERNAL_STORAGE') &&
+        !content.includes('android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove"'));
     assert(
-      !content.includes('android.permission.READ_EXTERNAL_STORAGE') &&
-      !content.includes('android.permission.WRITE_EXTERNAL_STORAGE'),
+      !hasActiveStorage,
       'Deprecated broad storage permissions must NOT be in AndroidManifest.xml',
     );
     passed++;
