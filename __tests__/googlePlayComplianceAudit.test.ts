@@ -137,8 +137,8 @@ async function runTests() {
     const gradleContent = fs.readFileSync(gradlePath, 'utf8');
 
     assert(
-      appJson.expo.version === '2.3.0',
-      'app.json version must be 2.3.0',
+      appJson.expo.version === '1.0.0',
+      'app.json version must be 1.0.0',
     );
     assert(
       appJson.expo.android.versionCode === 2,
@@ -149,11 +149,11 @@ async function runTests() {
       'build.gradle must have versionCode 2',
     );
     assert(
-      gradleContent.includes('versionName "2.3.0"'),
-      'build.gradle must have versionName "2.3.0"',
+      gradleContent.includes('versionName "1.0.0"'),
+      'build.gradle must have versionName "1.0.0"',
     );
     passed++;
-    console.log('✓ PASS: [8] App version (2.3.0) and versionCode (2) aligned across config files');
+    console.log('✓ PASS: [8] App version (1.0.0) and versionCode (2) aligned across config files');
   }
 
   console.log(`\n========================================================================`);

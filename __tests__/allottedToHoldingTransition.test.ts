@@ -394,7 +394,7 @@ async function runAllTests() {
 
     assert.ok(!aboutContent.includes("showWhatsNewModal"), 'settings-about.tsx must NOT declare showWhatsNewModal');
     assert.ok(!aboutContent.includes("whatsNewItem"), 'settings-about.tsx must NOT contain whatsNewItem style');
-    assert.ok(aboutContent.includes('Version 2.3.0'), 'settings-about.tsx must still retain Version information');
+    assert.ok(aboutContent.includes('Version 1.0.0'), 'settings-about.tsx must still retain Version information');
   });
 
   assert.strictEqual(passed, 5, 'All 5 tests must be accounted for and completed before the summary');

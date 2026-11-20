@@ -94,7 +94,7 @@ export default function PrivacyPolicyScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <Text style={[styles.effectiveDate, { color: colors.mutedForeground }]}>Effective: September 2026</Text>
             <View style={[styles.versionBadge, { backgroundColor: isDark ? '#374151' : '#F3F4F6' }]}>
-              <Text style={[styles.versionText, { color: colors.foreground }]}>v2.3.0</Text>
+              <Text style={[styles.versionText, { color: colors.foreground }]}>v1.0.0</Text>
             </View>
           </View>
           <Text style={[styles.summaryText, { color: colors.foreground }]}>

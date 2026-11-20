@@ -67,7 +67,7 @@ export default function SettingsAboutScreen() {
                 <Text style={[styles.upToDateText, { color: '#FFFFFF' }]}>Up to date</Text>
               </View>
             </View>
-            <Text style={[styles.appVersion, { color: colors.mutedForeground }]}>Version 2.3.0</Text>
+            <Text style={[styles.appVersion, { color: colors.mutedForeground }]}>Version 1.0.0</Text>
           </View>
         </View>
 

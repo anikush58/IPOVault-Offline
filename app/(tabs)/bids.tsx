@@ -27,7 +27,7 @@ import { useDB, type ApplicationStatus, type ApplicationWithDetails, type IPOLis
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
-import { formatCurrency, getResolvedLogoUrl } from '@/utils/formatters';
+import { formatCurrency, formatDate, getResolvedLogoUrl } from '@/utils/formatters';
 import { StatusBadge } from '@/components/StatusBadge';
 import { AddIPOModal } from '@/components/AddIPOModal';
 
@@ -238,7 +238,7 @@ function SwipeableBidCard({
                   {bid.ipo_name}
                 </Text>
                 <Text style={[styles.cardAppliedDate, { color: colors.mutedForeground }]}>
-                  Applied on {bid.open_date || '2026-08-27'}
+                  Applied on {bid.open_date ? formatDate(bid.open_date) : '27-08-2026'}
                 </Text>
               </View>
             </View>
@@ -731,7 +731,7 @@ function BidsScreenContent() {
                         {app.user_name}{app.user_bank_name ? ` (${app.user_bank_name})` : ''}
                       </Text>
                       <Text style={[styles.attentionItemDate, { color: colors.mutedForeground }]}>
-                        Applied on {app.open_date || 'recent date'}
+                        Applied on {app.open_date ? formatDate(app.open_date) : 'recent date'}
                       </Text>
                     </View>
                   </View>
@@ -872,7 +872,7 @@ function BidsScreenContent() {
                     {selectedAppForUpdate.user_name}{selectedAppForUpdate.user_bank_name ? ` (${selectedAppForUpdate.user_bank_name})` : ''}
                   </Text>
                   <Text style={[styles.summarySub, { color: colors.mutedForeground, marginTop: 2 }]}>
-                    Applied on {selectedAppForUpdate.open_date || 'recent date'}
+                    Applied on {selectedAppForUpdate.open_date ? formatDate(selectedAppForUpdate.open_date) : 'recent date'}
                   </Text>
                   <Text style={[styles.summaryAmt, { color: colors.foreground, marginTop: 6 }]}>
                     Amount: {formatCurrency(selectedAppForUpdate.buy_price * selectedAppForUpdate.quantity)} · 1 Lot ({selectedAppForUpdate.quantity} Shares)

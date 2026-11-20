@@ -22,6 +22,7 @@ import { useDB } from '@/context/DBContext';
 import { Button } from '@/components/ui/Button';
 import { ScreenHeader } from '@/components/ui/ScreenHeader';
 import { DatePickerModal } from '@/components/DatePickerModal';
+import { formatDate } from '@/utils/formatters';
 import { ensureBase64DataUrl } from '@/utils/imageUtils';
 import {
   CONTROLLED_EXCHANGES,
@@ -602,7 +603,7 @@ export default function AddIPOScreen() {
               style={[styles.dateInput, { borderColor: formOpenDate ? colors.primary : colors.border, backgroundColor: colors.surface }]}
             >
               <Text style={{ flex: 1, fontSize: 14, fontFamily: 'GoogleSansFlex_400Regular', color: formOpenDate ? colors.foreground : colors.mutedForeground }}>
-                {formOpenDate || 'Select'}
+                {formOpenDate ? formatDate(formOpenDate) : 'Select'}
               </Text>
               <Feather name="calendar" size={16} color={formOpenDate ? colors.primary : colors.mutedForeground} />
             </TouchableOpacity>
@@ -616,7 +617,7 @@ export default function AddIPOScreen() {
               style={[styles.dateInput, { borderColor: formCloseDate ? colors.primary : colors.border, backgroundColor: colors.surface }]}
             >
               <Text style={{ flex: 1, fontSize: 14, fontFamily: 'GoogleSansFlex_400Regular', color: formCloseDate ? colors.foreground : colors.mutedForeground }}>
-                {formCloseDate || 'Select'}
+                {formCloseDate ? formatDate(formCloseDate) : 'Select'}
               </Text>
               <Feather name="calendar" size={16} color={formCloseDate ? colors.primary : colors.mutedForeground} />
             </TouchableOpacity>
@@ -632,7 +633,7 @@ export default function AddIPOScreen() {
               style={[styles.dateInput, { borderColor: formAllotmentDate ? colors.primary : colors.border, backgroundColor: colors.surface }]}
             >
               <Text style={{ flex: 1, fontSize: 14, fontFamily: 'GoogleSansFlex_400Regular', color: formAllotmentDate ? colors.foreground : colors.mutedForeground }}>
-                {formAllotmentDate || 'Select'}
+                {formAllotmentDate ? formatDate(formAllotmentDate) : 'Select'}
               </Text>
               <Feather name="calendar" size={16} color={formAllotmentDate ? colors.primary : colors.mutedForeground} />
             </TouchableOpacity>
@@ -646,7 +647,7 @@ export default function AddIPOScreen() {
               style={[styles.dateInput, { borderColor: formListingDate ? colors.primary : colors.border, backgroundColor: colors.surface }]}
             >
               <Text style={{ flex: 1, fontSize: 14, fontFamily: 'GoogleSansFlex_400Regular', color: formListingDate ? colors.foreground : colors.mutedForeground }}>
-                {formListingDate || 'Select'}
+                {formListingDate ? formatDate(formListingDate) : 'Select'}
               </Text>
               <Feather name="calendar" size={16} color={formListingDate ? colors.primary : colors.mutedForeground} />
             </TouchableOpacity>

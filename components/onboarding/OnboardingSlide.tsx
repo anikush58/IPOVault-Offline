@@ -42,8 +42,6 @@ export function OnboardingSlide({
     );
     return {
       opacity,
-      // Shift texts downward by exactly 10px
-      transform: [{ translateY: 10 }],
     };
   });
 

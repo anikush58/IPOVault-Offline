@@ -18,11 +18,10 @@ export function formatAllotmentTimestamp(iso?: string | null): string | undefine
   const ms = Date.parse(iso);
   if (Number.isNaN(ms)) return undefined;
   const d = new Date(ms);
-  return d.toLocaleDateString('en-IN', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}-${month}-${year}`;
 }
 
 /**
@@ -238,6 +237,23 @@ export function getAllotmentItemMonthYear(item: AllotmentHistoryItem): Allotment
   }
 
   if (item.checkedAtFormatted) {
+    const dmyMatch = item.checkedAtFormatted.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (dmyMatch) {
+      const monthIdx = parseInt(dmyMatch[2], 10) - 1;
+      const year = parseInt(dmyMatch[3], 10);
+      if (monthIdx >= 0 && monthIdx < 12 && !isNaN(year)) {
+        const yearShort = String(year).slice(-2);
+        return {
+          month: MONTH_NAMES_SHORT[monthIdx],
+          monthIndex: monthIdx,
+          year,
+          yearShort,
+          label: `${MONTH_NAMES_SHORT[monthIdx]} ${yearShort}`,
+          key: `${MONTH_NAMES_SHORT[monthIdx].toLowerCase()}-${yearShort}`,
+        };
+      }
+    }
+
     const match = item.checkedAtFormatted.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b(?:[^\d]*(\d{2,4}))?/i);
     if (match) {
       const normalized = match[1].charAt(0).toUpperCase() + match[1].slice(1, 3).toLowerCase();

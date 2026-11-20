@@ -51,6 +51,13 @@ export function formatAuthError(error: any): string {
     case 'auth/cancelled-popup-request':
       return 'Sign-in window was closed.';
     default:
+      if (
+        message.includes('DEVELOPER_ERROR') ||
+        String(code) === '10' ||
+        String(code) === 'DEVELOPER_ERROR'
+      ) {
+        return 'Google Sign-In configuration error (DEVELOPER_ERROR): The app signing key SHA-1 fingerprint is not registered in Firebase Console. Please add your SHA-1 to Firebase Project Settings.';
+      }
       if (message.includes('PLAY_SERVICES_NOT_AVAILABLE')) {
         return 'Google Play Services is unavailable on this device.';
       }

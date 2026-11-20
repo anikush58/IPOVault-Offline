@@ -116,7 +116,7 @@ export function FilterSheet({
         ...new Set([
           currentYear,
           ...applications
-            .map((a) => (a.open_date ? a.open_date.slice(0, 4) : null))
+            .map((a) => (a.open_date ? (a.open_date.match(/\d{4}/)?.[0] || null) : null))
             .filter((y): y is string => y !== null),
         ]),
       ].sort((a, b) => b.localeCompare(a)),

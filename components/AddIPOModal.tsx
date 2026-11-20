@@ -19,7 +19,7 @@ import { useDialog } from '@/context/DialogContext';
 import { useDB } from '@/context/DBContext';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
-import { formatCurrency, todayISO } from '@/utils/formatters';
+import { formatCurrency, formatDate, todayISO } from '@/utils/formatters';
 import { useSQLiteContext } from 'expo-sqlite';
 import { safeRunAsync } from '@/utils/sqliteDebug';
 import {
@@ -479,7 +479,7 @@ export function AddIPOModal({ visible, onClose }: Props) {
                   activeOpacity={0.7}
                 >
                   <Text style={[styles.dateText, { color: value ? colors.foreground : colors.mutedForeground }]}>
-                    {value || 'Select date'}
+                    {value ? formatDate(value) : 'Select date'}
                   </Text>
                   <Feather name="calendar" size={16} color={colors.primary} />
                 </TouchableOpacity>

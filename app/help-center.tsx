@@ -138,7 +138,7 @@ const GUIDE_ARTICLES: GuideArticle[] = [
     icon: 'star',
     iconColor: '#F59E0B',
     iconBg: 'rgba(245, 158, 11, 0.12)',
-    infoNote: 'Version 2.3.0 brings performance improvements, staged cloud sync, live Upstox LTP, and redesigned Settings hub.',
+    infoNote: 'Version 1.0.0 brings comprehensive IPO tracking, multi-account allotment verification, and local-first security.',
   },
 ];
 

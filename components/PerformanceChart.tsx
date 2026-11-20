@@ -265,9 +265,9 @@ export function PerformanceChart({ applications }: Props) {
   // Helper for formatting date strings
   const formatDateShort = (d: Date) => {
     const day = String(d.getDate()).padStart(2, '0');
-    const month = MONTHS[d.getMonth()];
+    const month = String(d.getMonth() + 1).padStart(2, '0');
     const year = d.getFullYear();
-    return `${day} ${month} ${year}`;
+    return `${day}-${month}-${year}`;
   };
 
   // Build options for performance period selector

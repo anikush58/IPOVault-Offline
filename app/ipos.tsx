@@ -47,7 +47,10 @@ function formatLastSynced(timestamp: string | null): string {
   const diffHours = Math.floor(diffMins / 60);
   if (diffHours < 24) return `Last synced ${diffHours}h ago`;
   const d = new Date(timestamp);
-  return `Last synced ${d.getDate()} ${d.toLocaleString('default', { month: 'short' })}, ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `Last synced ${day}-${month}-${year}, ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
 }
 
 const TABS: { key: HubTab; label: string }[] = [

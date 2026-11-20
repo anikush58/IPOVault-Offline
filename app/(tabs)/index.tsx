@@ -75,11 +75,20 @@ function parseAppDate(dateStr: string | null | undefined): Date | null {
   const str = dateStr.trim();
   const parts = str.split(/[-/ T]/);
   if (parts.length >= 3) {
-    const year = parseInt(parts[0], 10);
-    const month = parseInt(parts[1], 10) - 1;
-    const day = parseInt(parts[2], 10);
-    if (!isNaN(year) && !isNaN(month) && !isNaN(day) && year > 1900 && month >= 0 && month <= 11) {
-      return new Date(year, month, day);
+    if (parts[0].length === 4) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      if (!isNaN(year) && !isNaN(month) && !isNaN(day) && year > 1900 && month >= 0 && month <= 11) {
+        return new Date(year, month, day);
+      }
+    } else if (parts[2].length === 4) {
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const year = parseInt(parts[2], 10);
+      if (!isNaN(year) && !isNaN(month) && !isNaN(day) && year > 1900 && month >= 0 && month <= 11) {
+        return new Date(year, month, day);
+      }
     }
   }
   const d = new Date(str);
@@ -438,7 +447,7 @@ function DashboardScreenContent() {
     if (filterUserIds.length > 0 && !filterUserIds.includes(a.user_id)) return false;
     if (filterIpoNames.length > 0 && !filterIpoNames.includes(a.ipo_name ?? '')) return false;
     if (filterYear) {
-      const y = a.open_date ? a.open_date.slice(0, 4) : '';
+      const y = a.open_date ? (a.open_date.match(/\d{4}/)?.[0] || '') : '';
       if (y !== filterYear) return false;
     }
     return true;

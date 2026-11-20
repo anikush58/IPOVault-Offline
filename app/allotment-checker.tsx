@@ -116,8 +116,8 @@ import {
 export const APP_DEBUG_BUILD = 'AC-DIAG-20260907-1640';
 
 // Hero and card graphics for allotment checker (can be swapped from assets/images)
-const ALLOTMENT_HERO_GRAPHIC = require('@/assets/images/allotment-checker-graphic.png');
-const ALLOTMENT_HERO_GRAPHIC_DARK = require('@/assets/images/allotment-checker-graphic-dark.png');
+const ALLOTMENT_HERO_GRAPHIC = require('@/assets/images/allotment-checker-hero.png');
+const ALLOTMENT_HERO_GRAPHIC_DARK = require('@/assets/images/allotment-checker-hero-dark.png');
 const ALLOTMENT_BG_GREY = require('@/assets/images/allotment-status-bg-grey.png');
 const ALLOTMENT_BG_GREY_DARK = require('@/assets/images/allotment-status-bg-grey-dark.png');
 const ALLOTMENT_BG_GREEN = require('@/assets/images/allotment-status-bg-green.png');
@@ -3784,69 +3784,58 @@ export default function AllotmentCheckerScreen({ isTabScreen }: { isTabScreen?: 
         { backgroundColor: colors.background, paddingTop: topPad },
       ]}
     >
-      {/* Full Screen Background Graphic for Idle State */}
-      {!selectedIpo && (
-        <View
-          style={[
-            StyleSheet.absoluteFillObject,
-            isNonPro ? { top: -100, bottom: -100 } : null,
-          ]}
-          pointerEvents="none"
-        >
-          <Image
-            source={isDark ? ALLOTMENT_HERO_GRAPHIC_DARK : ALLOTMENT_HERO_GRAPHIC}
-            style={StyleSheet.absoluteFillObject}
-            resizeMode="cover"
-          />
-        </View>
-      )}
-
       {/* Top Header */}
       <View style={styles.header}>
         {selectedIpo || !isPrimaryTab ? (
-          <View style={{ marginRight: 12 }}>
+          <View style={{ marginRight: 12, zIndex: 10, elevation: 10 }}>
             <IconButton
               name="arrow-left"
               variant="surface"
               size="md"
+              hitSlop={10}
               onPress={handleBackPress}
             />
           </View>
         ) : null}
 
-        <TouchableOpacity
-          activeOpacity={0.9}
-          delayLongPress={600}
-          onLongPress={() => {
-            try {
-              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-            } catch {}
-            setShowDevOption((prev) => !prev);
-          }}
+        <View
           style={(!isPrimaryTab || selectedIpo) ? styles.headerCenterPro : { flex: 1, justifyContent: 'center' }}
+          pointerEvents="box-none"
         >
-          <Text
-            style={[
-              styles.headerEyebrow,
-              { color: colors.primary },
-              (!isPrimaryTab || selectedIpo) && styles.headerEyebrowPro,
-            ]}
+          <TouchableOpacity
+            activeOpacity={0.9}
+            delayLongPress={600}
+            onLongPress={() => {
+              try {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+              } catch {}
+              setShowDevOption((prev) => !prev);
+            }}
+            style={{ alignItems: 'center', justifyContent: 'center' }}
           >
-            {selectedIpo ? 'ALLOTMENT RESULT' : 'REGISTRAR STATUS'}
-          </Text>
-          <Text
-            style={[
-              styles.headerTitle,
-              { color: colors.foreground },
-              (!isPrimaryTab || selectedIpo) ? styles.headerTitlePro : null,
-            ]}
-            numberOfLines={1}
-          >
-            {selectedIpo ? (selectedIpo.ipo_name || selectedIpo.company_name) : 'Allotment Checker'}
-          </Text>
-        </TouchableOpacity>
+            <Text
+              style={[
+                styles.headerEyebrow,
+                { color: colors.primary },
+                (!isPrimaryTab || selectedIpo) && styles.headerEyebrowPro,
+              ]}
+            >
+              {selectedIpo ? 'ALLOTMENT RESULT' : 'REGISTRAR STATUS'}
+            </Text>
+            <Text
+              style={[
+                styles.headerTitle,
+                { color: colors.foreground },
+                (!isPrimaryTab || selectedIpo) ? styles.headerTitlePro : null,
+              ]}
+              numberOfLines={1}
+            >
+              {selectedIpo ? (selectedIpo.ipo_name || selectedIpo.company_name) : 'Allotment Checker'}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-        <View style={styles.headerRightActions}>
+        <View style={[styles.headerRightActions, { zIndex: 10, elevation: 10 }]}>
           <TouchableOpacity
             style={[
               styles.historyHeaderBtn,
@@ -4074,12 +4063,21 @@ export default function AllotmentCheckerScreen({ isTabScreen }: { isTabScreen?: 
           </View>
         )}
 
-        {/* Idle Spacer to push intro/trust content to bottom 30% */}
-        {!selectedIpo && <View style={{ flex: 1, minHeight: 32 }} />}
+        {/* Idle Spacer */}
+        {!selectedIpo && <View style={{ minHeight: 16 }} />}
 
-        {/* Idle Intro & Trust Section (Bottom 30%) */}
+        {/* Idle Intro & Trust Section */}
         {!selectedIpo && (
           <View style={styles.idleBottomHeroContainer}>
+            {/* Dedicated Hero Phone Graphic (In-flow, perfectly non-overlapping) */}
+            <View style={styles.idleHeroGraphicContainer}>
+              <Image
+                source={isDark ? ALLOTMENT_HERO_GRAPHIC_DARK : ALLOTMENT_HERO_GRAPHIC}
+                style={styles.idleHeroGraphicImage}
+                resizeMode="contain"
+              />
+            </View>
+
             <View style={styles.idleHeroTextWrap}>
               <Text
                 style={[
@@ -6511,14 +6509,24 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'space-between',
   },
+  idleHeroGraphicContainer: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  idleHeroGraphicImage: {
+    width: 220,
+    height: 170,
+  },
   idleBottomHeroContainer: {
     width: '100%',
     alignItems: 'center',
     paddingHorizontal: 4,
-    paddingTop: 16,
-    paddingBottom: 8,
-    marginTop: 50,
-    marginBottom: 70,
+    paddingTop: 8,
+    paddingBottom: 24,
+    marginTop: 12,
+    marginBottom: 32,
     gap: 16,
   },
   idleHeroTextWrap: {

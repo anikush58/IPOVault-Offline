@@ -65,7 +65,7 @@ export function formatDate(dateVal?: string | number | Date | boolean | null): s
   const day = String(date.getDate()).padStart(2, "0");
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const year = date.getFullYear();
-  return `${day}/${month}/${year}`;
+  return `${day}-${month}-${year}`;
 }
 
 export function formatShortDate(dateVal?: string | number | Date | boolean | null): string {
@@ -89,7 +89,7 @@ export function formatShortDate(dateVal?: string | number | Date | boolean | nul
 
   const day = String(date.getDate()).padStart(2, "0");
   const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${day}/${month}`;
+  return `${day}-${month}`;
 }
 
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

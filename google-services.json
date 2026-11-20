@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "649099972-f87obc4amd3m79kf2vc1m71gb2ij5v0s.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.ipovault.app",
+            "certificate_hash": "2736138e2ed9e63d160f61e890b8944a2cbc1997"
+          }
+        },
+        {
           "client_id": "649099972-hrmk5h725abna6a4o96ikcbqfl4ke2tn.apps.googleusercontent.com",
           "client_type": 3
         }

@@ -181,7 +181,7 @@ function ApplicationsScreenContent() {
       }
       if (filterIpoNames.length > 0 && !filterIpoNames.includes(a.ipo_name ?? '')) return false;
       if (filterYear) {
-        const y = a.open_date ? a.open_date.slice(0, 4) : '';
+        const y = a.open_date ? (a.open_date.match(/\d{4}/)?.[0] || '') : '';
         if (y !== filterYear) return false;
       }
       return true;

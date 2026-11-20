@@ -27,7 +27,7 @@ import { Button } from '@/components/ui/Button';
 import { useDB, type ApplicationStatus, type ApplicationWithDetails } from '@/context/DBContext';
 
 import { StatusBadge } from './StatusBadge';
-import { formatCurrency, getResolvedLogoUrl, todayISO } from '@/utils/formatters';
+import { formatCurrency, formatDate, getResolvedLogoUrl, todayISO } from '@/utils/formatters';
 import { calcBuyValue, calcNetProfit, calcProfitLoss, calcSaleValue } from '@/utils/calculations';
 import { DatePickerModal } from '@/components/DatePickerModal';
 
@@ -587,7 +587,7 @@ export function UpdateApplicationModal({ application: app, onClose }: Props) {
                                 color: saleDate ? colors.foreground : colors.mutedForeground,
                               }}
                             >
-                              {saleDate || todayISO()}
+                              {formatDate(saleDate || todayISO())}
                             </Text>
                             <Feather name="calendar" size={16} color={saleDate ? colors.primary : colors.mutedForeground} />
                           </TouchableOpacity>

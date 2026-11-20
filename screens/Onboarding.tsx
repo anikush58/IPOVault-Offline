@@ -42,9 +42,11 @@ const BG_IMAGES = [
 function BackgroundLayers({
   scrollX,
   windowWidth,
+  isSmallScreen,
 }: {
   scrollX: SharedValue<number>;
   windowWidth: number;
+  isSmallScreen?: boolean;
 }) {
   const layer1Style = useAnimatedStyle(() => {
     const opacity = interpolate(
@@ -66,19 +68,41 @@ function BackgroundLayers({
     return { opacity };
   });
 
+  const bgShiftY = isSmallScreen ? -24 : -48;
+
   return (
-    <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+    <View
+      style={[
+        StyleSheet.absoluteFillObject,
+        {
+          transform: [{ translateY: bgShiftY }],
+        },
+      ]}
+      pointerEvents="none"
+    >
       {/* Base Layer 0: Always 100% opaque underneath to prevent background bleed/blink */}
-      <Image source={BG_IMAGES[0]} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+      <Image
+        source={BG_IMAGES[0]}
+        style={[StyleSheet.absoluteFillObject, { height: '115%' }]}
+        resizeMode="cover"
+      />
 
       {/* Layer 1: Dissolves seamlessly over Layer 0 */}
-      <Animated.View style={[StyleSheet.absoluteFillObject, layer1Style]}>
-        <Image source={BG_IMAGES[1]} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+      <Animated.View style={[StyleSheet.absoluteFillObject, { height: '115%' }, layer1Style]}>
+        <Image
+          source={BG_IMAGES[1]}
+          style={StyleSheet.absoluteFillObject}
+          resizeMode="cover"
+        />
       </Animated.View>
 
       {/* Layer 2: Dissolves seamlessly over Layer 1 */}
-      <Animated.View style={[StyleSheet.absoluteFillObject, layer2Style]}>
-        <Image source={BG_IMAGES[2]} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+      <Animated.View style={[StyleSheet.absoluteFillObject, { height: '115%' }, layer2Style]}>
+        <Image
+          source={BG_IMAGES[2]}
+          style={StyleSheet.absoluteFillObject}
+          resizeMode="cover"
+        />
       </Animated.View>
     </View>
   );
@@ -239,7 +263,7 @@ export function OnboardingScreenView() {
       <AutoStatusBar backgroundColor={bgColor} />
 
       {/* Zero-Blink Cumulative Background Dissolve Layer Stack */}
-      <BackgroundLayers scrollX={scrollX} windowWidth={windowWidth} />
+      <BackgroundLayers scrollX={scrollX} windowWidth={windowWidth} isSmallScreen={isSmallScreen} />
 
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         {/* Top Header Bar */}

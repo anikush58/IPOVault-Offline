@@ -200,19 +200,28 @@ export default function SettingsScreen() {
   const [usernameStr, setUsernameStr] = useState(defaultDisplayName);
   const [editNameInput, setEditNameInput] = useState(defaultDisplayName);
 
+  const authUserRef = useRef(authUser);
+  authUserRef.current = authUser;
+  const defaultDisplayNameRef = useRef(defaultDisplayName);
+  defaultDisplayNameRef.current = defaultDisplayName;
+  const showEditProfileModalRef = useRef(showEditProfileModal);
+  showEditProfileModalRef.current = showEditProfileModal;
+
   // Reactively synchronize local screen state whenever authUser profile updates (e.g. from cloud sync)
   useEffect(() => {
     if (authUser?.displayName && authUser.displayName.trim()) {
       const name = authUser.displayName.trim();
       setUsernameStr(name);
-      setEditNameInput(name);
+      if (!showEditProfileModal) {
+        setEditNameInput(name);
+      }
     }
     if (authUser?.photoURL && isCustomAvatarUrl(authUser.photoURL)) {
       setAvatarUri(authUser.photoURL.trim());
     } else {
       setAvatarUri(null);
     }
-  }, [authUser?.displayName, authUser?.photoURL]);
+  }, [authUser?.displayName, authUser?.photoURL, showEditProfileModal]);
 
   useFocusEffect(
     useCallback(() => {
@@ -221,19 +230,25 @@ export default function SettingsScreen() {
         if (!isMounted) return;
         if (stored && stored.trim()) {
           setUsernameStr(stored.trim());
-          setEditNameInput(stored.trim());
+          if (!showEditProfileModalRef.current) {
+            setEditNameInput(stored.trim());
+          }
         } else {
-          const fallback = (authUser?.displayName && authUser.displayName.trim()) || defaultDisplayName;
+          const fallback =
+            (authUserRef.current?.displayName && authUserRef.current.displayName.trim()) ||
+            defaultDisplayNameRef.current;
           setUsernameStr(fallback);
-          setEditNameInput(fallback);
+          if (!showEditProfileModalRef.current) {
+            setEditNameInput(fallback);
+          }
         }
       });
       safeAsyncStorage.getItem('@ipovault_avatar_uri').then((stored) => {
         if (!isMounted) return;
         if (stored && isCustomAvatarUrl(stored)) {
           setAvatarUri(stored.trim());
-        } else if (authUser?.photoURL && isCustomAvatarUrl(authUser.photoURL)) {
-          setAvatarUri(authUser.photoURL.trim());
+        } else if (authUserRef.current?.photoURL && isCustomAvatarUrl(authUserRef.current.photoURL)) {
+          setAvatarUri(authUserRef.current.photoURL.trim());
         } else {
           setAvatarUri(null);
         }
@@ -254,7 +269,7 @@ export default function SettingsScreen() {
         setShowLicensesSheet(false);
         setShowEditProfileModal(false);
       };
-    }, [defaultDisplayName, authUser?.displayName, authUser?.photoURL])
+    }, [])
   );
 
   const handlePickAvatar = async () => {
@@ -305,12 +320,20 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleSaveName = async (newName: string) => {
-    const trimmed = newName.trim();
-    const targetName = trimmed || defaultDisplayName;
+  const handleSaveProfile = async () => {
+    try {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {}
+    const targetName = editNameInput.trim() || defaultDisplayName;
     setUsernameStr(targetName);
     const effectiveAvatar = avatarUri || authUser?.photoURL || undefined;
-    await updateProfile(targetName, effectiveAvatar);
+    const res = await updateProfile(targetName, effectiveAvatar);
+    if (res.error) {
+      showSuccess('Profile Saved', 'Saved locally. Cloud sync will update once connected.');
+    } else {
+      showSuccess('Profile Saved', 'Username and profile details saved and synced to the cloud.');
+    }
+    setShowEditProfileModal(false);
   };
 
   const emailStr = authUser?.email?.trim() || 'Guest Account (Offline)';
@@ -544,7 +567,10 @@ export default function SettingsScreen() {
               <View style={styles.topCardActions}>
                 <TouchableOpacity
                   activeOpacity={0.8}
-                  onPress={() => setShowEditProfileModal(true)}
+                  onPress={() => {
+                    setEditNameInput(usernameStr);
+                    setShowEditProfileModal(true);
+                  }}
                   style={[
                     styles.topEditProfileBtn,
                     {
@@ -1005,13 +1031,12 @@ export default function SettingsScreen() {
                 <TextInput
                   style={[styles.editTextInput, { color: colors.foreground }]}
                   value={editNameInput}
-                  onChangeText={(val) => {
-                    setEditNameInput(val);
-                    handleSaveName(val);
-                  }}
+                  onChangeText={setEditNameInput}
                   placeholder="Enter your name"
                   placeholderTextColor={colors.mutedForeground}
                   autoCapitalize="words"
+                  returnKeyType="done"
+                  onSubmitEditing={handleSaveProfile}
                 />
                 {editNameInput.length > 0 ? (
                   <TouchableOpacity
@@ -1120,21 +1145,7 @@ export default function SettingsScreen() {
           <TouchableOpacity
             style={[styles.solidCTA, { backgroundColor: colors.primary }]}
             activeOpacity={0.85}
-            onPress={async () => {
-              try {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              } catch {}
-              const targetName = editNameInput.trim() || defaultDisplayName;
-              setUsernameStr(targetName);
-              const effectiveAvatar = avatarUri || authUser?.photoURL || undefined;
-              const res = await updateProfile(targetName, effectiveAvatar);
-              if (res.error) {
-                showSuccess('Profile Saved', 'Saved locally. Cloud sync will update once connected.');
-              } else {
-                showSuccess('Profile Saved', 'Username and profile details saved and synced to the cloud.');
-              }
-              setShowEditProfileModal(false);
-            }}
+            onPress={handleSaveProfile}
           >
             <Text style={[styles.solidCTAText, { color: colors.primaryForeground }]}>Save Changes</Text>
           </TouchableOpacity>

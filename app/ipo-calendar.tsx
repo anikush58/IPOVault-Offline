@@ -135,10 +135,12 @@ function formatDateDisplay(dateStr: string): { full: string; short: string } {
     const d = new Date(dateStr + 'T00:00:00');
     if (isNaN(d.getTime())) return { full: dateStr, short: dateStr };
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
     return {
-      full: `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`,
-      short: `${d.getDate()} ${months[d.getMonth()]}`,
+      full: `${days[d.getDay()]}, ${day}-${month}-${year}`,
+      short: `${day}-${month}`,
     };
   } catch {
     return { full: dateStr, short: dateStr };

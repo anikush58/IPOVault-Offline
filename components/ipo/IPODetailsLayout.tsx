@@ -30,7 +30,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useAppExperience } from '@/context/AppExperienceContext';
 import { calculateNormalizedIPOStatus } from '@/services/ipo/statusNormalizer';
 import { getRegistrarConfig } from '@/services/allotment/registrarConfig';
-import { getResolvedLogoUrl } from '@/utils/formatters';
+import { formatDate, getResolvedLogoUrl } from '@/utils/formatters';
 import { allotmentApiService } from '@/services/allotment/AllotmentApiService';
 
 const TIMELINE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -130,9 +130,9 @@ export function formatFullDate(dateStr?: string | null): string {
   if (ts != null) {
     const d = new Date(ts);
     const day = String(d.getDate()).padStart(2, '0');
-    const month = TIMELINE_MONTHS[d.getMonth()];
+    const month = String(d.getMonth() + 1).padStart(2, '0');
     const year = d.getFullYear();
-    return `${day} ${month} ${year}`;
+    return `${day}-${month}-${year}`;
   }
   return formatShortDate(clean);
 }
@@ -601,7 +601,7 @@ export function IPODetailsLayout({
       const d = new Date(observedAt);
       if (!isNaN(d.getTime())) {
         const timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-        updatedText = `Updated ${formatShortDate(observedAt)}, ${timeStr}`;
+        updatedText = `Updated ${formatDate(observedAt)}, ${timeStr}`;
       }
     }
 
